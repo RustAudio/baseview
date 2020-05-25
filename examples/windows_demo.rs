@@ -1,14 +1,14 @@
 use std::ptr::null_mut;
 
-use baseview::{WindowOpenOptions, create_window, handle_msg};
 use baseview::Parent;
+use baseview::{create_window, handle_msg, WindowOpenOptions};
 
 fn main() {
     let window = WindowOpenOptions {
         title: "Baseview",
         width: 800,
         height: 400,
-        parent: Parent::None
+        parent: Parent::None,
     };
 
     create_window(window);
