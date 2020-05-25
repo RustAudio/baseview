@@ -2,6 +2,8 @@
 // TODO: actually handle events
 // TODO: set window title
 // TODO: close window
+// TODO: proper error handling (no bare `unwrap`s)
+// TODO: refactor X connections (+setup, +screen) to a new struct
 
 use crate::Parent;
 use crate::WindowOpenOptions;
@@ -107,4 +109,29 @@ impl X11Window {
 
 pub fn run(options: WindowOpenOptions) {
     X11Window::run(options);
+}
+
+// Figure out the DPI scaling by opening a new temporary connection and asking XCB
+// TODO: currently returning (96, 96) on my system, even though I have 4k screens. Problem with my setup perhaps?
+pub fn get_scaling() -> (u32, u32) {
+    let (conn, screen_num) = xcb::Connection::connect_with_xlib_display().unwrap();
+
+    // Figure out screen information
+    let setup = conn.get_setup();
+    let screen = setup.roots().nth(screen_num as usize).unwrap();
+
+    // Get the DPI from the screen struct
+    //
+    // there are 2.54 centimeters to an inch; so there are 25.4 millimeters.
+    // dpi = N pixels / (M millimeters / (25.4 millimeters / 1 inch))
+    //     = N pixels / (M inch / 25.4)
+    //     = N * 25.4 pixels / M inch
+    let width_px = screen.width_in_pixels() as f64;
+    let width_mm = screen.width_in_millimeters() as f64;
+    let height_px = screen.height_in_pixels() as f64;
+    let height_mm = screen.height_in_millimeters() as f64;
+    let xres = width_px * 25.4 / width_mm;
+    let yres = height_px * 25.4 / height_mm;
+
+    ((xres + 0.5) as u32, (yres + 0.5) as u32)
 }
