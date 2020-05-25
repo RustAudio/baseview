@@ -69,6 +69,18 @@ impl X11Window {
             event_mask,
         );
 
+        // Change window title
+        let title = options.title;
+        xcb::change_property(
+            &conn,
+            xcb::PROP_MODE_REPLACE as u8,
+            win,
+            xcb::ATOM_WM_NAME,
+            xcb::ATOM_STRING,
+            8,
+            title.as_bytes(),
+        );
+
         // Display the window
         xcb::map_window(&conn, win);
         conn.flush();
