@@ -4,6 +4,8 @@ pub use win::*;
 
 use std::ffi::c_void;
 
+mod x11;
+
 pub enum Parent {
     None,
     AsIfParented,
@@ -17,4 +19,8 @@ pub struct WindowOpenOptions<'a> {
     pub height: usize,
 
     pub parent: Parent,
+}
+
+pub fn run(options: WindowOpenOptions) {
+    x11::run(options);
 }
