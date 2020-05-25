@@ -1,9 +1,16 @@
 [package]
 name = "baseview"
 version = "0.1.0"
-authors = ["William Light <git@wrl.lhiaudio.com>"]
+authors = [
+    "William Light <git@wrl.lhiaudio.com>",
+    "Charles Saracco <crsaracco@gmail.com>"
+]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+[target.'cfg(target_os="linux")'.dependencies]
+xcb = { version = "0.9", features = ["thread", "xlib_xcb", "dri2"] }
+
+# [target.'cfg(target_os="windows")'.dependencies]
+
+# [target.'cfg(target_os="macos")'.dependencies]
