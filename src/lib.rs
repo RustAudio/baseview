@@ -6,6 +6,9 @@ use std::ffi::c_void;
 
 mod x11;
 
+mod macos;
+pub use macos::Window;
+
 pub enum Parent {
     None,
     AsIfParented,
