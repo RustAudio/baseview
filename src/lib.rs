@@ -1,3 +1,7 @@
+mod win;
+
+pub use win::*;
+
 use std::ffi::c_void;
 
 mod x11;
