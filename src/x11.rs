@@ -113,6 +113,7 @@ pub fn run(options: WindowOpenOptions) {
 
 // Figure out the DPI scaling by opening a new temporary connection and asking XCB
 // TODO: currently returning (96, 96) on my system, even though I have 4k screens. Problem with my setup perhaps?
+#[allow(dead_code)]
 pub fn get_scaling() -> (u32, u32) {
     let (conn, screen_num) = xcb::Connection::connect_with_xlib_display().unwrap();
 
