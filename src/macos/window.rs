@@ -11,7 +11,7 @@ use crate::WindowOpenOptions;
 pub struct Window;
 
 impl Window {
-    pub fn open(options: WindowOpenOptions) {
+    pub fn open(options: WindowOpenOptions) -> Self {
         unsafe {
             let _pool = NSAutoreleasePool::new(nil);
 
@@ -41,6 +41,8 @@ impl Window {
             let current_app = NSRunningApplication::currentApplication(nil);
             current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
             app.run();
+
+            Window
         }
     }
 }

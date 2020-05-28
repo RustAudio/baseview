@@ -8,12 +8,12 @@
 use crate::Parent;
 use crate::WindowOpenOptions;
 
-struct X11Window {
+pub struct Window {
     xcb_connection: xcb::Connection,
 }
 
-impl X11Window {
-    pub fn run(options: WindowOpenOptions) -> Self {
+impl Window {
+    pub fn open(options: WindowOpenOptions) -> Self {
         // Convert the parent to a X11 window ID if we're given one
         let parent = match options.parent {
             Parent::None => None,
@@ -105,10 +105,6 @@ impl X11Window {
             }
         }
     }
-}
-
-pub fn run(options: WindowOpenOptions) {
-    X11Window::run(options);
 }
 
 // Figure out the DPI scaling by opening a new temporary connection and asking XCB

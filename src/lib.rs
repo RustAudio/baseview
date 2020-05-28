@@ -4,12 +4,16 @@ use std::ffi::c_void;
 mod win;
 #[cfg(target_os = "windows")]
 pub use win::*;
+
 #[cfg(target_os = "linux")]
 mod x11;
+#[cfg(target_os = "linux")]
+pub use x11::*;
+
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::Window;
+pub use macos::*;
 
 pub enum Parent {
     None,
@@ -24,9 +28,4 @@ pub struct WindowOpenOptions<'a> {
     pub height: usize,
 
     pub parent: Parent,
-}
-
-#[cfg(target_os = "linux")]
-pub fn run(options: WindowOpenOptions) {
-    x11::run(options);
 }
