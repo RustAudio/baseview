@@ -5,10 +5,14 @@ use std::ptr::null_mut;
 use self::winapi::_core::mem::MaybeUninit;
 use self::winapi::shared::guiddef::GUID;
 use self::winapi::shared::minwindef::{LPARAM, LPVOID, LRESULT, UINT, WPARAM};
-use self::winapi::shared::windef::{HBRUSH, HICON, HMENU, HWND, HGLRC};
+use self::winapi::shared::windef::{HBRUSH, HGLRC, HICON, HMENU, HWND};
 use self::winapi::um::combaseapi::CoCreateGuid;
-use self::winapi::um::libloaderapi::{GetModuleHandleA, LoadLibraryA, GetProcAddress};
-use self::winapi::um::wingdi::{wglCreateContext, wglMakeCurrent, ChoosePixelFormat, SetPixelFormat, PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR, SwapBuffers, PFD_MAIN_PLANE};
+use self::winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress, LoadLibraryA};
+use self::winapi::um::wingdi::{
+    wglCreateContext, wglMakeCurrent, ChoosePixelFormat, SetPixelFormat, SwapBuffers,
+    PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA,
+    PIXELFORMATDESCRIPTOR,
+};
 use self::winapi::um::winuser::{
     CreateWindowExA, DefWindowProcA, DispatchMessageA, GetDC, PeekMessageA, PostQuitMessage,
     RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, CW_USEDEFAULT, MSG,
