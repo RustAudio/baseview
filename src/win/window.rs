@@ -4,10 +4,10 @@ use std::ffi::CString;
 use std::ptr::null_mut;
 
 use self::winapi::shared::guiddef::GUID;
-use self::winapi::shared::minwindef::{LPARAM, LPVOID, LRESULT, UINT, WPARAM};
-use self::winapi::shared::windef::{HBRUSH, HGLRC, HICON, HMENU, HWND};
+use self::winapi::shared::minwindef::{LPARAM, LRESULT, UINT, WPARAM};
+use self::winapi::shared::windef::{HGLRC, HWND};
 use self::winapi::um::combaseapi::CoCreateGuid;
-use self::winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress, LoadLibraryA};
+use self::winapi::um::libloaderapi::{GetProcAddress, LoadLibraryA};
 use self::winapi::um::wingdi::{
     wglCreateContext, wglMakeCurrent, ChoosePixelFormat, SetPixelFormat, SwapBuffers,
     PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA,
@@ -45,18 +45,17 @@ impl Window {
                 guid.Data4[7]
             );
 
-            let hinstance = GetModuleHandleA(std::ptr::null::<i8>());
             let wnd_class = WNDCLASSA {
                 // todo: for OpenGL, will use it later
                 style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
                 lpfnWndProc: Some(wnd_proc),
-                hInstance: hinstance,
+                hInstance: null_mut(),
                 lpszClassName: class_name.as_ptr() as *const i8,
                 cbClsExtra: 0,
                 cbWndExtra: 0,
-                hIcon: 0 as HICON,
-                hCursor: 0 as HICON,
-                hbrBackground: 0 as HBRUSH,
+                hIcon: null_mut(),
+                hCursor: null_mut(),
+                hbrBackground: null_mut(),
                 lpszMenuName: std::ptr::null::<i8>(),
             };
             RegisterClassA(&wnd_class);
@@ -72,10 +71,10 @@ impl Window {
                 // todo: check if usize fits into i32
                 options.width as i32,
                 options.height as i32,
-                0 as HWND,
-                0 as HMENU,
-                hinstance,
-                0 as LPVOID,
+                null_mut(),
+                null_mut(),
+                null_mut(),
+                null_mut(),
             );
 
             let hdc = GetDC(hwnd);
