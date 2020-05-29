@@ -25,7 +25,7 @@ impl Window {
             let mut guid: GUID = MaybeUninit::uninit().assume_init();
             CoCreateGuid(&mut guid);
             let class_name = format!(
-                "Baseview-{}-{}-{}-{}{}{}{}{}{}{}{}\0",
+                "Baseview-{:0X}-{:0X}-{:0X}-{:0X}{:0X}-{:0X}{:0X}{:0X}{:0X}{:0X}{:0X}\0",
                 guid.Data1,
                 guid.Data2,
                 guid.Data3,
@@ -58,8 +58,7 @@ impl Window {
             let _hwnd = CreateWindowExA(
                 0,
                 class_name.as_ptr() as *const i8,
-                // todo: change title based on options struct
-                "Baseview\0".as_ptr() as *const i8,
+                (options.title.to_owned() + "\0").as_ptr() as *const i8,
                 // todo: fine for now, will have to change with a parent
                 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                 CW_USEDEFAULT,
