@@ -1,8 +1,8 @@
 extern crate winapi;
 
+use std::ffi::CString;
 use std::ptr::null_mut;
 
-use self::winapi::_core::mem::MaybeUninit;
 use self::winapi::shared::guiddef::GUID;
 use self::winapi::shared::minwindef::{LPARAM, LPVOID, LRESULT, UINT, WPARAM};
 use self::winapi::shared::windef::{HBRUSH, HGLRC, HICON, HMENU, HWND};
@@ -20,7 +20,6 @@ use self::winapi::um::winuser::{
 };
 
 use crate::WindowOpenOptions;
-use std::ffi::CString;
 
 pub struct Window;
 
@@ -29,7 +28,7 @@ impl Window {
     pub fn open(options: WindowOpenOptions) -> Self {
         unsafe {
             // We generate a unique name for the new window class to prevent name collisions
-            let mut guid: GUID = MaybeUninit::uninit().assume_init();
+            let mut guid: GUID = std::mem::zeroed();
             CoCreateGuid(&mut guid);
             let class_name = format!(
                 "Baseview-{:0X}-{:0X}-{:0X}-{:0X}{:0X}-{:0X}{:0X}{:0X}{:0X}{:0X}{:0X}\0",
@@ -46,7 +45,7 @@ impl Window {
                 guid.Data4[7]
             );
 
-            let hinstance = GetModuleHandleA(0 as *const i8);
+            let hinstance = GetModuleHandleA(std::ptr::null::<i8>());
             let wnd_class = WNDCLASSA {
                 // todo: for OpenGL, will use it later
                 style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
@@ -58,7 +57,7 @@ impl Window {
                 hIcon: 0 as HICON,
                 hCursor: 0 as HICON,
                 hbrBackground: 0 as HBRUSH,
-                lpszMenuName: 0 as *const i8,
+                lpszMenuName: std::ptr::null::<i8>(),
             };
             RegisterClassA(&wnd_class);
 
@@ -81,8 +80,8 @@ impl Window {
 
             let hdc = GetDC(hwnd);
 
-            let mut pfd: PIXELFORMATDESCRIPTOR = MaybeUninit::uninit().assume_init();
-            pfd.nSize = core::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16;
+            let mut pfd: PIXELFORMATDESCRIPTOR = std::mem::zeroed();
+            pfd.nSize = std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16;
             pfd.nVersion = 1;
             pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
             pfd.iPixelType = PFD_TYPE_RGBA;
@@ -136,7 +135,7 @@ impl Window {
 
 fn handle_msg(_window: HWND) -> bool {
     unsafe {
-        let mut msg: MSG = MaybeUninit::uninit().assume_init();
+        let mut msg: MSG = std::mem::zeroed();
         loop {
             if PeekMessageA(&mut msg, 0 as HWND, 0, 0, PM_REMOVE) == 0 {
                 return true;
@@ -164,5 +163,5 @@ unsafe extern "system" fn wnd_proc(
             return DefWindowProcA(hwnd, msg, w_param, l_param);
         }
     }
-    return 0;
+    0
 }
