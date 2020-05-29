@@ -5,20 +5,23 @@ use std::ptr::null_mut;
 use self::winapi::_core::mem::MaybeUninit;
 use self::winapi::shared::guiddef::GUID;
 use self::winapi::shared::minwindef::{LPARAM, LPVOID, LRESULT, UINT, WPARAM};
-use self::winapi::shared::windef::{HBRUSH, HICON, HMENU, HWND};
+use self::winapi::shared::windef::{HBRUSH, HICON, HMENU, HWND, HGLRC};
 use self::winapi::um::combaseapi::CoCreateGuid;
-use self::winapi::um::libloaderapi::GetModuleHandleA;
+use self::winapi::um::libloaderapi::{GetModuleHandleA, LoadLibraryA, GetProcAddress};
+use self::winapi::um::wingdi::{wglCreateContext, wglMakeCurrent, ChoosePixelFormat, SetPixelFormat, PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR, SwapBuffers, PFD_MAIN_PLANE};
 use self::winapi::um::winuser::{
-    CreateWindowExA, DefWindowProcA, DispatchMessageA, PeekMessageA, PostQuitMessage,
+    CreateWindowExA, DefWindowProcA, DispatchMessageA, GetDC, PeekMessageA, PostQuitMessage,
     RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, CW_USEDEFAULT, MSG,
     PM_REMOVE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 use crate::WindowOpenOptions;
+use std::ffi::CString;
 
 pub struct Window;
 
 impl Window {
+    // todo: we should decide this interface
     pub fn open(options: WindowOpenOptions) -> Self {
         unsafe {
             // We generate a unique name for the new window class to prevent name collisions
@@ -55,7 +58,7 @@ impl Window {
             };
             RegisterClassA(&wnd_class);
 
-            let _hwnd = CreateWindowExA(
+            let hwnd = CreateWindowExA(
                 0,
                 class_name.as_ptr() as *const i8,
                 (options.title.to_owned() + "\0").as_ptr() as *const i8,
@@ -72,10 +75,54 @@ impl Window {
                 0 as LPVOID,
             );
 
+            let hdc = GetDC(hwnd);
+
+            let mut pfd: PIXELFORMATDESCRIPTOR = MaybeUninit::uninit().assume_init();
+            pfd.nSize = core::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16;
+            pfd.nVersion = 1;
+            pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+            pfd.iPixelType = PFD_TYPE_RGBA;
+            pfd.cColorBits = 32;
+            // todo: ask wrl why 24 instead of 32?
+            pfd.cDepthBits = 24;
+            pfd.cStencilBits = 8;
+            pfd.iLayerType = PFD_MAIN_PLANE;
+
+            let pf_id: i32 = ChoosePixelFormat(hdc, &pfd);
+            if pf_id == 0 {
+                return Window;
+            }
+
+            if SetPixelFormat(hdc, pf_id, &pfd) == 0 {
+                return Window;
+            }
+
+            let gl_context: HGLRC = wglCreateContext(hdc);
+            if gl_context == 0 as HGLRC {
+                return Window;
+            }
+
+            if wglMakeCurrent(hdc, gl_context) == 0 {
+                return Window;
+            }
+
+            let h = LoadLibraryA("opengl32.dll\0".as_ptr() as *const i8);
+            gl::load_with(|symbol| {
+                let symbol = CString::new(symbol.as_bytes()).unwrap();
+                let symbol = symbol.as_ptr();
+                GetProcAddress(h, symbol) as *const _
+            });
+
+            // todo: decide what to do with the message pump
             loop {
                 if !handle_msg(null_mut()) {
                     break;
                 }
+
+                // todo: pass callback rendering function instead
+                gl::ClearColor(0.3, 0.8, 0.3, 1.0);
+                gl::Clear(gl::COLOR_BUFFER_BIT);
+                SwapBuffers(hdc);
             }
         }
 
