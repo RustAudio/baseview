@@ -11,12 +11,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: install XCB dependencies
+    - name: Install XCB and GL dependencies
       run: |
         sudo apt update
-        sudo apt install libx11-xcb-dev libxcb-dri2-0-dev
+        sudo apt install libx11-xcb-dev libxcb-dri2-0-dev libgl1-mesa-dev
       if: contains(matrix.os, 'ubuntu')
-    - name: install rust stable
+    - name: Install rust stable
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable

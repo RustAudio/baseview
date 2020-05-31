@@ -8,7 +8,7 @@ pub use win::*;
 #[cfg(target_os = "linux")]
 mod x11;
 #[cfg(target_os = "linux")]
-pub use x11::*;
+pub use crate::x11::*;
 
 #[cfg(target_os = "macos")]
 mod macos;

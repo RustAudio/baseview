@@ -8,9 +8,9 @@ A low-level windowing system geared towards making audio plugin UIs.
 
 Below is a proposed list of milestones (roughly in-order) and their status. Subject to change at any time.
 
-| Feature                                | Windows            | Mac OS             | Linux             |
-| -------------------------------------- | ------------------ | ------------------ | ----------------- |
-| Spawns a window, no parent             | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:|
-| Cross-platform API for window spawning | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:|
-| Window uses an OpenGL surface          | :heavy_check_mark: |                    |                   |
-| Basic DPI scaling support              |                    |                    | :question:        |
+| Feature                                | Windows            | Mac OS             | Linux              |
+| -------------------------------------- | ------------------ | ------------------ | ------------------ |
+| Spawns a window, no parent             | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| Cross-platform API for window spawning | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| Window uses an OpenGL surface          | :heavy_check_mark: |                    | :heavy_check_mark: |
+| Basic DPI scaling support              |                    |                    | :question:         |
