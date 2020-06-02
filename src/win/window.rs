@@ -16,9 +16,11 @@ use self::winapi::um::wingdi::{
 use self::winapi::um::winuser::{
     CreateWindowExA, DefWindowProcA, DispatchMessageA, GetDC, PeekMessageA, PostQuitMessage,
     RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, CW_USEDEFAULT, MSG,
-    PM_REMOVE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    PM_REMOVE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
 };
 
+use crate::Parent::WithParent;
 use crate::WindowOpenOptions;
 
 pub struct Window;
@@ -60,18 +62,32 @@ impl Window {
             };
             RegisterClassA(&wnd_class);
 
+            let mut flags = WS_POPUPWINDOW
+                | WS_CAPTION
+                | WS_VISIBLE
+                | WS_SIZEBOX
+                | WS_MINIMIZEBOX
+                | WS_MAXIMIZEBOX
+                | WS_CLIPSIBLINGS;
+
+            let mut parent = null_mut();
+            if let WithParent(p) = options.parent {
+                parent = p;
+                flags = WS_CHILD | WS_VISIBLE;
+            }
+
             let hwnd = CreateWindowExA(
                 0,
                 class_name.as_ptr() as *const i8,
                 (options.title.to_owned() + "\0").as_ptr() as *const i8,
                 // todo: fine for now, will have to change with a parent
-                WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                flags,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
                 // todo: check if usize fits into i32
                 options.width as i32,
                 options.height as i32,
-                null_mut(),
+                parent as *mut _,
                 null_mut(),
                 null_mut(),
                 null_mut(),
@@ -116,15 +132,17 @@ impl Window {
             });
 
             // todo: decide what to do with the message pump
-            loop {
-                if !handle_msg(null_mut()) {
-                    break;
-                }
+            if parent.is_null() {
+                loop {
+                    if !handle_msg(null_mut()) {
+                        break;
+                    }
 
-                // todo: pass callback rendering function instead
-                gl::ClearColor(0.3, 0.8, 0.3, 1.0);
-                gl::Clear(gl::COLOR_BUFFER_BIT);
-                SwapBuffers(hdc);
+                    // todo: pass callback rendering function instead
+                    gl::ClearColor(0.3, 0.8, 0.3, 1.0);
+                    gl::Clear(gl::COLOR_BUFFER_BIT);
+                    SwapBuffers(hdc);
+                }
             }
         }
 
