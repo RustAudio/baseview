@@ -14,14 +14,40 @@ use self::winapi::um::wingdi::{
     PIXELFORMATDESCRIPTOR,
 };
 use self::winapi::um::winuser::{
-    CreateWindowExA, DefWindowProcA, DispatchMessageA, GetDC, PeekMessageA, PostQuitMessage,
-    RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, CW_USEDEFAULT, MSG,
-    PM_REMOVE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+    CreateWindowExA, DefWindowProcA, DispatchMessageA, GetDC, MessageBoxA, PeekMessageA,
+    PostQuitMessage, RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
+    CW_USEDEFAULT, MB_ICONERROR, MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_DESTROY, WM_QUIT, WNDCLASSA,
+    WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW,
+    WS_SIZEBOX, WS_VISIBLE,
 };
 
 use crate::Parent::WithParent;
 use crate::WindowOpenOptions;
+
+unsafe fn message_box(title: &str, msg: &str) {
+    let title = (title.to_owned() + "\0").as_ptr() as *const i8;
+    let msg = (msg.to_owned() + "\0").as_ptr() as *const i8;
+    MessageBoxA(null_mut(), msg, title, MB_ICONERROR | MB_OK | MB_TOPMOST);
+}
+
+unsafe fn generate_guid() -> String {
+    let mut guid: GUID = std::mem::zeroed();
+    CoCreateGuid(&mut guid);
+    format!(
+        "{:0X}-{:0X}-{:0X}-{:0X}{:0X}-{:0X}{:0X}{:0X}{:0X}{:0X}{:0X}\0",
+        guid.Data1,
+        guid.Data2,
+        guid.Data3,
+        guid.Data4[0],
+        guid.Data4[1],
+        guid.Data4[2],
+        guid.Data4[3],
+        guid.Data4[4],
+        guid.Data4[5],
+        guid.Data4[6],
+        guid.Data4[7]
+    )
+}
 
 pub struct Window;
 
@@ -30,22 +56,7 @@ impl Window {
     pub fn open(options: WindowOpenOptions) -> Self {
         unsafe {
             // We generate a unique name for the new window class to prevent name collisions
-            let mut guid: GUID = std::mem::zeroed();
-            CoCreateGuid(&mut guid);
-            let class_name = format!(
-                "Baseview-{:0X}-{:0X}-{:0X}-{:0X}{:0X}-{:0X}{:0X}{:0X}{:0X}{:0X}{:0X}\0",
-                guid.Data1,
-                guid.Data2,
-                guid.Data3,
-                guid.Data4[0],
-                guid.Data4[1],
-                guid.Data4[2],
-                guid.Data4[3],
-                guid.Data4[4],
-                guid.Data4[5],
-                guid.Data4[6],
-                guid.Data4[7]
-            );
+            let class_name = format!("Baseview-{}", generate_guid());
 
             let wnd_class = WNDCLASSA {
                 // todo: for OpenGL, will use it later
