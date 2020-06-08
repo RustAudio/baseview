@@ -13,15 +13,21 @@ use self::winapi::um::wingdi::{
     PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA,
     PIXELFORMATDESCRIPTOR,
 };
-use self::winapi::um::winuser::{
-    CreateWindowExA, DefWindowProcA, DispatchMessageA, GetDC, PeekMessageA, PostQuitMessage,
-    RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, CW_USEDEFAULT, MSG,
-    PM_REMOVE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
-};
+use self::winapi::um::winuser::{CreateWindowExA, DefWindowProcA, DispatchMessageA, GetDC, PeekMessageA, PostQuitMessage, RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, CW_USEDEFAULT, MSG, PM_REMOVE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, MessageBoxA, MB_ICONERROR, MB_TOPMOST, MB_OK};
 
 use crate::Parent::WithParent;
 use crate::WindowOpenOptions;
+
+unsafe fn message_box(title: &str, msg: &str) {
+    let title = (title.to_owned() + "\0").as_ptr() as *const i8;
+    let msg = (msg.to_owned() + "\0").as_ptr() as *const i8;
+    MessageBoxA(
+        null_mut(),
+        msg,
+        title,
+        MB_ICONERROR | MB_OK | MB_TOPMOST
+    );
+}
 
 pub struct Window;
 
