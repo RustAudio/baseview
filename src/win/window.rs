@@ -29,6 +29,25 @@ unsafe fn message_box(title: &str, msg: &str) {
     );
 }
 
+unsafe fn generate_guid() -> String {
+    let mut guid: GUID = std::mem::zeroed();
+    CoCreateGuid(&mut guid);
+    format!(
+        "{:0X}-{:0X}-{:0X}-{:0X}{:0X}-{:0X}{:0X}{:0X}{:0X}{:0X}{:0X}\0",
+        guid.Data1,
+        guid.Data2,
+        guid.Data3,
+        guid.Data4[0],
+        guid.Data4[1],
+        guid.Data4[2],
+        guid.Data4[3],
+        guid.Data4[4],
+        guid.Data4[5],
+        guid.Data4[6],
+        guid.Data4[7]
+    )
+}
+
 pub struct Window;
 
 impl Window {
@@ -36,22 +55,7 @@ impl Window {
     pub fn open(options: WindowOpenOptions) -> Self {
         unsafe {
             // We generate a unique name for the new window class to prevent name collisions
-            let mut guid: GUID = std::mem::zeroed();
-            CoCreateGuid(&mut guid);
-            let class_name = format!(
-                "Baseview-{:0X}-{:0X}-{:0X}-{:0X}{:0X}-{:0X}{:0X}{:0X}{:0X}{:0X}{:0X}\0",
-                guid.Data1,
-                guid.Data2,
-                guid.Data3,
-                guid.Data4[0],
-                guid.Data4[1],
-                guid.Data4[2],
-                guid.Data4[3],
-                guid.Data4[4],
-                guid.Data4[5],
-                guid.Data4[6],
-                guid.Data4[7]
-            );
+            let class_name = format!("Baseview-{}", generate_guid());
 
             let wnd_class = WNDCLASSA {
                 // todo: for OpenGL, will use it later
