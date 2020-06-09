@@ -5,20 +5,20 @@ use std::ptr::null_mut;
 
 use self::winapi::shared::guiddef::GUID;
 use self::winapi::shared::minwindef::{LPARAM, LRESULT, UINT, WPARAM};
-use self::winapi::shared::windef::{HGLRC, HWND};
+use self::winapi::shared::windef::{HDC, HGLRC, HWND};
 use self::winapi::um::combaseapi::CoCreateGuid;
 use self::winapi::um::libloaderapi::{GetProcAddress, LoadLibraryA};
 use self::winapi::um::wingdi::{
-    wglCreateContext, wglMakeCurrent, ChoosePixelFormat, SetPixelFormat, SwapBuffers,
-    PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA,
-    PIXELFORMATDESCRIPTOR,
+    wglCreateContext, wglDeleteContext, wglMakeCurrent, ChoosePixelFormat, SetPixelFormat,
+    SwapBuffers, PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL,
+    PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
 };
 use self::winapi::um::winuser::{
-    CreateWindowExA, DefWindowProcA, DispatchMessageA, GetDC, MessageBoxA, PeekMessageA,
-    PostQuitMessage, RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
-    CW_USEDEFAULT, MB_ICONERROR, MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_DESTROY, WM_QUIT, WNDCLASSA,
-    WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW,
-    WS_SIZEBOX, WS_VISIBLE,
+    CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA, GetDC, MessageBoxA,
+    PeekMessageA, PostQuitMessage, RegisterClassA, ReleaseDC, TranslateMessage, UnregisterClassA,
+    CS_HREDRAW, CS_OWNDC, CS_VREDRAW, MB_ICONERROR, MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CLOSE,
+    WM_QUIT, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
+    WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
 };
 
 use crate::Parent::WithParent;
@@ -49,21 +49,35 @@ unsafe fn generate_guid() -> String {
     )
 }
 
-pub struct Window;
+pub struct Window {
+    hwnd: HWND,
+    hdc: HDC,
+    gl_context: HGLRC,
+    class_name: *const i8,
+}
 
 impl Window {
     // todo: we should decide this interface
     pub fn open(options: WindowOpenOptions) -> Self {
         unsafe {
+            let mut hwnd = null_mut();
+            let mut hdc = null_mut();
+            let mut gl_context = null_mut();
             // We generate a unique name for the new window class to prevent name collisions
-            let class_name = format!("Baseview-{}", generate_guid());
+            let class_name = format!("Baseview-{}", generate_guid()).as_ptr() as *const i8;
+
+            let window = Window {
+                hwnd,
+                hdc,
+                gl_context,
+                class_name,
+            };
 
             let wnd_class = WNDCLASSA {
-                // todo: for OpenGL, will use it later
                 style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
                 lpfnWndProc: Some(wnd_proc),
                 hInstance: null_mut(),
-                lpszClassName: class_name.as_ptr() as *const i8,
+                lpszClassName: class_name,
                 cbClsExtra: 0,
                 cbWndExtra: 0,
                 hIcon: null_mut(),
@@ -71,6 +85,7 @@ impl Window {
                 hbrBackground: null_mut(),
                 lpszMenuName: std::ptr::null::<i8>(),
             };
+
             RegisterClassA(&wnd_class);
 
             let mut flags = WS_POPUPWINDOW
@@ -87,14 +102,13 @@ impl Window {
                 flags = WS_CHILD | WS_VISIBLE;
             }
 
-            let hwnd = CreateWindowExA(
+            hwnd = CreateWindowExA(
                 0,
-                class_name.as_ptr() as *const i8,
+                class_name,
                 (options.title.to_owned() + "\0").as_ptr() as *const i8,
-                // todo: fine for now, will have to change with a parent
                 flags,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
+                0,
+                0,
                 // todo: check if usize fits into i32
                 options.width as i32,
                 options.height as i32,
@@ -104,7 +118,7 @@ impl Window {
                 null_mut(),
             );
 
-            let hdc = GetDC(hwnd);
+            hdc = GetDC(hwnd);
 
             let mut pfd: PIXELFORMATDESCRIPTOR = std::mem::zeroed();
             pfd.nSize = std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16;
@@ -119,20 +133,28 @@ impl Window {
 
             let pf_id: i32 = ChoosePixelFormat(hdc, &pfd);
             if pf_id == 0 {
-                return Window;
+                // todo: use a more useful return like an Option
+                // todo: also launch error message boxes
+                return window;
             }
 
             if SetPixelFormat(hdc, pf_id, &pfd) == 0 {
-                return Window;
+                // todo: use a more useful return like an Option
+                // todo: also launch error message boxes
+                return window;
             }
 
-            let gl_context: HGLRC = wglCreateContext(hdc);
+            gl_context = wglCreateContext(hdc);
             if gl_context == 0 as HGLRC {
-                return Window;
+                // todo: use a more useful return like an Option
+                // todo: also launch error message boxes
+                return window;
             }
 
             if wglMakeCurrent(hdc, gl_context) == 0 {
-                return Window;
+                // todo: use a more useful return like an Option
+                // todo: also launch error message boxes
+                return window;
             }
 
             let h = LoadLibraryA("opengl32.dll\0".as_ptr() as *const i8);
@@ -155,9 +177,20 @@ impl Window {
                     SwapBuffers(hdc);
                 }
             }
-        }
 
-        Window
+            window
+        }
+    }
+
+    pub fn close(&self) {
+        // todo: see https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L402
+        unsafe {
+            wglMakeCurrent(null_mut(), null_mut());
+            wglDeleteContext(self.gl_context);
+            ReleaseDC(self.hwnd, self.hdc);
+            DestroyWindow(self.hwnd);
+            UnregisterClassA(self.class_name, null_mut());
+        }
     }
 }
 
@@ -184,12 +217,10 @@ unsafe extern "system" fn wnd_proc(
     l_param: LPARAM,
 ) -> LRESULT {
     match msg {
-        WM_DESTROY => {
+        WM_CLOSE => {
             PostQuitMessage(0);
         }
-        _ => {
-            return DefWindowProcA(hwnd, msg, w_param, l_param);
-        }
+        _ => return DefWindowProcA(hwnd, msg, w_param, l_param),
     }
     0
 }
