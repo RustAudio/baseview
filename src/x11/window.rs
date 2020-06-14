@@ -19,6 +19,7 @@ use crate::WindowOpenOptions;
 
 pub struct Window {
     xcb_connection: XcbConnection,
+    scaling: Option<f64>, // DPI scale, 96.0 is "default".
 }
 
 impl Window {
@@ -229,8 +230,15 @@ impl Window {
             xlib::XSync(xcb_connection.conn.get_raw_dpy(), xlib::False);
         }
 
-        let x11_window = Self { xcb_connection };
+        let mut x11_window = Self {
+            xcb_connection,
+            scaling: None,
+        };
 
+        x11_window.scaling = x11_window
+            .get_scaling_xft()
+            .or(x11_window.get_scaling_screen_dimensions());
+        println!("Scale factor: {:?}", x11_window.scaling);
         x11_window.handle_events(window_id, ctx);
 
         return x11_window;
@@ -259,34 +267,83 @@ impl Window {
             }
         }
     }
-}
 
-// Figure out the DPI scaling by opening a new temporary connection and asking XCB
-// TODO: currently returning (96, 96) on my system, even though I have 4k screens. Problem with my setup perhaps?
-#[allow(dead_code)]
-pub fn get_scaling() -> (u32, u32) {
-    // Connect to the X server
-    let xcb_connection = XcbConnection::new();
+    // Try to get the scaling with this function first.
+    // If this gives you `None`, fall back to `get_scaling_screen_dimensions`.
+    // If neither work, I guess just assume 96.0 and don't do any scaling.
+    fn get_scaling_xft(&self) -> Option<f64> {
+        use std::ffi::CString;
+        use x11::xlib::{
+            XResourceManagerString, XrmDestroyDatabase, XrmGetResource, XrmGetStringDatabase,
+            XrmValue,
+        };
 
-    // Figure out screen information
-    let setup = xcb_connection.conn.get_setup();
-    let screen = setup
-        .roots()
-        .nth(xcb_connection.xlib_display as usize)
-        .unwrap();
+        let display = self.xcb_connection.conn.get_raw_dpy();
+        unsafe {
+            let rms = XResourceManagerString(display);
+            if !rms.is_null() {
+                let db = XrmGetStringDatabase(rms);
+                if !db.is_null() {
+                    let mut value = XrmValue {
+                        size: 0,
+                        addr: std::ptr::null_mut(),
+                    };
 
-    // Get the DPI from the screen struct
-    //
-    // there are 2.54 centimeters to an inch; so there are 25.4 millimeters.
-    // dpi = N pixels / (M millimeters / (25.4 millimeters / 1 inch))
-    //     = N pixels / (M inch / 25.4)
-    //     = N * 25.4 pixels / M inch
-    let width_px = screen.width_in_pixels() as f64;
-    let width_mm = screen.width_in_millimeters() as f64;
-    let height_px = screen.height_in_pixels() as f64;
-    let height_mm = screen.height_in_millimeters() as f64;
-    let xres = width_px * 25.4 / width_mm;
-    let yres = height_px * 25.4 / height_mm;
+                    let mut value_type: *mut libc::c_char = std::ptr::null_mut();
+                    let name_c_str = CString::new("Xft.dpi").unwrap();
+                    let c_str = CString::new("Xft.Dpi").unwrap();
 
-    ((xres + 0.5) as u32, (yres + 0.5) as u32)
+                    let dpi = if XrmGetResource(
+                        db,
+                        name_c_str.as_ptr(),
+                        c_str.as_ptr(),
+                        &mut value_type,
+                        &mut value,
+                    ) != 0
+                        && !value.addr.is_null()
+                    {
+                        let value_addr: &CStr = CStr::from_ptr(value.addr);
+                        value_addr.to_str().ok();
+                        let value_str = value_addr.to_str().ok()?;
+                        let value_f64 = value_str.parse().ok()?;
+                        Some(value_f64)
+                    } else {
+                        None
+                    };
+                    XrmDestroyDatabase(db);
+
+                    return dpi;
+                }
+            }
+        }
+        None
+    }
+
+    // Try to get the scaling with `get_scaling_xft` first.
+    // Only use this function as a fallback.
+    // If neither work, I guess just assume 96.0 and don't do any scaling.
+    fn get_scaling_screen_dimensions(&self) -> Option<f64> {
+        // Figure out screen information
+        let setup = self.xcb_connection.conn.get_setup();
+        let screen = setup
+            .roots()
+            .nth(self.xcb_connection.xlib_display as usize)
+            .unwrap();
+
+        // Get the DPI from the screen struct
+        //
+        // there are 2.54 centimeters to an inch; so there are 25.4 millimeters.
+        // dpi = N pixels / (M millimeters / (25.4 millimeters / 1 inch))
+        //     = N pixels / (M inch / 25.4)
+        //     = N * 25.4 pixels / M inch
+        let width_px = screen.width_in_pixels() as f64;
+        let width_mm = screen.width_in_millimeters() as f64;
+        let height_px = screen.height_in_pixels() as f64;
+        let height_mm = screen.height_in_millimeters() as f64;
+        let _xres = width_px * 25.4 / width_mm;
+        let yres = height_px * 25.4 / height_mm;
+
+        // TODO: choose between `xres` and `yres`? (probably both are the same?)
+        Some(yres)
+    }
 }
