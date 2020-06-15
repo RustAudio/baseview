@@ -15,14 +15,17 @@ use self::winapi::um::wingdi::{
 };
 use self::winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA, GetDC,
-    MessageBoxA, PeekMessageA, PostQuitMessage, RegisterClassA, ReleaseDC, TranslateMessage,
-    UnregisterClassA, CS_OWNDC, MB_ICONERROR, MB_OK, MB_TOPMOST, MSG,
-    PM_REMOVE, WM_CLOSE, WM_QUIT, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX,
-    WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+    GetWindowLongPtrA, MessageBoxA, PeekMessageA, PostMessageA, RegisterClassA, ReleaseDC,
+    SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR,
+    MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CREATE, WM_QUIT, WM_SHOWWINDOW, WNDCLASSA, WS_CAPTION,
+    WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX,
+    WS_VISIBLE,
 };
 
+use self::winapi::ctypes::c_void;
 use crate::Parent::WithParent;
-use crate::WindowOpenOptions;
+use crate::{handle_message, WindowOpenOptions};
+use std::sync::{Arc, Mutex};
 
 unsafe fn message_box(title: &str, msg: &str) {
     let title = (title.to_owned() + "\0").as_ptr() as *const i8;
@@ -68,16 +71,28 @@ fn handle_msg(_window: HWND) -> bool {
 unsafe extern "system" fn wnd_proc(
     hwnd: HWND,
     msg: UINT,
-    w_param: WPARAM,
-    l_param: LPARAM,
+    wparam: WPARAM,
+    lparam: LPARAM,
 ) -> LRESULT {
+    let win = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
     match msg {
-        WM_CLOSE => {
-            PostQuitMessage(0);
+        WM_CREATE => {
+            PostMessageA(hwnd, WM_SHOWWINDOW, 0, 0);
+            0
         }
-        _ => return DefWindowProcA(hwnd, msg, w_param, l_param),
+        _ => {
+            if !win.is_null() {
+                let win: &Arc<Mutex<Window>> = std::mem::transmute(win);
+                let win = Arc::clone(win);
+                let ret = handle_message(win, msg, wparam, lparam);
+
+                // todo: need_reconfigure thing?
+
+                // return ret
+            }
+            return DefWindowProcA(hwnd, msg, wparam, lparam);
+        }
     }
-    0
 }
 
 unsafe fn register_wnd_class() -> ATOM {
@@ -114,7 +129,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open(options: WindowOpenOptions) -> Self {
+    pub fn open(options: WindowOpenOptions) -> Arc<Mutex<Self>> {
         unsafe {
             let mut window = Window {
                 hwnd: null_mut(),
@@ -188,26 +203,26 @@ impl Window {
             if pf_id == 0 {
                 // todo: use a more useful return like an Option
                 // todo: also launch error message boxes
-                return window;
+                return Arc::new(Mutex::new(window));
             }
 
             if SetPixelFormat(window.hdc, pf_id, &pfd) == 0 {
                 // todo: use a more useful return like an Option
                 // todo: also launch error message boxes
-                return window;
+                return Arc::new(Mutex::new(window));
             }
 
             window.gl_context = wglCreateContext(window.hdc);
             if window.gl_context == 0 as HGLRC {
                 // todo: use a more useful return like an Option
                 // todo: also launch error message boxes
-                return window;
+                return Arc::new(Mutex::new(window));
             }
 
             if wglMakeCurrent(window.hdc, window.gl_context) == 0 {
                 // todo: use a more useful return like an Option
                 // todo: also launch error message boxes
-                return window;
+                return Arc::new(Mutex::new(window));
             }
 
             let h = LoadLibraryA("opengl32.dll\0".as_ptr() as *const i8);
@@ -216,6 +231,13 @@ impl Window {
                 let symbol = symbol.as_ptr();
                 GetProcAddress(h, symbol) as *const _
             });
+
+            let hwnd = window.hwnd;
+            let hdc = window.hdc;
+
+            let win = Arc::new(Mutex::new(window));
+
+            SetWindowLongPtrA(hwnd, GWLP_USERDATA, &Arc::clone(&win) as *const _ as _);
 
             // todo: decide what to do with the message pump
             if parent.is_null() {
@@ -227,11 +249,11 @@ impl Window {
                     // todo: pass callback rendering function instead
                     gl::ClearColor(0.3, 0.8, 0.3, 1.0);
                     gl::Clear(gl::COLOR_BUFFER_BIT);
-                    SwapBuffers(window.hdc);
+                    SwapBuffers(hdc);
                 }
             }
 
-            window
+            win
         }
     }
 
@@ -244,5 +266,9 @@ impl Window {
             DestroyWindow(self.hwnd);
             unregister_wnd_class(self.window_class);
         }
+    }
+
+    pub(crate) fn handle_mouse_motion(&self, x: i32, y: i32) {
+        println!("{}, {}", x, y);
     }
 }
