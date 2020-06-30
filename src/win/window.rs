@@ -15,11 +15,11 @@ use self::winapi::um::wingdi::{
 };
 use self::winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA, GetDC,
-    GetWindowLongPtrA, MessageBoxA, PeekMessageA, PostMessageA, RegisterClassA, ReleaseDC,
-    SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR,
-    MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CREATE, WM_QUIT, WM_SHOWWINDOW, WNDCLASSA, WS_CAPTION,
-    WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX,
-    WS_VISIBLE,
+    GetMessageA, GetWindowLongPtrA, MessageBoxA, PeekMessageA, PostMessageA, RegisterClassA,
+    ReleaseDC, SetTimer, SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC,
+    GWLP_USERDATA, MB_ICONERROR, MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CREATE, WM_QUIT,
+    WM_SHOWWINDOW, WM_TIMER, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
 };
 
 use self::winapi::ctypes::c_void;
@@ -52,44 +52,29 @@ unsafe fn generate_guid() -> String {
     )
 }
 
-fn handle_msg(_window: HWND) -> bool {
-    unsafe {
-        let mut msg: MSG = std::mem::zeroed();
-        loop {
-            if PeekMessageA(&mut msg, 0 as HWND, 0, 0, PM_REMOVE) == 0 {
-                return true;
-            }
-            if msg.message == WM_QUIT {
-                return false;
-            }
-            TranslateMessage(&msg);
-            DispatchMessageA(&msg);
-        }
-    }
-}
-
 unsafe extern "system" fn wnd_proc(
     hwnd: HWND,
     msg: UINT,
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let win = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
+    let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
     match msg {
         WM_CREATE => {
             PostMessageA(hwnd, WM_SHOWWINDOW, 0, 0);
             0
         }
         _ => {
-            if !win.is_null() {
-                let win: &Arc<Mutex<Window>> = std::mem::transmute(win);
-                let win = Arc::clone(win);
+            if !win_ptr.is_null() {
+                let win_ref: &Arc<Mutex<Window>> = std::mem::transmute(win_ptr);
+                let win = Arc::clone(win_ref);
                 let ret = handle_message(win, msg, wparam, lparam);
 
                 // todo: need_reconfigure thing?
 
-                // return ret
+                return ret;
             }
+
             return DefWindowProcA(hwnd, msg, wparam, lparam);
         }
     }
@@ -122,7 +107,7 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 unsafe fn init_gl_context() {}
 
 pub struct Window {
-    hwnd: HWND,
+    pub(crate) hwnd: HWND,
     hdc: HDC,
     gl_context: HGLRC,
     window_class: ATOM,
@@ -239,17 +224,18 @@ impl Window {
 
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, &Arc::clone(&win) as *const _ as _);
 
+            SetTimer(hwnd, 4242, 13, None);
+
             // todo: decide what to do with the message pump
             if parent.is_null() {
+                let mut msg: MSG = std::mem::zeroed();
                 loop {
-                    if !handle_msg(null_mut()) {
+                    let status = GetMessageA(&mut msg, hwnd, 0, 0);
+                    if status == -1 {
                         break;
                     }
-
-                    // todo: pass callback rendering function instead
-                    gl::ClearColor(0.3, 0.8, 0.3, 1.0);
-                    gl::Clear(gl::COLOR_BUFFER_BIT);
-                    SwapBuffers(hdc);
+                    TranslateMessage(&mut msg);
+                    handle_message(Arc::clone(&win), msg.message, msg.wParam, msg.lParam);
                 }
             }
 
@@ -266,6 +252,13 @@ impl Window {
             DestroyWindow(self.hwnd);
             unregister_wnd_class(self.window_class);
         }
+    }
+
+    pub(crate) unsafe fn draw_frame(&self) {
+        // todo: pass callback rendering function instead
+        gl::ClearColor(0.3, 0.8, 0.3, 1.0);
+        gl::Clear(gl::COLOR_BUFFER_BIT);
+        SwapBuffers(self.hdc);
     }
 
     pub(crate) fn handle_mouse_motion(&self, x: i32, y: i32) {
