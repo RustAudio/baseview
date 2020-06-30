@@ -58,22 +58,23 @@ unsafe extern "system" fn wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let win = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
+    let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
     match msg {
         WM_CREATE => {
             PostMessageA(hwnd, WM_SHOWWINDOW, 0, 0);
             0
         }
         _ => {
-            if !win.is_null() {
-                let win: &Arc<Mutex<Window>> = std::mem::transmute(win);
-                let win = Arc::clone(win);
+            if !win_ptr.is_null() {
+                let win_ref: &Arc<Mutex<Window>> = std::mem::transmute(win_ptr);
+                let win = Arc::clone(win_ref);
                 let ret = handle_message(win, msg, wparam, lparam);
 
                 // todo: need_reconfigure thing?
 
-                // return ret
+                return ret;
             }
+
             return DefWindowProcA(hwnd, msg, wparam, lparam);
         }
     }
@@ -106,7 +107,7 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 unsafe fn init_gl_context() {}
 
 pub struct Window {
-    hwnd: HWND,
+    pub(crate) hwnd: HWND,
     hdc: HDC,
     gl_context: HGLRC,
     window_class: ATOM,
@@ -234,18 +235,7 @@ impl Window {
                         break;
                     }
                     TranslateMessage(&mut msg);
-
-                    match msg.message {
-                        WM_TIMER => {
-                            // todo: pass callback rendering function instead
-                            gl::ClearColor(0.3, 0.8, 0.3, 1.0);
-                            gl::Clear(gl::COLOR_BUFFER_BIT);
-                            SwapBuffers(hdc);
-                        }
-                        _ => (),
-                    }
-
-                    DefWindowProcA(hwnd, msg.message, msg.wParam, msg.lParam);
+                    handle_message(Arc::clone(&win), msg.message, msg.wParam, msg.lParam);
                 }
             }
 
@@ -262,6 +252,13 @@ impl Window {
             DestroyWindow(self.hwnd);
             unregister_wnd_class(self.window_class);
         }
+    }
+
+    pub(crate) unsafe fn draw_frame(&self) {
+        // todo: pass callback rendering function instead
+        gl::ClearColor(0.3, 0.8, 0.3, 1.0);
+        gl::Clear(gl::COLOR_BUFFER_BIT);
+        SwapBuffers(self.hdc);
     }
 
     pub(crate) fn handle_mouse_motion(&self, x: i32, y: i32) {
