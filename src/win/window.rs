@@ -13,7 +13,14 @@ use self::winapi::um::wingdi::{
     SwapBuffers, PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL,
     PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
 };
-use self::winapi::um::winuser::{AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA, GetDC, GetWindowLongPtrA, MessageBoxA, PeekMessageA, PostMessageA, RegisterClassA, ReleaseDC, SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR, MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CREATE, WM_QUIT, WM_SHOWWINDOW, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, SetTimer, GetMessageA};
+use self::winapi::um::winuser::{
+    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA, GetDC,
+    GetMessageA, GetWindowLongPtrA, MessageBoxA, PeekMessageA, PostMessageA, RegisterClassA,
+    ReleaseDC, SetTimer, SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC,
+    GWLP_USERDATA, MB_ICONERROR, MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CREATE, WM_QUIT,
+    WM_SHOWWINDOW, WM_TIMER, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+};
 
 use self::winapi::ctypes::c_void;
 use crate::Parent::WithParent;
@@ -224,7 +231,7 @@ impl Window {
                 loop {
                     let status = GetMessageA(&mut msg, hwnd, 0, 0);
                     if status == -1 {
-                        break
+                        break;
                     }
                     TranslateMessage(&mut msg);
 
@@ -235,6 +242,7 @@ impl Window {
                             gl::Clear(gl::COLOR_BUFFER_BIT);
                             SwapBuffers(hdc);
                         }
+                        _ => (),
                     }
 
                     DefWindowProcA(hwnd, msg.message, msg.wParam, msg.lParam);
