@@ -13,14 +13,7 @@ use self::winapi::um::wingdi::{
     SwapBuffers, PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL,
     PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
 };
-use self::winapi::um::winuser::{
-    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA, GetDC,
-    GetWindowLongPtrA, MessageBoxA, PeekMessageA, PostMessageA, RegisterClassA, ReleaseDC,
-    SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR,
-    MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CREATE, WM_QUIT, WM_SHOWWINDOW, WNDCLASSA, WS_CAPTION,
-    WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX,
-    WS_VISIBLE,
-};
+use self::winapi::um::winuser::{AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA, GetDC, GetWindowLongPtrA, MessageBoxA, PeekMessageA, PostMessageA, RegisterClassA, ReleaseDC, SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR, MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CREATE, WM_QUIT, WM_SHOWWINDOW, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, SetTimer, GetMessageA};
 
 use self::winapi::ctypes::c_void;
 use crate::Parent::WithParent;
@@ -50,22 +43,6 @@ unsafe fn generate_guid() -> String {
         guid.Data4[6],
         guid.Data4[7]
     )
-}
-
-fn handle_msg(_window: HWND) -> bool {
-    unsafe {
-        let mut msg: MSG = std::mem::zeroed();
-        loop {
-            if PeekMessageA(&mut msg, 0 as HWND, 0, 0, PM_REMOVE) == 0 {
-                return true;
-            }
-            if msg.message == WM_QUIT {
-                return false;
-            }
-            TranslateMessage(&msg);
-            DispatchMessageA(&msg);
-        }
-    }
 }
 
 unsafe extern "system" fn wnd_proc(
@@ -239,17 +216,28 @@ impl Window {
 
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, &Arc::clone(&win) as *const _ as _);
 
+            SetTimer(hwnd, 4242, 13, None);
+
             // todo: decide what to do with the message pump
             if parent.is_null() {
+                let mut msg: MSG = std::mem::zeroed();
                 loop {
-                    if !handle_msg(null_mut()) {
-                        break;
+                    let status = GetMessageA(&mut msg, hwnd, 0, 0);
+                    if status == -1 {
+                        break
+                    }
+                    TranslateMessage(&mut msg);
+
+                    match msg.message {
+                        WM_TIMER => {
+                            // todo: pass callback rendering function instead
+                            gl::ClearColor(0.3, 0.8, 0.3, 1.0);
+                            gl::Clear(gl::COLOR_BUFFER_BIT);
+                            SwapBuffers(hdc);
+                        }
                     }
 
-                    // todo: pass callback rendering function instead
-                    gl::ClearColor(0.3, 0.8, 0.3, 1.0);
-                    gl::Clear(gl::COLOR_BUFFER_BIT);
-                    SwapBuffers(hdc);
+                    DefWindowProcA(hwnd, msg.message, msg.wParam, msg.lParam);
                 }
             }
 
