@@ -66,11 +66,16 @@ unsafe extern "system" fn wnd_proc(
         }
         _ => {
             if !win_ptr.is_null() {
-                let win_ref: &Arc<Mutex<Window>> = std::mem::transmute(win_ptr);
-                let win = Arc::clone(win_ref);
+                let win_ref: Arc<Mutex<Window>> = Arc::from_raw(win_ptr as *mut Mutex<Window>);
+                let win = Arc::clone(&win_ref);
                 let ret = handle_message(win, msg, wparam, lparam);
 
                 // todo: need_reconfigure thing?
+
+                // Needed otherwise it crashes because it drops the userdata
+                // We basically need to keep the GWLP_USERDATA fresh between calls of the proc
+                // DO NOT REMOVE
+                SetWindowLongPtrA(hwnd, GWLP_USERDATA, Arc::into_raw(win_ref) as *const _ as _);
 
                 return ret;
             }
@@ -111,16 +116,22 @@ pub struct Window {
     hdc: HDC,
     gl_context: HGLRC,
     window_class: ATOM,
+    r: f32,
+    g: f32,
+    b: f32,
 }
 
 impl Window {
-    pub fn open(options: WindowOpenOptions) -> Arc<Mutex<Self>> {
+    pub fn open(options: WindowOpenOptions) {
         unsafe {
             let mut window = Window {
                 hwnd: null_mut(),
                 hdc: null_mut(),
                 gl_context: null_mut(),
                 window_class: 0,
+                r: 0.3,
+                g: 0.8,
+                b: 0.3,
             };
 
             let title = (options.title.to_owned() + "\0").as_ptr() as *const i8;
@@ -171,8 +182,6 @@ impl Window {
 
             window.hdc = GetDC(window.hwnd);
 
-            //init_gl_context(&window, title);
-
             let mut pfd: PIXELFORMATDESCRIPTOR = std::mem::zeroed();
             pfd.nSize = std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16;
             pfd.nVersion = 1;
@@ -188,26 +197,26 @@ impl Window {
             if pf_id == 0 {
                 // todo: use a more useful return like an Option
                 // todo: also launch error message boxes
-                return Arc::new(Mutex::new(window));
+                //return Arc::new(Mutex::new(window));
             }
 
             if SetPixelFormat(window.hdc, pf_id, &pfd) == 0 {
                 // todo: use a more useful return like an Option
                 // todo: also launch error message boxes
-                return Arc::new(Mutex::new(window));
+                //return Arc::new(Mutex::new(window));
             }
 
             window.gl_context = wglCreateContext(window.hdc);
             if window.gl_context == 0 as HGLRC {
                 // todo: use a more useful return like an Option
                 // todo: also launch error message boxes
-                return Arc::new(Mutex::new(window));
+                //return Arc::new(Mutex::new(window));
             }
 
             if wglMakeCurrent(window.hdc, window.gl_context) == 0 {
                 // todo: use a more useful return like an Option
                 // todo: also launch error message boxes
-                return Arc::new(Mutex::new(window));
+                //return Arc::new(Mutex::new(window));
             }
 
             let h = LoadLibraryA("opengl32.dll\0".as_ptr() as *const i8);
@@ -221,8 +230,9 @@ impl Window {
             let hdc = window.hdc;
 
             let win = Arc::new(Mutex::new(window));
+            let win_p = Arc::clone(&win);
 
-            SetWindowLongPtrA(hwnd, GWLP_USERDATA, &Arc::clone(&win) as *const _ as _);
+            SetWindowLongPtrA(hwnd, GWLP_USERDATA, Arc::into_raw(win) as *const _ as _);
 
             SetTimer(hwnd, 4242, 13, None);
 
@@ -235,11 +245,9 @@ impl Window {
                         break;
                     }
                     TranslateMessage(&mut msg);
-                    handle_message(Arc::clone(&win), msg.message, msg.wParam, msg.lParam);
+                    handle_message(Arc::clone(&win_p), msg.message, msg.wParam, msg.lParam);
                 }
             }
-
-            win
         }
     }
 
@@ -254,14 +262,18 @@ impl Window {
         }
     }
 
-    pub(crate) unsafe fn draw_frame(&self) {
-        // todo: pass callback rendering function instead
-        gl::ClearColor(0.3, 0.8, 0.3, 1.0);
+    pub(crate) unsafe fn draw_frame(&mut self) {
+        // todo: pass callback rendering function instead?
+        gl::ClearColor(self.r, self.g, self.b, 1.0);
         gl::Clear(gl::COLOR_BUFFER_BIT);
         SwapBuffers(self.hdc);
     }
 
-    pub(crate) fn handle_mouse_motion(&self, x: i32, y: i32) {
+    pub(crate) fn handle_mouse_motion(&mut self, x: i32, y: i32) {
         println!("{}, {}", x, y);
+        let r = (x as f32) / 1000.0;
+        let g = (y as f32) / 1000.0;
+        self.r = r;
+        self.g = g;
     }
 }
