@@ -105,9 +105,11 @@ impl Window {
             (
                 xcb::CW_EVENT_MASK,
                 xcb::EVENT_MASK_EXPOSURE
+                    | xcb::EVENT_MASK_POINTER_MOTION
                     | xcb::EVENT_MASK_BUTTON_PRESS
                     | xcb::EVENT_MASK_BUTTON_RELEASE
-                    | xcb::EVENT_MASK_BUTTON_1_MOTION,
+                    | xcb::EVENT_MASK_KEY_PRESS
+                    | xcb::EVENT_MASK_KEY_RELEASE,
             ),
             (xcb::CW_COLORMAP, colormap),
         ];
@@ -251,7 +253,26 @@ impl Window {
             let ev = self.xcb_connection.conn.wait_for_event();
             if let Some(event) = ev {
                 let event_type = event.response_type() & !0x80;
-                //println!("{:?}", event_type);
+
+                // For all of the keyboard and mouse events, you can fetch
+                // `x`, `y`, `detail`, and `state`.
+                // - `x` and `y` are the position inside the window where the cursor currently is
+                //   when the event happened.
+                // - `detail` will tell you which keycode was pressed/released (for keyboard events)
+                //   or which mouse button was pressed/released (for mouse events).
+                //   For mouse events, here's what the value means (at least on my current mouse):
+                //      1 = left mouse button
+                //      2 = middle mouse button (scroll wheel)
+                //      3 = right mouse button
+                //      4 = scroll wheel up
+                //      5 = scroll wheel down
+                //      8 = lower side button ("back" button)
+                //      9 = upper side button ("forward" button)
+                //   Note that you *will* get a "button released" event for even the scroll wheel
+                //   events, which you can probably ignore.
+                // - `state` will tell you the state of the main three mouse buttons and some of
+                //   the keyboard modifier keys at the time of the event.
+                //   http://rtbo.github.io/rust-xcb/src/xcb/ffi/xproto.rs.html#445
 
                 match event_type {
                     xcb::EXPOSE => unsafe {
@@ -262,7 +283,61 @@ impl Window {
                         glx::glXSwapBuffers(raw_display, window_id as xlib::XID);
                         glx::glXMakeCurrent(raw_display, 0, null_mut());
                     },
-                    _ => {}
+                    xcb::MOTION_NOTIFY => {
+                        let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
+                        let x = event.event_x();
+                        let y = event.event_y();
+                        let detail = event.detail();
+                        let state = event.state();
+                        println!("Mouse motion: ({}, {}) -- {} / {}", x, y, detail, state);
+                    }
+                    xcb::BUTTON_PRESS => {
+                        let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
+                        let x = event.event_x();
+                        let y = event.event_y();
+                        let detail = event.detail();
+                        let state = event.state();
+                        println!(
+                            "Mouse button pressed: ({}, {}) -- {} / {}",
+                            x, y, detail, state
+                        );
+                    }
+                    xcb::BUTTON_RELEASE => {
+                        let event = unsafe { xcb::cast_event::<xcb::ButtonReleaseEvent>(&event) };
+                        let x = event.event_x();
+                        let y = event.event_y();
+                        let detail = event.detail();
+                        let state = event.state();
+                        println!(
+                            "Mouse button released: ({}, {}) -- {} / {}",
+                            x, y, detail, state
+                        );
+                    }
+                    xcb::KEY_PRESS => {
+                        let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
+                        let x = event.event_x();
+                        let y = event.event_y();
+                        let detail = event.detail();
+                        let state = event.state();
+                        println!(
+                            "Keyboard key pressed: ({}, {}) -- {} / {}",
+                            x, y, detail, state
+                        );
+                    }
+                    xcb::KEY_RELEASE => {
+                        let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
+                        let x = event.event_x();
+                        let y = event.event_y();
+                        let detail = event.detail();
+                        let state = event.state();
+                        println!(
+                            "Keyboard key released: ({}, {}) -- {} / {}",
+                            x, y, detail, state
+                        );
+                    }
+                    _ => {
+                        println!("Unhandled event type: {:?}", event_type);
+                    }
                 }
             }
         }
