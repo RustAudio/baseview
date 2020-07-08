@@ -118,7 +118,7 @@ pub struct Window {
     window_class: ATOM,
     r: f32,
     g: f32,
-    b: f32
+    b: f32,
 }
 
 impl Window {
@@ -131,7 +131,7 @@ impl Window {
                 window_class: 0,
                 r: 0.3,
                 g: 0.8,
-                b: 0.3
+                b: 0.3,
             };
 
             let title = (options.title.to_owned() + "\0").as_ptr() as *const i8;

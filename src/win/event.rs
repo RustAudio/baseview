@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use winapi::shared::minwindef::{LPARAM, LRESULT, UINT, WPARAM};
 
 use crate::Window;
-use winapi::um::winuser::{DefWindowProcA, WM_MOUSEMOVE, WM_TIMER, WM_PAINT};
+use winapi::um::winuser::{DefWindowProcA, WM_MOUSEMOVE, WM_PAINT, WM_TIMER};
 
 const WIN_FRAME_TIMER: usize = 4242;
 
