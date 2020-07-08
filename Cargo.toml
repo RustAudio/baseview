@@ -16,6 +16,7 @@ log = "0.4.8"
 [target.'cfg(target_os="linux")'.dependencies]
 xcb = { version = "0.9", features = ["thread", "xlib_xcb", "dri2"] }
 x11 = { version = "2.3", features = ["xlib", "glx"]}
+libc = "0.2"
 
 [target.'cfg(target_os="windows")'.dependencies]
 winapi = { version = "0.3.8", features = ["libloaderapi", "winuser", "windef", "minwindef", "guiddef", "combaseapi", "wingdi", "errhandlingapi"] }
