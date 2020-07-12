@@ -1,36 +1,36 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use winapi::shared::minwindef::{LPARAM, LRESULT, UINT, WPARAM};
 
 use crate::Window;
-use winapi::um::winuser::{DefWindowProcA, WM_MOUSEMOVE, WM_PAINT, WM_TIMER};
+use winapi::um::wingdi::SwapBuffers;
+use winapi::um::winuser::{
+    DefWindowProcA, WM_CLOSE, WM_CREATE, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_MOUSEMOVE, WM_PAINT,
+    WM_QUIT, WM_RBUTTONUP, WM_SHOWWINDOW, WM_TIMER,
+};
 
 const WIN_FRAME_TIMER: usize = 4242;
 
-unsafe fn handle_timer(win: Arc<Mutex<Window>>, timer_id: usize) {
+unsafe fn handle_timer(win: *mut Window, timer_id: usize) {
     match timer_id {
         WIN_FRAME_TIMER => {
-            win.lock().unwrap().draw_frame();
+            (*win).draw_frame();
         }
         _ => (),
     }
 }
 
 pub(crate) unsafe fn handle_message(
-    win: Arc<Mutex<Window>>,
+    win: *mut Window,
     message: UINT,
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let hwnd;
-    {
-        hwnd = win.lock().unwrap().hwnd;
-    }
     match message {
         WM_MOUSEMOVE => {
             let x = (lparam & 0xFFFF) as i32;
             let y = ((lparam >> 16) & 0xFFFF) as i32;
-            win.lock().unwrap().handle_mouse_motion(x, y);
+            (*win).handle_mouse_motion(x, y);
             0
         }
         WM_TIMER => {
@@ -38,9 +38,9 @@ pub(crate) unsafe fn handle_message(
             0
         }
         WM_PAINT => {
-            win.lock().unwrap().draw_frame();
+            (*win).draw_frame();
             0
         }
-        _ => DefWindowProcA(hwnd, message, wparam, lparam),
+        _ => DefWindowProcA((*win).hwnd, message, wparam, lparam),
     }
 }

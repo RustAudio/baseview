@@ -58,7 +58,7 @@ unsafe extern "system" fn wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
+    let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *mut Window;
     match msg {
         WM_CREATE => {
             PostMessageA(hwnd, WM_SHOWWINDOW, 0, 0);
@@ -66,16 +66,9 @@ unsafe extern "system" fn wnd_proc(
         }
         _ => {
             if !win_ptr.is_null() {
-                let win_ref: Arc<Mutex<Window>> = Arc::from_raw(win_ptr as *mut Mutex<Window>);
-                let win = Arc::clone(&win_ref);
-                let ret = handle_message(win, msg, wparam, lparam);
+                let ret = handle_message(win_ptr, msg, wparam, lparam);
 
                 // todo: need_reconfigure thing?
-
-                // Needed otherwise it crashes because it drops the userdata
-                // We basically need to keep the GWLP_USERDATA fresh between calls of the proc
-                // DO NOT REMOVE
-                SetWindowLongPtrA(hwnd, GWLP_USERDATA, Arc::into_raw(win_ref) as *const _ as _);
 
                 return ret;
             }
@@ -112,8 +105,8 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 unsafe fn init_gl_context() {}
 
 pub struct Window {
-    pub(crate) hwnd: HWND,
-    hdc: HDC,
+    pub hwnd: HWND,
+    pub(crate) hdc: HDC,
     gl_context: HGLRC,
     window_class: ATOM,
     r: f32,
@@ -121,8 +114,14 @@ pub struct Window {
     b: f32,
 }
 
+impl Drop for Window {
+    fn drop(&mut self) {
+        log::info!("> Dropping {}", self.window_class);
+    }
+}
+
 impl Window {
-    pub fn open(options: WindowOpenOptions) {
+    pub fn open(options: WindowOpenOptions) -> Window {
         unsafe {
             let mut window = Window {
                 hwnd: null_mut(),
@@ -226,28 +225,28 @@ impl Window {
                 GetProcAddress(h, symbol) as *const _
             });
 
-            let hwnd = window.hwnd;
-            let hdc = window.hdc;
+            SetWindowLongPtrA(
+                window.hwnd,
+                GWLP_USERDATA,
+                &mut window as *mut Window as isize,
+            );
 
-            let win = Arc::new(Mutex::new(window));
-            let win_p = Arc::clone(&win);
-
-            SetWindowLongPtrA(hwnd, GWLP_USERDATA, Arc::into_raw(win) as *const _ as _);
-
-            SetTimer(hwnd, 4242, 13, None);
+            SetTimer(window.hwnd, 4242, 13, None);
 
             // todo: decide what to do with the message pump
             if parent.is_null() {
                 let mut msg: MSG = std::mem::zeroed();
                 loop {
-                    let status = GetMessageA(&mut msg, hwnd, 0, 0);
+                    let status = GetMessageA(&mut msg, window.hwnd, 0, 0);
                     if status == -1 {
                         break;
                     }
                     TranslateMessage(&mut msg);
-                    handle_message(Arc::clone(&win_p), msg.message, msg.wParam, msg.lParam);
+                    handle_message(&mut window, msg.message, msg.wParam, msg.lParam);
                 }
             }
+
+            return window;
         }
     }
 
