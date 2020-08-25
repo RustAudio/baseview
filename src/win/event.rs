@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use winapi::shared::minwindef::{LPARAM, LRESULT, UINT, WPARAM};
 
 use crate::Window;
-use winapi::um::winuser::{DefWindowProcA, WM_MOUSEMOVE, WM_PAINT, WM_TIMER};
+use winapi::um::winuser::{DefWindowProcA, WM_MOUSEMOVE, WM_PAINT, WM_TIMER, WM_KEYDOWN, WM_KEYUP};
 
 const WIN_FRAME_TIMER: usize = 4242;
 
@@ -41,6 +41,15 @@ pub(crate) unsafe fn handle_message(
             win.lock().unwrap().draw_frame();
             0
         }
+        WM_KEYDOWN => {
+            win.lock().unwrap().handle_keydown(wparam);
+            0
+        }
+        WM_KEYUP => {
+            win.lock().unwrap().handle_keyup(wparam);
+            0
+        }
+
         _ => DefWindowProcA(hwnd, message, wparam, lparam),
     }
 }

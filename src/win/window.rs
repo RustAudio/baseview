@@ -265,7 +265,7 @@ impl Window {
     pub(crate) unsafe fn draw_frame(&mut self) {
         // todo: pass callback rendering function instead?
         gl::ClearColor(self.r, self.g, self.b, 1.0);
-        gl::Clear(gl::COLOR_BUFFER_BIT);
+        gl::Clear(gl::COLOR_BUFFER_BIT);    
         SwapBuffers(self.hdc);
     }
 
@@ -275,5 +275,17 @@ impl Window {
         let g = (y as f32) / 1000.0;
         self.r = r;
         self.g = g;
+    }
+
+    pub(crate) fn handle_keydown(&mut self, key: usize) {
+        println!("Keyboard key pressed: {}", key);
+        let r = (key as f32) / 1000.0;
+        let g = (key as f32) / 1000.0;
+        self.r = r;
+        self.g = g;
+    }
+
+    pub(crate) fn handle_keyup(&mut self, key: usize) {
+        println!("Keyboard key released: {}", key);
     }
 }
