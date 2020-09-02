@@ -16,7 +16,7 @@ use ::x11::xlib;
 use super::opengl_util;
 
 use super::XcbConnection;
-use crate::{Parent, WindowOpenOptions, Message, Receiver, MouseButtonID, MouseScroll};
+use crate::{Message, MouseButtonID, MouseScroll, Parent, Receiver, WindowOpenOptions};
 
 pub struct Window<R: Receiver> {
     xcb_connection: XcbConnection,
@@ -42,9 +42,8 @@ impl<R: Receiver> Window<R> {
         #[cfg(all(feature = "gl_renderer", not(feature = "wgpu_renderer")))]
         let fb_config = opengl_util::fb_config(&xcb_connection);
         #[cfg(all(feature = "gl_renderer", not(feature = "wgpu_renderer")))]
-        let x_visual_info: *const xlib::XVisualInfo = {
-            opengl_util::x_visual_info(&xcb_connection, fb_config)
-        };
+        let x_visual_info: *const xlib::XVisualInfo =
+            { opengl_util::x_visual_info(&xcb_connection, fb_config) };
 
         // Load up DRI2 extensions.
         // See also: https://www.x.org/releases/X11R7.7/doc/dri2proto/dri2proto.txt
@@ -176,13 +175,13 @@ impl<R: Receiver> Window<R> {
             .or(x11_window.get_scaling_screen_dimensions());
         println!("Scale factor: {:?}", x11_window.scaling);
 
-        x11_window.receiver.on_message(Message::Opened(
-            crate::message::WindowInfo {
+        x11_window
+            .receiver
+            .on_message(Message::Opened(crate::message::WindowInfo {
                 width: options.width as u32,
                 height: options.height as u32,
                 dpi: x11_window.scaling,
-            }
-        ));
+            }));
 
         x11_window.handle_events(window_id);
 
@@ -223,15 +222,15 @@ impl<R: Receiver> Window<R> {
                     xcb::EXPOSE => {
                         #[cfg(all(feature = "gl_renderer", not(feature = "wgpu_renderer")))]
                         opengl_util::xcb_expose(window_id, raw_display, self.ctx);
-                    },
+                    }
                     xcb::MOTION_NOTIFY => {
                         let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
                         let detail = event.detail();
 
                         if detail != 4 && detail != 5 {
                             self.receiver.on_message(Message::CursorMotion(
-                                    event.event_x() as i32,
-                                    event.event_y() as i32,
+                                event.event_x() as i32,
+                                event.event_y() as i32,
                             ));
                         }
                     }
@@ -241,20 +240,16 @@ impl<R: Receiver> Window<R> {
 
                         match detail {
                             4 => {
-                                self.receiver.on_message(Message::MouseScroll(
-                                    MouseScroll {
-                                        x_delta: 0.0,
-                                        y_delta: 1.0,
-                                    }
-                                ));
-                            },
+                                self.receiver.on_message(Message::MouseScroll(MouseScroll {
+                                    x_delta: 0.0,
+                                    y_delta: 1.0,
+                                }));
+                            }
                             5 => {
-                                self.receiver.on_message(Message::MouseScroll(
-                                    MouseScroll {
-                                        x_delta: 0.0,
-                                        y_delta: -1.0,
-                                    }
-                                ));
+                                self.receiver.on_message(Message::MouseScroll(MouseScroll {
+                                    x_delta: 0.0,
+                                    y_delta: -1.0,
+                                }));
                             }
                             detail => {
                                 let button_id = mouse_id(detail);

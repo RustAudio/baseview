@@ -43,9 +43,9 @@ pub enum Message {
     MouseUp(MouseButtonID),
     MouseScroll(MouseScroll),
     MouseClick(MouseClick),
-    KeyDown(u8), // keycode
-    KeyUp(u8), // keycode
-    CharacterInput(u32), // character code
+    KeyDown(u8),               // keycode
+    KeyUp(u8),                 // keycode
+    CharacterInput(u32),       // character code
     WindowResized(WindowInfo), // new (width, height)
     WindowFocus,
     WindowUnfocus,

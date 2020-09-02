@@ -6,7 +6,7 @@ use cocoa::appkit::{
 use cocoa::base::{nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 
-use crate::{WindowOpenOptions, Message, Receiver, MouseButtonID, MouseScroll};
+use crate::{Message, MouseButtonID, MouseScroll, Receiver, WindowOpenOptions};
 
 pub struct Window<R: Receiver> {
     receiver: R,
@@ -44,17 +44,13 @@ impl<R: Receiver> Window<R> {
             current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
             app.run();
 
-            receiver.on_message(Message::Opened(
-                crate::message::WindowInfo {
-                    width: options.width as u32,
-                    height: options.height as u32,
-                    dpi: None,
-                }
-            ));
+            receiver.on_message(Message::Opened(crate::message::WindowInfo {
+                width: options.width as u32,
+                height: options.height as u32,
+                dpi: None,
+            }));
 
-            Window {
-                receiver,
-            }
+            Window { receiver }
         }
     }
 }

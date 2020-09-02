@@ -1,4 +1,4 @@
-use std::ffi::{CString, CStr};
+use std::ffi::{CStr, CString};
 use std::os::raw::{c_int, c_void};
 use std::ptr::null_mut;
 
@@ -35,19 +35,16 @@ pub fn fb_config(xcb_connection: &XcbConnection) -> *mut glx::__GLXFBConfigRec {
 
 pub fn x_visual_info(
     xcb_connection: &XcbConnection,
-    fb_config: *mut glx::__GLXFBConfigRec
+    fb_config: *mut glx::__GLXFBConfigRec,
 ) -> *const xlib::XVisualInfo {
     // The GLX framebuffer config holds an XVisualInfo, which we'll need for other X operations.
-    
-    unsafe { glx::glXGetVisualFromFBConfig(
-        xcb_connection.conn.get_raw_dpy(),
-        fb_config
-    )}
+
+    unsafe { glx::glXGetVisualFromFBConfig(xcb_connection.conn.get_raw_dpy(), fb_config) }
 }
 
 pub fn glx_context(
     xcb_connection: &XcbConnection,
-    fb_config: *mut glx::__GLXFBConfigRec
+    fb_config: *mut glx::__GLXFBConfigRec,
 ) -> *mut glx::__GLXcontextRec {
     // Load GLX extensions
     // We need at least `GLX_ARB_create_context`

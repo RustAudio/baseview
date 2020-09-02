@@ -25,7 +25,7 @@ use self::winapi::um::winuser::{
 use self::winapi::ctypes::c_void;
 use crate::Parent::WithParent;
 use crate::{handle_message, WindowOpenOptions};
-use crate::{Message, Receiver, MouseButtonID, MouseScroll};
+use crate::{Message, MouseButtonID, MouseScroll, Receiver};
 use std::sync::{Arc, Mutex};
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -241,13 +241,13 @@ impl<R: Receiver> Window<R> {
 
             SetTimer(hwnd, 4242, 13, None);
 
-            window.receiver.on_message(Message::Opened(
-                crate::message::WindowInfo {
+            window
+                .receiver
+                .on_message(Message::Opened(crate::message::WindowInfo {
                     width: options.width as u32,
                     height: options.height as u32,
                     dpi: window.scaling,
-                }
-            ));
+                }));
 
             // todo: decide what to do with the message pump
             if parent.is_null() {
@@ -290,9 +290,6 @@ impl<R: Receiver> Window<R> {
         self.r = r;
         self.g = g;
 
-        self.receiver.on_message(Message::CursorMotion(
-            x,
-            y,
-        ));
+        self.receiver.on_message(Message::CursorMotion(x, y));
     }
 }
