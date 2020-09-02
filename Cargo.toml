@@ -6,16 +6,29 @@ authors = [
     "Charles Saracco <crsaracco@gmail.com>",
     "Mirko Covizzi <mrkcvzz@gmail.com>",
     "Micah Johnston <micah@glowcoil.com>",
+    "Billy Messenger <billydm@protonmail.com>",
 ]
 edition = "2018"
 
+[features]
+default = ["gl_renderer"]
+gl_renderer = ["gl"]
+wgpu_renderer = ["wgpu"]
+
 [dependencies]
-gl = "0.14.0"
 log = "0.4.8"
+
+[dependencies.gl]
+gl = "0.14"
+optional = true
+
+[dependencies.wgpu]
+wgpu = "0.6"
+optional = true
 
 [target.'cfg(target_os="linux")'.dependencies]
 xcb = { version = "0.9", features = ["thread", "xlib_xcb", "dri2"] }
-x11 = { version = "2.3", features = ["xlib", "glx"]}
+x11 = { version = "2.18", features = ["xlib", "glx"] }
 libc = "0.2"
 
 [target.'cfg(target_os="windows")'.dependencies]

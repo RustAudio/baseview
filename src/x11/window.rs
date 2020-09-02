@@ -9,21 +9,26 @@ use std::ffi::CStr;
 use std::os::raw::{c_int, c_void};
 use std::ptr::null_mut;
 
-use ::x11::{glx, xlib};
+use ::x11::xlib;
 // use xcb::dri2; // needed later
 
+#[cfg(all(not(feature = "wgpu_renderer"), feature = "gl_renderer"))]
 use super::opengl_util;
-use super::XcbConnection;
-use crate::Parent;
-use crate::WindowOpenOptions;
 
-pub struct Window {
+use super::XcbConnection;
+use crate::{Parent, WindowOpenOptions, Message, Receiver, MouseButtonID, MouseScroll};
+
+pub struct Window<R: Receiver> {
     xcb_connection: XcbConnection,
     scaling: Option<f64>, // DPI scale, 96.0 is "default".
+    receiver: R,
+
+    #[cfg(all(not(feature = "wgpu_renderer"), feature = "gl_renderer"))]
+    ctx: *mut x11::glx::__GLXcontextRec,
 }
 
-impl Window {
-    pub fn open(options: WindowOpenOptions) -> Self {
+impl<R: Receiver> Window<R> {
+    pub fn open(options: WindowOpenOptions, receiver: R) -> Self {
         // Convert the parent to a X11 window ID if we're given one
         let parent = match options.parent {
             Parent::None => None,
@@ -34,32 +39,12 @@ impl Window {
         // Connect to the X server
         let xcb_connection = XcbConnection::new();
 
-        // Check GLX version (>= 1.3 needed)
-        opengl_util::check_glx_version(&xcb_connection);
-
-        // Get GLX framebuffer config (requires GLX >= 1.3)
-        #[rustfmt::skip]
-        let fb_config = opengl_util::get_glxfbconfig(
-            &xcb_connection,
-            &[
-                glx::GLX_X_RENDERABLE,  1,
-                glx::GLX_DRAWABLE_TYPE, glx::GLX_WINDOW_BIT,
-                glx::GLX_RENDER_TYPE,   glx::GLX_RGBA_BIT,
-                glx::GLX_X_VISUAL_TYPE, glx::GLX_TRUE_COLOR,
-                glx::GLX_RED_SIZE,      8,
-                glx::GLX_GREEN_SIZE,    8,
-                glx::GLX_BLUE_SIZE,     8,
-                glx::GLX_ALPHA_SIZE,    8,
-                glx::GLX_DEPTH_SIZE,    24,
-                glx::GLX_STENCIL_SIZE,  8,
-                glx::GLX_DOUBLEBUFFER,  1,
-                0
-            ],
-        );
-
-        // The GLX framebuffer config holds an XVisualInfo, which we'll need for other X operations.
-        let x_visual_info: *const xlib::XVisualInfo =
-            unsafe { glx::glXGetVisualFromFBConfig(xcb_connection.conn.get_raw_dpy(), fb_config) };
+        #[cfg(all(feature = "gl_renderer", not(feature = "wgpu_renderer")))]
+        let fb_config = opengl_util::fb_config(&xcb_connection);
+        #[cfg(all(feature = "gl_renderer", not(feature = "wgpu_renderer")))]
+        let x_visual_info: *const xlib::XVisualInfo = {
+            opengl_util::x_visual_info(&xcb_connection, fb_config)
+        };
 
         // Load up DRI2 extensions.
         // See also: https://www.x.org/releases/X11R7.7/doc/dri2proto/dri2proto.txt
@@ -157,36 +142,6 @@ impl Window {
             title.as_bytes(),
         );
 
-        // Load GLX extensions
-        // We need at least `GLX_ARB_create_context`
-        let glx_extensions = unsafe {
-            CStr::from_ptr(glx::glXQueryExtensionsString(
-                xcb_connection.conn.get_raw_dpy(),
-                xcb_connection.xlib_display,
-            ))
-            .to_str()
-            .unwrap()
-        };
-        glx_extensions
-            .find("GLX_ARB_create_context")
-            .expect("could not find GLX extension GLX_ARB_create_context");
-
-        // With GLX, we don't need a context pre-created in order to load symbols.
-        // Otherwise, we would need to create a temporary legacy (dummy) GL context to load them.
-        // (something that has at least GlXCreateContextAttribsARB)
-        let glx_create_context_attribs: opengl_util::GlXCreateContextAttribsARBProc =
-            unsafe { std::mem::transmute(opengl_util::load_gl_func("glXCreateContextAttribsARB")) };
-
-        // Load all other symbols
-        unsafe {
-            gl::load_with(|n| opengl_util::load_gl_func(&n));
-        }
-
-        // Check GL3 support
-        if !gl::GenVertexArrays::is_loaded() {
-            panic!("no GL3 support available!");
-        }
-
         // TODO: This requires a global, which is a no. Figure out if there's a better way to do it.
         /*
         // installing an event handler to check if error is generated
@@ -198,32 +153,8 @@ impl Window {
         };
         */
 
-        // Create GLX context attributes. (?)
-        let context_attribs: [c_int; 5] = [
-            glx::arb::GLX_CONTEXT_MAJOR_VERSION_ARB as c_int,
-            3,
-            glx::arb::GLX_CONTEXT_MINOR_VERSION_ARB as c_int,
-            0,
-            0,
-        ];
-        let ctx = unsafe {
-            glx_create_context_attribs(
-                xcb_connection.conn.get_raw_dpy(),
-                fb_config,
-                null_mut(),
-                xlib::True,
-                &context_attribs[0] as *const c_int,
-            )
-        };
-
-        if ctx.is_null()
-        /* || ctx_error_occurred */
-        {
-            panic!("Error when creating a GL 3.0 context");
-        }
-        if unsafe { glx::glXIsDirect(xcb_connection.conn.get_raw_dpy(), ctx) } == 0 {
-            panic!("Obtained indirect rendering context");
-        }
+        #[cfg(all(feature = "gl_renderer", not(feature = "wgpu_renderer")))]
+        let ctx = opengl_util::glx_context(&xcb_connection, fb_config);
 
         // Display the window
         xcb::map_window(&xcb_connection.conn, window_id);
@@ -232,22 +163,36 @@ impl Window {
             xlib::XSync(xcb_connection.conn.get_raw_dpy(), xlib::False);
         }
 
+        #[cfg(all(feature = "gl_renderer", not(feature = "wgpu_renderer")))]
         let mut x11_window = Self {
             xcb_connection,
             scaling: None,
+            ctx,
+            receiver,
         };
 
         x11_window.scaling = x11_window
             .get_scaling_xft()
             .or(x11_window.get_scaling_screen_dimensions());
         println!("Scale factor: {:?}", x11_window.scaling);
-        x11_window.handle_events(window_id, ctx);
+
+        x11_window.receiver.on_message(Message::Opened(
+            crate::message::WindowInfo {
+                width: options.width as u32,
+                height: options.height as u32,
+                dpi: x11_window.scaling,
+            }
+        ));
+
+        x11_window.handle_events(window_id);
+
+        x11_window.receiver.on_message(Message::WillClose);
 
         return x11_window;
     }
 
     // Event loop
-    fn handle_events(&self, window_id: u32, ctx: *mut x11::glx::__GLXcontextRec) {
+    fn handle_events(&mut self, window_id: u32) {
         let raw_display = self.xcb_connection.conn.get_raw_dpy();
         loop {
             let ev = self.xcb_connection.conn.wait_for_event();
@@ -275,65 +220,68 @@ impl Window {
                 //   http://rtbo.github.io/rust-xcb/src/xcb/ffi/xproto.rs.html#445
 
                 match event_type {
-                    xcb::EXPOSE => unsafe {
-                        glx::glXMakeCurrent(raw_display, window_id as xlib::XID, ctx);
-                        gl::ClearColor(0.3, 0.8, 0.3, 1.0);
-                        gl::Clear(gl::COLOR_BUFFER_BIT);
-                        gl::Flush();
-                        glx::glXSwapBuffers(raw_display, window_id as xlib::XID);
-                        glx::glXMakeCurrent(raw_display, 0, null_mut());
+                    xcb::EXPOSE => {
+                        #[cfg(all(feature = "gl_renderer", not(feature = "wgpu_renderer")))]
+                        opengl_util::xcb_expose(window_id, raw_display, self.ctx);
                     },
                     xcb::MOTION_NOTIFY => {
                         let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
-                        let x = event.event_x();
-                        let y = event.event_y();
                         let detail = event.detail();
-                        let state = event.state();
-                        println!("Mouse motion: ({}, {}) -- {} / {}", x, y, detail, state);
+
+                        if detail != 4 && detail != 5 {
+                            self.receiver.on_message(Message::CursorMotion(
+                                    event.event_x() as i32,
+                                    event.event_y() as i32,
+                            ));
+                        }
                     }
                     xcb::BUTTON_PRESS => {
                         let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
-                        let x = event.event_x();
-                        let y = event.event_y();
                         let detail = event.detail();
-                        let state = event.state();
-                        println!(
-                            "Mouse button pressed: ({}, {}) -- {} / {}",
-                            x, y, detail, state
-                        );
+
+                        match detail {
+                            4 => {
+                                self.receiver.on_message(Message::MouseScroll(
+                                    MouseScroll {
+                                        x_delta: 0.0,
+                                        y_delta: 1.0,
+                                    }
+                                ));
+                            },
+                            5 => {
+                                self.receiver.on_message(Message::MouseScroll(
+                                    MouseScroll {
+                                        x_delta: 0.0,
+                                        y_delta: -1.0,
+                                    }
+                                ));
+                            }
+                            detail => {
+                                let button_id = mouse_id(detail);
+                                self.receiver.on_message(Message::MouseDown(button_id));
+                            }
+                        }
                     }
                     xcb::BUTTON_RELEASE => {
-                        let event = unsafe { xcb::cast_event::<xcb::ButtonReleaseEvent>(&event) };
-                        let x = event.event_x();
-                        let y = event.event_y();
+                        let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
                         let detail = event.detail();
-                        let state = event.state();
-                        println!(
-                            "Mouse button released: ({}, {}) -- {} / {}",
-                            x, y, detail, state
-                        );
+
+                        if detail != 4 && detail != 5 {
+                            let button_id = mouse_id(detail);
+                            self.receiver.on_message(Message::MouseUp(button_id));
+                        }
                     }
                     xcb::KEY_PRESS => {
                         let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
-                        let x = event.event_x();
-                        let y = event.event_y();
                         let detail = event.detail();
-                        let state = event.state();
-                        println!(
-                            "Keyboard key pressed: ({}, {}) -- {} / {}",
-                            x, y, detail, state
-                        );
+
+                        self.receiver.on_message(Message::KeyDown(detail));
                     }
                     xcb::KEY_RELEASE => {
                         let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
-                        let x = event.event_x();
-                        let y = event.event_y();
                         let detail = event.detail();
-                        let state = event.state();
-                        println!(
-                            "Keyboard key released: ({}, {}) -- {} / {}",
-                            x, y, detail, state
-                        );
+
+                        self.receiver.on_message(Message::KeyUp(detail));
                     }
                     _ => {
                         println!("Unhandled event type: {:?}", event_type);
@@ -420,5 +368,16 @@ impl Window {
 
         // TODO: choose between `xres` and `yres`? (probably both are the same?)
         Some(yres)
+    }
+}
+
+fn mouse_id(id: u8) -> MouseButtonID {
+    match id {
+        1 => MouseButtonID::Left,
+        2 => MouseButtonID::Middle,
+        3 => MouseButtonID::Right,
+        6 => MouseButtonID::Back,
+        7 => MouseButtonID::Forward,
+        id => MouseButtonID::Other(id),
     }
 }

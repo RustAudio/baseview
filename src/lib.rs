@@ -15,6 +15,9 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::*;
 
+mod message;
+pub use message::*;
+
 pub enum Parent {
     None,
     AsIfParented,
@@ -28,4 +31,8 @@ pub struct WindowOpenOptions<'a> {
     pub height: usize,
 
     pub parent: Parent,
+}
+
+pub trait Receiver {
+    fn on_message(&mut self, message: Message);
 }

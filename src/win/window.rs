@@ -25,6 +25,7 @@ use self::winapi::um::winuser::{
 use self::winapi::ctypes::c_void;
 use crate::Parent::WithParent;
 use crate::{handle_message, WindowOpenOptions};
+use crate::{Message, Receiver, MouseButtonID, MouseScroll};
 use std::sync::{Arc, Mutex};
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -111,24 +112,28 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 
 unsafe fn init_gl_context() {}
 
-pub struct Window {
+pub struct Window<R: Receiver> {
     pub(crate) hwnd: HWND,
     hdc: HDC,
     gl_context: HGLRC,
     window_class: ATOM,
+    receiver: R,
+    scaling: Option<f64>, // DPI scale, 96.0 is "default".
     r: f32,
     g: f32,
     b: f32,
 }
 
-impl Window {
-    pub fn open(options: WindowOpenOptions) {
+impl<R: Receiver> Window<R> {
+    pub fn open(options: WindowOpenOptions, receiver: R) {
         unsafe {
             let mut window = Window {
                 hwnd: null_mut(),
                 hdc: null_mut(),
                 gl_context: null_mut(),
                 window_class: 0,
+                receiver,
+                scaling: None,
                 r: 0.3,
                 g: 0.8,
                 b: 0.3,
@@ -236,6 +241,14 @@ impl Window {
 
             SetTimer(hwnd, 4242, 13, None);
 
+            window.receiver.on_message(Message::Opened(
+                crate::message::WindowInfo {
+                    width: options.width as u32,
+                    height: options.height as u32,
+                    dpi: window.scaling,
+                }
+            ));
+
             // todo: decide what to do with the message pump
             if parent.is_null() {
                 let mut msg: MSG = std::mem::zeroed();
@@ -252,6 +265,8 @@ impl Window {
     }
 
     pub fn close(&self) {
+        self.receiver.on_message(Message::WillClose);
+
         // todo: see https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L402
         unsafe {
             wglMakeCurrent(null_mut(), null_mut());
@@ -270,10 +285,14 @@ impl Window {
     }
 
     pub(crate) fn handle_mouse_motion(&mut self, x: i32, y: i32) {
-        println!("{}, {}", x, y);
         let r = (x as f32) / 1000.0;
         let g = (y as f32) / 1000.0;
         self.r = r;
         self.g = g;
+
+        self.receiver.on_message(Message::CursorMotion(
+            x,
+            y,
+        ));
     }
 }
