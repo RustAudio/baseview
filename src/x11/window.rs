@@ -17,7 +17,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn build(options: WindowOpenOptions, message_tx: mpsc::Sender<Message>) -> Self {
+    pub fn open(options: WindowOpenOptions, message_tx: mpsc::Sender<Message>) -> Self {
         // Convert the parent to a X11 window ID if we're given one
         let parent = match options.parent {
             Parent::None => None,
