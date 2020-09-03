@@ -179,8 +179,7 @@ impl<R: Receiver> Window<R> {
 
                 match event_type {
                     xcb::EXPOSE => {
-                        #[cfg(all(feature = "gl_renderer", not(feature = "wgpu_renderer")))]
-                        opengl_util::xcb_expose(window_id, raw_display, self.ctx);
+                        self.receiver.on_message(Message::RenderExpose);
                     }
                     xcb::MOTION_NOTIFY => {
                         let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };

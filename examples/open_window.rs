@@ -24,6 +24,7 @@ impl baseview::Receiver for MyProgram {
 
     fn on_message(&mut self, message: Message) {
         match message {
+            Message::RenderExpose => {}
             Message::CursorMotion(x, y) => {
                 println!("Cursor moved, x: {}, y: {}", x, y);
             }
@@ -56,9 +57,6 @@ impl baseview::Receiver for MyProgram {
             }
             Message::WindowUnfocus => {
                 println!("Window unfocused");
-            }
-            Message::Opened(window_info) => {
-                println!("Window opened, {:?}", window_info);
             }
             Message::WillClose => {
                 println!("Window will close");

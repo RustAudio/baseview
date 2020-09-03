@@ -38,6 +38,7 @@ pub struct WindowInfo {
 
 #[derive(Debug)]
 pub enum Message {
+    RenderExpose,
     CursorMotion(i32, i32), // new (x, y) relative to window
     MouseDown(MouseButtonID),
     MouseUp(MouseButtonID),
@@ -49,6 +50,5 @@ pub enum Message {
     WindowResized(WindowInfo), // new (width, height)
     WindowFocus,
     WindowUnfocus,
-    Opened(WindowInfo),
     WillClose,
 }
