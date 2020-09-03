@@ -1,12 +1,12 @@
 use std::ffi::CStr;
 use std::os::raw::c_void;
-use std::thread;
+use std::sync::mpsc;
 
 use ::x11::xlib;
 // use xcb::dri2; // needed later
 
 use super::XcbConnection;
-use crate::{Message, MouseButtonID, MouseScroll, Parent, Receiver, WindowInfo, WindowOpenOptions};
+use crate::{Event, MouseButtonID, MouseScroll, Parent, Receiver, WindowInfo, WindowOpenOptions};
 
 use raw_window_handle::RawWindowHandle;
 
@@ -14,10 +14,15 @@ pub struct Window<R: Receiver> {
     scaling: Option<f64>, // DPI scale, 96.0 is "default".
     xcb_connection: XcbConnection,
     receiver: R,
+    app_message_rx: mpsc::Receiver<R::AppMessage>,
 }
 
 impl<R: Receiver> Window<R> {
-    pub fn open(options: WindowOpenOptions, receiver: R) -> Self {
+    pub fn open(
+        options: WindowOpenOptions,
+        receiver: R,
+        app_message_rx: mpsc::Receiver<R::AppMessage>,
+    ) -> Self {
         // Convert the parent to a X11 window ID if we're given one
         let parent = match options.parent {
             Parent::None => None,
@@ -130,6 +135,7 @@ impl<R: Receiver> Window<R> {
             scaling: None,
             xcb_connection,
             receiver,
+            app_message_rx,
         };
 
         x11_window.scaling = get_scaling_xft(&x11_window.xcb_connection)
@@ -153,6 +159,8 @@ impl<R: Receiver> Window<R> {
     fn run_event_loop(&mut self) {
         //let raw_display = self.xcb_connection.conn.get_raw_dpy();
         loop {
+            // somehow poll self.app_message_rx for messages at the same time
+
             let ev = self.xcb_connection.conn.wait_for_event();
             if let Some(event) = ev {
                 let event_type = event.response_type() & !0x80;
@@ -179,14 +187,14 @@ impl<R: Receiver> Window<R> {
 
                 match event_type {
                     xcb::EXPOSE => {
-                        self.receiver.on_message(Message::RenderExpose);
+                        self.receiver.on_event(Event::RenderExpose);
                     }
                     xcb::MOTION_NOTIFY => {
                         let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
                         let detail = event.detail();
 
                         if detail != 4 && detail != 5 {
-                            self.receiver.on_message(Message::CursorMotion(
+                            self.receiver.on_event(Event::CursorMotion(
                                 event.event_x() as i32,
                                 event.event_y() as i32,
                             ));
@@ -198,20 +206,20 @@ impl<R: Receiver> Window<R> {
 
                         match detail {
                             4 => {
-                                self.receiver.on_message(Message::MouseScroll(MouseScroll {
+                                self.receiver.on_event(Event::MouseScroll(MouseScroll {
                                     x_delta: 0.0,
                                     y_delta: 1.0,
                                 }));
                             }
                             5 => {
-                                self.receiver.on_message(Message::MouseScroll(MouseScroll {
+                                self.receiver.on_event(Event::MouseScroll(MouseScroll {
                                     x_delta: 0.0,
                                     y_delta: -1.0,
                                 }));
                             }
                             detail => {
                                 let button_id = mouse_id(detail);
-                                self.receiver.on_message(Message::MouseDown(button_id));
+                                self.receiver.on_event(Event::MouseDown(button_id));
                             }
                         }
                     }
@@ -221,20 +229,20 @@ impl<R: Receiver> Window<R> {
 
                         if detail != 4 && detail != 5 {
                             let button_id = mouse_id(detail);
-                            self.receiver.on_message(Message::MouseUp(button_id));
+                            self.receiver.on_event(Event::MouseUp(button_id));
                         }
                     }
                     xcb::KEY_PRESS => {
                         let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
                         let detail = event.detail();
 
-                        self.receiver.on_message(Message::KeyDown(detail));
+                        self.receiver.on_event(Event::KeyDown(detail));
                     }
                     xcb::KEY_RELEASE => {
                         let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
                         let detail = event.detail();
 
-                        self.receiver.on_message(Message::KeyUp(detail));
+                        self.receiver.on_event(Event::KeyUp(detail));
                     }
                     _ => {
                         println!("Unhandled event type: {:?}", event_type);

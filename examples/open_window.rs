@@ -1,4 +1,6 @@
-use baseview::Message;
+use std::sync::mpsc;
+
+use baseview::Event;
 
 fn main() {
     let window_open_options = baseview::WindowOpenOptions {
@@ -10,11 +12,17 @@ fn main() {
 
     let my_program = MyProgram {};
 
-    let _ = baseview::Window::open(window_open_options, my_program);
+    let (_app_message_tx, app_message_rx) = mpsc::channel::<()>();
+
+    // Send _app_message_tx to a separate thread, then send messages to the GUI thread.
+
+    let _ = baseview::Window::open(window_open_options, my_program, app_message_rx);
 }
 struct MyProgram {}
 
 impl baseview::Receiver for MyProgram {
+    type AppMessage = ();
+
     fn create_context(
         &mut self,
         _window: raw_window_handle::RawWindowHandle,
@@ -22,45 +30,47 @@ impl baseview::Receiver for MyProgram {
     ) {
     }
 
-    fn on_message(&mut self, message: Message) {
-        match message {
-            Message::RenderExpose => {}
-            Message::CursorMotion(x, y) => {
+    fn on_event(&mut self, event: Event) {
+        match event {
+            Event::RenderExpose => {}
+            Event::CursorMotion(x, y) => {
                 println!("Cursor moved, x: {}, y: {}", x, y);
             }
-            Message::MouseDown(button_id) => {
+            Event::MouseDown(button_id) => {
                 println!("Mouse down, button id: {:?}", button_id);
             }
-            Message::MouseUp(button_id) => {
+            Event::MouseUp(button_id) => {
                 println!("Mouse up, button id: {:?}", button_id);
             }
-            Message::MouseScroll(mouse_scroll) => {
+            Event::MouseScroll(mouse_scroll) => {
                 println!("Mouse scroll, {:?}", mouse_scroll);
             }
-            Message::MouseClick(mouse_click) => {
+            Event::MouseClick(mouse_click) => {
                 println!("Mouse click, {:?}", mouse_click);
             }
-            Message::KeyDown(keycode) => {
+            Event::KeyDown(keycode) => {
                 println!("Key down, keycode: {}", keycode);
             }
-            Message::KeyUp(keycode) => {
+            Event::KeyUp(keycode) => {
                 println!("Key up, keycode: {}", keycode);
             }
-            Message::CharacterInput(char_code) => {
+            Event::CharacterInput(char_code) => {
                 println!("Character input, char_code: {}", char_code);
             }
-            Message::WindowResized(window_info) => {
+            Event::WindowResized(window_info) => {
                 println!("Window resized, {:?}", window_info);
             }
-            Message::WindowFocus => {
+            Event::WindowFocus => {
                 println!("Window focused");
             }
-            Message::WindowUnfocus => {
+            Event::WindowUnfocus => {
                 println!("Window unfocused");
             }
-            Message::WillClose => {
+            Event::WillClose => {
                 println!("Window will close");
             }
         }
     }
+
+    fn on_app_message(&mut self, _message: Self::AppMessage) {}
 }

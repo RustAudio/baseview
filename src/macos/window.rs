@@ -6,14 +6,19 @@ use cocoa::appkit::{
 use cocoa::base::{nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 
-use crate::{Message, MouseButtonID, MouseScroll, Receiver, WindowOpenOptions};
+use crate::{Event, MouseButtonID, MouseScroll, Receiver, WindowOpenOptions};
 
 pub struct Window<R: Receiver> {
     receiver: R,
+    app_message_rx: mpsc::Receiver<R::AppMessage>,
 }
 
 impl<R: Receiver> Window<R> {
-    pub fn open(options: WindowOpenOptions, receiver: R) -> Self {
+    pub fn open(
+        options: WindowOpenOptions,
+        receiver: R,
+        app_message_rx: mpsc::Receiver<R::AppMessage>,
+    ) -> Self {
         unsafe {
             let _pool = NSAutoreleasePool::new(nil);
 
@@ -44,7 +49,10 @@ impl<R: Receiver> Window<R> {
             current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
             app.run();
 
-            Window { receiver }
+            Window {
+                receiver,
+                app_message_rx,
+            }
         }
     }
 }

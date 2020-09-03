@@ -15,8 +15,8 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::*;
 
-mod message;
-pub use message::*;
+mod event;
+pub use event::*;
 
 pub enum Parent {
     None,
@@ -34,10 +34,13 @@ pub struct WindowOpenOptions<'a> {
 }
 
 pub trait Receiver {
+    type AppMessage;
+
     fn create_context(
         &mut self,
         window: raw_window_handle::RawWindowHandle,
         window_info: &WindowInfo,
     );
-    fn on_message(&mut self, message: Message);
+    fn on_event(&mut self, event: Event);
+    fn on_app_message(&mut self, message: Self::AppMessage);
 }

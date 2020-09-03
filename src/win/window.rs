@@ -2,6 +2,7 @@ extern crate winapi;
 
 use std::ffi::CString;
 use std::ptr::null_mut;
+use std::sync::mpsc;
 
 use self::winapi::shared::guiddef::GUID;
 use self::winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM};
@@ -14,24 +15,24 @@ use self::winapi::um::wingdi::{
     PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
 };
 use self::winapi::um::winuser::{
-    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA, GetDC,
-    GetMessageA, GetWindowLongPtrA, MessageBoxA, PeekMessageA, PostMessageA, RegisterClassA,
-    ReleaseDC, SetTimer, SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC,
-    GWLP_USERDATA, MB_ICONERROR, MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CREATE, WM_QUIT,
-    WM_SHOWWINDOW, WM_TIMER, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX,
-    WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchEventA, EventBoxA,
+    GetDC, GetEventA, GetWindowLongPtrA, PeekEventA, PostEventA, RegisterClassA, ReleaseDC,
+    SetTimer, SetWindowLongPtrA, TranslateEvent, UnregisterClassA, CS_OWNDC, GWLP_USERDATA,
+    MB_ICONERROR, MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CREATE, WM_QUIT, WM_SHOWWINDOW, WM_TIMER,
+    WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
+    WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
 };
 
 use self::winapi::ctypes::c_void;
 use crate::Parent::WithParent;
 use crate::{handle_message, WindowOpenOptions};
-use crate::{Message, MouseButtonID, MouseScroll, Receiver};
+use crate::{Event, MouseButtonID, MouseScroll, Receiver};
 use std::sync::{Arc, Mutex};
 
 unsafe fn message_box(title: &str, msg: &str) {
     let title = (title.to_owned() + "\0").as_ptr() as *const i8;
     let msg = (msg.to_owned() + "\0").as_ptr() as *const i8;
-    MessageBoxA(null_mut(), msg, title, MB_ICONERROR | MB_OK | MB_TOPMOST);
+    EventBoxA(null_mut(), msg, title, MB_ICONERROR | MB_OK | MB_TOPMOST);
 }
 
 unsafe fn generate_guid() -> String {
@@ -62,7 +63,7 @@ unsafe extern "system" fn wnd_proc(
     let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
     match msg {
         WM_CREATE => {
-            PostMessageA(hwnd, WM_SHOWWINDOW, 0, 0);
+            PostEventA(hwnd, WM_SHOWWINDOW, 0, 0);
             0
         }
         _ => {
@@ -118,6 +119,7 @@ pub struct Window<R: Receiver> {
     gl_context: HGLRC,
     window_class: ATOM,
     receiver: R,
+    app_message_rx: mpsc::Receiver<R::AppMessage>,
     scaling: Option<f64>, // DPI scale, 96.0 is "default".
     r: f32,
     g: f32,
@@ -125,7 +127,11 @@ pub struct Window<R: Receiver> {
 }
 
 impl<R: Receiver> Window<R> {
-    pub fn open(options: WindowOpenOptions, receiver: R) {
+    pub fn open(
+        options: WindowOpenOptions,
+        receiver: R,
+        app_message_rx: mpsc::Receiver<R::AppMessage>,
+    ) {
         unsafe {
             let mut window = Window {
                 hwnd: null_mut(),
@@ -133,6 +139,7 @@ impl<R: Receiver> Window<R> {
                 gl_context: null_mut(),
                 window_class: 0,
                 receiver,
+                app_message_rx,
                 scaling: None,
                 r: 0.3,
                 g: 0.8,
@@ -245,11 +252,11 @@ impl<R: Receiver> Window<R> {
             if parent.is_null() {
                 let mut msg: MSG = std::mem::zeroed();
                 loop {
-                    let status = GetMessageA(&mut msg, hwnd, 0, 0);
+                    let status = GetEventA(&mut msg, hwnd, 0, 0);
                     if status == -1 {
                         break;
                     }
-                    TranslateMessage(&mut msg);
+                    TranslateEvent(&mut msg);
                     handle_message(Arc::clone(&win_p), msg.message, msg.wParam, msg.lParam);
                 }
             }
@@ -257,7 +264,7 @@ impl<R: Receiver> Window<R> {
     }
 
     pub fn close(&self) {
-        self.receiver.on_message(Message::WillClose);
+        self.receiver.on_event(Event::WillClose);
 
         // todo: see https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L402
         unsafe {
@@ -282,6 +289,6 @@ impl<R: Receiver> Window<R> {
         self.r = r;
         self.g = g;
 
-        self.receiver.on_message(Message::CursorMotion(x, y));
+        self.receiver.on_message(Event::CursorMotion(x, y));
     }
 }
