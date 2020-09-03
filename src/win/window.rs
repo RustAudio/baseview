@@ -2,7 +2,6 @@ extern crate winapi;
 
 use std::ffi::CString;
 use std::ptr::null_mut;
-use std::sync::mpsc;
 
 use self::winapi::shared::guiddef::GUID;
 use self::winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM};
@@ -113,19 +112,20 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 
 unsafe fn init_gl_context() {}
 
-pub struct Window {
+pub struct Window<R: Receiver> {
     pub(crate) hwnd: HWND,
     hdc: HDC,
     gl_context: HGLRC,
     window_class: ATOM,
+    receiver: R,
     scaling: Option<f64>, // DPI scale, 96.0 is "default".
     r: f32,
     g: f32,
     b: f32,
 }
 
-impl Window {
-    pub fn open(options: WindowOpenOptions, message_tx: mpsc::Sender<Message>) {
+impl<R: Receiver> Window<R> {
+    pub fn open(options: WindowOpenOptions, receiver: R) {
         unsafe {
             let mut window = Window {
                 hwnd: null_mut(),
@@ -240,14 +240,6 @@ impl Window {
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, Arc::into_raw(win) as *const _ as _);
 
             SetTimer(hwnd, 4242, 13, None);
-
-            message_tx
-                .send(Message::Opened(WindowInfo {
-                    width: options.width as u32,
-                    height: options.height as u32,
-                    dpi: None,
-                }))
-                .unwrap();
 
             // todo: decide what to do with the message pump
             if parent.is_null() {

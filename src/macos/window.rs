@@ -8,10 +8,12 @@ use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 
 use crate::{Message, MouseButtonID, MouseScroll, Receiver, WindowOpenOptions};
 
-pub struct Window {}
+pub struct Window<R: Receiver> {
+    receiver: R,
+}
 
-impl Window {
-    pub fn open(options: WindowOpenOptions, message_tx: mpsc::Sender<Message>) -> Self {
+impl<R: Receiver> Window<R> {
+    pub fn open(options: WindowOpenOptions, receiver: R) -> Self {
         unsafe {
             let _pool = NSAutoreleasePool::new(nil);
 
@@ -41,14 +43,6 @@ impl Window {
             let current_app = NSRunningApplication::currentApplication(nil);
             current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
             app.run();
-
-            message_tx
-                .send(Message::Opened(WindowInfo {
-                    width: options.width as u32,
-                    height: options.height as u32,
-                    dpi: None,
-                }))
-                .unwrap();
 
             Window { receiver }
         }

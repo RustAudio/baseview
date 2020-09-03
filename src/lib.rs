@@ -32,3 +32,12 @@ pub struct WindowOpenOptions<'a> {
 
     pub parent: Parent,
 }
+
+pub trait Receiver {
+    fn create_context(
+        &mut self,
+        window: raw_window_handle::RawWindowHandle,
+        window_info: &WindowInfo,
+    );
+    fn on_message(&mut self, message: Message);
+}
