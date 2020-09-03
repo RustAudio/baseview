@@ -32,7 +32,3 @@ pub struct WindowOpenOptions<'a> {
 
     pub parent: Parent,
 }
-
-pub trait Receiver {
-    fn on_message(&mut self, message: Message);
-}

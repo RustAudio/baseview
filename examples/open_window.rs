@@ -1,3 +1,5 @@
+use std::sync::mpsc;
+
 use baseview::Message;
 
 fn main() {
@@ -8,15 +10,22 @@ fn main() {
         parent: baseview::Parent::None,
     };
 
+    let (message_tx, message_rx) = mpsc::channel::<Message>();
+
     let my_program = MyProgram {};
 
-    baseview::Window::open(window_open_options, my_program);
-}
+    let window = baseview::Window::build(window_open_options, message_tx);
 
+    // Get raw window handle!
+    let _raw_handle = window.raw_window_handle();
+
+    my_program_loop(my_program, message_rx);
+}
 struct MyProgram {}
 
-impl baseview::Receiver for MyProgram {
-    fn on_message(&mut self, message: Message) {
+fn my_program_loop(_my_program: MyProgram, message_rx: mpsc::Receiver<Message>) {
+    loop {
+        let message = message_rx.recv().unwrap();
         match message {
             Message::CursorMotion(x, y) => {
                 println!("Cursor moved, x: {}, y: {}", x, y);

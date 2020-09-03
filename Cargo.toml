@@ -10,30 +10,18 @@ authors = [
 ]
 edition = "2018"
 
-[features]
-default = ["gl_renderer"]
-gl_renderer = ["gl"]
-wgpu_renderer = ["wgpu"]
-
 [dependencies]
-log = "0.4.8"
-
-[dependencies.gl]
-gl = "0.14"
-optional = true
-
-[dependencies.wgpu]
-wgpu = "0.6"
-optional = true
+log = "0.4.11"
+raw-window-handle = "0.3.3"
 
 [target.'cfg(target_os="linux")'.dependencies]
 xcb = { version = "0.9", features = ["thread", "xlib_xcb", "dri2"] }
-x11 = { version = "2.18", features = ["xlib", "glx"] }
+x11 = { version = "2.18", features = ["xlib"] }
 libc = "0.2"
 
 [target.'cfg(target_os="windows")'.dependencies]
 winapi = { version = "0.3.8", features = ["libloaderapi", "winuser", "windef", "minwindef", "guiddef", "combaseapi", "wingdi", "errhandlingapi"] }
 
 [target.'cfg(target_os="macos")'.dependencies]
-cocoa = "0.20.1"
+cocoa = "0.23.0"
 objc = "0.2.7"
