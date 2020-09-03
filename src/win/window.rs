@@ -26,7 +26,7 @@ use self::winapi::um::winuser::{
 use self::winapi::ctypes::c_void;
 use crate::Parent::WithParent;
 use crate::{handle_message, WindowOpenOptions};
-use crate::{Event, MouseButtonID, MouseScroll, Receiver};
+use crate::{Application, Event, MouseButtonID, MouseScroll};
 use std::sync::{Arc, Mutex};
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -113,24 +113,24 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 
 unsafe fn init_gl_context() {}
 
-pub struct Window<R: Receiver> {
+pub struct Window<A: Application> {
     pub(crate) hwnd: HWND,
     hdc: HDC,
     gl_context: HGLRC,
     window_class: ATOM,
-    receiver: R,
-    app_message_rx: mpsc::Receiver<R::AppMessage>,
+    application: A,
+    app_message_rx: mpsc::Receiver<A::AppMessage>,
     scaling: Option<f64>, // DPI scale, 96.0 is "default".
     r: f32,
     g: f32,
     b: f32,
 }
 
-impl<R: Receiver> Window<R> {
+impl<A: Application> Window<A> {
     pub fn open(
         options: WindowOpenOptions,
-        receiver: R,
-        app_message_rx: mpsc::Receiver<R::AppMessage>,
+        application: A,
+        app_message_rx: mpsc::Receiver<A::AppMessage>,
     ) {
         unsafe {
             let mut window = Window {
@@ -138,7 +138,7 @@ impl<R: Receiver> Window<R> {
                 hdc: null_mut(),
                 gl_context: null_mut(),
                 window_class: 0,
-                receiver,
+                application,
                 app_message_rx,
                 scaling: None,
                 r: 0.3,
@@ -264,7 +264,7 @@ impl<R: Receiver> Window<R> {
     }
 
     pub fn close(&self) {
-        self.receiver.on_event(Event::WillClose);
+        self.application.on_event(Event::WillClose);
 
         // todo: see https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L402
         unsafe {
@@ -289,6 +289,6 @@ impl<R: Receiver> Window<R> {
         self.r = r;
         self.g = g;
 
-        self.receiver.on_message(Event::CursorMotion(x, y));
+        self.application.on_message(Event::CursorMotion(x, y));
     }
 }

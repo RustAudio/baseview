@@ -20,7 +20,7 @@ fn main() {
 }
 struct MyProgram {}
 
-impl baseview::Receiver for MyProgram {
+impl baseview::Application for MyProgram {
     type AppMessage = ();
 
     fn create_context(
