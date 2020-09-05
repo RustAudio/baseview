@@ -1,29 +1,23 @@
-// TODO: messy for now, will refactor when I have more of an idea of the API/architecture
-// TODO: close window
-// TODO: proper error handling (no bare `unwrap`s, no panics)
-// TODO: move more OpenGL-related stuff into opengl_util.rs
-// TODO: consider researching all unsafe calls here and figuring out what invariants need to be upheld.
-//       (write safe wrappers?)
-
 use std::ffi::CStr;
-use std::os::raw::{c_int, c_void};
-use std::ptr::null_mut;
+use std::os::raw::{c_ulong, c_void};
+use std::sync::mpsc;
 
-use ::x11::{glx, xlib};
-// use xcb::dri2; // needed later
-
-use super::opengl_util;
 use super::XcbConnection;
-use crate::Parent;
-use crate::WindowOpenOptions;
+use crate::{
+    AppWindow, Event, MouseButtonID, MouseScroll, Parent, RawWindow, WindowInfo, WindowOpenOptions,
+};
 
-pub struct Window {
+use raw_window_handle::RawWindowHandle;
+
+pub struct Window<A: AppWindow> {
+    scaling: f64,
     xcb_connection: XcbConnection,
-    scaling: Option<f64>, // DPI scale, 96.0 is "default".
+    app_window: A,
+    app_message_rx: mpsc::Receiver<A::AppMessage>,
 }
 
-impl Window {
-    pub fn open(options: WindowOpenOptions) -> Self {
+impl<A: AppWindow> Window<A> {
+    pub fn open(options: WindowOpenOptions, app_message_rx: mpsc::Receiver<A::AppMessage>) -> Self {
         // Convert the parent to a X11 window ID if we're given one
         let parent = match options.parent {
             Parent::None => None,
@@ -34,49 +28,14 @@ impl Window {
         // Connect to the X server
         let xcb_connection = XcbConnection::new();
 
-        // Check GLX version (>= 1.3 needed)
-        opengl_util::check_glx_version(&xcb_connection);
-
-        // Get GLX framebuffer config (requires GLX >= 1.3)
-        #[rustfmt::skip]
-        let fb_config = opengl_util::get_glxfbconfig(
-            &xcb_connection,
-            &[
-                glx::GLX_X_RENDERABLE,  1,
-                glx::GLX_DRAWABLE_TYPE, glx::GLX_WINDOW_BIT,
-                glx::GLX_RENDER_TYPE,   glx::GLX_RGBA_BIT,
-                glx::GLX_X_VISUAL_TYPE, glx::GLX_TRUE_COLOR,
-                glx::GLX_RED_SIZE,      8,
-                glx::GLX_GREEN_SIZE,    8,
-                glx::GLX_BLUE_SIZE,     8,
-                glx::GLX_ALPHA_SIZE,    8,
-                glx::GLX_DEPTH_SIZE,    24,
-                glx::GLX_STENCIL_SIZE,  8,
-                glx::GLX_DOUBLEBUFFER,  1,
-                0
-            ],
-        );
-
-        // The GLX framebuffer config holds an XVisualInfo, which we'll need for other X operations.
-        let x_visual_info: *const xlib::XVisualInfo =
-            unsafe { glx::glXGetVisualFromFBConfig(xcb_connection.conn.get_raw_dpy(), fb_config) };
-
-        // Load up DRI2 extensions.
-        // See also: https://www.x.org/releases/X11R7.7/doc/dri2proto/dri2proto.txt
-        /*
-        // needed later when we handle events
-        let dri2_ev = {
-            xcb_connection.conn.prefetch_extension_data(dri2::id());
-            match xcb_connection.conn.get_extension_data(dri2::id()) {
-                None => panic!("could not load dri2 extension"),
-                Some(r) => r.first_event(),
-            }
-        };
-        */
-
         // Get screen information (?)
         let setup = xcb_connection.conn.get_setup();
-        let screen = unsafe { setup.roots().nth((*x_visual_info).screen as usize).unwrap() };
+        let screen = setup
+            .roots()
+            .nth(xcb_connection.xlib_display as usize)
+            .unwrap();
+
+        let foreground = xcb_connection.conn.generate_id();
 
         // Convert parent into something that X understands
         let parent_id = if let Some(p) = parent {
@@ -85,24 +44,30 @@ impl Window {
             screen.root()
         };
 
-        // Create a colormap
-        let colormap = xcb_connection.conn.generate_id();
-        unsafe {
-            xcb::create_colormap(
-                &xcb_connection.conn,
-                xcb::COLORMAP_ALLOC_NONE as u8,
-                colormap,
-                parent_id,
-                (*x_visual_info).visualid as u32,
-            );
-        }
+        xcb::create_gc(
+            &xcb_connection.conn,
+            foreground,
+            parent_id,
+            &[
+                (xcb::GC_FOREGROUND, screen.black_pixel()),
+                (xcb::GC_GRAPHICS_EXPOSURES, 0),
+            ],
+        );
 
-        // Create window, connecting to the parent if we have one
         let window_id = xcb_connection.conn.generate_id();
-        let cw_values = [
-            (xcb::CW_BACK_PIXEL, screen.white_pixel()),
-            (xcb::CW_BORDER_PIXEL, screen.black_pixel()),
-            (
+        xcb::create_window(
+            &xcb_connection.conn,
+            xcb::COPY_FROM_PARENT as u8,
+            window_id,
+            parent_id,
+            0,                     // x coordinate of the new window
+            0,                     // y coordinate of the new window
+            options.width as u16,  // window width
+            options.height as u16, // window height
+            0,                     // window border
+            xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
+            screen.root_visual(),
+            &[(
                 xcb::CW_EVENT_MASK,
                 xcb::EVENT_MASK_EXPOSURE
                     | xcb::EVENT_MASK_POINTER_MOTION
@@ -110,40 +75,9 @@ impl Window {
                     | xcb::EVENT_MASK_BUTTON_RELEASE
                     | xcb::EVENT_MASK_KEY_PRESS
                     | xcb::EVENT_MASK_KEY_RELEASE,
-            ),
-            (xcb::CW_COLORMAP, colormap),
-        ];
-        xcb::create_window(
-            // Connection
-            &xcb_connection.conn,
-            // Depth
-            unsafe { *x_visual_info }.depth as u8,
-            // Window ID
-            window_id,
-            // Parent ID
-            parent_id,
-            // x
-            0,
-            // y
-            0,
-            // width
-            options.width as u16,
-            // height
-            options.height as u16,
-            // border width
-            0,
-            // class
-            xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
-            // visual
-            unsafe { *x_visual_info }.visualid as u32,
-            // value list
-            &cw_values,
+            )],
         );
-
-        // Don't need the visual info anymore
-        unsafe {
-            xlib::XFree(x_visual_info as *mut c_void);
-        }
+        xcb::map_window(&xcb_connection.conn, window_id);
 
         // Change window title
         let title = options.title;
@@ -153,103 +87,51 @@ impl Window {
             window_id,
             xcb::ATOM_WM_NAME,
             xcb::ATOM_STRING,
-            8,
+            8, // view data as 8-bit
             title.as_bytes(),
         );
 
-        // Load GLX extensions
-        // We need at least `GLX_ARB_create_context`
-        let glx_extensions = unsafe {
-            CStr::from_ptr(glx::glXQueryExtensionsString(
-                xcb_connection.conn.get_raw_dpy(),
-                xcb_connection.xlib_display,
-            ))
-            .to_str()
-            .unwrap()
-        };
-        glx_extensions
-            .find("GLX_ARB_create_context")
-            .expect("could not find GLX extension GLX_ARB_create_context");
-
-        // With GLX, we don't need a context pre-created in order to load symbols.
-        // Otherwise, we would need to create a temporary legacy (dummy) GL context to load them.
-        // (something that has at least GlXCreateContextAttribsARB)
-        let glx_create_context_attribs: opengl_util::GlXCreateContextAttribsARBProc =
-            unsafe { std::mem::transmute(opengl_util::load_gl_func("glXCreateContextAttribsARB")) };
-
-        // Load all other symbols
-        unsafe {
-            gl::load_with(|n| opengl_util::load_gl_func(&n));
-        }
-
-        // Check GL3 support
-        if !gl::GenVertexArrays::is_loaded() {
-            panic!("no GL3 support available!");
-        }
-
-        // TODO: This requires a global, which is a no. Figure out if there's a better way to do it.
-        /*
-        // installing an event handler to check if error is generated
-        unsafe {
-            ctx_error_occurred = false;
-        }
-        let old_handler = unsafe {
-            xlib::XSetErrorHandler(Some(ctx_error_handler))
-        };
-        */
-
-        // Create GLX context attributes. (?)
-        let context_attribs: [c_int; 5] = [
-            glx::arb::GLX_CONTEXT_MAJOR_VERSION_ARB as c_int,
-            3,
-            glx::arb::GLX_CONTEXT_MINOR_VERSION_ARB as c_int,
-            0,
-            0,
-        ];
-        let ctx = unsafe {
-            glx_create_context_attribs(
-                xcb_connection.conn.get_raw_dpy(),
-                fb_config,
-                null_mut(),
-                xlib::True,
-                &context_attribs[0] as *const c_int,
-            )
-        };
-
-        if ctx.is_null()
-        /* || ctx_error_occurred */
-        {
-            panic!("Error when creating a GL 3.0 context");
-        }
-        if unsafe { glx::glXIsDirect(xcb_connection.conn.get_raw_dpy(), ctx) } == 0 {
-            panic!("Obtained indirect rendering context");
-        }
-
-        // Display the window
-        xcb::map_window(&xcb_connection.conn, window_id);
         xcb_connection.conn.flush();
-        unsafe {
-            xlib::XSync(xcb_connection.conn.get_raw_dpy(), xlib::False);
-        }
+
+        let raw_handle = RawWindowHandle::Xlib(raw_window_handle::unix::XlibHandle {
+            window: window_id as c_ulong,
+            display: xcb_connection.conn.get_raw_dpy() as *mut c_void,
+            ..raw_window_handle::unix::XlibHandle::empty()
+        });
+
+        let raw_window = RawWindow {
+            raw_window_handle: raw_handle,
+        };
+
+        let scaling = get_scaling_xft(&xcb_connection)
+            .or(get_scaling_screen_dimensions(&xcb_connection))
+            .unwrap_or(1.0);
+
+        let window_info = WindowInfo {
+            width: options.width as u32,
+            height: options.height as u32,
+            scale: scaling,
+        };
+
+        let app_window = A::build(raw_window, &window_info);
 
         let mut x11_window = Self {
+            scaling,
             xcb_connection,
-            scaling: None,
+            app_window,
+            app_message_rx,
         };
 
-        x11_window.scaling = x11_window
-            .get_scaling_xft()
-            .or(x11_window.get_scaling_screen_dimensions());
-        println!("Scale factor: {:?}", x11_window.scaling);
-        x11_window.handle_events(window_id, ctx);
+        x11_window.run_event_loop();
 
-        return x11_window;
+        x11_window
     }
 
     // Event loop
-    fn handle_events(&self, window_id: u32, ctx: *mut x11::glx::__GLXcontextRec) {
-        let raw_display = self.xcb_connection.conn.get_raw_dpy();
+    fn run_event_loop(&mut self) {
         loop {
+            // somehow poll self.app_message_rx for messages at the same time
+
             let ev = self.xcb_connection.conn.wait_for_event();
             if let Some(event) = ev {
                 let event_type = event.response_type() & !0x80;
@@ -275,65 +157,63 @@ impl Window {
                 //   http://rtbo.github.io/rust-xcb/src/xcb/ffi/xproto.rs.html#445
 
                 match event_type {
-                    xcb::EXPOSE => unsafe {
-                        glx::glXMakeCurrent(raw_display, window_id as xlib::XID, ctx);
-                        gl::ClearColor(0.3, 0.8, 0.3, 1.0);
-                        gl::Clear(gl::COLOR_BUFFER_BIT);
-                        gl::Flush();
-                        glx::glXSwapBuffers(raw_display, window_id as xlib::XID);
-                        glx::glXMakeCurrent(raw_display, 0, null_mut());
-                    },
+                    xcb::EXPOSE => {
+                        self.app_window.draw();
+                    }
                     xcb::MOTION_NOTIFY => {
                         let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
-                        let x = event.event_x();
-                        let y = event.event_y();
                         let detail = event.detail();
-                        let state = event.state();
-                        println!("Mouse motion: ({}, {}) -- {} / {}", x, y, detail, state);
+
+                        if detail != 4 && detail != 5 {
+                            self.app_window.on_event(Event::CursorMotion(
+                                event.event_x() as i32,
+                                event.event_y() as i32,
+                            ));
+                        }
                     }
                     xcb::BUTTON_PRESS => {
                         let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
-                        let x = event.event_x();
-                        let y = event.event_y();
                         let detail = event.detail();
-                        let state = event.state();
-                        println!(
-                            "Mouse button pressed: ({}, {}) -- {} / {}",
-                            x, y, detail, state
-                        );
+
+                        match detail {
+                            4 => {
+                                self.app_window.on_event(Event::MouseScroll(MouseScroll {
+                                    x_delta: 0.0,
+                                    y_delta: 1.0,
+                                }));
+                            }
+                            5 => {
+                                self.app_window.on_event(Event::MouseScroll(MouseScroll {
+                                    x_delta: 0.0,
+                                    y_delta: -1.0,
+                                }));
+                            }
+                            detail => {
+                                let button_id = mouse_id(detail);
+                                self.app_window.on_event(Event::MouseDown(button_id));
+                            }
+                        }
                     }
                     xcb::BUTTON_RELEASE => {
-                        let event = unsafe { xcb::cast_event::<xcb::ButtonReleaseEvent>(&event) };
-                        let x = event.event_x();
-                        let y = event.event_y();
+                        let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
                         let detail = event.detail();
-                        let state = event.state();
-                        println!(
-                            "Mouse button released: ({}, {}) -- {} / {}",
-                            x, y, detail, state
-                        );
+
+                        if detail != 4 && detail != 5 {
+                            let button_id = mouse_id(detail);
+                            self.app_window.on_event(Event::MouseUp(button_id));
+                        }
                     }
                     xcb::KEY_PRESS => {
                         let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
-                        let x = event.event_x();
-                        let y = event.event_y();
                         let detail = event.detail();
-                        let state = event.state();
-                        println!(
-                            "Keyboard key pressed: ({}, {}) -- {} / {}",
-                            x, y, detail, state
-                        );
+
+                        self.app_window.on_event(Event::KeyDown(detail));
                     }
                     xcb::KEY_RELEASE => {
                         let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
-                        let x = event.event_x();
-                        let y = event.event_y();
                         let detail = event.detail();
-                        let state = event.state();
-                        println!(
-                            "Keyboard key released: ({}, {}) -- {} / {}",
-                            x, y, detail, state
-                        );
+
+                        self.app_window.on_event(Event::KeyUp(detail));
                     }
                     _ => {
                         println!("Unhandled event type: {:?}", event_type);
@@ -342,83 +222,96 @@ impl Window {
             }
         }
     }
+}
 
-    // Try to get the scaling with this function first.
-    // If this gives you `None`, fall back to `get_scaling_screen_dimensions`.
-    // If neither work, I guess just assume 96.0 and don't do any scaling.
-    fn get_scaling_xft(&self) -> Option<f64> {
-        use std::ffi::CString;
-        use x11::xlib::{
-            XResourceManagerString, XrmDestroyDatabase, XrmGetResource, XrmGetStringDatabase,
-            XrmValue,
-        };
+// Try to get the scaling with this function first.
+// If this gives you `None`, fall back to `get_scaling_screen_dimensions`.
+// If neither work, I guess just assume 96.0 and don't do any scaling.
+fn get_scaling_xft(xcb_connection: &XcbConnection) -> Option<f64> {
+    use std::ffi::CString;
+    use x11::xlib::{
+        XResourceManagerString, XrmDestroyDatabase, XrmGetResource, XrmGetStringDatabase, XrmValue,
+    };
 
-        let display = self.xcb_connection.conn.get_raw_dpy();
-        unsafe {
-            let rms = XResourceManagerString(display);
-            if !rms.is_null() {
-                let db = XrmGetStringDatabase(rms);
-                if !db.is_null() {
-                    let mut value = XrmValue {
-                        size: 0,
-                        addr: std::ptr::null_mut(),
-                    };
+    let display = xcb_connection.conn.get_raw_dpy();
+    unsafe {
+        let rms = XResourceManagerString(display);
+        if !rms.is_null() {
+            let db = XrmGetStringDatabase(rms);
+            if !db.is_null() {
+                let mut value = XrmValue {
+                    size: 0,
+                    addr: std::ptr::null_mut(),
+                };
 
-                    let mut value_type: *mut libc::c_char = std::ptr::null_mut();
-                    let name_c_str = CString::new("Xft.dpi").unwrap();
-                    let c_str = CString::new("Xft.Dpi").unwrap();
+                let mut value_type: *mut libc::c_char = std::ptr::null_mut();
+                let name_c_str = CString::new("Xft.dpi").unwrap();
+                let c_str = CString::new("Xft.Dpi").unwrap();
 
-                    let dpi = if XrmGetResource(
-                        db,
-                        name_c_str.as_ptr(),
-                        c_str.as_ptr(),
-                        &mut value_type,
-                        &mut value,
-                    ) != 0
-                        && !value.addr.is_null()
-                    {
-                        let value_addr: &CStr = CStr::from_ptr(value.addr);
-                        value_addr.to_str().ok();
-                        let value_str = value_addr.to_str().ok()?;
-                        let value_f64 = value_str.parse().ok()?;
-                        Some(value_f64)
-                    } else {
-                        None
-                    };
-                    XrmDestroyDatabase(db);
+                let dpi = if XrmGetResource(
+                    db,
+                    name_c_str.as_ptr(),
+                    c_str.as_ptr(),
+                    &mut value_type,
+                    &mut value,
+                ) != 0
+                    && !value.addr.is_null()
+                {
+                    let value_addr: &CStr = CStr::from_ptr(value.addr);
+                    value_addr.to_str().ok();
+                    let value_str = value_addr.to_str().ok()?;
+                    let value_f64: f64 = value_str.parse().ok()?;
+                    let dpi_to_scale = value_f64 / 96.0;
+                    Some(dpi_to_scale)
+                } else {
+                    None
+                };
+                XrmDestroyDatabase(db);
 
-                    return dpi;
-                }
+                return dpi;
             }
         }
-        None
     }
+    None
+}
 
-    // Try to get the scaling with `get_scaling_xft` first.
-    // Only use this function as a fallback.
-    // If neither work, I guess just assume 96.0 and don't do any scaling.
-    fn get_scaling_screen_dimensions(&self) -> Option<f64> {
-        // Figure out screen information
-        let setup = self.xcb_connection.conn.get_setup();
-        let screen = setup
-            .roots()
-            .nth(self.xcb_connection.xlib_display as usize)
-            .unwrap();
+// Try to get the scaling with `get_scaling_xft` first.
+// Only use this function as a fallback.
+// If neither work, I guess just assume 96.0 and don't do any scaling.
+fn get_scaling_screen_dimensions(xcb_connection: &XcbConnection) -> Option<f64> {
+    // Figure out screen information
+    let setup = xcb_connection.conn.get_setup();
+    let screen = setup
+        .roots()
+        .nth(xcb_connection.xlib_display as usize)
+        .unwrap();
 
-        // Get the DPI from the screen struct
-        //
-        // there are 2.54 centimeters to an inch; so there are 25.4 millimeters.
-        // dpi = N pixels / (M millimeters / (25.4 millimeters / 1 inch))
-        //     = N pixels / (M inch / 25.4)
-        //     = N * 25.4 pixels / M inch
-        let width_px = screen.width_in_pixels() as f64;
-        let width_mm = screen.width_in_millimeters() as f64;
-        let height_px = screen.height_in_pixels() as f64;
-        let height_mm = screen.height_in_millimeters() as f64;
-        let _xres = width_px * 25.4 / width_mm;
-        let yres = height_px * 25.4 / height_mm;
+    // Get the DPI from the screen struct
+    //
+    // there are 2.54 centimeters to an inch; so there are 25.4 millimeters.
+    // dpi = N pixels / (M millimeters / (25.4 millimeters / 1 inch))
+    //     = N pixels / (M inch / 25.4)
+    //     = N * 25.4 pixels / M inch
+    let width_px = screen.width_in_pixels() as f64;
+    let width_mm = screen.width_in_millimeters() as f64;
+    let height_px = screen.height_in_pixels() as f64;
+    let height_mm = screen.height_in_millimeters() as f64;
+    let _xres = width_px * 25.4 / width_mm;
+    let yres = height_px * 25.4 / height_mm;
 
-        // TODO: choose between `xres` and `yres`? (probably both are the same?)
-        Some(yres)
+    let yscale = yres / 96.0;
+
+    // TODO: choose between `xres` and `yres`? (probably both are the same?)
+    Some(yscale)
+}
+
+fn mouse_id(id: u8) -> MouseButtonID {
+    match id {
+        1 => MouseButtonID::Left,
+        2 => MouseButtonID::Middle,
+        3 => MouseButtonID::Right,
+        6 => MouseButtonID::Back,
+        7 => MouseButtonID::Forward,
+        id => MouseButtonID::Other(id),
     }
 }
