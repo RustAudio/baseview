@@ -1,5 +1,5 @@
 use std::ffi::CStr;
-use std::os::raw::c_void;
+use std::os::raw::{c_ulong, c_void};
 use std::sync::mpsc;
 
 use ::x11::xlib;
@@ -128,10 +128,12 @@ impl<A: AppWindow> Window<A> {
             xlib::XSync(xcb_connection.conn.get_raw_dpy(), xlib::False);
         }
 
-        let raw_handle = RawWindowHandle::Xcb(raw_window_handle::unix::XcbHandle {
-            connection: xcb_connection.conn.get_raw_conn() as *mut c_void,
-            ..raw_window_handle::unix::XcbHandle::empty()
+        let raw_handle = RawWindowHandle::Xlib(raw_window_handle::unix::XlibHandle {
+            window: window_id as c_ulong,
+            display: xcb_connection.conn.get_raw_dpy() as *mut c_void,
+            ..raw_window_handle::unix::XlibHandle::empty()
         });
+
         let raw_window = RawWindow {
             raw_window_handle: raw_handle,
         };
