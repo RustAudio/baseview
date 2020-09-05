@@ -2,9 +2,6 @@ use std::ffi::CStr;
 use std::os::raw::{c_ulong, c_void};
 use std::sync::mpsc;
 
-use ::x11::xlib;
-// use xcb::dri2; // needed later
-
 use super::XcbConnection;
 use crate::{
     AppWindow, Event, MouseButtonID, MouseScroll, Parent, RawWindow, WindowInfo, WindowOpenOptions,
@@ -34,19 +31,6 @@ impl<A: AppWindow> Window<A> {
 
         // Connect to the X server
         let xcb_connection = XcbConnection::new();
-
-        // Load up DRI2 extensions.
-        // See also: https://www.x.org/releases/X11R7.7/doc/dri2proto/dri2proto.txt
-        /*
-        // needed later when we handle events
-        let dri2_ev = {
-            xcb_connection.conn.prefetch_extension_data(dri2::id());
-            match xcb_connection.conn.get_extension_data(dri2::id()) {
-                None => panic!("could not load dri2 extension"),
-                Some(r) => r.first_event(),
-            }
-        };
-        */
 
         // Get screen information (?)
         let setup = xcb_connection.conn.get_setup();
@@ -80,11 +64,11 @@ impl<A: AppWindow> Window<A> {
             xcb::COPY_FROM_PARENT as u8,
             window_id,
             parent_id,
-            0,
-            0,
-            options.width as u16,
-            options.height as u16,
-            10,
+            0,                     // x coordinate of the new window
+            0,                     // y coordinate of the new window
+            options.width as u16,  // window width
+            options.height as u16, // window height
+            0,                     // window border
             xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
             screen.root_visual(),
             &[(
@@ -98,7 +82,6 @@ impl<A: AppWindow> Window<A> {
             )],
         );
         xcb::map_window(&xcb_connection.conn, window_id);
-        xcb_connection.conn.flush();
 
         // Change window title
         let title = options.title;
@@ -108,25 +91,11 @@ impl<A: AppWindow> Window<A> {
             window_id,
             xcb::ATOM_WM_NAME,
             xcb::ATOM_STRING,
-            8,
+            8, // view data as 8-bit
             title.as_bytes(),
         );
 
-        // TODO: This requires a global, which is a no. Figure out if there's a better way to do it.
-        /*
-        // installing an event handler to check if error is generated
-        unsafe {
-            ctx_error_occurred = false;
-        }
-        let old_handler = unsafe {
-            xlib::XSetErrorHandler(Some(ctx_error_handler))
-        };
-        */
-
-        // What does this do?
-        unsafe {
-            xlib::XSync(xcb_connection.conn.get_raw_dpy(), xlib::False);
-        }
+        xcb_connection.conn.flush();
 
         let raw_handle = RawWindowHandle::Xlib(raw_window_handle::unix::XlibHandle {
             window: window_id as c_ulong,
@@ -138,17 +107,10 @@ impl<A: AppWindow> Window<A> {
             raw_window_handle: raw_handle,
         };
 
-        let scaling = {
-            let maybe_scaling =
-                get_scaling_xft(&xcb_connection).or(get_scaling_screen_dimensions(&xcb_connection));
-
-            if let Some(scaling) = maybe_scaling {
-                scaling
-            } else {
-                1.0
-            }
-        };
-        println!("Scale factor: {:?}", scaling);
+        let scaling = get_scaling_xft(&xcb_connection)
+            .or(get_scaling_screen_dimensions(&xcb_connection))
+            .or(Some(1.0))
+            .unwrap();
 
         let mut x11_window = Self {
             scaling,
@@ -174,7 +136,6 @@ impl<A: AppWindow> Window<A> {
 
     // Event loop
     fn run_event_loop(&mut self) {
-        //let raw_display = self.xcb_connection.conn.get_raw_dpy();
         loop {
             // somehow poll self.app_message_rx for messages at the same time
 
