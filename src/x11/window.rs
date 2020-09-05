@@ -105,8 +105,7 @@ impl<A: AppWindow> Window<A> {
 
         let scaling = get_scaling_xft(&xcb_connection)
             .or(get_scaling_screen_dimensions(&xcb_connection))
-            .or(Some(1.0))
-            .unwrap();
+            .unwrap_or(1.0);
 
         let window_info = WindowInfo {
             width: options.width as u32,
