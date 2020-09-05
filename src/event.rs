@@ -15,16 +15,9 @@ pub struct MouseScroll {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub enum MouseClickType {
-    Single,
-    Double,
-    Triple,
-}
-
-#[derive(Debug, Copy, Clone)]
 pub struct MouseClick {
     pub id: MouseButtonID,
-    pub click_type: MouseClickType,
+    pub click_count: usize,
     pub x: i32,
     pub y: i32,
 }
@@ -33,7 +26,7 @@ pub struct MouseClick {
 pub struct WindowInfo {
     pub width: u32,
     pub height: u32,
-    pub dpi: Option<f64>,
+    pub scale: f64,
 }
 
 #[derive(Debug)]

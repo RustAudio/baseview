@@ -11,7 +11,7 @@ use crate::{AppWindow, Event, MouseButtonID, MouseScroll, Parent, WindowInfo, Wi
 use raw_window_handle::RawWindowHandle;
 
 pub struct Window<A: AppWindow> {
-    scaling: Option<f64>, // DPI scale, 96.0 is "default".
+    scaling: f64,
     xcb_connection: XcbConnection,
     app_window: A,
     app_message_rx: mpsc::Receiver<A::AppMessage>,
@@ -131,21 +131,29 @@ impl<A: AppWindow> Window<A> {
             ..raw_window_handle::unix::XcbHandle::empty()
         });
 
+        let scaling = {
+            let maybe_scaling =
+                get_scaling_xft(&xcb_connection).or(get_scaling_screen_dimensions(&xcb_connection));
+
+            if let Some(scaling) = maybe_scaling {
+                scaling
+            } else {
+                1.0
+            }
+        };
+        println!("Scale factor: {:?}", scaling);
+
         let mut x11_window = Self {
-            scaling: None,
+            scaling,
             xcb_connection,
             app_window,
             app_message_rx,
         };
 
-        x11_window.scaling = get_scaling_xft(&x11_window.xcb_connection)
-            .or(get_scaling_screen_dimensions(&x11_window.xcb_connection));
-        println!("Scale factor: {:?}", x11_window.scaling);
-
         let window_info = WindowInfo {
             width: options.width as u32,
             height: options.height as u32,
-            dpi: x11_window.scaling,
+            scale: x11_window.scaling,
         };
 
         x11_window
@@ -291,8 +299,9 @@ fn get_scaling_xft(xcb_connection: &XcbConnection) -> Option<f64> {
                     let value_addr: &CStr = CStr::from_ptr(value.addr);
                     value_addr.to_str().ok();
                     let value_str = value_addr.to_str().ok()?;
-                    let value_f64 = value_str.parse().ok()?;
-                    Some(value_f64)
+                    let value_f64: f64 = value_str.parse().ok()?;
+                    let dpi_to_scale = value_f64 / 96.0;
+                    Some(dpi_to_scale)
                 } else {
                     None
                 };
@@ -329,8 +338,10 @@ fn get_scaling_screen_dimensions(xcb_connection: &XcbConnection) -> Option<f64> 
     let _xres = width_px * 25.4 / width_mm;
     let yres = height_px * 25.4 / height_mm;
 
+    let yscale = yres / 96.0;
+
     // TODO: choose between `xres` and `yres`? (probably both are the same?)
-    Some(yres)
+    Some(yscale)
 }
 
 fn mouse_id(id: u8) -> MouseButtonID {
