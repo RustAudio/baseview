@@ -10,24 +10,20 @@ fn main() {
         parent: baseview::Parent::None,
     };
 
-    let my_program = MyProgram {};
-
     let (_app_message_tx, app_message_rx) = mpsc::channel::<()>();
 
     // Send _app_message_tx to a separate thread, then send messages to the GUI thread.
 
-    let _ = baseview::Window::open(window_open_options, my_program, app_message_rx);
+    let _ = baseview::Window::<MyProgram>::open(window_open_options, app_message_rx);
 }
 struct MyProgram {}
 
 impl baseview::AppWindow for MyProgram {
     type AppMessage = ();
 
-    fn create_context(
-        &mut self,
-        _window: baseview::RawWindow,
-        _window_info: &baseview::WindowInfo,
-    ) {
+    fn build(_window_handle: baseview::RawWindow, window_info: &baseview::WindowInfo) -> Self {
+        println!("Window info: {:?}", window_info);
+        Self {}
     }
 
     fn draw(&mut self) {}

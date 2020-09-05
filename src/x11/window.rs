@@ -17,11 +17,7 @@ pub struct Window<A: AppWindow> {
 }
 
 impl<A: AppWindow> Window<A> {
-    pub fn open(
-        options: WindowOpenOptions,
-        app_window: A,
-        app_message_rx: mpsc::Receiver<A::AppMessage>,
-    ) -> Self {
+    pub fn open(options: WindowOpenOptions, app_message_rx: mpsc::Receiver<A::AppMessage>) -> Self {
         // Convert the parent to a X11 window ID if we're given one
         let parent = match options.parent {
             Parent::None => None,
@@ -112,22 +108,20 @@ impl<A: AppWindow> Window<A> {
             .or(Some(1.0))
             .unwrap();
 
+        let window_info = WindowInfo {
+            width: options.width as u32,
+            height: options.height as u32,
+            scale: scaling,
+        };
+
+        let app_window = A::build(raw_window, &window_info);
+
         let mut x11_window = Self {
             scaling,
             xcb_connection,
             app_window,
             app_message_rx,
         };
-
-        let window_info = WindowInfo {
-            width: options.width as u32,
-            height: options.height as u32,
-            scale: x11_window.scaling,
-        };
-
-        x11_window
-            .app_window
-            .create_context(raw_window, &window_info);
 
         x11_window.run_event_loop();
 

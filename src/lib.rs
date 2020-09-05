@@ -36,7 +36,8 @@ pub struct WindowOpenOptions<'a> {
 pub trait AppWindow {
     type AppMessage;
 
-    fn create_context(&mut self, window: RawWindow, window_info: &WindowInfo);
+    fn build(window_handle: RawWindow, window_info: &WindowInfo) -> Self;
+
     fn draw(&mut self);
     fn on_event(&mut self, event: Event);
     fn on_app_message(&mut self, message: Self::AppMessage);
