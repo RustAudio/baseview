@@ -14,14 +14,21 @@ fn main() {
 
     // Send _app_message_tx to a separate thread, then send messages to the GUI thread.
 
-    let _ = baseview::Window::<MyProgram>::open(window_open_options, app_message_rx);
+    let flags = ();
+
+    let _ = baseview::Window::<MyProgram>::open(window_open_options, flags, app_message_rx);
 }
 struct MyProgram {}
 
 impl baseview::AppWindow for MyProgram {
     type AppMessage = ();
+    type Flags = ();
 
-    fn build(_window_handle: baseview::RawWindow, window_info: &baseview::WindowInfo) -> Self {
+    fn build(
+        _window_handle: baseview::RawWindow,
+        window_info: &baseview::WindowInfo,
+        _flags: Self::Flags,
+    ) -> Self {
         println!("Window info: {:?}", window_info);
         Self {}
     }
