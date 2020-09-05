@@ -33,7 +33,7 @@ pub struct WindowOpenOptions<'a> {
     pub parent: Parent,
 }
 
-pub trait Application {
+pub trait AppWindow {
     type AppMessage;
 
     fn create_context(

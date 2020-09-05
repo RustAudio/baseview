@@ -6,17 +6,17 @@ use cocoa::appkit::{
 use cocoa::base::{nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 
-use crate::{Application, Event, MouseButtonID, MouseScroll, WindowOpenOptions};
+use crate::{AppWindow, Event, MouseButtonID, MouseScroll, WindowOpenOptions};
 
-pub struct Window<A: Application> {
-    application: A,
+pub struct Window<A: AppWindow> {
+    app_window: A,
     app_message_rx: mpsc::Receiver<A::AppMessage>,
 }
 
 impl<A: Application> Window<A> {
     pub fn open(
         options: WindowOpenOptions,
-        application: A,
+        app_window: A,
         app_message_rx: mpsc::Receiver<A::AppMessage>,
     ) -> Self {
         unsafe {
@@ -50,7 +50,7 @@ impl<A: Application> Window<A> {
             app.run();
 
             Window {
-                application,
+                app_window,
                 app_message_rx,
             }
         }

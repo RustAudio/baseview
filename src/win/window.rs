@@ -26,7 +26,7 @@ use self::winapi::um::winuser::{
 use self::winapi::ctypes::c_void;
 use crate::Parent::WithParent;
 use crate::{handle_message, WindowOpenOptions};
-use crate::{Application, Event, MouseButtonID, MouseScroll};
+use crate::{AppWindow, Event, MouseButtonID, MouseScroll};
 use std::sync::{Arc, Mutex};
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -113,12 +113,12 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 
 unsafe fn init_gl_context() {}
 
-pub struct Window<A: Application> {
+pub struct Window<A: AppWindow> {
     pub(crate) hwnd: HWND,
     hdc: HDC,
     gl_context: HGLRC,
     window_class: ATOM,
-    application: A,
+    app_window: A,
     app_message_rx: mpsc::Receiver<A::AppMessage>,
     scaling: Option<f64>, // DPI scale, 96.0 is "default".
     r: f32,
@@ -126,10 +126,10 @@ pub struct Window<A: Application> {
     b: f32,
 }
 
-impl<A: Application> Window<A> {
+impl<A: AppWindow> Window<A> {
     pub fn open(
         options: WindowOpenOptions,
-        application: A,
+        app_window: A,
         app_message_rx: mpsc::Receiver<A::AppMessage>,
     ) {
         unsafe {
@@ -138,7 +138,7 @@ impl<A: Application> Window<A> {
                 hdc: null_mut(),
                 gl_context: null_mut(),
                 window_class: 0,
-                application,
+                app_window,
                 app_message_rx,
                 scaling: None,
                 r: 0.3,
@@ -264,7 +264,7 @@ impl<A: Application> Window<A> {
     }
 
     pub fn close(&self) {
-        self.application.on_event(Event::WillClose);
+        self.app_window.on_event(Event::WillClose);
 
         // todo: see https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L402
         unsafe {
@@ -289,6 +289,6 @@ impl<A: Application> Window<A> {
         self.r = r;
         self.g = g;
 
-        self.application.on_message(Event::CursorMotion(x, y));
+        self.app_window.on_message(Event::CursorMotion(x, y));
     }
 }
