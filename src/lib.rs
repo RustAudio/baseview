@@ -41,6 +41,7 @@ pub trait AppWindow {
         window: raw_window_handle::RawWindowHandle,
         window_info: &WindowInfo,
     );
+    fn draw(&mut self);
     fn on_event(&mut self, event: Event);
     fn on_app_message(&mut self, message: Self::AppMessage);
 }

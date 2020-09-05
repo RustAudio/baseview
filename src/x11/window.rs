@@ -189,7 +189,7 @@ impl<A: AppWindow> Window<A> {
 
                 match event_type {
                     xcb::EXPOSE => {
-                        self.app_window.on_event(Event::RenderExpose);
+                        self.app_window.draw();
                     }
                     xcb::MOTION_NOTIFY => {
                         let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };

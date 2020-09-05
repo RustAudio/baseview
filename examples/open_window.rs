@@ -30,9 +30,10 @@ impl baseview::AppWindow for MyProgram {
     ) {
     }
 
+    fn draw(&mut self) {}
+
     fn on_event(&mut self, event: Event) {
         match event {
-            Event::RenderExpose => {}
             Event::CursorMotion(x, y) => {
                 println!("Cursor moved, x: {}, y: {}", x, y);
             }
