@@ -25,7 +25,7 @@ impl baseview::AppWindow for MyProgram {
 
     fn create_context(
         &mut self,
-        _window: raw_window_handle::RawWindowHandle,
+        _window: baseview::RawWindow,
         _window_info: &baseview::WindowInfo,
     ) {
     }

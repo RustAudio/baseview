@@ -6,7 +6,9 @@ use ::x11::xlib;
 // use xcb::dri2; // needed later
 
 use super::XcbConnection;
-use crate::{AppWindow, Event, MouseButtonID, MouseScroll, Parent, WindowInfo, WindowOpenOptions};
+use crate::{
+    AppWindow, Event, MouseButtonID, MouseScroll, Parent, RawWindow, WindowInfo, WindowOpenOptions,
+};
 
 use raw_window_handle::RawWindowHandle;
 
@@ -130,6 +132,9 @@ impl<A: AppWindow> Window<A> {
             connection: xcb_connection.conn.get_raw_conn() as *mut c_void,
             ..raw_window_handle::unix::XcbHandle::empty()
         });
+        let raw_window = RawWindow {
+            raw_window_handle: raw_handle,
+        };
 
         let scaling = {
             let maybe_scaling =
@@ -158,7 +163,7 @@ impl<A: AppWindow> Window<A> {
 
         x11_window
             .app_window
-            .create_context(raw_handle, &window_info);
+            .create_context(raw_window, &window_info);
 
         x11_window.run_event_loop();
 

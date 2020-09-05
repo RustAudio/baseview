@@ -36,12 +36,20 @@ pub struct WindowOpenOptions<'a> {
 pub trait AppWindow {
     type AppMessage;
 
-    fn create_context(
-        &mut self,
-        window: raw_window_handle::RawWindowHandle,
-        window_info: &WindowInfo,
-    );
+    fn create_context(&mut self, window: RawWindow, window_info: &WindowInfo);
     fn draw(&mut self);
     fn on_event(&mut self, event: Event);
     fn on_app_message(&mut self, message: Self::AppMessage);
+}
+
+/// A wrapper for a `RawWindowHandle`. Some context creators expect an `&impl HasRawWindowHandle`.
+#[derive(Debug, Copy, Clone)]
+pub struct RawWindow {
+    pub raw_window_handle: raw_window_handle::RawWindowHandle,
+}
+
+unsafe impl raw_window_handle::HasRawWindowHandle for RawWindow {
+    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
+        self.raw_window_handle
+    }
 }
