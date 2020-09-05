@@ -19,8 +19,8 @@ pub struct Window<A: AppWindow> {
 impl<A: AppWindow> Window<A> {
     pub fn open(
         options: WindowOpenOptions,
-        flags: A::Flags,
         app_message_rx: mpsc::Receiver<A::AppMessage>,
+        flags: A::Flags,
     ) -> Self {
         // Convert the parent to a X11 window ID if we're given one
         let parent = match options.parent {

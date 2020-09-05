@@ -16,7 +16,7 @@ fn main() {
 
     let flags = ();
 
-    let _ = baseview::Window::<MyProgram>::open(window_open_options, flags, app_message_rx);
+    let _ = baseview::Window::<MyProgram>::open(window_open_options, app_message_rx, flags);
 }
 struct MyProgram {}
 
