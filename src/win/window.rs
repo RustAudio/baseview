@@ -8,18 +8,16 @@ use self::winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM
 use self::winapi::shared::windef::{HWND, RECT};
 use self::winapi::um::combaseapi::CoCreateGuid;
 use self::winapi::um::winuser::{
-    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA, GetDC,
-    GetMessageA, GetWindowLongPtrA, MessageBoxA, PeekMessageA, PostMessageA, RegisterClassA,
-    ReleaseDC, SetTimer, SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC,
-    GWLP_USERDATA, MB_ICONERROR, MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CREATE, WM_QUIT,
-    WM_SHOWWINDOW, WM_TIMER, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX,
-    WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, GetMessageA,
+    GetWindowLongPtrA, MessageBoxA, PostMessageA, RegisterClassA, SetTimer, SetWindowLongPtrA,
+    TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR, MB_OK, MB_TOPMOST,
+    MSG, WM_CREATE, WM_SHOWWINDOW, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
 };
 
 use self::winapi::ctypes::c_void;
-use crate::Parent::WithParent;
-use crate::{handle_message, WindowOpenOptions};
-use crate::{AppWindow, Event, RawWindow, WindowInfo};
+use super::event::handle_message;
+use crate::{AppWindow, Event, Parent::WithParent, RawWindow, WindowInfo, WindowOpenOptions};
 use std::sync::{Arc, Mutex};
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -175,7 +173,7 @@ impl<A: AppWindow> Window<A> {
 
             let app_window = A::build(raw_window, &window_info);
 
-            let mut window = Window {
+            let window = Window {
                 hwnd,
                 window_class,
                 app_window,
