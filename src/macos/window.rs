@@ -1,3 +1,6 @@
+use std::ffi::c_void;
+use std::sync::mpsc;
+
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivateIgnoringOtherApps,
     NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSRunningApplication, NSView,
@@ -6,19 +9,19 @@ use cocoa::appkit::{
 use cocoa::base::{nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 
-use crate::{AppWindow, Event, MouseButtonID, MouseScroll, WindowOpenOptions};
+use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
+
+use crate::{
+    AppWindow, Event, MouseButtonID, MouseScroll, RawWindow, WindowInfo, WindowOpenOptions,
+};
 
 pub struct Window<A: AppWindow> {
     app_window: A,
     app_message_rx: mpsc::Receiver<A::AppMessage>,
 }
 
-impl<A: Application> Window<A> {
-    pub fn open(
-        options: WindowOpenOptions,
-        app_window: A,
-        app_message_rx: mpsc::Receiver<A::AppMessage>,
-    ) -> Self {
+impl<A: AppWindow> Window<A> {
+    pub fn open(options: WindowOpenOptions, app_message_rx: mpsc::Receiver<A::AppMessage>) -> Self {
         unsafe {
             let _pool = NSAutoreleasePool::new(nil);
 
@@ -44,6 +47,22 @@ impl<A: Application> Window<A> {
 
             let view = NSView::alloc(nil).init();
             window.setContentView_(view);
+
+            let raw_window = RawWindow {
+                raw_window_handle: RawWindowHandle::MacOS(MacOSHandle {
+                    ns_window: window as *mut c_void,
+                    ns_view: app as *mut c_void,
+                    ..raw_window_handle::macos::MacOSHandle::empty()
+                }),
+            };
+
+            let window_info = WindowInfo {
+                width: options.width as u32,
+                height: options.height as u32,
+                scale: 1.0,
+            };
+
+            let app_window = A::build(raw_window, &window_info);
 
             let current_app = NSRunningApplication::currentApplication(nil);
             current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
