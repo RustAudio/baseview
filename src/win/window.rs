@@ -68,10 +68,8 @@ unsafe extern "system" fn wnd_proc<A: AppWindow>(
 
                 // todo: need_reconfigure thing?
 
-                // Needed otherwise it crashes because it drops the userdata
-                // We basically need to keep the GWLP_USERDATA fresh between calls of the proc
-                // DO NOT REMOVE
-                SetWindowLongPtrA(hwnd, GWLP_USERDATA, Arc::into_raw(win_ref) as *const _ as _);
+                // If we don't do this, the Arc will be dropped and we'll get a crash.
+                let _ = Arc::into_raw(win_ref);
 
                 return ret;
             }

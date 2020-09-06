@@ -35,9 +35,7 @@ pub(crate) unsafe fn handle_message<A: AppWindow>(
             handle_timer(win, wparam);
             0
         }
-        WM_PAINT => {
-            0
-        }
+        WM_PAINT => 0,
         _ => DefWindowProcA(hwnd, message, wparam, lparam),
     }
 }
