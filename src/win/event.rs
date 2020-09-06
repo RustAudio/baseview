@@ -2,22 +2,20 @@ use std::sync::{Arc, Mutex};
 
 use winapi::shared::minwindef::{LPARAM, LRESULT, UINT, WPARAM};
 
-use crate::Window;
+use crate::{AppWindow, Window};
 use winapi::um::winuser::{DefWindowProcA, WM_MOUSEMOVE, WM_PAINT, WM_TIMER};
 
 const WIN_FRAME_TIMER: usize = 4242;
 
-unsafe fn handle_timer(win: Arc<Mutex<Window>>, timer_id: usize) {
+unsafe fn handle_timer<A: AppWindow>(win: &Arc<Mutex<Window<A>>>, timer_id: usize) {
     match timer_id {
-        WIN_FRAME_TIMER => {
-            win.lock().unwrap().draw_frame();
-        }
+        WIN_FRAME_TIMER => {}
         _ => (),
     }
 }
 
-pub(crate) unsafe fn handle_message(
-    win: Arc<Mutex<Window>>,
+pub(crate) unsafe fn handle_message<A: AppWindow>(
+    win: &Arc<Mutex<Window<A>>>,
     message: UINT,
     wparam: WPARAM,
     lparam: LPARAM,
@@ -37,10 +35,7 @@ pub(crate) unsafe fn handle_message(
             handle_timer(win, wparam);
             0
         }
-        WM_PAINT => {
-            win.lock().unwrap().draw_frame();
-            0
-        }
+        WM_PAINT => 0,
         _ => DefWindowProcA(hwnd, message, wparam, lparam),
     }
 }
