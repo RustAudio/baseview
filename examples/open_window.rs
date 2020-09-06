@@ -14,8 +14,10 @@ fn main() {
 
     // Send _app_message_tx to a separate thread, then send messages to the GUI thread.
 
-    let _ = baseview::Window::<MyProgram>::open(window_open_options, app_message_rx);
+    let window = baseview::Window::open(window_open_options);
+    window.run(MyProgram {}, app_message_rx);
 }
+
 struct MyProgram {}
 
 impl baseview::AppWindow for MyProgram {

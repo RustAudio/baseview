@@ -1,24 +1,23 @@
+use std::sync::mpsc;
+
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivateIgnoringOtherApps,
     NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSRunningApplication, NSView,
     NSWindow, NSWindowStyleMask,
 };
-use cocoa::base::{nil, NO};
+use cocoa::base::{id, nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
+
+use objc::declare::ClassDecl;
 
 use crate::{AppWindow, Event, MouseButtonID, MouseScroll, WindowOpenOptions};
 
-pub struct Window<A: AppWindow> {
-    app_window: A,
-    app_message_rx: mpsc::Receiver<A::AppMessage>,
+pub struct Window {
+    app: id,
 }
 
-impl<A: Application> Window<A> {
-    pub fn open(
-        options: WindowOpenOptions,
-        app_window: A,
-        app_message_rx: mpsc::Receiver<A::AppMessage>,
-    ) -> Self {
+impl Window {
+    pub fn open(options: WindowOpenOptions) -> Self {
         unsafe {
             let _pool = NSAutoreleasePool::new(nil);
 
@@ -47,12 +46,14 @@ impl<A: Application> Window<A> {
 
             let current_app = NSRunningApplication::currentApplication(nil);
             current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
-            app.run();
 
-            Window {
-                app_window,
-                app_message_rx,
-            }
+            Window { app }
+        }
+    }
+
+    pub fn run<A: AppWindow>(self, app_window: A, app_message_rx: mpsc::Receiver<A::AppMessage>) {
+        unsafe {
+            self.app.run();
         }
     }
 }
