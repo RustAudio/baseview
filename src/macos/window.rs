@@ -1,3 +1,4 @@
+use std::ffi::c_void;
 use std::sync::mpsc;
 
 use cocoa::appkit::{
@@ -10,10 +11,14 @@ use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 
 use objc::declare::ClassDecl;
 
+use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
+
 use crate::{AppWindow, Event, MouseButtonID, MouseScroll, WindowOpenOptions};
 
 pub struct Window {
     app: id,
+    window: id,
+    view: id,
 }
 
 impl Window {
@@ -47,7 +52,7 @@ impl Window {
             let current_app = NSRunningApplication::currentApplication(nil);
             current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
 
-            Window { app }
+            Window { app, window, view }
         }
     }
 
@@ -55,5 +60,15 @@ impl Window {
         unsafe {
             self.app.run();
         }
+    }
+}
+
+unsafe impl raw_window_handle::HasRawWindowHandle for Window {
+    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
+        RawWindowHandle::MacOS(MacOSHandle {
+            ns_window: self.window as *mut c_void,
+            ns_view: self.app as *mut c_void,
+            ..raw_window_handle::macos::MacOSHandle::empty()
+        })
     }
 }
