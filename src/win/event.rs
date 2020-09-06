@@ -9,9 +9,7 @@ const WIN_FRAME_TIMER: usize = 4242;
 
 unsafe fn handle_timer<A: AppWindow>(win: Arc<Mutex<Window<A>>>, timer_id: usize) {
     match timer_id {
-        WIN_FRAME_TIMER => {
-            win.lock().unwrap().draw_frame();
-        }
+        WIN_FRAME_TIMER => {}
         _ => (),
     }
 }
@@ -38,7 +36,6 @@ pub(crate) unsafe fn handle_message<A: AppWindow>(
             0
         }
         WM_PAINT => {
-            win.lock().unwrap().draw_frame();
             0
         }
         _ => DefWindowProcA(hwnd, message, wparam, lparam),

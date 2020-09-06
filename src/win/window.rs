@@ -1,19 +1,12 @@
 extern crate winapi;
 
-use std::ffi::CString;
 use std::ptr::null_mut;
 use std::sync::mpsc;
 
 use self::winapi::shared::guiddef::GUID;
 use self::winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM};
-use self::winapi::shared::windef::{HDC, HGLRC, HWND, RECT};
+use self::winapi::shared::windef::{HWND, RECT};
 use self::winapi::um::combaseapi::CoCreateGuid;
-use self::winapi::um::libloaderapi::{GetProcAddress, LoadLibraryA};
-use self::winapi::um::wingdi::{
-    wglCreateContext, wglDeleteContext, wglMakeCurrent, ChoosePixelFormat, SetPixelFormat,
-    SwapBuffers, PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL,
-    PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
-};
 use self::winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA, GetDC,
     GetMessageA, GetWindowLongPtrA, MessageBoxA, PeekMessageA, PostMessageA, RegisterClassA,
@@ -26,7 +19,7 @@ use self::winapi::um::winuser::{
 use self::winapi::ctypes::c_void;
 use crate::Parent::WithParent;
 use crate::{handle_message, WindowOpenOptions};
-use crate::{AppWindow, Event, MouseButtonID, MouseScroll, RawWindow, WindowInfo};
+use crate::{AppWindow, Event, RawWindow, WindowInfo};
 use std::sync::{Arc, Mutex};
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -112,19 +105,12 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
     UnregisterClassA(wnd_class as _, null_mut());
 }
 
-unsafe fn init_gl_context() {}
-
 pub struct Window<A: AppWindow> {
     pub(crate) hwnd: HWND,
-    hdc: HDC,
-    gl_context: HGLRC,
     window_class: ATOM,
     app_window: A,
     app_message_rx: mpsc::Receiver<A::AppMessage>,
     scaling: Option<f64>, // DPI scale, 96.0 is "default".
-    r: f32,
-    g: f32,
-    b: f32,
 }
 
 impl<A: AppWindow> Window<A> {
@@ -176,52 +162,6 @@ impl<A: AppWindow> Window<A> {
             );
             // todo: manage error ^
 
-            let hdc = GetDC(hwnd);
-
-            let mut pfd: PIXELFORMATDESCRIPTOR = std::mem::zeroed();
-            pfd.nSize = std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16;
-            pfd.nVersion = 1;
-            pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
-            pfd.iPixelType = PFD_TYPE_RGBA;
-            pfd.cColorBits = 32;
-            // todo: ask wrl why 24 instead of 32?
-            pfd.cDepthBits = 24;
-            pfd.cStencilBits = 8;
-            pfd.iLayerType = PFD_MAIN_PLANE;
-
-            let pf_id: i32 = ChoosePixelFormat(hdc, &pfd);
-            if pf_id == 0 {
-                // todo: use a more useful return like an Option
-                // todo: also launch error message boxes
-                //return Arc::new(Mutex::new(window));
-            }
-
-            if SetPixelFormat(hdc, pf_id, &pfd) == 0 {
-                // todo: use a more useful return like an Option
-                // todo: also launch error message boxes
-                //return Arc::new(Mutex::new(window));
-            }
-
-            let gl_context = wglCreateContext(hdc);
-            if gl_context == 0 as HGLRC {
-                // todo: use a more useful return like an Option
-                // todo: also launch error message boxes
-                //return Arc::new(Mutex::new(window));
-            }
-
-            if wglMakeCurrent(hdc, gl_context) == 0 {
-                // todo: use a more useful return like an Option
-                // todo: also launch error message boxes
-                //return Arc::new(Mutex::new(window));
-            }
-
-            let h = LoadLibraryA("opengl32.dll\0".as_ptr() as *const i8);
-            // gl::load_with(|symbol| {
-            //     let symbol = CString::new(symbol.as_bytes()).unwrap();
-            //     let symbol = symbol.as_ptr();
-            //     GetProcAddress(h, symbol) as *const _
-            // });
-
             let mut windows_handle = raw_window_handle::windows::WindowsHandle::empty();
             windows_handle.hwnd = hwnd as *mut std::ffi::c_void;
 
@@ -239,15 +179,10 @@ impl<A: AppWindow> Window<A> {
 
             let mut window = Window {
                 hwnd,
-                hdc,
-                gl_context,
                 window_class,
                 app_window,
                 app_message_rx,
                 scaling: None,
-                r: 0.3,
-                g: 0.8,
-                b: 0.3,
             };
 
             let win = Arc::new(Mutex::new(window));
@@ -277,27 +212,12 @@ impl<A: AppWindow> Window<A> {
 
         // todo: see https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L402
         unsafe {
-            wglMakeCurrent(null_mut(), null_mut());
-            wglDeleteContext(self.gl_context);
-            ReleaseDC(self.hwnd, self.hdc);
             DestroyWindow(self.hwnd);
             unregister_wnd_class(self.window_class);
         }
     }
 
-    pub(crate) unsafe fn draw_frame(&mut self) {
-        // todo: pass callback rendering function instead?
-        // gl::ClearColor(self.r, self.g, self.b, 1.0);
-        // gl::Clear(gl::COLOR_BUFFER_BIT);
-        SwapBuffers(self.hdc);
-    }
-
     pub(crate) fn handle_mouse_motion(&mut self, x: i32, y: i32) {
-        let r = (x as f32) / 1000.0;
-        let g = (y as f32) / 1000.0;
-        self.r = r;
-        self.g = g;
-
         self.app_window.on_event(Event::CursorMotion(x, y));
     }
 }
