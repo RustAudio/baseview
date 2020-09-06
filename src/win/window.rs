@@ -15,24 +15,24 @@ use self::winapi::um::wingdi::{
     PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
 };
 use self::winapi::um::winuser::{
-    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchEventA, EventBoxA,
-    GetDC, GetEventA, GetWindowLongPtrA, PeekEventA, PostEventA, RegisterClassA, ReleaseDC,
-    SetTimer, SetWindowLongPtrA, TranslateEvent, UnregisterClassA, CS_OWNDC, GWLP_USERDATA,
-    MB_ICONERROR, MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CREATE, WM_QUIT, WM_SHOWWINDOW, WM_TIMER,
-    WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-    WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA, GetDC,
+    GetMessageA, GetWindowLongPtrA, MessageBoxA, PeekMessageA, PostMessageA, RegisterClassA,
+    ReleaseDC, SetTimer, SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC,
+    GWLP_USERDATA, MB_ICONERROR, MB_OK, MB_TOPMOST, MSG, PM_REMOVE, WM_CREATE, WM_QUIT,
+    WM_SHOWWINDOW, WM_TIMER, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
 };
 
 use self::winapi::ctypes::c_void;
 use crate::Parent::WithParent;
 use crate::{handle_message, WindowOpenOptions};
-use crate::{AppWindow, Event, MouseButtonID, MouseScroll};
+use crate::{AppWindow, Event, MouseButtonID, MouseScroll, RawWindow, WindowInfo};
 use std::sync::{Arc, Mutex};
 
 unsafe fn message_box(title: &str, msg: &str) {
     let title = (title.to_owned() + "\0").as_ptr() as *const i8;
     let msg = (msg.to_owned() + "\0").as_ptr() as *const i8;
-    EventBoxA(null_mut(), msg, title, MB_ICONERROR | MB_OK | MB_TOPMOST);
+    MessageBoxA(null_mut(), msg, title, MB_ICONERROR | MB_OK | MB_TOPMOST);
 }
 
 unsafe fn generate_guid() -> String {
@@ -54,7 +54,7 @@ unsafe fn generate_guid() -> String {
     )
 }
 
-unsafe extern "system" fn wnd_proc(
+unsafe extern "system" fn wnd_proc<A: AppWindow>(
     hwnd: HWND,
     msg: UINT,
     wparam: WPARAM,
@@ -63,12 +63,13 @@ unsafe extern "system" fn wnd_proc(
     let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
     match msg {
         WM_CREATE => {
-            PostEventA(hwnd, WM_SHOWWINDOW, 0, 0);
+            PostMessageA(hwnd, WM_SHOWWINDOW, 0, 0);
             0
         }
         _ => {
             if !win_ptr.is_null() {
-                let win_ref: Arc<Mutex<Window>> = Arc::from_raw(win_ptr as *mut Mutex<Window>);
+                let win_ref: Arc<Mutex<Window<A>>> =
+                    Arc::from_raw(win_ptr as *mut Mutex<Window<A>>);
                 let win = Arc::clone(&win_ref);
                 let ret = handle_message(win, msg, wparam, lparam);
 
@@ -87,13 +88,13 @@ unsafe extern "system" fn wnd_proc(
     }
 }
 
-unsafe fn register_wnd_class() -> ATOM {
+unsafe fn register_wnd_class<A: AppWindow>() -> ATOM {
     // We generate a unique name for the new window class to prevent name collisions
     let class_name = format!("Baseview-{}", generate_guid()).as_ptr() as *const i8;
 
     let wnd_class = WNDCLASSA {
         style: CS_OWNDC,
-        lpfnWndProc: Some(wnd_proc),
+        lpfnWndProc: Some(wnd_proc::<A>),
         hInstance: null_mut(),
         lpszClassName: class_name,
         cbClsExtra: 0,
@@ -127,28 +128,11 @@ pub struct Window<A: AppWindow> {
 }
 
 impl<A: AppWindow> Window<A> {
-    pub fn open(
-        options: WindowOpenOptions,
-        app_window: A,
-        app_message_rx: mpsc::Receiver<A::AppMessage>,
-    ) {
+    pub fn open(options: WindowOpenOptions, app_message_rx: mpsc::Receiver<A::AppMessage>) {
         unsafe {
-            let mut window = Window {
-                hwnd: null_mut(),
-                hdc: null_mut(),
-                gl_context: null_mut(),
-                window_class: 0,
-                app_window,
-                app_message_rx,
-                scaling: None,
-                r: 0.3,
-                g: 0.8,
-                b: 0.3,
-            };
-
             let title = (options.title.to_owned() + "\0").as_ptr() as *const i8;
 
-            window.window_class = register_wnd_class();
+            let window_class = register_wnd_class::<A>();
             // todo: manage error ^
 
             let mut flags = WS_POPUPWINDOW
@@ -176,9 +160,9 @@ impl<A: AppWindow> Window<A> {
                 AdjustWindowRectEx(&mut rect, flags, FALSE, 0);
             }
 
-            window.hwnd = CreateWindowExA(
+            let hwnd = CreateWindowExA(
                 0,
-                window.window_class as _,
+                window_class as _,
                 title,
                 flags,
                 0,
@@ -192,7 +176,7 @@ impl<A: AppWindow> Window<A> {
             );
             // todo: manage error ^
 
-            window.hdc = GetDC(window.hwnd);
+            let hdc = GetDC(hwnd);
 
             let mut pfd: PIXELFORMATDESCRIPTOR = std::mem::zeroed();
             pfd.nSize = std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16;
@@ -205,41 +189,66 @@ impl<A: AppWindow> Window<A> {
             pfd.cStencilBits = 8;
             pfd.iLayerType = PFD_MAIN_PLANE;
 
-            let pf_id: i32 = ChoosePixelFormat(window.hdc, &pfd);
+            let pf_id: i32 = ChoosePixelFormat(hdc, &pfd);
             if pf_id == 0 {
                 // todo: use a more useful return like an Option
                 // todo: also launch error message boxes
                 //return Arc::new(Mutex::new(window));
             }
 
-            if SetPixelFormat(window.hdc, pf_id, &pfd) == 0 {
+            if SetPixelFormat(hdc, pf_id, &pfd) == 0 {
                 // todo: use a more useful return like an Option
                 // todo: also launch error message boxes
                 //return Arc::new(Mutex::new(window));
             }
 
-            window.gl_context = wglCreateContext(window.hdc);
-            if window.gl_context == 0 as HGLRC {
+            let gl_context = wglCreateContext(hdc);
+            if gl_context == 0 as HGLRC {
                 // todo: use a more useful return like an Option
                 // todo: also launch error message boxes
                 //return Arc::new(Mutex::new(window));
             }
 
-            if wglMakeCurrent(window.hdc, window.gl_context) == 0 {
+            if wglMakeCurrent(hdc, gl_context) == 0 {
                 // todo: use a more useful return like an Option
                 // todo: also launch error message boxes
                 //return Arc::new(Mutex::new(window));
             }
 
             let h = LoadLibraryA("opengl32.dll\0".as_ptr() as *const i8);
-            gl::load_with(|symbol| {
-                let symbol = CString::new(symbol.as_bytes()).unwrap();
-                let symbol = symbol.as_ptr();
-                GetProcAddress(h, symbol) as *const _
-            });
+            // gl::load_with(|symbol| {
+            //     let symbol = CString::new(symbol.as_bytes()).unwrap();
+            //     let symbol = symbol.as_ptr();
+            //     GetProcAddress(h, symbol) as *const _
+            // });
 
-            let hwnd = window.hwnd;
-            let hdc = window.hdc;
+            let mut windows_handle = raw_window_handle::windows::WindowsHandle::empty();
+            windows_handle.hwnd = hwnd as *mut std::ffi::c_void;
+
+            let raw_window = RawWindow {
+                raw_window_handle: raw_window_handle::RawWindowHandle::Windows(windows_handle),
+            };
+
+            let window_info = WindowInfo {
+                width: options.width as u32,
+                height: options.height as u32,
+                scale: 1.0,
+            };
+
+            let app_window = A::build(raw_window, &window_info);
+
+            let mut window = Window {
+                hwnd,
+                hdc,
+                gl_context,
+                window_class,
+                app_window,
+                app_message_rx,
+                scaling: None,
+                r: 0.3,
+                g: 0.8,
+                b: 0.3,
+            };
 
             let win = Arc::new(Mutex::new(window));
             let win_p = Arc::clone(&win);
@@ -252,18 +261,18 @@ impl<A: AppWindow> Window<A> {
             if parent.is_null() {
                 let mut msg: MSG = std::mem::zeroed();
                 loop {
-                    let status = GetEventA(&mut msg, hwnd, 0, 0);
+                    let status = GetMessageA(&mut msg, hwnd, 0, 0);
                     if status == -1 {
                         break;
                     }
-                    TranslateEvent(&mut msg);
+                    TranslateMessage(&mut msg);
                     handle_message(Arc::clone(&win_p), msg.message, msg.wParam, msg.lParam);
                 }
             }
         }
     }
 
-    pub fn close(&self) {
+    pub fn close(&mut self) {
         self.app_window.on_event(Event::WillClose);
 
         // todo: see https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L402
@@ -278,8 +287,8 @@ impl<A: AppWindow> Window<A> {
 
     pub(crate) unsafe fn draw_frame(&mut self) {
         // todo: pass callback rendering function instead?
-        gl::ClearColor(self.r, self.g, self.b, 1.0);
-        gl::Clear(gl::COLOR_BUFFER_BIT);
+        // gl::ClearColor(self.r, self.g, self.b, 1.0);
+        // gl::Clear(gl::COLOR_BUFFER_BIT);
         SwapBuffers(self.hdc);
     }
 
@@ -289,6 +298,6 @@ impl<A: AppWindow> Window<A> {
         self.r = r;
         self.g = g;
 
-        self.app_window.on_message(Event::CursorMotion(x, y));
+        self.app_window.on_event(Event::CursorMotion(x, y));
     }
 }
