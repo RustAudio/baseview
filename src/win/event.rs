@@ -7,7 +7,7 @@ use winapi::um::winuser::{DefWindowProcA, WM_MOUSEMOVE, WM_PAINT, WM_TIMER};
 
 const WIN_FRAME_TIMER: usize = 4242;
 
-unsafe fn handle_timer<A: AppWindow>(win: Arc<Mutex<Window<A>>>, timer_id: usize) {
+unsafe fn handle_timer<A: AppWindow>(win: &Arc<Mutex<Window<A>>>, timer_id: usize) {
     match timer_id {
         WIN_FRAME_TIMER => {}
         _ => (),
@@ -15,7 +15,7 @@ unsafe fn handle_timer<A: AppWindow>(win: Arc<Mutex<Window<A>>>, timer_id: usize
 }
 
 pub(crate) unsafe fn handle_message<A: AppWindow>(
-    win: Arc<Mutex<Window<A>>>,
+    win: &Arc<Mutex<Window<A>>>,
     message: UINT,
     wparam: WPARAM,
     lparam: LPARAM,

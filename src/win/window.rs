@@ -59,15 +59,15 @@ unsafe extern "system" fn wnd_proc<A: AppWindow>(
         }
         _ => {
             if !win_ptr.is_null() {
-                let win_ref: Arc<Mutex<Window<A>>> =
+                let win: Arc<Mutex<Window<A>>> =
                     Arc::from_raw(win_ptr as *mut Mutex<Window<A>>);
-                let win = Arc::clone(&win_ref);
-                let ret = handle_message(win, msg, wparam, lparam);
+
+                let ret = handle_message(&win, msg, wparam, lparam);
 
                 // todo: need_reconfigure thing?
 
                 // If we don't do this, the Arc will be dropped and we'll get a crash.
-                let _ = Arc::into_raw(win_ref);
+                let _ = Arc::into_raw(win);
 
                 return ret;
             }
@@ -197,7 +197,7 @@ impl<A: AppWindow> Window<A> {
                         break;
                     }
                     TranslateMessage(&mut msg);
-                    handle_message(Arc::clone(&win_p), msg.message, msg.wParam, msg.lParam);
+                    handle_message(&win_p, msg.message, msg.wParam, msg.lParam);
                 }
             }
         }
