@@ -14,7 +14,8 @@ use winapi::um::winuser::{
 use std::ffi::c_void;
 use std::ptr::null_mut;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
+use std::cell::RefCell;
 
 use crate::{AppWindow, Event, Parent::WithParent, RawWindow, WindowInfo, WindowOpenOptions};
 
@@ -45,7 +46,7 @@ unsafe fn generate_guid() -> String {
 
 const WIN_FRAME_TIMER: usize = 4242;
 
-unsafe fn handle_timer<A: AppWindow>(win: &Mutex<Window<A>>, timer_id: usize) {
+unsafe fn handle_timer<A: AppWindow>(win: &RefCell<Window<A>>, timer_id: usize) {
     match timer_id {
         WIN_FRAME_TIMER => {}
         _ => (),
@@ -65,13 +66,13 @@ unsafe extern "system" fn wnd_proc<A: AppWindow>(
 
     let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
     if !win_ptr.is_null() {
-        let win: &Mutex<Window<A>> = &*(win_ptr as *const Mutex<Window<A>>);
+        let win = &*(win_ptr as *const RefCell<Window<A>>);
 
         match msg {
             WM_MOUSEMOVE => {
                 let x = (lparam & 0xFFFF) as i32;
                 let y = ((lparam >> 16) & 0xFFFF) as i32;
-                win.lock().unwrap().handle_mouse_motion(x, y);
+                win.borrow_mut().handle_mouse_motion(x, y);
                 return 0;
             }
             WM_TIMER => {
@@ -192,9 +193,9 @@ impl<A: AppWindow> Window<A> {
                 scaling: None,
             };
 
-            let win = Arc::new(Mutex::new(window));
+            let win = Rc::new(RefCell::new(window));
 
-            SetWindowLongPtrA(hwnd, GWLP_USERDATA, Arc::into_raw(win) as *const _ as _);
+            SetWindowLongPtrA(hwnd, GWLP_USERDATA, Rc::into_raw(win) as *const _ as _);
 
             SetTimer(hwnd, 4242, 13, None);
 
