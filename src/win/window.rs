@@ -1,24 +1,22 @@
-extern crate winapi;
-
-use std::ptr::null_mut;
-use std::sync::mpsc;
-
-use self::winapi::shared::guiddef::GUID;
-use self::winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM};
-use self::winapi::shared::windef::{HWND, RECT};
-use self::winapi::um::combaseapi::CoCreateGuid;
-use self::winapi::um::winuser::{
-    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, GetMessageA,
-    GetWindowLongPtrA, MessageBoxA, PostMessageA, RegisterClassA, SetTimer, SetWindowLongPtrA,
-    TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR, MB_OK, MB_TOPMOST,
-    MSG, WM_CREATE, WM_SHOWWINDOW, WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+use winapi::shared::guiddef::GUID;
+use winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM};
+use winapi::shared::windef::{HWND, RECT};
+use winapi::um::combaseapi::CoCreateGuid;
+use winapi::um::winuser::{
+    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA,
+    GetMessageA, GetWindowLongPtrA, MessageBoxA, PostMessageA, RegisterClassA, SetTimer,
+    SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR,
+    MB_OK, MB_TOPMOST, MSG, WM_CREATE, WM_MOUSEMOVE, WM_PAINT, WM_SHOWWINDOW, WM_TIMER, WNDCLASSA,
+    WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW,
+    WS_SIZEBOX, WS_VISIBLE,
 };
 
-use self::winapi::ctypes::c_void;
-use super::event::handle_message;
-use crate::{AppWindow, Event, Parent::WithParent, RawWindow, WindowInfo, WindowOpenOptions};
+use std::ffi::c_void;
+use std::ptr::null_mut;
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+
+use crate::{AppWindow, Event, Parent::WithParent, RawWindow, WindowInfo, WindowOpenOptions};
 
 unsafe fn message_box(title: &str, msg: &str) {
     let title = (title.to_owned() + "\0").as_ptr() as *const i8;
@@ -45,36 +43,52 @@ unsafe fn generate_guid() -> String {
     )
 }
 
+const WIN_FRAME_TIMER: usize = 4242;
+
+unsafe fn handle_timer<A: AppWindow>(win: &Arc<Mutex<Window<A>>>, timer_id: usize) {
+    match timer_id {
+        WIN_FRAME_TIMER => {}
+        _ => (),
+    }
+}
+
 unsafe extern "system" fn wnd_proc<A: AppWindow>(
     hwnd: HWND,
     msg: UINT,
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
-    match msg {
-        WM_CREATE => {
-            PostMessageA(hwnd, WM_SHOWWINDOW, 0, 0);
-            0
-        }
-        _ => {
-            if !win_ptr.is_null() {
-                let win: Arc<Mutex<Window<A>>> =
-                    Arc::from_raw(win_ptr as *mut Mutex<Window<A>>);
-
-                let ret = handle_message(&win, msg, wparam, lparam);
-
-                // todo: need_reconfigure thing?
-
-                // If we don't do this, the Arc will be dropped and we'll get a crash.
-                let _ = Arc::into_raw(win);
-
-                return ret;
-            }
-
-            return DefWindowProcA(hwnd, msg, wparam, lparam);
-        }
+    if msg == WM_CREATE {
+        PostMessageA(hwnd, WM_SHOWWINDOW, 0, 0);
+        return 0;
     }
+
+    let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
+    if !win_ptr.is_null() {
+        let win: Arc<Mutex<Window<A>>> = Arc::from_raw(win_ptr as *mut Mutex<Window<A>>);
+
+        match msg {
+            WM_MOUSEMOVE => {
+                let x = (lparam & 0xFFFF) as i32;
+                let y = ((lparam >> 16) & 0xFFFF) as i32;
+                win.lock().unwrap().handle_mouse_motion(x, y);
+                return 0;
+            }
+            WM_TIMER => {
+                handle_timer(&win, wparam);
+                return 0;
+            }
+            WM_PAINT => {
+                return 0;
+            }
+            _ => {}
+        }
+
+        // If we don't do this, the Arc will be dropped and we'll get a crash.
+        let _ = Arc::into_raw(win);
+    }
+
+    return DefWindowProcA(hwnd, msg, wparam, lparam);
 }
 
 unsafe fn register_wnd_class<A: AppWindow>() -> ATOM {
@@ -182,7 +196,6 @@ impl<A: AppWindow> Window<A> {
             };
 
             let win = Arc::new(Mutex::new(window));
-            let win_p = Arc::clone(&win);
 
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, Arc::into_raw(win) as *const _ as _);
 
@@ -197,7 +210,7 @@ impl<A: AppWindow> Window<A> {
                         break;
                     }
                     TranslateMessage(&mut msg);
-                    handle_message(&win_p, msg.message, msg.wParam, msg.lParam);
+                    DispatchMessageA(&mut msg);
                 }
             }
         }
