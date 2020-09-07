@@ -45,7 +45,7 @@ unsafe fn generate_guid() -> String {
 
 const WIN_FRAME_TIMER: usize = 4242;
 
-unsafe fn handle_timer<A: AppWindow>(win: &Arc<Mutex<Window<A>>>, timer_id: usize) {
+unsafe fn handle_timer<A: AppWindow>(win: &Mutex<Window<A>>, timer_id: usize) {
     match timer_id {
         WIN_FRAME_TIMER => {}
         _ => (),
@@ -65,7 +65,7 @@ unsafe extern "system" fn wnd_proc<A: AppWindow>(
 
     let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
     if !win_ptr.is_null() {
-        let win: Arc<Mutex<Window<A>>> = Arc::from_raw(win_ptr as *mut Mutex<Window<A>>);
+        let win: &Mutex<Window<A>> = &*(win_ptr as *const Mutex<Window<A>>);
 
         match msg {
             WM_MOUSEMOVE => {
@@ -83,9 +83,6 @@ unsafe extern "system" fn wnd_proc<A: AppWindow>(
             }
             _ => {}
         }
-
-        // If we don't do this, the Arc will be dropped and we'll get a crash.
-        let _ = Arc::into_raw(win);
     }
 
     return DefWindowProcA(hwnd, msg, wparam, lparam);
