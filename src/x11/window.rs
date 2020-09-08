@@ -1,6 +1,5 @@
 use std::ffi::CStr;
 use std::os::raw::{c_ulong, c_void};
-use std::sync::mpsc;
 
 use super::XcbConnection;
 use crate::{Event, MouseButtonID, MouseScroll, Parent, WindowHandler, WindowOpenOptions};
@@ -14,10 +13,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open<H: WindowHandler>(
-        options: WindowOpenOptions,
-        app_message_rx: mpsc::Receiver<H::Message>,
-    ) {
+    pub fn open<H: WindowHandler>(options: WindowOpenOptions) {
         // Convert the parent to a X11 window ID if we're given one
         let parent = match options.parent {
             Parent::None => None,
@@ -122,8 +118,6 @@ unsafe impl HasRawWindowHandle for Window {
 // Event loop
 fn run_event_loop<H: WindowHandler>(window: &mut Window, handler: &mut H) {
     loop {
-        // somehow poll app_message_rx for messages at the same time
-
         let ev = window.xcb_connection.conn.wait_for_event();
         if let Some(event) = ev {
             let event_type = event.response_type() & !0x80;

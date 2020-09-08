@@ -15,7 +15,6 @@ use std::cell::RefCell;
 use std::ffi::c_void;
 use std::ptr::null_mut;
 use std::rc::Rc;
-use std::sync::mpsc;
 
 use raw_window_handle::{windows::WindowsHandle, HasRawWindowHandle, RawWindowHandle};
 
@@ -137,10 +136,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open<H: WindowHandler>(
-        options: WindowOpenOptions,
-        app_message_rx: mpsc::Receiver<H::Message>,
-    ) {
+    pub fn open<H: WindowHandler>(options: WindowOpenOptions) {
         unsafe {
             let title = (options.title.to_owned() + "\0").as_ptr() as *const i8;
 

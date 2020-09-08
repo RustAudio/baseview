@@ -1,5 +1,4 @@
 use std::ffi::c_void;
-use std::sync::mpsc;
 
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivateIgnoringOtherApps,
@@ -19,10 +18,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open<H: WindowHandler>(
-        options: WindowOpenOptions,
-        app_message_rx: mpsc::Receiver<H::Message>,
-    ) {
+    pub fn open<H: WindowHandler>(options: WindowOpenOptions) {
         unsafe {
             let _pool = NSAutoreleasePool::new(nil);
 

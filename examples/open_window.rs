@@ -1,5 +1,3 @@
-use std::sync::mpsc;
-
 use baseview::{Event, Window, WindowHandler};
 
 fn main() {
@@ -10,11 +8,7 @@ fn main() {
         parent: baseview::Parent::None,
     };
 
-    let (_app_message_tx, app_message_rx) = mpsc::channel::<()>();
-
-    // Send _app_message_tx to a separate thread, then send messages to the GUI thread.
-
-    let _ = Window::open::<MyProgram>(window_open_options, app_message_rx);
+    Window::open::<MyProgram>(window_open_options);
 }
 
 struct MyProgram {}
