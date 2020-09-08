@@ -136,7 +136,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open<H: WindowHandler>(options: WindowOpenOptions) {
+    pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
         unsafe {
             let title = (options.title.to_owned() + "\0").as_ptr() as *const i8;
 
@@ -213,6 +213,8 @@ impl Window {
                 }
             }
         }
+
+        WindowHandle
     }
 }
 
@@ -224,3 +226,5 @@ unsafe impl HasRawWindowHandle for Window {
         })
     }
 }
+
+pub struct WindowHandle;

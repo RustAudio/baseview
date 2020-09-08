@@ -18,7 +18,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open<H: WindowHandler>(options: WindowOpenOptions) {
+    pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
         unsafe {
             let _pool = NSAutoreleasePool::new(nil);
 
@@ -52,6 +52,8 @@ impl Window {
             let current_app = NSRunningApplication::currentApplication(nil);
             current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
             app.run();
+
+            WindowHandle
         }
     }
 }
@@ -65,3 +67,5 @@ unsafe impl HasRawWindowHandle for Window {
         })
     }
 }
+
+pub struct WindowHandle;

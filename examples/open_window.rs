@@ -8,7 +8,7 @@ fn main() {
         parent: baseview::Parent::None,
     };
 
-    Window::open::<MyProgram>(window_open_options);
+    let _handle = Window::open::<MyProgram>(window_open_options);
 }
 
 struct MyProgram {}

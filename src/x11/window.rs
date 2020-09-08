@@ -13,7 +13,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open<H: WindowHandler>(options: WindowOpenOptions) {
+    pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
         // Convert the parent to a X11 window ID if we're given one
         let parent = match options.parent {
             Parent::None => None,
@@ -102,6 +102,8 @@ impl Window {
         let mut handler = H::build(&mut window);
 
         run_event_loop(&mut window, &mut handler);
+
+        WindowHandle
     }
 }
 
@@ -114,6 +116,8 @@ unsafe impl HasRawWindowHandle for Window {
         })
     }
 }
+
+pub struct WindowHandle;
 
 // Event loop
 fn run_event_loop<H: WindowHandler>(window: &mut Window, handler: &mut H) {
