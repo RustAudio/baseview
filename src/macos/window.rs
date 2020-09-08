@@ -11,7 +11,7 @@ use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
-use crate::{AppWindow, MouseScroll, WindowOpenOptions};
+use crate::{MouseScroll, WindowHandler, WindowOpenOptions};
 
 pub struct Window {
     ns_window: id,
@@ -19,9 +19,9 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open<A: AppWindow>(
+    pub fn open<H: WindowHandler>(
         options: WindowOpenOptions,
-        app_message_rx: mpsc::Receiver<A::AppMessage>,
+        app_message_rx: mpsc::Receiver<H::Message>,
     ) {
         unsafe {
             let _pool = NSAutoreleasePool::new(nil);
@@ -49,12 +49,9 @@ impl Window {
             let ns_view = NSView::alloc(nil).init();
             ns_window.setContentView_(ns_view);
 
-            let mut window = Window {
-                ns_window,
-                ns_view,
-            };
+            let mut window = Window { ns_window, ns_view };
 
-            let app_window = A::build(&mut window);
+            let handler = H::build(&mut window);
 
             let current_app = NSRunningApplication::currentApplication(nil);
             current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);

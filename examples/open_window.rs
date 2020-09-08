@@ -1,6 +1,6 @@
 use std::sync::mpsc;
 
-use baseview::{Event, Window};
+use baseview::{Event, Window, WindowHandler};
 
 fn main() {
     let window_open_options = baseview::WindowOpenOptions {
@@ -19,8 +19,8 @@ fn main() {
 
 struct MyProgram {}
 
-impl baseview::AppWindow for MyProgram {
-    type AppMessage = ();
+impl WindowHandler for MyProgram {
+    type Message = ();
 
     fn build(window: &mut Window) -> Self {
         Self {}
@@ -69,5 +69,5 @@ impl baseview::AppWindow for MyProgram {
         }
     }
 
-    fn on_app_message(&mut self, window: &mut Window, _message: Self::AppMessage) {}
+    fn on_message(&mut self, window: &mut Window, _message: Self::Message) {}
 }

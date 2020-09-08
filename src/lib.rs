@@ -33,12 +33,12 @@ pub struct WindowOpenOptions<'a> {
     pub parent: Parent,
 }
 
-pub trait AppWindow {
-    type AppMessage;
+pub trait WindowHandler {
+    type Message;
 
     fn build(window: &mut Window) -> Self;
 
     fn draw(&mut self, window: &mut Window);
     fn on_event(&mut self, window: &mut Window, event: Event);
-    fn on_app_message(&mut self, window: &mut Window, message: Self::AppMessage);
+    fn on_message(&mut self, window: &mut Window, message: Self::Message);
 }

@@ -19,7 +19,7 @@ use std::sync::mpsc;
 
 use raw_window_handle::{windows::WindowsHandle, HasRawWindowHandle, RawWindowHandle};
 
-use crate::{AppWindow, Event, Parent::WithParent, WindowInfo, WindowOpenOptions};
+use crate::{Event, Parent::WithParent, WindowHandler, WindowInfo, WindowOpenOptions};
 
 unsafe fn message_box(title: &str, msg: &str) {
     let title = (title.to_owned() + "\0").as_ptr() as *const i8;
@@ -48,14 +48,14 @@ unsafe fn generate_guid() -> String {
 
 const WIN_FRAME_TIMER: usize = 4242;
 
-unsafe fn handle_timer<A: AppWindow>(window_state: &RefCell<WindowState<A>>, timer_id: usize) {
+unsafe fn handle_timer<H: WindowHandler>(window_state: &RefCell<WindowState<H>>, timer_id: usize) {
     match timer_id {
         WIN_FRAME_TIMER => {}
         _ => (),
     }
 }
 
-unsafe extern "system" fn wnd_proc<A: AppWindow>(
+unsafe extern "system" fn wnd_proc<H: WindowHandler>(
     hwnd: HWND,
     msg: UINT,
     wparam: WPARAM,
@@ -68,7 +68,7 @@ unsafe extern "system" fn wnd_proc<A: AppWindow>(
 
     let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
     if !win_ptr.is_null() {
-        let window_state = &*(win_ptr as *const RefCell<WindowState<A>>);
+        let window_state = &*(win_ptr as *const RefCell<WindowState<H>>);
         let mut window = Window { hwnd };
 
         match msg {
@@ -77,7 +77,7 @@ unsafe extern "system" fn wnd_proc<A: AppWindow>(
                 let y = ((lparam >> 16) & 0xFFFF) as i32;
                 window_state
                     .borrow_mut()
-                    .app_window
+                    .handler
                     .on_event(&mut window, Event::CursorMotion(x, y));
                 return 0;
             }
@@ -91,7 +91,7 @@ unsafe extern "system" fn wnd_proc<A: AppWindow>(
             WM_CLOSE => {
                 window_state
                     .borrow_mut()
-                    .app_window
+                    .handler
                     .on_event(&mut window, Event::WillClose);
                 return DefWindowProcA(hwnd, msg, wparam, lparam);
             }
@@ -102,13 +102,13 @@ unsafe extern "system" fn wnd_proc<A: AppWindow>(
     return DefWindowProcA(hwnd, msg, wparam, lparam);
 }
 
-unsafe fn register_wnd_class<A: AppWindow>() -> ATOM {
+unsafe fn register_wnd_class<H: WindowHandler>() -> ATOM {
     // We generate a unique name for the new window class to prevent name collisions
     let class_name = format!("Baseview-{}", generate_guid()).as_ptr() as *const i8;
 
     let wnd_class = WNDCLASSA {
         style: CS_OWNDC,
-        lpfnWndProc: Some(wnd_proc::<A>),
+        lpfnWndProc: Some(wnd_proc::<H>),
         hInstance: null_mut(),
         lpszClassName: class_name,
         cbClsExtra: 0,
@@ -126,10 +126,10 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
     UnregisterClassA(wnd_class as _, null_mut());
 }
 
-struct WindowState<A> {
+struct WindowState<H> {
     window_class: ATOM,
     scaling: Option<f64>, // DPI scale, 96.0 is "default".
-    app_window: A,
+    handler: H,
 }
 
 pub struct Window {
@@ -137,14 +137,14 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open<A: AppWindow>(
+    pub fn open<H: WindowHandler>(
         options: WindowOpenOptions,
-        app_message_rx: mpsc::Receiver<A::AppMessage>,
+        app_message_rx: mpsc::Receiver<H::Message>,
     ) {
         unsafe {
             let title = (options.title.to_owned() + "\0").as_ptr() as *const i8;
 
-            let window_class = register_wnd_class::<A>();
+            let window_class = register_wnd_class::<H>();
             // todo: manage error ^
 
             let mut flags = WS_POPUPWINDOW
@@ -190,12 +190,12 @@ impl Window {
 
             let mut window = Window { hwnd };
 
-            let app_window = A::build(&mut window);
+            let handler = H::build(&mut window);
 
             let window_state = Rc::new(RefCell::new(WindowState {
                 window_class,
                 scaling: None,
-                app_window,
+                handler,
             }));
 
             let win = Rc::new(RefCell::new(window));

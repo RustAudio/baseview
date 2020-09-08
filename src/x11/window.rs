@@ -3,9 +3,7 @@ use std::os::raw::{c_ulong, c_void};
 use std::sync::mpsc;
 
 use super::XcbConnection;
-use crate::{
-    AppWindow, Event, MouseButtonID, MouseScroll, Parent, WindowOpenOptions,
-};
+use crate::{Event, MouseButtonID, MouseScroll, Parent, WindowHandler, WindowOpenOptions};
 
 use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
@@ -16,7 +14,10 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open<A: AppWindow>(options: WindowOpenOptions, app_message_rx: mpsc::Receiver<A::AppMessage>) {
+    pub fn open<H: WindowHandler>(
+        options: WindowOpenOptions,
+        app_message_rx: mpsc::Receiver<H::Message>,
+    ) {
         // Convert the parent to a X11 window ID if we're given one
         let parent = match options.parent {
             Parent::None => None,
@@ -102,9 +103,9 @@ impl Window {
             scaling,
         };
 
-        let mut app_window = A::build(&mut window);
+        let mut handler = H::build(&mut window);
 
-        run_event_loop(&mut window, &mut app_window);
+        run_event_loop(&mut window, &mut handler);
     }
 }
 
@@ -119,7 +120,7 @@ unsafe impl HasRawWindowHandle for Window {
 }
 
 // Event loop
-fn run_event_loop<A: AppWindow>(window: &mut Window, app_window: &mut A) {
+fn run_event_loop<H: WindowHandler>(window: &mut Window, handler: &mut H) {
     loop {
         // somehow poll app_message_rx for messages at the same time
 
@@ -149,17 +150,17 @@ fn run_event_loop<A: AppWindow>(window: &mut Window, app_window: &mut A) {
 
             match event_type {
                 xcb::EXPOSE => {
-                    app_window.draw(window);
+                    handler.draw(window);
                 }
                 xcb::MOTION_NOTIFY => {
                     let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
                     let detail = event.detail();
 
                     if detail != 4 && detail != 5 {
-                        app_window.on_event(window, Event::CursorMotion(
-                            event.event_x() as i32,
-                            event.event_y() as i32,
-                        ));
+                        handler.on_event(
+                            window,
+                            Event::CursorMotion(event.event_x() as i32, event.event_y() as i32),
+                        );
                     }
                 }
                 xcb::BUTTON_PRESS => {
@@ -168,20 +169,26 @@ fn run_event_loop<A: AppWindow>(window: &mut Window, app_window: &mut A) {
 
                     match detail {
                         4 => {
-                            app_window.on_event(window, Event::MouseScroll(MouseScroll {
-                                x_delta: 0.0,
-                                y_delta: 1.0,
-                            }));
+                            handler.on_event(
+                                window,
+                                Event::MouseScroll(MouseScroll {
+                                    x_delta: 0.0,
+                                    y_delta: 1.0,
+                                }),
+                            );
                         }
                         5 => {
-                            app_window.on_event(window, Event::MouseScroll(MouseScroll {
-                                x_delta: 0.0,
-                                y_delta: -1.0,
-                            }));
+                            handler.on_event(
+                                window,
+                                Event::MouseScroll(MouseScroll {
+                                    x_delta: 0.0,
+                                    y_delta: -1.0,
+                                }),
+                            );
                         }
                         detail => {
                             let button_id = mouse_id(detail);
-                            app_window.on_event(window, Event::MouseDown(button_id));
+                            handler.on_event(window, Event::MouseDown(button_id));
                         }
                     }
                 }
@@ -191,20 +198,20 @@ fn run_event_loop<A: AppWindow>(window: &mut Window, app_window: &mut A) {
 
                     if detail != 4 && detail != 5 {
                         let button_id = mouse_id(detail);
-                        app_window.on_event(window, Event::MouseUp(button_id));
+                        handler.on_event(window, Event::MouseUp(button_id));
                     }
                 }
                 xcb::KEY_PRESS => {
                     let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
                     let detail = event.detail();
 
-                    app_window.on_event(window, Event::KeyDown(detail));
+                    handler.on_event(window, Event::KeyDown(detail));
                 }
                 xcb::KEY_RELEASE => {
                     let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
                     let detail = event.detail();
 
-                    app_window.on_event(window, Event::KeyUp(detail));
+                    handler.on_event(window, Event::KeyUp(detail));
                 }
                 _ => {
                     println!("Unhandled event type: {:?}", event_type);
