@@ -18,7 +18,7 @@ use std::rc::Rc;
 use std::sync::mpsc;
 
 use crate::{
-    AppWindow, Event, MouseEvent, Parent::WithParent, RawWindow, WindowEvent, WindowOpenOptions,
+    AppWindow, Event, MouseEvent, Parent::WithParent, WindowEvent, WindowOpenOptions,
     WindowState,
 };
 

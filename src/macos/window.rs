@@ -12,7 +12,7 @@ use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    AppWindow, Event, FileDropEvent, KeyCode, KeyboardEvent, MouseButton, MouseEvent, RawWindow,
+    AppWindow, Event, FileDropEvent, KeyCode, KeyboardEvent, MouseButton, MouseEvent,
     ScrollDelta, WindowEvent, WindowOpenOptions, WindowState,
 };
 

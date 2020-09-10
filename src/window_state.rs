@@ -1,6 +1,8 @@
 use crate::MouseCursor;
 
-/// The struct that is passed to the user's application. This is akin to winit's `Window` struct
+// The struct that is passed to the user's application. This is akin to winit's `Window` struct
+
+/// The current state of the window
 #[derive(Debug)]
 pub struct WindowState {
     width: u32,
