@@ -18,9 +18,11 @@ pub use macos::*;
 mod event;
 mod key_code;
 mod mouse_cursor;
+mod window_state;
 pub use event::*;
 pub use key_code::KeyCode;
 pub use mouse_cursor::MouseCursor;
+pub use window_state::WindowState;
 
 pub enum Parent {
     None,
@@ -43,11 +45,11 @@ pub struct WindowOpenOptions<'a> {
 pub trait AppWindow {
     type AppMessage;
 
-    fn build(window_handle: RawWindow, window_info: &WindowInfo) -> Self;
+    fn build(window: &mut WindowState) -> Self;
 
-    fn draw(&mut self, mouse_cursor: &mut MouseCursor);
-    fn on_event(&mut self, event: Event);
-    fn on_app_message(&mut self, message: Self::AppMessage);
+    fn draw(&mut self);
+    fn on_event(&mut self, event: Event, window: &mut WindowState);
+    fn on_app_message(&mut self, message: Self::AppMessage, window: &mut WindowState);
 
     /// The requested frequency to call `draw()` in calls per second.
     /// Set this to `None` to use the frame rate the host provides. (default is `None`)
@@ -59,17 +61,5 @@ pub trait AppWindow {
     /// Set this to `None` to not be sent this event. (default is `None`)
     fn interval() -> Option<f64> {
         None
-    }
-}
-
-/// A wrapper for a `RawWindowHandle`. Some context creators expect an `&impl HasRawWindowHandle`.
-#[derive(Debug, Copy, Clone)]
-pub struct RawWindow {
-    pub raw_window_handle: raw_window_handle::RawWindowHandle,
-}
-
-unsafe impl raw_window_handle::HasRawWindowHandle for RawWindow {
-    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
-        self.raw_window_handle
     }
 }

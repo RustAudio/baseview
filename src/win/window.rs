@@ -18,8 +18,8 @@ use std::rc::Rc;
 use std::sync::mpsc;
 
 use crate::{
-    AppWindow, Event, MouseEvent, Parent::WithParent, RawWindow, WindowEvent, WindowInfo,
-    WindowOpenOptions,
+    AppWindow, Event, MouseEvent, Parent::WithParent, RawWindow, WindowEvent, WindowOpenOptions,
+    WindowState,
 };
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -122,6 +122,7 @@ pub struct Window<A: AppWindow> {
     app_window: A,
     app_message_rx: mpsc::Receiver<A::AppMessage>,
     scaling: Option<f64>, // DPI scale, 96.0 is "default".
+    window_state: WindowState,
 }
 
 impl<A: AppWindow> Window<A> {
@@ -176,17 +177,16 @@ impl<A: AppWindow> Window<A> {
             let mut windows_handle = raw_window_handle::windows::WindowsHandle::empty();
             windows_handle.hwnd = hwnd as *mut std::ffi::c_void;
 
-            let raw_window = RawWindow {
-                raw_window_handle: raw_window_handle::RawWindowHandle::Windows(windows_handle),
-            };
+            let raw_handle = raw_window_handle::RawWindowHandle::Windows(windows_handle);
 
-            let window_info = WindowInfo {
-                width: options.width as u32,
-                height: options.height as u32,
-                scale_factor: 1.0,
-            };
+            let mut window_state = WindowState::new(
+                options.width as u32,
+                options.height as u32,
+                1.0, // scaling
+                raw_handle,
+            );
 
-            let app_window = A::build(raw_window, &window_info);
+            let app_window = A::build(&mut window_state);
 
             let window = Window {
                 hwnd,
@@ -194,6 +194,7 @@ impl<A: AppWindow> Window<A> {
                 app_window,
                 app_message_rx,
                 scaling: None,
+                window_state,
             };
 
             let win = Rc::new(RefCell::new(window));
@@ -218,8 +219,10 @@ impl<A: AppWindow> Window<A> {
     }
 
     pub fn close(&mut self) {
-        self.app_window
-            .on_event(Event::Window(WindowEvent::WillClose));
+        self.app_window.on_event(
+            Event::Window(WindowEvent::WillClose),
+            &mut self.window_state,
+        );
 
         // todo: see https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L402
         unsafe {
@@ -229,10 +232,12 @@ impl<A: AppWindow> Window<A> {
     }
 
     pub(crate) fn handle_mouse_motion(&mut self, x: i32, y: i32) {
-        self.app_window
-            .on_event(Event::Mouse(MouseEvent::CursorMoved {
+        self.app_window.on_event(
+            Event::Mouse(MouseEvent::CursorMoved {
                 x: x as f32,
                 y: y as f32,
-            }));
+            }),
+            &mut self.window_state,
+        );
     }
 }

@@ -13,12 +13,13 @@ use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle}
 
 use crate::{
     AppWindow, Event, FileDropEvent, KeyCode, KeyboardEvent, MouseButton, MouseEvent, RawWindow,
-    ScrollDelta, WindowEvent, WindowInfo, WindowOpenOptions,
+    ScrollDelta, WindowEvent, WindowOpenOptions, WindowState,
 };
 
 pub struct Window<A: AppWindow> {
     app_window: A,
     app_message_rx: mpsc::Receiver<A::AppMessage>,
+    window_state: WindowState,
 }
 
 impl<A: AppWindow> Window<A> {
@@ -49,21 +50,20 @@ impl<A: AppWindow> Window<A> {
             let view = NSView::alloc(nil).init();
             window.setContentView_(view);
 
-            let raw_window = RawWindow {
-                raw_window_handle: RawWindowHandle::MacOS(MacOSHandle {
-                    ns_window: window as *mut c_void,
-                    ns_view: app as *mut c_void,
-                    ..raw_window_handle::macos::MacOSHandle::empty()
-                }),
-            };
+            let raw_handle = RawWindowHandle::MacOS(MacOSHandle {
+                ns_window: window as *mut c_void,
+                ns_view: app as *mut c_void,
+                ..raw_window_handle::macos::MacOSHandle::empty()
+            });
 
-            let window_info = WindowInfo {
-                width: options.width as u32,
-                height: options.height as u32,
-                scale_factor: 1.0,
-            };
+            let mut window_state = WindowState::new(
+                options.width as u32,
+                options.height as u32,
+                1.0, // scaling
+                raw_handle,
+            );
 
-            let app_window = A::build(raw_window, &window_info);
+            let app_window = A::build(&mut window_state);
 
             let current_app = NSRunningApplication::currentApplication(nil);
             current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
@@ -72,6 +72,7 @@ impl<A: AppWindow> Window<A> {
             Window {
                 app_window,
                 app_message_rx,
+                window_state,
             }
         }
     }

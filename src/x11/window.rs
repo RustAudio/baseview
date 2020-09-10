@@ -5,8 +5,8 @@ use std::sync::mpsc;
 use super::XcbConnection;
 use crate::{
     AppWindow, Event, FileDropEvent, KeyCode, KeyboardEvent, ModifiersState, MouseButton,
-    MouseCursor, MouseEvent, Parent, RawWindow, ScrollDelta, WindowEvent, WindowInfo,
-    WindowOpenOptions,
+    MouseCursor, MouseEvent, Parent, ScrollDelta, WindowEvent, WindowInfo, WindowOpenOptions,
+    WindowState,
 };
 
 use raw_window_handle::RawWindowHandle;
@@ -17,6 +17,7 @@ pub struct Window<A: AppWindow> {
     app_window: A,
     app_message_rx: mpsc::Receiver<A::AppMessage>,
     mouse_cursor: MouseCursor,
+    window_state: WindowState,
 }
 
 impl<A: AppWindow> Window<A> {
@@ -102,21 +103,18 @@ impl<A: AppWindow> Window<A> {
             ..raw_window_handle::unix::XlibHandle::empty()
         });
 
-        let raw_window = RawWindow {
-            raw_window_handle: raw_handle,
-        };
-
         let scaling = get_scaling_xft(&xcb_connection)
             .or(get_scaling_screen_dimensions(&xcb_connection))
             .unwrap_or(1.0);
 
-        let window_info = WindowInfo {
-            width: options.width as u32,
-            height: options.height as u32,
-            scale_factor: scaling,
-        };
+        let mut window_state = WindowState::new(
+            options.width as u32,
+            options.height as u32,
+            scaling,
+            raw_handle,
+        );
 
-        let app_window = A::build(raw_window, &window_info);
+        let app_window = A::build(&mut window_state);
 
         let mut x11_window = Self {
             scaling,
@@ -124,6 +122,7 @@ impl<A: AppWindow> Window<A> {
             app_window,
             app_message_rx,
             mouse_cursor: Default::default(),
+            window_state,
         };
 
         x11_window.run_event_loop();
@@ -162,18 +161,20 @@ impl<A: AppWindow> Window<A> {
 
                 match event_type {
                     xcb::EXPOSE => {
-                        self.app_window.draw(&mut self.mouse_cursor);
+                        self.app_window.draw();
                     }
                     xcb::MOTION_NOTIFY => {
                         let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
                         let detail = event.detail();
 
                         if detail != 4 && detail != 5 {
-                            self.app_window
-                                .on_event(Event::Mouse(MouseEvent::CursorMoved {
+                            self.app_window.on_event(
+                                Event::Mouse(MouseEvent::CursorMoved {
                                     x: event.event_x() as f32,
                                     y: event.event_y() as f32,
-                                }));
+                                }),
+                                &mut self.window_state,
+                            );
                         }
                     }
                     xcb::BUTTON_PRESS => {
@@ -182,21 +183,27 @@ impl<A: AppWindow> Window<A> {
 
                         match detail {
                             4 => {
-                                self.app_window
-                                    .on_event(Event::Mouse(MouseEvent::WheelScrolled {
+                                self.app_window.on_event(
+                                    Event::Mouse(MouseEvent::WheelScrolled {
                                         delta: ScrollDelta::Lines { x: 0.0, y: 1.0 },
-                                    }));
+                                    }),
+                                    &mut self.window_state,
+                                );
                             }
                             5 => {
-                                self.app_window
-                                    .on_event(Event::Mouse(MouseEvent::WheelScrolled {
+                                self.app_window.on_event(
+                                    Event::Mouse(MouseEvent::WheelScrolled {
                                         delta: ScrollDelta::Lines { x: 0.0, y: -1.0 },
-                                    }));
+                                    }),
+                                    &mut self.window_state,
+                                );
                             }
                             detail => {
                                 let button = mouse_id(detail);
-                                self.app_window
-                                    .on_event(Event::Mouse(MouseEvent::ButtonPressed(button)));
+                                self.app_window.on_event(
+                                    Event::Mouse(MouseEvent::ButtonPressed(button)),
+                                    &mut self.window_state,
+                                );
                             }
                         }
                     }
@@ -206,34 +213,51 @@ impl<A: AppWindow> Window<A> {
 
                         if detail != 4 && detail != 5 {
                             let button = mouse_id(detail);
-                            self.app_window
-                                .on_event(Event::Mouse(MouseEvent::ButtonReleased(button)));
+                            self.app_window.on_event(
+                                Event::Mouse(MouseEvent::ButtonReleased(button)),
+                                &mut self.window_state,
+                            );
                         }
                     }
                     xcb::KEY_PRESS => {
                         let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
                         let detail = event.detail();
 
-                        self.app_window
-                            .on_event(Event::Keyboard(KeyboardEvent::KeyPressed {
+                        self.app_window.on_event(
+                            Event::Keyboard(KeyboardEvent::KeyPressed {
                                 key_code: KeyCode::Other(detail as u32),
                                 modifiers: ModifiersState::default(), // TODO: keyboard modifiers
-                            }));
+                            }),
+                            &mut self.window_state,
+                        );
                     }
                     xcb::KEY_RELEASE => {
                         let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
                         let detail = event.detail();
 
-                        self.app_window
-                            .on_event(Event::Keyboard(KeyboardEvent::KeyReleased {
+                        self.app_window.on_event(
+                            Event::Keyboard(KeyboardEvent::KeyReleased {
                                 key_code: KeyCode::Other(detail as u32),
                                 modifiers: ModifiersState::default(), // TODO: keyboard modifiers
-                            }));
+                            }),
+                            &mut self.window_state,
+                        );
                     }
                     _ => {
                         println!("Unhandled event type: {:?}", event_type);
                     }
                 }
+            }
+
+            // TODO: process requests
+            if self.window_state.poll_redraw_request() {
+                // do something
+            }
+            if let Some(mouse_cursor) = self.window_state.poll_cursor_request() {
+                // do something
+            }
+            if self.window_state.poll_close_request() {
+                // do something
             }
         }
     }

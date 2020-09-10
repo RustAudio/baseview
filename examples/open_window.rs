@@ -1,6 +1,6 @@
 use std::sync::mpsc;
 
-use baseview::Event;
+use baseview::{Event, WindowState};
 
 fn main() {
     let window_open_options = baseview::WindowOpenOptions {
@@ -22,14 +22,14 @@ struct MyProgram {}
 impl baseview::AppWindow for MyProgram {
     type AppMessage = ();
 
-    fn build(_window_handle: baseview::RawWindow, window_info: &baseview::WindowInfo) -> Self {
-        println!("Window info: {:?}", window_info);
+    fn build(window: &mut WindowState) -> Self {
+        println!("Window info: {:?}", window);
         Self {}
     }
 
-    fn draw(&mut self, _mouse_cursor: &mut baseview::MouseCursor) {}
+    fn draw(&mut self) {}
 
-    fn on_event(&mut self, event: Event) {
+    fn on_event(&mut self, event: Event, _window: &mut WindowState) {
         match event {
             Event::Interval(delta_time) => println!("Update interval, delta time: {}", delta_time),
             Event::Mouse(e) => println!("Mouse event: {:?}", e),
@@ -46,5 +46,5 @@ impl baseview::AppWindow for MyProgram {
         }
     }
 
-    fn on_app_message(&mut self, _message: Self::AppMessage) {}
+    fn on_app_message(&mut self, _message: Self::AppMessage, _window: &mut WindowState) {}
 }
