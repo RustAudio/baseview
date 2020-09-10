@@ -75,6 +75,7 @@ pub struct MouseClick {
     pub click_count: usize,
     pub x: f32,
     pub y: f32,
+    pub modifiers: ModifiersState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
