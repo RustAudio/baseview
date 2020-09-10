@@ -11,9 +11,13 @@ pub struct WindowState {
     mouse_cursor: MouseCursor,
     raw_handle: raw_window_handle::RawWindowHandle,
     resized: bool,
+    frame_rate: f64,
+    interval_rate: Option<f64>,
     cursor_requested: bool,
     redraw_requested: bool,
     close_requested: bool,
+    frame_rate_requested: bool,
+    interval_requested: bool,
 }
 
 impl WindowState {
@@ -30,9 +34,13 @@ impl WindowState {
             raw_handle,
             mouse_cursor: Default::default(),
             resized: false,
+            frame_rate: 60.0,
+            interval_rate: None,
             cursor_requested: false,
             redraw_requested: true,
             close_requested: false,
+            frame_rate_requested: false,
+            interval_requested: false,
         }
     }
 
@@ -46,6 +54,18 @@ impl WindowState {
 
     pub fn scale(&self) -> f64 {
         self.scale
+    }
+
+    pub fn mouse_cursor(&self) -> MouseCursor {
+        self.mouse_cursor
+    }
+
+    pub fn frame_rate(&self) -> f64 {
+        self.frame_rate
+    }
+
+    pub fn interval_rate(&self) -> Option<f64> {
+        self.interval_rate
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -69,6 +89,29 @@ impl WindowState {
 
     pub fn request_close(&mut self) {
         self.close_requested = true;
+    }
+
+    /// Request the rate at which `draw()` is called in frames per second.
+    ///
+    /// Note that `request_redraw()` must be called after an update for `draw()` to be called.
+    ///
+    /// By default this is `60.0`.
+    pub fn request_frame_rate(&mut self, frame_rate: f64) {
+        if self.frame_rate != frame_rate {
+            self.frame_rate = frame_rate;
+            self.frame_rate_requested = true;
+        }
+    }
+
+    /// Request the rate at which the `Interval` event is called in calls per second.
+    /// Set this to `None` if do not want this event.
+    ///
+    /// By default this is `None`.
+    pub fn request_interval(&mut self, interval_rate: Option<f64>) {
+        if self.interval_rate != interval_rate {
+            self.interval_rate = interval_rate;
+            self.interval_requested = true;
+        }
     }
 
     pub fn poll_cursor_request(&mut self) -> Option<MouseCursor> {
@@ -95,6 +138,24 @@ impl WindowState {
             true
         } else {
             false
+        }
+    }
+
+    pub fn poll_frame_rate_request(&mut self) -> Option<f64> {
+        if self.frame_rate_requested {
+            self.frame_rate_requested = false;
+            Some(self.frame_rate)
+        } else {
+            None
+        }
+    }
+
+    pub fn poll_interval_request(&mut self) -> Option<Option<f64>> {
+        if self.interval_requested {
+            self.interval_requested = false;
+            Some(self.interval_rate)
+        } else {
+            None
         }
     }
 }

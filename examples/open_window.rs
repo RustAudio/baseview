@@ -8,7 +8,6 @@ fn main() {
         width: 512,
         height: 512,
         parent: baseview::Parent::None,
-        frame_rate: 60.0,
     };
 
     let (_app_message_tx, app_message_rx) = mpsc::channel::<()>();

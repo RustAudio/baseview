@@ -37,9 +37,6 @@ pub struct WindowOpenOptions<'a> {
     pub height: usize,
 
     pub parent: Parent,
-
-    // The frequency to call the `draw()` method in calls per second.
-    pub frame_rate: f64,
 }
 
 pub trait AppWindow {
@@ -50,16 +47,4 @@ pub trait AppWindow {
     fn draw(&mut self);
     fn on_event(&mut self, event: Event, window: &mut WindowState);
     fn on_app_message(&mut self, message: Self::AppMessage, window: &mut WindowState);
-
-    /// The requested frequency to call `draw()` in calls per second.
-    /// Set this to `None` to use the frame rate the host provides. (default is `None`)
-    fn frame_rate() -> Option<f64> {
-        None
-    }
-
-    /// The frequency to be sent `Event::Interval` in calls per second.
-    /// Set this to `None` to not be sent this event. (default is `None`)
-    fn interval() -> Option<f64> {
-        None
-    }
 }

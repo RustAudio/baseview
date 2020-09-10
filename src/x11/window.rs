@@ -252,6 +252,12 @@ impl<A: AppWindow> Window<A> {
             if let Some(mouse_cursor) = self.window_state.poll_cursor_request() {
                 // do something
             }
+            if let Some(frame_rate) = self.window_state.poll_frame_rate_request() {
+                // do something
+            }
+            if let Some(maybe_interval_rate) = self.window_state.poll_interval_request() {
+                // do something
+            }
             if self.window_state.poll_close_request() {
                 // do something
             }
