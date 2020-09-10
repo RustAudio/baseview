@@ -11,11 +11,11 @@ use winapi::um::winuser::{
     WS_SIZEBOX, WS_VISIBLE,
 };
 
+use std::cell::RefCell;
 use std::ffi::c_void;
 use std::ptr::null_mut;
-use std::sync::mpsc;
 use std::rc::Rc;
-use std::cell::RefCell;
+use std::sync::mpsc;
 
 use crate::{AppWindow, Event, Parent::WithParent, RawWindow, WindowInfo, WindowOpenOptions};
 

@@ -4,7 +4,9 @@ use std::sync::mpsc;
 
 use super::XcbConnection;
 use crate::{
-    AppWindow, Event, MouseButtonID, MouseScroll, Parent, RawWindow, WindowInfo, WindowOpenOptions,
+    AppWindow, Event, FileDropEvent, KeyCode, KeyboardEvent, ModifiersState, MouseButton,
+    MouseCursor, MouseEvent, Parent, RawWindow, ScrollDelta, WindowEvent, WindowInfo,
+    WindowOpenOptions,
 };
 
 use raw_window_handle::RawWindowHandle;
@@ -14,6 +16,7 @@ pub struct Window<A: AppWindow> {
     xcb_connection: XcbConnection,
     app_window: A,
     app_message_rx: mpsc::Receiver<A::AppMessage>,
+    mouse_cursor: MouseCursor,
 }
 
 impl<A: AppWindow> Window<A> {
@@ -110,7 +113,7 @@ impl<A: AppWindow> Window<A> {
         let window_info = WindowInfo {
             width: options.width as u32,
             height: options.height as u32,
-            scale: scaling,
+            scale_factor: scaling,
         };
 
         let app_window = A::build(raw_window, &window_info);
@@ -120,6 +123,7 @@ impl<A: AppWindow> Window<A> {
             xcb_connection,
             app_window,
             app_message_rx,
+            mouse_cursor: Default::default(),
         };
 
         x11_window.run_event_loop();
@@ -158,17 +162,18 @@ impl<A: AppWindow> Window<A> {
 
                 match event_type {
                     xcb::EXPOSE => {
-                        self.app_window.draw();
+                        self.app_window.draw(&mut self.mouse_cursor);
                     }
                     xcb::MOTION_NOTIFY => {
                         let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
                         let detail = event.detail();
 
                         if detail != 4 && detail != 5 {
-                            self.app_window.on_event(Event::CursorMotion(
-                                event.event_x() as i32,
-                                event.event_y() as i32,
-                            ));
+                            self.app_window
+                                .on_event(Event::Mouse(MouseEvent::CursorMoved {
+                                    x: event.event_x() as f32,
+                                    y: event.event_y() as f32,
+                                }));
                         }
                     }
                     xcb::BUTTON_PRESS => {
@@ -177,20 +182,21 @@ impl<A: AppWindow> Window<A> {
 
                         match detail {
                             4 => {
-                                self.app_window.on_event(Event::MouseScroll(MouseScroll {
-                                    x_delta: 0.0,
-                                    y_delta: 1.0,
-                                }));
+                                self.app_window
+                                    .on_event(Event::Mouse(MouseEvent::WheelScrolled {
+                                        delta: ScrollDelta::Lines { x: 0.0, y: 1.0 },
+                                    }));
                             }
                             5 => {
-                                self.app_window.on_event(Event::MouseScroll(MouseScroll {
-                                    x_delta: 0.0,
-                                    y_delta: -1.0,
-                                }));
+                                self.app_window
+                                    .on_event(Event::Mouse(MouseEvent::WheelScrolled {
+                                        delta: ScrollDelta::Lines { x: 0.0, y: -1.0 },
+                                    }));
                             }
                             detail => {
-                                let button_id = mouse_id(detail);
-                                self.app_window.on_event(Event::MouseDown(button_id));
+                                let button = mouse_id(detail);
+                                self.app_window
+                                    .on_event(Event::Mouse(MouseEvent::ButtonPressed(button)));
                             }
                         }
                     }
@@ -199,21 +205,30 @@ impl<A: AppWindow> Window<A> {
                         let detail = event.detail();
 
                         if detail != 4 && detail != 5 {
-                            let button_id = mouse_id(detail);
-                            self.app_window.on_event(Event::MouseUp(button_id));
+                            let button = mouse_id(detail);
+                            self.app_window
+                                .on_event(Event::Mouse(MouseEvent::ButtonReleased(button)));
                         }
                     }
                     xcb::KEY_PRESS => {
                         let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
                         let detail = event.detail();
 
-                        self.app_window.on_event(Event::KeyDown(detail));
+                        self.app_window
+                            .on_event(Event::Keyboard(KeyboardEvent::KeyPressed {
+                                key_code: KeyCode::Other(detail as u32),
+                                modifiers: ModifiersState::default(), // TODO: keyboard modifiers
+                            }));
                     }
                     xcb::KEY_RELEASE => {
                         let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
                         let detail = event.detail();
 
-                        self.app_window.on_event(Event::KeyUp(detail));
+                        self.app_window
+                            .on_event(Event::Keyboard(KeyboardEvent::KeyReleased {
+                                key_code: KeyCode::Other(detail as u32),
+                                modifiers: ModifiersState::default(), // TODO: keyboard modifiers
+                            }));
                     }
                     _ => {
                         println!("Unhandled event type: {:?}", event_type);
@@ -305,13 +320,13 @@ fn get_scaling_screen_dimensions(xcb_connection: &XcbConnection) -> Option<f64> 
     Some(yscale)
 }
 
-fn mouse_id(id: u8) -> MouseButtonID {
+fn mouse_id(id: u8) -> MouseButton {
     match id {
-        1 => MouseButtonID::Left,
-        2 => MouseButtonID::Middle,
-        3 => MouseButtonID::Right,
-        6 => MouseButtonID::Back,
-        7 => MouseButtonID::Forward,
-        id => MouseButtonID::Other(id),
+        1 => MouseButton::Left,
+        2 => MouseButton::Middle,
+        3 => MouseButton::Right,
+        6 => MouseButton::Back,
+        7 => MouseButton::Forward,
+        id => MouseButton::Other(id),
     }
 }
