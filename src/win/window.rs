@@ -17,7 +17,10 @@ use std::ptr::null_mut;
 use std::rc::Rc;
 use std::sync::mpsc;
 
-use crate::{AppWindow, Event, Parent::WithParent, RawWindow, WindowInfo, WindowOpenOptions};
+use crate::{
+    AppWindow, Event, MouseEvent, Parent::WithParent, RawWindow, WindowEvent, WindowInfo,
+    WindowOpenOptions,
+};
 
 unsafe fn message_box(title: &str, msg: &str) {
     let title = (title.to_owned() + "\0").as_ptr() as *const i8;
@@ -180,7 +183,7 @@ impl<A: AppWindow> Window<A> {
             let window_info = WindowInfo {
                 width: options.width as u32,
                 height: options.height as u32,
-                scale: 1.0,
+                scale_factor: 1.0,
             };
 
             let app_window = A::build(raw_window, &window_info);
@@ -215,7 +218,8 @@ impl<A: AppWindow> Window<A> {
     }
 
     pub fn close(&mut self) {
-        self.app_window.on_event(Event::WillClose);
+        self.app_window
+            .on_event(Event::Window(WindowEvent::WillClose));
 
         // todo: see https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L402
         unsafe {
@@ -225,6 +229,10 @@ impl<A: AppWindow> Window<A> {
     }
 
     pub(crate) fn handle_mouse_motion(&mut self, x: i32, y: i32) {
-        self.app_window.on_event(Event::CursorMotion(x, y));
+        self.app_window
+            .on_event(Event::Mouse(MouseEvent::CursorMoved {
+                x: x as f32,
+                y: y as f32,
+            }));
     }
 }

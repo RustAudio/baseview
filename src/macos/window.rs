@@ -13,6 +13,7 @@ use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle}
 
 use crate::{
     AppWindow, Event, MouseButtonID, MouseScroll, RawWindow, WindowInfo, WindowOpenOptions,
+    MouseEvent, KeyboardEvent, WindowEvent, FileDropEvent, Keycode, ScrollDelta,
 };
 
 pub struct Window<A: AppWindow> {
@@ -59,7 +60,7 @@ impl<A: AppWindow> Window<A> {
             let window_info = WindowInfo {
                 width: options.width as u32,
                 height: options.height as u32,
-                scale: 1.0,
+                scale_factor: 1.0,
             };
 
             let app_window = A::build(raw_window, &window_info);
