@@ -12,8 +12,8 @@ use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    AppWindow, Event, MouseButton, ScrollDelta, RawWindow, WindowInfo, WindowOpenOptions,
-    MouseEvent, KeyboardEvent, WindowEvent, FileDropEvent, Keycode, ScrollDelta,
+    AppWindow, Event, FileDropEvent, KeyCode, KeyboardEvent, MouseButton, MouseEvent, RawWindow,
+    ScrollDelta, WindowEvent, WindowInfo, WindowOpenOptions,
 };
 
 pub struct Window<A: AppWindow> {
