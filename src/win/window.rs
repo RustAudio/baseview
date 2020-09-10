@@ -18,8 +18,7 @@ use std::rc::Rc;
 use std::sync::mpsc;
 
 use crate::{
-    AppWindow, Event, MouseEvent, Parent::WithParent, WindowEvent, WindowOpenOptions,
-    WindowState,
+    AppWindow, Event, MouseEvent, Parent::WithParent, WindowEvent, WindowOpenOptions, WindowState,
 };
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -121,7 +120,6 @@ pub struct Window<A: AppWindow> {
     window_class: ATOM,
     app_window: A,
     app_message_rx: mpsc::Receiver<A::AppMessage>,
-    scaling: Option<f64>, // DPI scale, 96.0 is "default".
     window_state: WindowState,
 }
 
@@ -193,7 +191,6 @@ impl<A: AppWindow> Window<A> {
                 window_class,
                 app_window,
                 app_message_rx,
-                scaling: None,
                 window_state,
             };
 

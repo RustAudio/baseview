@@ -12,11 +12,9 @@ use crate::{
 use raw_window_handle::RawWindowHandle;
 
 pub struct Window<A: AppWindow> {
-    scaling: f64,
     xcb_connection: XcbConnection,
     app_window: A,
     app_message_rx: mpsc::Receiver<A::AppMessage>,
-    mouse_cursor: MouseCursor,
     window_state: WindowState,
 }
 
@@ -117,11 +115,9 @@ impl<A: AppWindow> Window<A> {
         let app_window = A::build(&mut window_state);
 
         let mut x11_window = Self {
-            scaling,
             xcb_connection,
             app_window,
             app_message_rx,
-            mouse_cursor: Default::default(),
             window_state,
         };
 
