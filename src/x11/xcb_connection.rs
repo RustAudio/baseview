@@ -7,19 +7,54 @@ use std::ffi::{
     CStr
 };
 
+pub(crate) struct Atoms {
+    pub wm_protocols: Option<u32>,
+    pub wm_delete_window: Option<u32>
+}
+
 pub struct XcbConnection {
     pub conn: xcb::Connection,
     pub xlib_display: i32,
+
+    pub(crate) atoms: Atoms
 }
+
+macro_rules! intern_atoms {
+    ($conn:expr, $( $name:ident ),+ ) => {{
+        $(
+            #[allow(non_snake_case)]
+            let $name = xcb::intern_atom($conn, true, stringify!($name));
+        )+
+
+        // splitting request and reply to improve throughput
+
+        (
+            $( $name.get_reply()
+                .map(|r| r.atom())
+                .ok()),+
+        )
+    }};
+}
+
 
 impl XcbConnection {
     pub fn new() -> Result<Self, xcb::base::ConnError> {
-        xcb::Connection::connect_with_xlib_display()
-            .map(|(conn, xlib_display)|
-                Self {
-                    conn,
-                    xlib_display
-                })
+        let (conn, xlib_display) = xcb::Connection::connect_with_xlib_display()?;
+
+        let (wm_protocols, wm_delete_window) =
+            intern_atoms!(&conn,
+                WM_PROTOCOLS,
+                WM_DELETE_WINDOW);
+
+        Ok(Self {
+            conn,
+            xlib_display,
+
+            atoms: Atoms {
+                wm_protocols,
+                wm_delete_window
+            }
+        })
     }
 
     // Try to get the scaling with this function first.

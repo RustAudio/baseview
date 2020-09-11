@@ -22,7 +22,7 @@ impl WindowHandler for MyProgram {
 
     fn on_frame(&mut self) {}
 
-    fn on_event(&mut self, _window: &mut Window, event: Event) {
+    fn on_event(&mut self, window: &mut Window, event: Event) {
         match event {
             Event::CursorMotion(x, y) => {
                 println!("Cursor moved, x: {}, y: {}", x, y);

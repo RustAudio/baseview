@@ -89,6 +89,17 @@ impl Window {
             title.as_bytes(),
         );
 
+        xcb_connection.atoms.wm_protocols
+            .zip(xcb_connection.atoms.wm_delete_window)
+            .map(|(wm_protocols, wm_delete_window)| {
+                xcb_util::icccm::set_wm_protocols(
+                    &xcb_connection.conn,
+                    window_id,
+                    wm_protocols,
+                    &[wm_delete_window]
+                );
+            });
+
         xcb_connection.conn.flush();
 
         let scaling = xcb_connection.get_scaling().unwrap_or(1.0);
@@ -187,9 +198,35 @@ impl Window {
         //   http://rtbo.github.io/rust-xcb/src/xcb/ffi/xproto.rs.html#445
 
         match event_type {
+            ////
+            // keys
+            ////
+
             xcb::EXPOSE => {
                 handler.on_frame();
             }
+
+            xcb::CLIENT_MESSAGE => {
+                let event = unsafe { xcb::cast_event::<xcb::ClientMessageEvent>(&event) };
+
+                // what an absolute trajedy this all is
+                let data = event.data().data;
+                let (_, data32, _) = unsafe { data.align_to::<u32>() };
+
+                let wm_delete_window = self.xcb_connection.atoms.wm_delete_window.unwrap_or(xcb::NONE);
+
+                if wm_delete_window == data32[0] {
+                    handler.on_event(self, Event::WillClose);
+
+                    // FIXME: handler should decide whether window stays open or not
+                    self.event_loop_running = false;
+                }
+            }
+
+            ////
+            // mouse
+            ////
+
             xcb::MOTION_NOTIFY => {
                 let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
                 let detail = event.detail();
@@ -201,6 +238,7 @@ impl Window {
                     );
                 }
             }
+
             xcb::BUTTON_PRESS => {
                 let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
                 let detail = event.detail();
@@ -230,6 +268,7 @@ impl Window {
                     }
                 }
             }
+
             xcb::BUTTON_RELEASE => {
                 let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
                 let detail = event.detail();
@@ -239,18 +278,25 @@ impl Window {
                     handler.on_event(self, Event::MouseUp(button_id));
                 }
             }
+
+            ////
+            // keys
+            ////
+
             xcb::KEY_PRESS => {
                 let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
                 let detail = event.detail();
 
                 handler.on_event(self, Event::KeyDown(detail));
             }
+
             xcb::KEY_RELEASE => {
                 let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
                 let detail = event.detail();
 
                 handler.on_event(self, Event::KeyUp(detail));
             }
+
             _ => {
                 println!("Unhandled event type: {:?}", event_type);
             }
