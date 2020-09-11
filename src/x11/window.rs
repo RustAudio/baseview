@@ -1,7 +1,7 @@
 use std::os::raw::{c_ulong, c_void};
 use std::sync::mpsc;
-use std::time::*;
 use std::thread;
+use std::time::*;
 use std::time::*;
 
 use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
@@ -47,12 +47,13 @@ impl Window {
         // FIXME: placeholder types for returning errors in the future
         let _ = rx.recv();
 
-        WindowHandle {
-            thread
-        }
+        WindowHandle { thread }
     }
 
-    fn window_thread<H: WindowHandler>(options: WindowOpenOptions, tx: mpsc::SyncSender<WindowOpenResult>) -> WindowOpenResult {
+    fn window_thread<H: WindowHandler>(
+        options: WindowOpenOptions,
+        tx: mpsc::SyncSender<WindowOpenResult>,
+    ) -> WindowOpenResult {
         // Connect to the X server
         // FIXME: baseview error type instead of unwrap()
         let xcb_connection = XcbConnection::new().unwrap();
