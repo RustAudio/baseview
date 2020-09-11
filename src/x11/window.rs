@@ -135,7 +135,7 @@ impl Window {
             let now = Instant::now();
             let until_next_frame =
                 if now > next_frame {
-                    handler.draw(self);
+                    handler.on_frame();
 
                     next_frame = now + self.frame_interval;
                     self.frame_interval
@@ -188,7 +188,7 @@ impl Window {
 
         match event_type {
             xcb::EXPOSE => {
-                handler.draw(self);
+                handler.on_frame();
             }
             xcb::MOTION_NOTIFY => {
                 let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
