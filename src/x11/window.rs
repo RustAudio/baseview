@@ -1,28 +1,27 @@
 use std::os::raw::{c_ulong, c_void};
-use std::time::*;
 use std::thread;
+use std::time::*;
 
 use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
 use super::XcbConnection;
 use crate::{
     Event, FileDropEvent, KeyboardEvent, MouseButton, MouseEvent, Parent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowOpenOptions,
+    WindowHandler, WindowInfo, WindowOpenOptions,
 };
-
 
 pub struct Window {
     xcb_connection: XcbConnection,
     window_id: u32,
-    scaling: f64,
+    window_info: WindowInfo,
 
     frame_interval: Duration,
-    event_loop_running: bool
+    event_loop_running: bool,
 }
 
 // FIXME: move to outer crate context
 pub struct WindowHandle {
-    thread: std::thread::JoinHandle<()>
+    thread: std::thread::JoinHandle<()>,
 }
 
 impl WindowHandle {
@@ -31,13 +30,12 @@ impl WindowHandle {
     }
 }
 
-
 impl Window {
     pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
         WindowHandle {
             thread: thread::spawn(move || {
                 Self::window_thread::<H>(options);
-            })
+            }),
         }
     }
 
@@ -91,7 +89,8 @@ impl Window {
                     | xcb::EVENT_MASK_BUTTON_PRESS
                     | xcb::EVENT_MASK_BUTTON_RELEASE
                     | xcb::EVENT_MASK_KEY_PRESS
-                    | xcb::EVENT_MASK_KEY_RELEASE,
+                    | xcb::EVENT_MASK_KEY_RELEASE
+                    | xcb::EVENT_MASK_STRUCTURE_NOTIFY,
             )],
         );
 
@@ -109,14 +108,16 @@ impl Window {
             title.as_bytes(),
         );
 
-        xcb_connection.atoms.wm_protocols
+        xcb_connection
+            .atoms
+            .wm_protocols
             .zip(xcb_connection.atoms.wm_delete_window)
             .map(|(wm_protocols, wm_delete_window)| {
                 xcb_util::icccm::set_wm_protocols(
                     &xcb_connection.conn,
                     window_id,
                     wm_protocols,
-                    &[wm_delete_window]
+                    &[wm_delete_window],
                 );
             });
 
@@ -124,13 +125,19 @@ impl Window {
 
         let scaling = xcb_connection.get_scaling().unwrap_or(1.0);
 
+        let window_info = WindowInfo {
+            width: options.width as u32,
+            height: options.height as u32,
+            scale: scaling,
+        };
+
         let mut window = Self {
             xcb_connection,
             window_id,
-            scaling,
+            window_info,
 
             frame_interval: Duration::from_millis(15),
-            event_loop_running: false
+            event_loop_running: false,
         };
 
         let mut handler = H::build(&mut window);
@@ -162,23 +169,19 @@ impl Window {
 
         while self.event_loop_running {
             let now = Instant::now();
-            let until_next_frame =
-                if now > next_frame {
-                    handler.on_frame();
+            let until_next_frame = if now > next_frame {
+                handler.on_frame();
 
-                    next_frame = now + self.frame_interval;
-                    self.frame_interval
-                } else {
-                    next_frame - now
-                };
+                next_frame = now + self.frame_interval;
+                self.frame_interval
+            } else {
+                next_frame - now
+            };
 
-            let mut fds = [
-                PollFd::new(xcb_fd, PollFlags::POLLIN)
-            ];
+            let mut fds = [PollFd::new(xcb_fd, PollFlags::POLLIN)];
 
             // FIXME: handle errors
-            poll(&mut fds, until_next_frame.subsec_millis() as i32)
-                .unwrap();
+            poll(&mut fds, until_next_frame.subsec_millis() as i32).unwrap();
 
             if let Some(revents) = fds[0].revents() {
                 if revents.contains(PollFlags::POLLERR) {
@@ -217,9 +220,8 @@ impl Window {
 
         match event_type {
             ////
-            // keys
+            // window
             ////
-
             xcb::EXPOSE => {
                 handler.on_frame();
             }
@@ -231,7 +233,11 @@ impl Window {
                 let data = event.data().data;
                 let (_, data32, _) = unsafe { data.align_to::<u32>() };
 
-                let wm_delete_window = self.xcb_connection.atoms.wm_delete_window.unwrap_or(xcb::NONE);
+                let wm_delete_window = self
+                    .xcb_connection
+                    .atoms
+                    .wm_delete_window
+                    .unwrap_or(xcb::NONE);
 
                 if wm_delete_window == data32[0] {
                     handler.on_event(self, Event::Window(WindowEvent::WillClose));
@@ -241,10 +247,22 @@ impl Window {
                 }
             }
 
+            xcb::CONFIGURE_NOTIFY => {
+                let event = unsafe { xcb::cast_event::<xcb::ConfigureNotifyEvent>(&event) };
+
+                if self.window_info.width != event.width() as u32
+                    || self.window_info.height != event.height() as u32
+                {
+                    self.window_info.width = event.width() as u32;
+                    self.window_info.height = event.height() as u32;
+
+                    handler.on_event(self, Event::Window(WindowEvent::Resized(self.window_info)))
+                }
+            }
+
             ////
             // mouse
             ////
-
             xcb::MOTION_NOTIFY => {
                 let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
                 let detail = event.detail();
@@ -252,7 +270,10 @@ impl Window {
                 if detail != 4 && detail != 5 {
                     handler.on_event(
                         self,
-                        Event::Mouse(MouseEvent::CursorMoved { x: event.event_x() as i32, y: event.event_y() as i32 }),
+                        Event::Mouse(MouseEvent::CursorMoved {
+                            x: event.event_x() as i32,
+                            y: event.event_y() as i32,
+                        }),
                     );
                 }
             }
@@ -300,19 +321,24 @@ impl Window {
             ////
             // keys
             ////
-
             xcb::KEY_PRESS => {
                 let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
                 let detail = event.detail();
 
-                handler.on_event(self, Event::Keyboard(KeyboardEvent::KeyPressed(detail as u32)));
+                handler.on_event(
+                    self,
+                    Event::Keyboard(KeyboardEvent::KeyPressed(detail as u32)),
+                );
             }
 
             xcb::KEY_RELEASE => {
                 let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
                 let detail = event.detail();
 
-                handler.on_event(self, Event::Keyboard(KeyboardEvent::KeyReleased(detail as u32)));
+                handler.on_event(
+                    self,
+                    Event::Keyboard(KeyboardEvent::KeyReleased(detail as u32)),
+                );
             }
 
             _ => {
