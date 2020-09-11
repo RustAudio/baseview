@@ -2,7 +2,7 @@ use baseview::{Event, Window, WindowHandler};
 
 fn main() {
     let window_open_options = baseview::WindowOpenOptions {
-        title: "baseview",
+        title: "baseview".into(),
         width: 512,
         height: 512,
         parent: baseview::Parent::None,
@@ -22,7 +22,7 @@ impl WindowHandler for MyProgram {
 
     fn on_frame(&mut self) {}
 
-    fn on_event(&mut self, window: &mut Window, event: Event) {
+    fn on_event(&mut self, _window: &mut Window, event: Event) {
         match event {
             Event::Mouse(e) => println!("Mouse event: {:?}", e),
             Event::Keyboard(e) => println!("Keyboard event: {:?}", e),

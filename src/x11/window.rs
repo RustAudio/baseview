@@ -1,5 +1,6 @@
 use std::os::raw::{c_ulong, c_void};
 use std::time::*;
+use std::thread;
 
 use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
@@ -25,6 +26,16 @@ pub struct WindowHandle;
 
 impl Window {
     pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
+        let runner = thread::spawn(move || {
+            Self::window_thread::<H>(options);
+        });
+
+        let _ = runner.join();
+
+        WindowHandle
+    }
+
+    fn window_thread<H: WindowHandler>(options: WindowOpenOptions) {
         // Connect to the X server
         // FIXME: baseview error type instead of unwrap()
         let xcb_connection = XcbConnection::new().unwrap();
@@ -119,8 +130,6 @@ impl Window {
         let mut handler = H::build(&mut window);
 
         window.run_event_loop(&mut handler);
-
-        WindowHandle
     }
 
     #[inline]
