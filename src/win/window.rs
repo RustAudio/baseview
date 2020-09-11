@@ -58,10 +58,7 @@ unsafe fn handle_timer<H: WindowHandler>(window_state: &RefCell<WindowState<H>>,
 }
 
 unsafe extern "system" fn wnd_proc<H: WindowHandler>(
-    hwnd: HWND,
-    msg: UINT,
-    wparam: WPARAM,
-    lparam: LPARAM,
+    hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM,
 ) -> LRESULT {
     if msg == WM_CREATE {
         PostMessageA(hwnd, WM_SHOWWINDOW, 0, 0);

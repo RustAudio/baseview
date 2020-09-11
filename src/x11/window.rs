@@ -51,8 +51,7 @@ impl Window {
     }
 
     fn window_thread<H: WindowHandler>(
-        options: WindowOpenOptions,
-        tx: mpsc::SyncSender<WindowOpenResult>,
+        options: WindowOpenOptions, tx: mpsc::SyncSender<WindowOpenResult>,
     ) -> WindowOpenResult {
         // Connect to the X server
         // FIXME: baseview error type instead of unwrap()
@@ -122,9 +121,7 @@ impl Window {
             title.as_bytes(),
         );
 
-        xcb_connection
-            .atoms
-            .wm_protocols
+        xcb_connection.atoms.wm_protocols
             .zip(xcb_connection.atoms.wm_delete_window)
             .map(|(wm_protocols, wm_delete_window)| {
                 xcb_util::icccm::set_wm_protocols(
@@ -254,10 +251,7 @@ impl Window {
                 let data = event.data().data;
                 let (_, data32, _) = unsafe { data.align_to::<u32>() };
 
-                let wm_delete_window = self
-                    .xcb_connection
-                    .atoms
-                    .wm_delete_window
+                let wm_delete_window = self.xcb_connection.atoms.wm_delete_window
                     .unwrap_or(xcb::NONE);
 
                 if wm_delete_window == data32[0] {

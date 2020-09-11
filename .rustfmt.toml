@@ -1,0 +1,2 @@
+fn_args_layout = "Compressed"
+use_field_init_shorthand = true
