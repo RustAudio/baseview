@@ -246,6 +246,9 @@ impl<A: AppWindow> Window<A> {
             }
 
             // TODO: process requests
+            if let Some((width, height)) = self.window_state.poll_size_request() {
+                // do something
+            }
             if self.window_state.poll_redraw_request() {
                 // do something
             }

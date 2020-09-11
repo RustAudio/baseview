@@ -10,9 +10,9 @@ pub struct WindowState {
     scale: f64,
     mouse_cursor: MouseCursor,
     raw_handle: raw_window_handle::RawWindowHandle,
-    resized: bool,
     frame_rate: f64,
     interval_rate: Option<f64>,
+    size_requested: bool,
     cursor_requested: bool,
     redraw_requested: bool,
     close_requested: bool,
@@ -33,7 +33,7 @@ impl WindowState {
             scale,
             raw_handle,
             mouse_cursor: Default::default(),
-            resized: false,
+            size_requested: false,
             frame_rate: 60.0,
             interval_rate: None,
             cursor_requested: false,
@@ -68,11 +68,11 @@ impl WindowState {
         self.interval_rate
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
+    pub fn request_size(&mut self, width: u32, height: u32) {
         if self.width != width || self.height != height {
             self.width = width;
             self.height = height;
-            self.resized = true;
+            self.size_requested = true;
         }
     }
 
@@ -111,6 +111,15 @@ impl WindowState {
         if self.interval_rate != interval_rate {
             self.interval_rate = interval_rate;
             self.interval_requested = true;
+        }
+    }
+
+    pub fn poll_size_request(&mut self) -> Option<(u32, u32)> {
+        if self.size_requested {
+            self.size_requested = false;
+            Some((self.width, self.height))
+        } else {
+            None
         }
     }
 
