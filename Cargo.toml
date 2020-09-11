@@ -17,7 +17,9 @@ raw-window-handle = "0.3.3"
 [target.'cfg(target_os="linux")'.dependencies]
 xcb = { version = "0.9", features = ["thread", "xlib_xcb", "dri2"] }
 x11 = { version = "2.18", features = ["xlib"] }
+xcb-util = { version = "0.3", features = ["icccm"] }
 libc = "0.2"
+nix = "0.18"
 
 [target.'cfg(target_os="windows")'.dependencies]
 winapi = { version = "0.3.8", features = ["libloaderapi", "winuser", "windef", "minwindef", "guiddef", "combaseapi", "wingdi", "errhandlingapi"] }

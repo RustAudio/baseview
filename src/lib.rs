@@ -42,7 +42,7 @@ pub trait WindowHandler {
 
     fn build(window: &mut Window) -> Self;
 
-    fn draw(&mut self, window: &mut Window);
+    fn on_frame(&mut self);
     fn on_event(&mut self, window: &mut Window, event: Event);
     fn on_message(&mut self, window: &mut Window, message: Self::Message);
 }

@@ -16,11 +16,11 @@ struct MyProgram {}
 impl WindowHandler for MyProgram {
     type Message = ();
 
-    fn build(window: &mut Window) -> Self {
+    fn build(_window: &mut Window) -> Self {
         Self {}
     }
 
-    fn draw(&mut self, window: &mut Window) {}
+    fn on_frame(&mut self) {}
 
     fn on_event(&mut self, window: &mut Window, event: Event) {
         match event {
@@ -32,5 +32,5 @@ impl WindowHandler for MyProgram {
         }
     }
 
-    fn on_message(&mut self, window: &mut Window, _message: Self::Message) {}
+    fn on_message(&mut self, _window: &mut Window, _message: Self::Message) {}
 }
