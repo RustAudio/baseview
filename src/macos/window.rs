@@ -20,6 +20,18 @@ pub struct Window {
     ns_view: id,
 }
 
+pub struct WindowHandle;
+
+impl WindowHandle {
+    pub fn app_run_blocking(self) {
+        unsafe {
+            let current_app = NSRunningApplication::currentApplication(nil);
+            current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
+            app.run();
+        }
+    }
+}
+
 impl Window {
     pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
         unsafe {
@@ -52,10 +64,6 @@ impl Window {
 
             let handler = H::build(&mut window);
 
-            let current_app = NSRunningApplication::currentApplication(nil);
-            current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
-            app.run();
-
             WindowHandle
         }
     }
@@ -70,5 +78,3 @@ unsafe impl HasRawWindowHandle for Window {
         })
     }
 }
-
-pub struct WindowHandle;
