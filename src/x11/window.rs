@@ -162,6 +162,10 @@ impl Window {
         Ok(())
     }
 
+    pub fn window_info(&self) -> &WindowInfo {
+        &self.window_info
+    }
+
     #[inline]
     fn drain_xcb_events<H: WindowHandler>(&mut self, handler: &mut H) {
         while let Some(event) = self.xcb_connection.conn.poll_for_event() {
