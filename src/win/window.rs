@@ -141,6 +141,29 @@ pub struct Window {
     hwnd: HWND,
 }
 
+pub struct WindowHandle {
+    hwnd: HWND
+}
+
+impl WindowHandle {
+    pub fn app_run_blocking(self) {
+        unsafe {
+            let mut msg: MSG = std::mem::zeroed();
+
+            loop {
+                let status = GetMessageA(&mut msg, self.hwnd, 0, 0);
+
+                if status == -1 {
+                    break;
+                }
+
+                TranslateMessage(&mut msg);
+                DispatchMessageA(&mut msg);
+            }
+        }
+    }
+}
+
 impl Window {
     pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
         unsafe {
@@ -203,24 +226,12 @@ impl Window {
             let win = Rc::new(RefCell::new(window));
 
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, Rc::into_raw(win) as *const _ as _);
-
             SetTimer(hwnd, 4242, 13, None);
 
-            // todo: decide what to do with the message pump
-            if parent.is_null() {
-                let mut msg: MSG = std::mem::zeroed();
-                loop {
-                    let status = GetMessageA(&mut msg, hwnd, 0, 0);
-                    if status == -1 {
-                        break;
-                    }
-                    TranslateMessage(&mut msg);
-                    DispatchMessageA(&mut msg);
-                }
+            WindowHandle {
+                hwnd
             }
         }
-
-        WindowHandle
     }
 }
 
@@ -232,5 +243,3 @@ unsafe impl HasRawWindowHandle for Window {
         })
     }
 }
-
-pub struct WindowHandle;
