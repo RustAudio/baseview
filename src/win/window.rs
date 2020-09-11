@@ -19,8 +19,8 @@ use std::rc::Rc;
 use raw_window_handle::{windows::WindowsHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    Event, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta,
-    WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    Event, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta, WindowEvent,
+    WindowHandler, WindowInfo, WindowOpenOptions,
 };
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -142,7 +142,7 @@ pub struct Window {
 }
 
 pub struct WindowHandle {
-    hwnd: HWND
+    hwnd: HWND,
 }
 
 impl WindowHandle {
@@ -193,7 +193,7 @@ impl Window {
                 WithParent(p) => {
                     flags = WS_CHILD | WS_VISIBLE;
                     p
-                },
+                }
 
                 _ => {
                     AdjustWindowRectEx(&mut rect, flags, FALSE, 0);
@@ -232,9 +232,7 @@ impl Window {
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, Rc::into_raw(win) as *const _ as _);
             SetTimer(hwnd, 4242, 13, None);
 
-            WindowHandle {
-                hwnd
-            }
+            WindowHandle { hwnd }
         }
     }
 }

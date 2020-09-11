@@ -91,5 +91,5 @@ pub enum WindowEvent {
 pub enum Event {
     Mouse(MouseEvent),
     Keyboard(KeyboardEvent),
-    Window(WindowEvent)
+    Window(WindowEvent),
 }

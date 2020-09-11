@@ -1,22 +1,18 @@
 /// A very light abstraction around the XCB connection.
 ///
 /// Keeps track of the xcb connection itself and the xlib display ID that was used to connect.
-
-use std::ffi::{
-    CString,
-    CStr
-};
+use std::ffi::{CStr, CString};
 
 pub(crate) struct Atoms {
     pub wm_protocols: Option<u32>,
-    pub wm_delete_window: Option<u32>
+    pub wm_delete_window: Option<u32>,
 }
 
 pub struct XcbConnection {
     pub conn: xcb::Connection,
     pub xlib_display: i32,
 
-    pub(crate) atoms: Atoms
+    pub(crate) atoms: Atoms,
 }
 
 macro_rules! intern_atoms {
@@ -36,15 +32,11 @@ macro_rules! intern_atoms {
     }};
 }
 
-
 impl XcbConnection {
     pub fn new() -> Result<Self, xcb::base::ConnError> {
         let (conn, xlib_display) = xcb::Connection::connect_with_xlib_display()?;
 
-        let (wm_protocols, wm_delete_window) =
-            intern_atoms!(&conn,
-                WM_PROTOCOLS,
-                WM_DELETE_WINDOW);
+        let (wm_protocols, wm_delete_window) = intern_atoms!(&conn, WM_PROTOCOLS, WM_DELETE_WINDOW);
 
         Ok(Self {
             conn,
@@ -52,8 +44,8 @@ impl XcbConnection {
 
             atoms: Atoms {
                 wm_protocols,
-                wm_delete_window
-            }
+                wm_delete_window,
+            },
         })
     }
 
@@ -62,7 +54,8 @@ impl XcbConnection {
     // If neither work, I guess just assume 96.0 and don't do any scaling.
     fn get_scaling_xft(&self) -> Option<f64> {
         use x11::xlib::{
-            XResourceManagerString, XrmDestroyDatabase, XrmGetResource, XrmGetStringDatabase, XrmValue,
+            XResourceManagerString, XrmDestroyDatabase, XrmGetResource, XrmGetStringDatabase,
+            XrmValue,
         };
 
         let display = self.conn.get_raw_dpy();
@@ -113,10 +106,7 @@ impl XcbConnection {
     fn get_scaling_screen_dimensions(&self) -> Option<f64> {
         // Figure out screen information
         let setup = self.conn.get_setup();
-        let screen = setup
-            .roots()
-            .nth(self.xlib_display as usize)
-            .unwrap();
+        let screen = setup.roots().nth(self.xlib_display as usize).unwrap();
 
         // Get the DPI from the screen struct
         //
