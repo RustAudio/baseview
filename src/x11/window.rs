@@ -17,13 +17,6 @@ pub struct WindowHandle;
 
 impl Window {
     pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
-        // Convert the parent to a X11 window ID if we're given one
-        let parent = match options.parent {
-            Parent::None => None,
-            Parent::AsIfParented => None, // TODO: ???
-            Parent::WithParent(p) => Some(p as u32),
-        };
-
         // Connect to the X server
         // FIXME: baseview error type instead of unwrap()
         let xcb_connection = XcbConnection::new().unwrap();
@@ -38,10 +31,9 @@ impl Window {
         let foreground = xcb_connection.conn.generate_id();
 
         // Convert parent into something that X understands
-        let parent_id = if let Some(p) = parent {
-            p
-        } else {
-            screen.root()
+        let parent_id = match options.parent {
+            Parent::WithParent(p) => p as u32,
+            Parent::None | Parent::AsIfParented => screen.root(),
         };
 
         xcb::create_gc(
@@ -77,6 +69,7 @@ impl Window {
                     | xcb::EVENT_MASK_KEY_RELEASE,
             )],
         );
+
         xcb::map_window(&xcb_connection.conn, window_id);
 
         // Change window title
