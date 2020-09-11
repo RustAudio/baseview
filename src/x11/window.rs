@@ -1,8 +1,7 @@
 use std::os::raw::{c_ulong, c_void};
 use std::sync::mpsc;
+use std::time::*;
 use std::thread;
-use std::time::*;
-use std::time::*;
 
 use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
