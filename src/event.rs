@@ -78,7 +78,7 @@ pub enum MouseEvent {
 pub struct WindowInfo {
     pub width: u32,
     pub height: u32,
-    pub scale_factor: f64,
+    pub scale: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
