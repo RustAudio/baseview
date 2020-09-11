@@ -25,7 +25,8 @@ impl Window {
         };
 
         // Connect to the X server
-        let xcb_connection = XcbConnection::new();
+        // FIXME: baseview error type instead of unwrap()
+        let xcb_connection = XcbConnection::new().unwrap();
 
         // Get screen information (?)
         let setup = xcb_connection.conn.get_setup();

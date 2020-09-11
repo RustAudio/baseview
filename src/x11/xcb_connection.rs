@@ -13,15 +13,19 @@ pub struct XcbConnection {
 }
 
 impl XcbConnection {
-    pub fn new() -> Self {
-        let (conn, xlib_display) = xcb::Connection::connect_with_xlib_display().unwrap();
-        Self { conn, xlib_display }
+    pub fn new() -> Result<Self, xcb::base::ConnError> {
+        xcb::Connection::connect_with_xlib_display()
+            .map(|(conn, xlib_display)|
+                Self {
+                    conn,
+                    xlib_display
+                })
     }
 
     // Try to get the scaling with this function first.
     // If this gives you `None`, fall back to `get_scaling_screen_dimensions`.
     // If neither work, I guess just assume 96.0 and don't do any scaling.
-    pub fn get_scaling_xft(&self) -> Option<f64> {
+    fn get_scaling_xft(&self) -> Option<f64> {
         use x11::xlib::{
             XResourceManagerString, XrmDestroyDatabase, XrmGetResource, XrmGetStringDatabase, XrmValue,
         };
@@ -71,7 +75,7 @@ impl XcbConnection {
     // Try to get the scaling with `get_scaling_xft` first.
     // Only use this function as a fallback.
     // If neither work, I guess just assume 96.0 and don't do any scaling.
-    pub fn get_scaling_screen_dimensions(&self) -> Option<f64> {
+    fn get_scaling_screen_dimensions(&self) -> Option<f64> {
         // Figure out screen information
         let setup = self.conn.get_setup();
         let screen = setup
