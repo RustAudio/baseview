@@ -6,7 +6,7 @@ use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
 use super::XcbConnection;
 use crate::{
-    Event, FileDropEvent, KeyboardEvent, MouseButton, MouseEvent, Parent, ScrollDelta, WindowEvent,
+    Event, KeyboardEvent, MouseButton, MouseEvent, Parent, ScrollDelta, WindowEvent,
     WindowHandler, WindowOpenOptions,
 };
 

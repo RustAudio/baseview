@@ -19,7 +19,7 @@ use std::rc::Rc;
 use raw_window_handle::{windows::WindowsHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    Event, FileDropEvent, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta,
+    Event, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta,
     WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
 };
 
