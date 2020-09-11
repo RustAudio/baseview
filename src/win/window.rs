@@ -6,18 +6,19 @@ use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA,
     GetMessageA, GetWindowLongPtrA, MessageBoxA, PostMessageA, RegisterClassA, SetTimer,
     SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR,
-    MB_OK, MB_TOPMOST, MSG, WM_CREATE, WM_MOUSEMOVE, WM_PAINT, WM_SHOWWINDOW, WM_TIMER, WNDCLASSA,
-    WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW,
-    WS_SIZEBOX, WS_VISIBLE,
+    MB_OK, MB_TOPMOST, MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_PAINT, WM_SHOWWINDOW, WM_TIMER,
+    WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
+    WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
 };
 
+use std::cell::RefCell;
 use std::ffi::c_void;
 use std::ptr::null_mut;
-use std::sync::mpsc;
 use std::rc::Rc;
-use std::cell::RefCell;
 
-use crate::{AppWindow, Event, Parent::WithParent, RawWindow, WindowInfo, WindowOpenOptions};
+use raw_window_handle::{windows::WindowsHandle, HasRawWindowHandle, RawWindowHandle};
+
+use crate::{Event, Parent::WithParent, WindowHandler, WindowInfo, WindowOpenOptions};
 
 unsafe fn message_box(title: &str, msg: &str) {
     let title = (title.to_owned() + "\0").as_ptr() as *const i8;
@@ -46,14 +47,14 @@ unsafe fn generate_guid() -> String {
 
 const WIN_FRAME_TIMER: usize = 4242;
 
-unsafe fn handle_timer<A: AppWindow>(win: &RefCell<Window<A>>, timer_id: usize) {
+unsafe fn handle_timer<H: WindowHandler>(window_state: &RefCell<WindowState<H>>, timer_id: usize) {
     match timer_id {
         WIN_FRAME_TIMER => {}
         _ => (),
     }
 }
 
-unsafe extern "system" fn wnd_proc<A: AppWindow>(
+unsafe extern "system" fn wnd_proc<H: WindowHandler>(
     hwnd: HWND,
     msg: UINT,
     wparam: WPARAM,
@@ -66,21 +67,32 @@ unsafe extern "system" fn wnd_proc<A: AppWindow>(
 
     let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
     if !win_ptr.is_null() {
-        let win = &*(win_ptr as *const RefCell<Window<A>>);
+        let window_state = &*(win_ptr as *const RefCell<WindowState<H>>);
+        let mut window = Window { hwnd };
 
         match msg {
             WM_MOUSEMOVE => {
                 let x = (lparam & 0xFFFF) as i32;
                 let y = ((lparam >> 16) & 0xFFFF) as i32;
-                win.borrow_mut().handle_mouse_motion(x, y);
+                window_state
+                    .borrow_mut()
+                    .handler
+                    .on_event(&mut window, Event::CursorMotion(x, y));
                 return 0;
             }
             WM_TIMER => {
-                handle_timer(&win, wparam);
+                handle_timer(&window_state, wparam);
                 return 0;
             }
             WM_PAINT => {
                 return 0;
+            }
+            WM_CLOSE => {
+                window_state
+                    .borrow_mut()
+                    .handler
+                    .on_event(&mut window, Event::WillClose);
+                return DefWindowProcA(hwnd, msg, wparam, lparam);
             }
             _ => {}
         }
@@ -89,13 +101,13 @@ unsafe extern "system" fn wnd_proc<A: AppWindow>(
     return DefWindowProcA(hwnd, msg, wparam, lparam);
 }
 
-unsafe fn register_wnd_class<A: AppWindow>() -> ATOM {
+unsafe fn register_wnd_class<H: WindowHandler>() -> ATOM {
     // We generate a unique name for the new window class to prevent name collisions
     let class_name = format!("Baseview-{}", generate_guid()).as_ptr() as *const i8;
 
     let wnd_class = WNDCLASSA {
         style: CS_OWNDC,
-        lpfnWndProc: Some(wnd_proc::<A>),
+        lpfnWndProc: Some(wnd_proc::<H>),
         hInstance: null_mut(),
         lpszClassName: class_name,
         cbClsExtra: 0,
@@ -113,20 +125,22 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
     UnregisterClassA(wnd_class as _, null_mut());
 }
 
-pub struct Window<A: AppWindow> {
-    pub(crate) hwnd: HWND,
+struct WindowState<H> {
     window_class: ATOM,
-    app_window: A,
-    app_message_rx: mpsc::Receiver<A::AppMessage>,
     scaling: Option<f64>, // DPI scale, 96.0 is "default".
+    handler: H,
 }
 
-impl<A: AppWindow> Window<A> {
-    pub fn open(options: WindowOpenOptions, app_message_rx: mpsc::Receiver<A::AppMessage>) {
+pub struct Window {
+    hwnd: HWND,
+}
+
+impl Window {
+    pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
         unsafe {
             let title = (options.title.to_owned() + "\0").as_ptr() as *const i8;
 
-            let window_class = register_wnd_class::<A>();
+            let window_class = register_wnd_class::<H>();
             // todo: manage error ^
 
             let mut flags = WS_POPUPWINDOW
@@ -170,28 +184,15 @@ impl<A: AppWindow> Window<A> {
             );
             // todo: manage error ^
 
-            let mut windows_handle = raw_window_handle::windows::WindowsHandle::empty();
-            windows_handle.hwnd = hwnd as *mut std::ffi::c_void;
+            let mut window = Window { hwnd };
 
-            let raw_window = RawWindow {
-                raw_window_handle: raw_window_handle::RawWindowHandle::Windows(windows_handle),
-            };
+            let handler = H::build(&mut window);
 
-            let window_info = WindowInfo {
-                width: options.width as u32,
-                height: options.height as u32,
-                scale: 1.0,
-            };
-
-            let app_window = A::build(raw_window, &window_info);
-
-            let window = Window {
-                hwnd,
+            let window_state = Rc::new(RefCell::new(WindowState {
                 window_class,
-                app_window,
-                app_message_rx,
                 scaling: None,
-            };
+                handler,
+            }));
 
             let win = Rc::new(RefCell::new(window));
 
@@ -212,19 +213,18 @@ impl<A: AppWindow> Window<A> {
                 }
             }
         }
-    }
 
-    pub fn close(&mut self) {
-        self.app_window.on_event(Event::WillClose);
-
-        // todo: see https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L402
-        unsafe {
-            DestroyWindow(self.hwnd);
-            unregister_wnd_class(self.window_class);
-        }
-    }
-
-    pub(crate) fn handle_mouse_motion(&mut self, x: i32, y: i32) {
-        self.app_window.on_event(Event::CursorMotion(x, y));
+        WindowHandle
     }
 }
+
+unsafe impl HasRawWindowHandle for Window {
+    fn raw_window_handle(&self) -> RawWindowHandle {
+        RawWindowHandle::Windows(WindowsHandle {
+            hwnd: self.hwnd as *mut std::ffi::c_void,
+            ..WindowsHandle::empty()
+        })
+    }
+}
+
+pub struct WindowHandle;

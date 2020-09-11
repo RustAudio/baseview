@@ -1,6 +1,4 @@
-use std::sync::mpsc;
-
-use baseview::Event;
+use baseview::{Event, Window, WindowHandler};
 
 fn main() {
     let window_open_options = baseview::WindowOpenOptions {
@@ -10,25 +8,21 @@ fn main() {
         parent: baseview::Parent::None,
     };
 
-    let (_app_message_tx, app_message_rx) = mpsc::channel::<()>();
-
-    // Send _app_message_tx to a separate thread, then send messages to the GUI thread.
-
-    let _ = baseview::Window::<MyProgram>::open(window_open_options, app_message_rx);
+    let _handle = Window::open::<MyProgram>(window_open_options);
 }
+
 struct MyProgram {}
 
-impl baseview::AppWindow for MyProgram {
-    type AppMessage = ();
+impl WindowHandler for MyProgram {
+    type Message = ();
 
-    fn build(_window_handle: baseview::RawWindow, window_info: &baseview::WindowInfo) -> Self {
-        println!("Window info: {:?}", window_info);
+    fn build(window: &mut Window) -> Self {
         Self {}
     }
 
-    fn draw(&mut self) {}
+    fn draw(&mut self, window: &mut Window) {}
 
-    fn on_event(&mut self, event: Event) {
+    fn on_event(&mut self, window: &mut Window, event: Event) {
         match event {
             Event::CursorMotion(x, y) => {
                 println!("Cursor moved, x: {}, y: {}", x, y);
@@ -69,5 +63,5 @@ impl baseview::AppWindow for MyProgram {
         }
     }
 
-    fn on_app_message(&mut self, _message: Self::AppMessage) {}
+    fn on_message(&mut self, window: &mut Window, _message: Self::Message) {}
 }
