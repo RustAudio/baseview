@@ -1,9 +1,10 @@
 use std::os::raw::{c_ulong, c_void};
 
+use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
+
 use super::XcbConnection;
 use crate::{Event, MouseButtonID, MouseScroll, Parent, WindowHandler, WindowOpenOptions};
 
-use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
 pub struct Window {
     xcb_connection: XcbConnection,
@@ -101,12 +102,41 @@ impl Window {
         WindowHandle
     }
 
+    #[inline]
+    fn drain_xcb_events<H: WindowHandler>(&mut self, handler: &mut H) {
+        while let Some(event) = self.xcb_connection.conn.poll_for_event() {
+            self.handle_xcb_event(handler, event);
+        }
+    }
+
     // Event loop
+    // FIXME: poll() acts fine on linux, sometimes funky on *BSD. XCB upstream uses a define to
+    // switch between poll() and select() (the latter of which is fine on *BSD), and we should do
+    // the same.
     fn run_event_loop<H: WindowHandler>(&mut self, handler: &mut H) {
+        use nix::poll::*;
+
+        let xcb_fd = unsafe {
+            let raw_conn = self.xcb_connection.conn.get_raw_conn();
+            xcb::ffi::xcb_get_file_descriptor(raw_conn)
+        };
+
         loop {
-            let ev = self.xcb_connection.conn.wait_for_event();
-            if let Some(event) = ev {
-                 self.handle_xcb_event(handler, event);
+            let mut fds = [
+                PollFd::new(xcb_fd, PollFlags::POLLIN)
+            ];
+
+            // FIXME: handle errors
+            poll(&mut fds, -1).unwrap();
+
+            if let Some(revents) = fds[0].revents() {
+                if revents.contains(PollFlags::POLLERR) {
+                    panic!("xcb connection poll error");
+                }
+
+                if revents.contains(PollFlags::POLLIN) {
+                    self.drain_xcb_events(handler);
+                }
             }
         }
     }
