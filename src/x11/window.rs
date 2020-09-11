@@ -21,18 +21,24 @@ pub struct Window {
 }
 
 // FIXME: move to outer crate context
-pub struct WindowHandle;
+pub struct WindowHandle {
+    thread: std::thread::JoinHandle<()>
+}
+
+impl WindowHandle {
+    pub fn app_run_blocking(self) {
+        let _ = self.thread.join();
+    }
+}
 
 
 impl Window {
     pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
-        let runner = thread::spawn(move || {
-            Self::window_thread::<H>(options);
-        });
-
-        let _ = runner.join();
-
-        WindowHandle
+        WindowHandle {
+            thread: thread::spawn(move || {
+                Self::window_thread::<H>(options);
+            })
+        }
     }
 
     fn window_thread<H: WindowHandler>(options: WindowOpenOptions) {
