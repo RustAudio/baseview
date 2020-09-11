@@ -24,7 +24,6 @@ impl WindowHandler for MyProgram {
 
     fn on_event(&mut self, window: &mut Window, event: Event) {
         match event {
-            Event::Interval(delta_time) => println!("Update interval, delta time: {}", delta_time),
             Event::Mouse(e) => println!("Mouse event: {:?}", e),
             Event::Keyboard(e) => println!("Keyboard event: {:?}", e),
             Event::Window(e) => println!("Window event: {:?}", e),

@@ -103,7 +103,6 @@ pub enum FileDropEvent {
 
 #[derive(Debug)]
 pub enum Event {
-    Interval(f64), // delta time passed
     Mouse(MouseEvent),
     Keyboard(KeyboardEvent),
     Window(WindowEvent),
