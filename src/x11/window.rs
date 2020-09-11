@@ -1,4 +1,5 @@
 use std::os::raw::{c_ulong, c_void};
+use std::time::*;
 
 use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
@@ -10,6 +11,9 @@ pub struct Window {
     xcb_connection: XcbConnection,
     window_id: u32,
     scaling: f64,
+
+    frame_interval: Duration,
+    event_loop_running: bool
 }
 
 // FIXME: move to outer crate context
@@ -93,6 +97,9 @@ impl Window {
             xcb_connection,
             window_id,
             scaling,
+
+            frame_interval: Duration::from_millis(15),
+            event_loop_running: false
         };
 
         let mut handler = H::build(&mut window);
@@ -121,13 +128,28 @@ impl Window {
             xcb::ffi::xcb_get_file_descriptor(raw_conn)
         };
 
-        loop {
+        let mut next_frame = Instant::now() + self.frame_interval;
+        self.event_loop_running = true;
+
+        while self.event_loop_running {
+            let now = Instant::now();
+            let until_next_frame =
+                if now > next_frame {
+                    handler.draw(self);
+
+                    next_frame = now + self.frame_interval;
+                    self.frame_interval
+                } else {
+                    next_frame - now
+                };
+
             let mut fds = [
                 PollFd::new(xcb_fd, PollFlags::POLLIN)
             ];
 
             // FIXME: handle errors
-            poll(&mut fds, -1).unwrap();
+            poll(&mut fds, until_next_frame.subsec_millis() as i32)
+                .unwrap();
 
             if let Some(revents) = fds[0].revents() {
                 if revents.contains(PollFlags::POLLERR) {
@@ -234,7 +256,6 @@ impl Window {
             }
         }
     }
-
 }
 
 unsafe impl HasRawWindowHandle for Window {

@@ -20,7 +20,7 @@ impl WindowHandler for MyProgram {
         Self {}
     }
 
-    fn draw(&mut self, window: &mut Window) {}
+    fn draw(&mut self, _window: &mut Window) {}
 
     fn on_event(&mut self, window: &mut Window, event: Event) {
         match event {
