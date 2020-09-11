@@ -16,7 +16,11 @@ mod macos;
 pub use macos::*;
 
 mod event;
+mod keyboard;
+mod mouse_cursor;
 pub use event::*;
+pub use keyboard::*;
+pub use mouse_cursor::MouseCursor;
 
 pub enum Parent {
     None,

@@ -10,7 +10,10 @@ use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
-use crate::{MouseScroll, WindowHandler, WindowOpenOptions};
+use crate::{
+    Event, FileDropEvent, KeyboardEvent, MouseButton, MouseEvent, ScrollDelta, WindowEvent,
+    WindowHandler, WindowOpenOptions,
+};
 
 pub struct Window {
     ns_window: id,

@@ -2,7 +2,10 @@ use std::ffi::CStr;
 use std::os::raw::{c_ulong, c_void};
 
 use super::XcbConnection;
-use crate::{Event, MouseButtonID, MouseScroll, Parent, WindowHandler, WindowOpenOptions};
+use crate::{
+    Event, FileDropEvent, KeyboardEvent, MouseButton, MouseEvent, Parent, ScrollDelta, WindowEvent,
+    WindowHandler, WindowOpenOptions,
+};
 
 use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
@@ -157,7 +160,10 @@ fn run_event_loop<H: WindowHandler>(window: &mut Window, handler: &mut H) {
                     if detail != 4 && detail != 5 {
                         handler.on_event(
                             window,
-                            Event::CursorMotion(event.event_x() as i32, event.event_y() as i32),
+                            Event::Mouse(MouseEvent::CursorMoved {
+                                x: event.event_x() as i32,
+                                y: event.event_y() as i32,
+                            }),
                         );
                     }
                 }
@@ -169,24 +175,27 @@ fn run_event_loop<H: WindowHandler>(window: &mut Window, handler: &mut H) {
                         4 => {
                             handler.on_event(
                                 window,
-                                Event::MouseScroll(MouseScroll {
-                                    x_delta: 0.0,
-                                    y_delta: 1.0,
-                                }),
+                                Event::Mouse(MouseEvent::WheelScrolled(ScrollDelta::Lines {
+                                    x: 0.0,
+                                    y: 1.0,
+                                })),
                             );
                         }
                         5 => {
                             handler.on_event(
                                 window,
-                                Event::MouseScroll(MouseScroll {
-                                    x_delta: 0.0,
-                                    y_delta: -1.0,
-                                }),
+                                Event::Mouse(MouseEvent::WheelScrolled(ScrollDelta::Lines {
+                                    x: 0.0,
+                                    y: -1.0,
+                                })),
                             );
                         }
                         detail => {
                             let button_id = mouse_id(detail);
-                            handler.on_event(window, Event::MouseDown(button_id));
+                            handler.on_event(
+                                window,
+                                Event::Mouse(MouseEvent::ButtonPressed(button_id)),
+                            );
                         }
                     }
                 }
@@ -196,20 +205,27 @@ fn run_event_loop<H: WindowHandler>(window: &mut Window, handler: &mut H) {
 
                     if detail != 4 && detail != 5 {
                         let button_id = mouse_id(detail);
-                        handler.on_event(window, Event::MouseUp(button_id));
+                        handler
+                            .on_event(window, Event::Mouse(MouseEvent::ButtonReleased(button_id)));
                     }
                 }
                 xcb::KEY_PRESS => {
                     let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
                     let detail = event.detail();
 
-                    handler.on_event(window, Event::KeyDown(detail));
+                    handler.on_event(
+                        window,
+                        Event::Keyboard(KeyboardEvent::KeyPressed(detail as u32)),
+                    );
                 }
                 xcb::KEY_RELEASE => {
                     let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
                     let detail = event.detail();
 
-                    handler.on_event(window, Event::KeyUp(detail));
+                    handler.on_event(
+                        window,
+                        Event::Keyboard(KeyboardEvent::KeyReleased(detail as u32)),
+                    );
                 }
                 _ => {
                     println!("Unhandled event type: {:?}", event_type);
@@ -300,13 +316,13 @@ fn get_scaling_screen_dimensions(xcb_connection: &XcbConnection) -> Option<f64> 
     Some(yscale)
 }
 
-fn mouse_id(id: u8) -> MouseButtonID {
+fn mouse_id(id: u8) -> MouseButton {
     match id {
-        1 => MouseButtonID::Left,
-        2 => MouseButtonID::Middle,
-        3 => MouseButtonID::Right,
-        6 => MouseButtonID::Back,
-        7 => MouseButtonID::Forward,
-        id => MouseButtonID::Other(id),
+        1 => MouseButton::Left,
+        2 => MouseButton::Middle,
+        3 => MouseButton::Right,
+        6 => MouseButton::Back,
+        7 => MouseButton::Forward,
+        id => MouseButton::Other(id),
     }
 }
