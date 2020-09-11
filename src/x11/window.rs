@@ -6,8 +6,8 @@ use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
 use super::XcbConnection;
 use crate::{
-    Event, KeyboardEvent, MouseButton, MouseEvent, Parent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowOpenOptions, WindowInfo,
+    Event, KeyboardEvent, MouseButton, MouseEvent, Parent, ScrollDelta, WindowEvent, WindowHandler,
+    WindowInfo, WindowOpenOptions,
 };
 
 pub struct Window {

@@ -19,8 +19,8 @@ use std::rc::Rc;
 use raw_window_handle::{windows::WindowsHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    Event, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta,
-    WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    Event, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta, WindowEvent,
+    WindowHandler, WindowInfo, WindowOpenOptions,
 };
 
 unsafe fn message_box(title: &str, msg: &str) {
