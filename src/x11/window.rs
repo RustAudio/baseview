@@ -12,6 +12,10 @@ pub struct Window {
     scaling: f64,
 }
 
+// FIXME: move to outer crate context
+pub struct WindowHandle;
+
+
 impl Window {
     pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
         // Convert the parent to a X11 window ID if we're given one
@@ -101,10 +105,115 @@ impl Window {
 
         let mut handler = H::build(&mut window);
 
-        run_event_loop(&mut window, &mut handler);
+        window.run_event_loop(&mut handler);
 
         WindowHandle
     }
+
+    // Event loop
+    fn run_event_loop<H: WindowHandler>(&mut self, handler: &mut H) {
+        loop {
+            let ev = self.xcb_connection.conn.wait_for_event();
+            if let Some(event) = ev {
+                 self.handle_xcb_event(handler, event);
+            }
+        }
+    }
+
+    fn handle_xcb_event<H: WindowHandler>(&mut self, handler: &mut H, event: xcb::GenericEvent) {
+        let event_type = event.response_type() & !0x80;
+
+        // For all of the keyboard and mouse events, you can fetch
+        // `x`, `y`, `detail`, and `state`.
+        // - `x` and `y` are the position inside the window where the cursor currently is
+        //   when the event happened.
+        // - `detail` will tell you which keycode was pressed/released (for keyboard events)
+        //   or which mouse button was pressed/released (for mouse events).
+        //   For mouse events, here's what the value means (at least on my current mouse):
+        //      1 = left mouse button
+        //      2 = middle mouse button (scroll wheel)
+        //      3 = right mouse button
+        //      4 = scroll wheel up
+        //      5 = scroll wheel down
+        //      8 = lower side button ("back" button)
+        //      9 = upper side button ("forward" button)
+        //   Note that you *will* get a "button released" event for even the scroll wheel
+        //   events, which you can probably ignore.
+        // - `state` will tell you the state of the main three mouse buttons and some of
+        //   the keyboard modifier keys at the time of the event.
+        //   http://rtbo.github.io/rust-xcb/src/xcb/ffi/xproto.rs.html#445
+
+        match event_type {
+            xcb::EXPOSE => {
+                handler.draw(self);
+            }
+            xcb::MOTION_NOTIFY => {
+                let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
+                let detail = event.detail();
+
+                if detail != 4 && detail != 5 {
+                    handler.on_event(
+                        self,
+                        Event::CursorMotion(event.event_x() as i32, event.event_y() as i32),
+                    );
+                }
+            }
+            xcb::BUTTON_PRESS => {
+                let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
+                let detail = event.detail();
+
+                match detail {
+                    4 => {
+                        handler.on_event(
+                            self,
+                            Event::MouseScroll(MouseScroll {
+                                x_delta: 0.0,
+                                y_delta: 1.0,
+                            }),
+                        );
+                    }
+                    5 => {
+                        handler.on_event(
+                            self,
+                            Event::MouseScroll(MouseScroll {
+                                x_delta: 0.0,
+                                y_delta: -1.0,
+                            }),
+                        );
+                    }
+                    detail => {
+                        let button_id = mouse_id(detail);
+                        handler.on_event(self, Event::MouseDown(button_id));
+                    }
+                }
+            }
+            xcb::BUTTON_RELEASE => {
+                let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
+                let detail = event.detail();
+
+                if detail != 4 && detail != 5 {
+                    let button_id = mouse_id(detail);
+                    handler.on_event(self, Event::MouseUp(button_id));
+                }
+            }
+            xcb::KEY_PRESS => {
+                let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
+                let detail = event.detail();
+
+                handler.on_event(self, Event::KeyDown(detail));
+            }
+            xcb::KEY_RELEASE => {
+                let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
+                let detail = event.detail();
+
+                handler.on_event(self, Event::KeyUp(detail));
+            }
+            _ => {
+                println!("Unhandled event type: {:?}", event_type);
+            }
+        }
+    }
+
 }
 
 unsafe impl HasRawWindowHandle for Window {
@@ -114,108 +223,6 @@ unsafe impl HasRawWindowHandle for Window {
             display: self.xcb_connection.conn.get_raw_dpy() as *mut c_void,
             ..raw_window_handle::unix::XlibHandle::empty()
         })
-    }
-}
-
-pub struct WindowHandle;
-
-// Event loop
-fn run_event_loop<H: WindowHandler>(window: &mut Window, handler: &mut H) {
-    loop {
-        let ev = window.xcb_connection.conn.wait_for_event();
-        if let Some(event) = ev {
-            let event_type = event.response_type() & !0x80;
-
-            // For all of the keyboard and mouse events, you can fetch
-            // `x`, `y`, `detail`, and `state`.
-            // - `x` and `y` are the position inside the window where the cursor currently is
-            //   when the event happened.
-            // - `detail` will tell you which keycode was pressed/released (for keyboard events)
-            //   or which mouse button was pressed/released (for mouse events).
-            //   For mouse events, here's what the value means (at least on my current mouse):
-            //      1 = left mouse button
-            //      2 = middle mouse button (scroll wheel)
-            //      3 = right mouse button
-            //      4 = scroll wheel up
-            //      5 = scroll wheel down
-            //      8 = lower side button ("back" button)
-            //      9 = upper side button ("forward" button)
-            //   Note that you *will* get a "button released" event for even the scroll wheel
-            //   events, which you can probably ignore.
-            // - `state` will tell you the state of the main three mouse buttons and some of
-            //   the keyboard modifier keys at the time of the event.
-            //   http://rtbo.github.io/rust-xcb/src/xcb/ffi/xproto.rs.html#445
-
-            match event_type {
-                xcb::EXPOSE => {
-                    handler.draw(window);
-                }
-                xcb::MOTION_NOTIFY => {
-                    let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
-                    let detail = event.detail();
-
-                    if detail != 4 && detail != 5 {
-                        handler.on_event(
-                            window,
-                            Event::CursorMotion(event.event_x() as i32, event.event_y() as i32),
-                        );
-                    }
-                }
-                xcb::BUTTON_PRESS => {
-                    let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
-                    let detail = event.detail();
-
-                    match detail {
-                        4 => {
-                            handler.on_event(
-                                window,
-                                Event::MouseScroll(MouseScroll {
-                                    x_delta: 0.0,
-                                    y_delta: 1.0,
-                                }),
-                            );
-                        }
-                        5 => {
-                            handler.on_event(
-                                window,
-                                Event::MouseScroll(MouseScroll {
-                                    x_delta: 0.0,
-                                    y_delta: -1.0,
-                                }),
-                            );
-                        }
-                        detail => {
-                            let button_id = mouse_id(detail);
-                            handler.on_event(window, Event::MouseDown(button_id));
-                        }
-                    }
-                }
-                xcb::BUTTON_RELEASE => {
-                    let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
-                    let detail = event.detail();
-
-                    if detail != 4 && detail != 5 {
-                        let button_id = mouse_id(detail);
-                        handler.on_event(window, Event::MouseUp(button_id));
-                    }
-                }
-                xcb::KEY_PRESS => {
-                    let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
-                    let detail = event.detail();
-
-                    handler.on_event(window, Event::KeyDown(detail));
-                }
-                xcb::KEY_RELEASE => {
-                    let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
-                    let detail = event.detail();
-
-                    handler.on_event(window, Event::KeyUp(detail));
-                }
-                _ => {
-                    println!("Unhandled event type: {:?}", event_type);
-                }
-            }
-        }
     }
 }
 
