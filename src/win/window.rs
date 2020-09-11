@@ -18,7 +18,10 @@ use std::rc::Rc;
 
 use raw_window_handle::{windows::WindowsHandle, HasRawWindowHandle, RawWindowHandle};
 
-use crate::{Event, Parent::WithParent, WindowHandler, WindowInfo, WindowOpenOptions};
+use crate::{
+    Event, FileDropEvent, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta,
+    WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+};
 
 unsafe fn message_box(title: &str, msg: &str) {
     let title = (title.to_owned() + "\0").as_ptr() as *const i8;
@@ -74,10 +77,13 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
             WM_MOUSEMOVE => {
                 let x = (lparam & 0xFFFF) as i32;
                 let y = ((lparam >> 16) & 0xFFFF) as i32;
-                window_state
-                    .borrow_mut()
-                    .handler
-                    .on_event(&mut window, Event::CursorMotion(x, y));
+                window_state.borrow_mut().handler.on_event(
+                    &mut window,
+                    Event::Mouse(MouseEvent::CursorMoved {
+                        x: x as i32,
+                        y: y as i32,
+                    }),
+                );
                 return 0;
             }
             WM_TIMER => {
@@ -91,7 +97,7 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
                 window_state
                     .borrow_mut()
                     .handler
-                    .on_event(&mut window, Event::WillClose);
+                    .on_event(&mut window, Event::Window(WindowEvent::WillClose));
                 return DefWindowProcA(hwnd, msg, wparam, lparam);
             }
             _ => {}

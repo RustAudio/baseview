@@ -4,7 +4,10 @@ use std::time::*;
 use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
 use super::XcbConnection;
-use crate::{Event, MouseButtonID, MouseScroll, Parent, WindowHandler, WindowOpenOptions};
+use crate::{
+    Event, FileDropEvent, KeyboardEvent, MouseButton, MouseEvent, Parent, ScrollDelta, WindowEvent,
+    WindowHandler, WindowOpenOptions,
+};
 
 
 pub struct Window {
@@ -216,7 +219,7 @@ impl Window {
                 let wm_delete_window = self.xcb_connection.atoms.wm_delete_window.unwrap_or(xcb::NONE);
 
                 if wm_delete_window == data32[0] {
-                    handler.on_event(self, Event::WillClose);
+                    handler.on_event(self, Event::Window(WindowEvent::WillClose));
 
                     // FIXME: handler should decide whether window stays open or not
                     self.event_loop_running = false;
@@ -234,7 +237,7 @@ impl Window {
                 if detail != 4 && detail != 5 {
                     handler.on_event(
                         self,
-                        Event::CursorMotion(event.event_x() as i32, event.event_y() as i32),
+                        Event::Mouse(MouseEvent::CursorMoved { x: event.event_x() as i32, y: event.event_y() as i32 }),
                     );
                 }
             }
@@ -247,24 +250,24 @@ impl Window {
                     4 => {
                         handler.on_event(
                             self,
-                            Event::MouseScroll(MouseScroll {
-                                x_delta: 0.0,
-                                y_delta: 1.0,
-                            }),
+                            Event::Mouse(MouseEvent::WheelScrolled(ScrollDelta::Lines {
+                                x: 0.0,
+                                y: 1.0,
+                            })),
                         );
                     }
                     5 => {
                         handler.on_event(
                             self,
-                            Event::MouseScroll(MouseScroll {
-                                x_delta: 0.0,
-                                y_delta: -1.0,
-                            }),
+                            Event::Mouse(MouseEvent::WheelScrolled(ScrollDelta::Lines {
+                                x: 0.0,
+                                y: -1.0,
+                            })),
                         );
                     }
                     detail => {
                         let button_id = mouse_id(detail);
-                        handler.on_event(self, Event::MouseDown(button_id));
+                        handler.on_event(self, Event::Mouse(MouseEvent::ButtonPressed(button_id)));
                     }
                 }
             }
@@ -275,7 +278,7 @@ impl Window {
 
                 if detail != 4 && detail != 5 {
                     let button_id = mouse_id(detail);
-                    handler.on_event(self, Event::MouseUp(button_id));
+                    handler.on_event(self, Event::Mouse(MouseEvent::ButtonReleased(button_id)));
                 }
             }
 
@@ -287,14 +290,14 @@ impl Window {
                 let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
                 let detail = event.detail();
 
-                handler.on_event(self, Event::KeyDown(detail));
+                handler.on_event(self, Event::Keyboard(KeyboardEvent::KeyPressed(detail as u32)));
             }
 
             xcb::KEY_RELEASE => {
                 let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
                 let detail = event.detail();
 
-                handler.on_event(self, Event::KeyUp(detail));
+                handler.on_event(self, Event::Keyboard(KeyboardEvent::KeyReleased(detail as u32)));
             }
 
             _ => {
@@ -314,13 +317,13 @@ unsafe impl HasRawWindowHandle for Window {
     }
 }
 
-fn mouse_id(id: u8) -> MouseButtonID {
+fn mouse_id(id: u8) -> MouseButton {
     match id {
-        1 => MouseButtonID::Left,
-        2 => MouseButtonID::Middle,
-        3 => MouseButtonID::Right,
-        6 => MouseButtonID::Back,
-        7 => MouseButtonID::Forward,
-        id => MouseButtonID::Other(id),
+        1 => MouseButton::Left,
+        2 => MouseButton::Middle,
+        3 => MouseButton::Right,
+        6 => MouseButton::Back,
+        7 => MouseButton::Forward,
+        id => MouseButton::Other(id),
     }
 }
