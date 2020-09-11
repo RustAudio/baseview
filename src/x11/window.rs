@@ -1,4 +1,6 @@
 use std::os::raw::{c_ulong, c_void};
+use std::sync::mpsc;
+use std::time::*;
 use std::thread;
 use std::time::*;
 
@@ -30,16 +32,27 @@ impl WindowHandle {
     }
 }
 
+type WindowOpenResult = Result<(), ()>;
+
 impl Window {
     pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
+        let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
+
+        let thread = thread::spawn(move || {
+            if let Err(e) = Self::window_thread::<H>(options, tx.clone()) {
+                let _ = tx.send(Err(e));
+            }
+        });
+
+        // FIXME: placeholder types for returning errors in the future
+        let _ = rx.recv();
+
         WindowHandle {
-            thread: thread::spawn(move || {
-                Self::window_thread::<H>(options);
-            }),
+            thread
         }
     }
 
-    fn window_thread<H: WindowHandler>(options: WindowOpenOptions) {
+    fn window_thread<H: WindowHandler>(options: WindowOpenOptions, tx: mpsc::SyncSender<WindowOpenResult>) -> WindowOpenResult {
         // Connect to the X server
         // FIXME: baseview error type instead of unwrap()
         let xcb_connection = XcbConnection::new().unwrap();
@@ -142,7 +155,10 @@ impl Window {
 
         let mut handler = H::build(&mut window);
 
+        let _ = tx.send(Ok(()));
+
         window.run_event_loop(&mut handler);
+        Ok(())
     }
 
     #[inline]
@@ -229,7 +245,7 @@ impl Window {
             xcb::CLIENT_MESSAGE => {
                 let event = unsafe { xcb::cast_event::<xcb::ClientMessageEvent>(&event) };
 
-                // what an absolute trajedy this all is
+                // what an absolute tragedy this all is
                 let data = event.data().data;
                 let (_, data32, _) = unsafe { data.align_to::<u32>() };
 
