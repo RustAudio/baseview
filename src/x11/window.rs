@@ -1,4 +1,3 @@
-use std::ffi::CStr;
 use std::os::raw::{c_ulong, c_void};
 
 use super::XcbConnection;
@@ -93,9 +92,7 @@ impl Window {
 
         xcb_connection.conn.flush();
 
-        let scaling = get_scaling_xft(&xcb_connection)
-            .or(get_scaling_screen_dimensions(&xcb_connection))
-            .unwrap_or(1.0);
+        let scaling = xcb_connection.get_scaling().unwrap_or(1.0);
 
         let mut window = Self {
             xcb_connection,
@@ -224,87 +221,6 @@ unsafe impl HasRawWindowHandle for Window {
             ..raw_window_handle::unix::XlibHandle::empty()
         })
     }
-}
-
-// Try to get the scaling with this function first.
-// If this gives you `None`, fall back to `get_scaling_screen_dimensions`.
-// If neither work, I guess just assume 96.0 and don't do any scaling.
-fn get_scaling_xft(xcb_connection: &XcbConnection) -> Option<f64> {
-    use std::ffi::CString;
-    use x11::xlib::{
-        XResourceManagerString, XrmDestroyDatabase, XrmGetResource, XrmGetStringDatabase, XrmValue,
-    };
-
-    let display = xcb_connection.conn.get_raw_dpy();
-    unsafe {
-        let rms = XResourceManagerString(display);
-        if !rms.is_null() {
-            let db = XrmGetStringDatabase(rms);
-            if !db.is_null() {
-                let mut value = XrmValue {
-                    size: 0,
-                    addr: std::ptr::null_mut(),
-                };
-
-                let mut value_type: *mut libc::c_char = std::ptr::null_mut();
-                let name_c_str = CString::new("Xft.dpi").unwrap();
-                let c_str = CString::new("Xft.Dpi").unwrap();
-
-                let dpi = if XrmGetResource(
-                    db,
-                    name_c_str.as_ptr(),
-                    c_str.as_ptr(),
-                    &mut value_type,
-                    &mut value,
-                ) != 0
-                    && !value.addr.is_null()
-                {
-                    let value_addr: &CStr = CStr::from_ptr(value.addr);
-                    value_addr.to_str().ok();
-                    let value_str = value_addr.to_str().ok()?;
-                    let value_f64: f64 = value_str.parse().ok()?;
-                    let dpi_to_scale = value_f64 / 96.0;
-                    Some(dpi_to_scale)
-                } else {
-                    None
-                };
-                XrmDestroyDatabase(db);
-
-                return dpi;
-            }
-        }
-    }
-    None
-}
-
-// Try to get the scaling with `get_scaling_xft` first.
-// Only use this function as a fallback.
-// If neither work, I guess just assume 96.0 and don't do any scaling.
-fn get_scaling_screen_dimensions(xcb_connection: &XcbConnection) -> Option<f64> {
-    // Figure out screen information
-    let setup = xcb_connection.conn.get_setup();
-    let screen = setup
-        .roots()
-        .nth(xcb_connection.xlib_display as usize)
-        .unwrap();
-
-    // Get the DPI from the screen struct
-    //
-    // there are 2.54 centimeters to an inch; so there are 25.4 millimeters.
-    // dpi = N pixels / (M millimeters / (25.4 millimeters / 1 inch))
-    //     = N pixels / (M inch / 25.4)
-    //     = N * 25.4 pixels / M inch
-    let width_px = screen.width_in_pixels() as f64;
-    let width_mm = screen.width_in_millimeters() as f64;
-    let height_px = screen.height_in_pixels() as f64;
-    let height_mm = screen.height_in_millimeters() as f64;
-    let _xres = width_px * 25.4 / width_mm;
-    let yres = height_px * 25.4 / height_mm;
-
-    let yscale = yres / 96.0;
-
-    // TODO: choose between `xres` and `yres`? (probably both are the same?)
-    Some(yscale)
 }
 
 fn mouse_id(id: u8) -> MouseButtonID {
