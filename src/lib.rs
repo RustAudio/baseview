@@ -28,8 +28,10 @@ pub enum Parent {
     WithParent(*mut c_void),
 }
 
-pub struct WindowOpenOptions<'a> {
-    pub title: &'a str,
+unsafe impl Send for Parent {}
+
+pub struct WindowOpenOptions {
+    pub title: String,
 
     pub width: usize,
     pub height: usize,

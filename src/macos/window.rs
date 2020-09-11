@@ -20,13 +20,22 @@ pub struct Window {
     ns_view: id,
 }
 
+pub struct WindowHandle;
+
+impl WindowHandle {
+    pub fn app_run_blocking(self) {
+        unsafe {
+            let app = NSApp();
+            app.setActivationPolicy_(NSApplicationActivationPolicyRegular);
+            app.run();
+        }
+    }
+}
+
 impl Window {
     pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
         unsafe {
             let _pool = NSAutoreleasePool::new(nil);
-
-            let app = NSApp();
-            app.setActivationPolicy_(NSApplicationActivationPolicyRegular);
 
             let rect = NSRect::new(
                 NSPoint::new(0.0, 0.0),
@@ -42,7 +51,7 @@ impl Window {
                 )
                 .autorelease();
             ns_window.center();
-            ns_window.setTitle_(NSString::alloc(nil).init_str(options.title));
+            ns_window.setTitle_(NSString::alloc(nil).init_str(&options.title));
             ns_window.makeKeyAndOrderFront_(nil);
 
             let ns_view = NSView::alloc(nil).init();
@@ -52,9 +61,9 @@ impl Window {
 
             let handler = H::build(&mut window);
 
+            // FIXME: only do this in the unparented case
             let current_app = NSRunningApplication::currentApplication(nil);
             current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
-            app.run();
 
             WindowHandle
         }
@@ -70,5 +79,3 @@ unsafe impl HasRawWindowHandle for Window {
         })
     }
 }
-
-pub struct WindowHandle;
