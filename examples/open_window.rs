@@ -15,8 +15,7 @@ impl WindowHandler for MyProgram {
         match event {
             Event::Mouse(e) => println!("Mouse event: {:?}", e),
             Event::Keyboard(e) => println!("Keyboard event: {:?}", e),
-            Event::Window(e) => println!("Window event: {:?}", e),
-            Event::FileDrop(e) => println!("File drop event: {:?}", e),
+            Event::Window(e) => println!("Window event: {:?}", e)
         }
     }
 

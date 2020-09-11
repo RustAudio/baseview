@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum KeyboardEvent {
     KeyPressed(u32),
@@ -89,22 +87,9 @@ pub enum WindowEvent {
     WillClose,
 }
 
-#[derive(PartialEq, Clone, Debug)]
-pub enum FileDropEvent {
-    /// A file is being hovered over the window.
-    FileHovered(PathBuf),
-
-    /// A file has beend dropped into the window.
-    FileDropped(PathBuf),
-
-    /// A file was hovered, but has exited the window.
-    FilesHoveredLeft,
-}
-
 #[derive(Debug)]
 pub enum Event {
     Mouse(MouseEvent),
     Keyboard(KeyboardEvent),
-    Window(WindowEvent),
-    FileDrop(FileDropEvent),
+    Window(WindowEvent)
 }
