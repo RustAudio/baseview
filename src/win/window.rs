@@ -196,7 +196,7 @@ impl Window {
                     h.hwnd
                 }
 
-                WithParent(h) => panic!("unsupported parent handle {:?}", h)
+                WithParent(h) => panic!("unsupported parent handle {:?}", h),
 
                 _ => {
                     AdjustWindowRectEx(&mut rect, flags, FALSE, 0);
