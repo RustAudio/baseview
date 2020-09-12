@@ -16,7 +16,11 @@ use std::ffi::c_void;
 use std::ptr::null_mut;
 use std::rc::Rc;
 
-use raw_window_handle::{windows::WindowsHandle, HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::{
+    windows::WindowsHandle,
+    HasRawWindowHandle,
+    RawWindowHandle
+};
 
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta, WindowEvent,
@@ -187,10 +191,12 @@ impl Window {
 
             // todo: add check flags https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L351
             let parent = match options.parent {
-                WithParent(p) => {
+                WithParent(RawWindowHandle::Windows(h)) => {
                     flags = WS_CHILD | WS_VISIBLE;
-                    p
+                    h.hwnd
                 }
+
+                WithParent(h) => panic!("unsupported parent handle {:?}", h)
 
                 _ => {
                     AdjustWindowRectEx(&mut rect, flags, FALSE, 0);

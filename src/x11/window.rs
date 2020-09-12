@@ -3,7 +3,11 @@ use std::sync::mpsc;
 use std::time::*;
 use std::thread;
 
-use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::{
+    unix::XlibHandle,
+    HasRawWindowHandle,
+    RawWindowHandle
+};
 
 use super::XcbConnection;
 use crate::{
@@ -67,7 +71,11 @@ impl Window {
 
         // Convert parent into something that X understands
         let parent_id = match options.parent {
-            Parent::WithParent(p) => p as u32,
+            Parent::WithParent(RawWindowHandle::Xlib(h)) => h.window as u32,
+            Parent::WithParent(RawWindowHandle::Xcb(h)) => h.window,
+            Parent::WithParent(h) =>
+                panic!("unsupported parent handle type {:?}", h),
+
             Parent::None | Parent::AsIfParented => screen.root(),
         };
 

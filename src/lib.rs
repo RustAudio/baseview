@@ -1,4 +1,4 @@
-use std::ffi::c_void;
+use raw_window_handle::RawWindowHandle;
 
 #[cfg(target_os = "windows")]
 mod win;
@@ -25,7 +25,7 @@ pub use mouse_cursor::MouseCursor;
 pub enum Parent {
     None,
     AsIfParented,
-    WithParent(*mut c_void),
+    WithParent(RawWindowHandle),
 }
 
 unsafe impl Send for Parent {}
