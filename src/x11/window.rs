@@ -3,7 +3,11 @@ use std::sync::mpsc;
 use std::time::*;
 use std::thread;
 
-use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::{
+    unix::XlibHandle,
+    HasRawWindowHandle,
+    RawWindowHandle
+};
 
 use super::XcbConnection;
 use crate::{
@@ -19,6 +23,8 @@ pub struct Window {
 
     frame_interval: Duration,
     event_loop_running: bool,
+
+    new_size: Option<(u32, u32)>
 }
 
 // FIXME: move to outer crate context
@@ -68,7 +74,11 @@ impl Window {
 
         // Convert parent into something that X understands
         let parent_id = match options.parent {
-            Parent::WithParent(p) => p as u32,
+            Parent::WithParent(RawWindowHandle::Xlib(h)) => h.window as u32,
+            Parent::WithParent(RawWindowHandle::Xcb(h)) => h.window,
+            Parent::WithParent(h) =>
+                panic!("unsupported parent handle type {:?}", h),
+
             Parent::None | Parent::AsIfParented => screen.root(),
         };
 
@@ -150,6 +160,8 @@ impl Window {
 
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
+
+            new_size: None
         };
 
         let mut handler = H::build(&mut window);
@@ -193,8 +205,22 @@ impl Window {
 
     #[inline]
     fn drain_xcb_events<H: WindowHandler>(&mut self, handler: &mut H) {
+        // the X server has a tendency to send spurious/extraneous configure notify events when a
+        // window is resized, and we need to batch those together and just send one resize event
+        // when they've all been coalesced.
+        self.new_size = None;
+
         while let Some(event) = self.xcb_connection.conn.poll_for_event() {
             self.handle_xcb_event(handler, event);
+        }
+
+        if let Some((width, height)) = self.new_size.take() {
+            self.window_info.width = width;
+            self.window_info.height = height;
+
+            handler.on_event(self, Event::Window(
+                WindowEvent::Resized(self.window_info)
+            ))
         }
     }
 
@@ -293,14 +319,7 @@ impl Window {
             xcb::CONFIGURE_NOTIFY => {
                 let event = unsafe { xcb::cast_event::<xcb::ConfigureNotifyEvent>(&event) };
 
-                if self.window_info.width != event.width() as u32
-                    || self.window_info.height != event.height() as u32
-                {
-                    self.window_info.width = event.width() as u32;
-                    self.window_info.height = event.height() as u32;
-
-                    handler.on_event(self, Event::Window(WindowEvent::Resized(self.window_info)))
-                }
+                self.new_size = Some((event.width() as u32, event.height() as u32));
             }
 
             ////
