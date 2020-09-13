@@ -1,5 +1,5 @@
 use std::os::raw::{c_ulong, c_void, c_char};
-use std::sync::{mpsc, Mutex};
+use std::sync::mpsc;
 use std::time::*;
 use std::thread;
 use std::collections::HashMap;
