@@ -9,6 +9,7 @@ pub enum MouseCursor {
     Grabbing,
     ResizingHorizontally,
     ResizingVertically,
+    Hidden,
 }
 
 impl Default for MouseCursor {

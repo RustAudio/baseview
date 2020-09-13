@@ -7,14 +7,15 @@ use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
 use super::XcbConnection;
 use crate::{
-    Event, KeyboardEvent, MouseButton, MouseEvent, Parent, ScrollDelta, WindowEvent, WindowHandler,
-    WindowInfo, WindowOpenOptions,
+    Event, KeyboardEvent, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta, WindowEvent,
+    WindowHandler,WindowInfo, WindowOpenOptions,
 };
 
 pub struct Window {
     xcb_connection: XcbConnection,
     window_id: u32,
     window_info: WindowInfo,
+    mouse_cursor: MouseCursor,
 
     frame_interval: Duration,
     event_loop_running: bool,
@@ -145,6 +146,7 @@ impl Window {
             xcb_connection,
             window_id,
             window_info,
+            mouse_cursor: MouseCursor::default(),
 
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
@@ -161,6 +163,33 @@ impl Window {
     pub fn window_info(&self) -> &WindowInfo {
         &self.window_info
     }
+
+    /*
+    pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
+        if self.mouse_cursor != mouse_cursor {
+            if mouse_cursor == MouseCursor::Hidden {
+                xcb::change_cursor(&self.xcb_connection.conn, xcb::CW_CURSOR, xcb::CURSOR_NONE);
+            } else {
+                let cursor_name = match mouse_cursor {
+                    MouseCursor::Idle => "pointer",
+                    MouseCursor::Pointer => "pointer",
+                    MouseCursor::Grab => "hand1",
+                    MouseCursor::Text => "xterm",
+                    MouseCursor::Crosshair => "crosshair",
+                    MouseCursor::Working => "watch",
+                    MouseCursor::Grabbing => "hand2",
+                    MouseCursor::ResizingHorizontally => "sizing",
+                    MouseCursor::ResizingVertically => "sizing",
+                    _ => "pointer",
+                };
+            }
+
+            
+
+            self.mouse_cursor = mouse_cursor;
+        }
+    }
+    */
 
     #[inline]
     fn drain_xcb_events<H: WindowHandler>(&mut self, handler: &mut H) {
