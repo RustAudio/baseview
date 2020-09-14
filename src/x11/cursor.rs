@@ -1,34 +1,65 @@
-use std::os::raw::{c_ulong, c_char};
-use std::collections::HashMap;
+use std::os::raw::c_char;
 
 use crate::MouseCursor;
 
-pub fn set_cursor(
-    xcb_connection: &mut crate::x11::XcbConnection,
-    window_id: u32,
-    cursor_cache: &mut HashMap<MouseCursor, c_ulong>,
-    mouse_cursor: MouseCursor,
-) {
-    let display = xcb_connection.conn.get_raw_dpy();
+fn create_empty_cursor(display: *mut x11::xlib::Display) -> Option<u32> {
+    let data = 0;
+    let pixmap = unsafe {
+        let screen = x11::xlib::XDefaultScreen(display);
+        let window = x11::xlib::XRootWindow(display, screen);
+        x11::xlib::XCreateBitmapFromData(display, window, &data, 1, 1)
+    };
 
-    let cursor = *cursor_cache
-                .entry(mouse_cursor)
-                .or_insert_with(|| get_cursor(display, mouse_cursor));
+    if pixmap == 0 {
+        return None;
+    }
 
     unsafe {
-        if cursor != 0 {
-            x11::xlib::XDefineCursor(display, window_id as c_ulong, cursor);
-        }
-        x11::xlib::XFlush(display);
+        // We don't care about this color, since it only fills bytes
+        // in the pixmap which are not 0 in the mask.
+        let mut color: x11::xlib::XColor = std::mem::zeroed();
+
+        let cursor = x11::xlib::XCreatePixmapCursor(
+            display,
+            pixmap,
+            pixmap,
+            &mut color as *mut _,
+            &mut color as *mut _,
+            0,
+            0,
+        );
+        x11::xlib::XFreePixmap(display, pixmap);
+
+        Some(cursor as u32)
     }
 }
 
-fn get_cursor(display: *mut x11::xlib::Display, cursor: MouseCursor) -> c_ulong {
+fn load_cursor(display: *mut x11::xlib::Display, name: &[u8]) -> Option<u32> {
+    let xcursor = unsafe {
+        x11::xcursor::XcursorLibraryLoadCursor(display, name.as_ptr() as *const c_char)
+    };
+
+    if xcursor == 0 {
+        None
+    } else {
+        Some(xcursor as u32)
+    }
+}
+
+fn load_first_existing_cursor(display: *mut x11::xlib::Display, names: &[&[u8]]) -> Option<u32> {
+    names.iter()
+        .map(|name| load_cursor(display, name))
+        .find(|xcursor| xcursor.is_some())
+        .unwrap_or(None)
+}
+
+pub(super) fn get_xcursor(display: *mut x11::xlib::Display, cursor: MouseCursor) -> u32 {
     let load = |name: &[u8]| load_cursor(display, name);
     let loadn = |names: &[&[u8]]| load_first_existing_cursor(display, names);
 
-    let mut cursor = match cursor {
-        MouseCursor::Default => load(b"left_ptr\0"),
+    let cursor = match cursor {
+        MouseCursor::Default => None, // catch this in the fallback case below
+
         MouseCursor::Hand => loadn(&[b"hand2\0", b"hand1\0"]),
         MouseCursor::HandGrabbing => loadn(&[b"closedhand\0", b"grabbing\0"]),
         MouseCursor::Help => load(b"question_arrow\0"),
@@ -70,56 +101,7 @@ fn get_cursor(display: *mut x11::xlib::Display, cursor: MouseCursor) -> c_ulong 
         MouseCursor::RowResize => loadn(&[b"split_v\0", b"v_double_arrow\0"]),
     };
 
-    if cursor == 0 {
-        cursor = load(b"left_ptr\0")
-    }
-
     cursor
-}
-
-fn load_cursor(display: *mut x11::xlib::Display, name: &[u8]) -> c_ulong {
-    unsafe {
-        x11::xcursor::XcursorLibraryLoadCursor(display, name.as_ptr() as *const c_char)
-    }
-}
-
-fn load_first_existing_cursor(display: *mut x11::xlib::Display, names: &[&[u8]]) -> c_ulong {
-    for name in names.iter() {
-        let xcursor = load_cursor(display, name);
-        if xcursor != 0 {
-            return xcursor;
-        }
-    }
-    0
-}
-
-fn create_empty_cursor(display: *mut x11::xlib::Display,) -> c_ulong {
-    let data = 0;
-    let pixmap = unsafe {
-        let screen = x11::xlib::XDefaultScreen(display);
-        let window = x11::xlib::XRootWindow(display, screen);
-        x11::xlib::XCreateBitmapFromData(display, window, &data, 1, 1)
-    };
-
-    if pixmap == 0 {
-        panic!("failed to allocate pixmap for cursor");
-    }
-
-    unsafe {
-        // We don't care about this color, since it only fills bytes
-        // in the pixmap which are not 0 in the mask.
-        let mut dummy_color = maybe_uninit::MaybeUninit::uninit();
-        let cursor = x11::xlib::XCreatePixmapCursor(
-            display,
-            pixmap,
-            pixmap,
-            dummy_color.as_mut_ptr(),
-            dummy_color.as_mut_ptr(),
-            0,
-            0,
-        );
-        x11::xlib::XFreePixmap(display, pixmap);
-
-        cursor
-    }
+        .or(load(b"left_ptr\0"))
+        .unwrap_or(0)
 }

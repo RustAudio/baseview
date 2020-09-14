@@ -1,7 +1,14 @@
 /// A very light abstraction around the XCB connection.
 ///
 /// Keeps track of the xcb connection itself and the xlib display ID that was used to connect.
+
 use std::ffi::{CStr, CString};
+use std::collections::HashMap;
+
+use crate::MouseCursor;
+
+use super::cursor;
+
 
 pub(crate) struct Atoms {
     pub wm_protocols: Option<u32>,
@@ -13,6 +20,8 @@ pub struct XcbConnection {
     pub xlib_display: i32,
 
     pub(crate) atoms: Atoms,
+
+    pub(super) cursor_cache: HashMap<MouseCursor, u32>,
 }
 
 macro_rules! intern_atoms {
@@ -46,6 +55,8 @@ impl XcbConnection {
                 wm_protocols,
                 wm_delete_window,
             },
+
+            cursor_cache: HashMap::new()
         })
     }
 
@@ -131,5 +142,14 @@ impl XcbConnection {
     pub fn get_scaling(&self) -> Option<f64> {
         self.get_scaling_xft()
             .or(self.get_scaling_screen_dimensions())
+    }
+
+    #[inline]
+    pub fn get_cursor_xid(&mut self, cursor: MouseCursor) -> u32 {
+        let dpy = self.conn.get_raw_dpy();
+
+        *self.cursor_cache
+            .entry(cursor)
+            .or_insert_with(|| cursor::get_xcursor(dpy, cursor))
     }
 }

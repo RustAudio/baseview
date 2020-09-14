@@ -2,7 +2,6 @@ use std::os::raw::{c_ulong, c_void};
 use std::sync::mpsc;
 use std::time::*;
 use std::thread;
-use std::collections::HashMap;
 
 use raw_window_handle::{
     unix::XlibHandle,
@@ -21,7 +20,6 @@ pub struct Window {
     window_id: u32,
     window_info: WindowInfo,
     mouse_cursor: MouseCursor,
-    cursor_cache: HashMap<MouseCursor, c_ulong>,
 
     frame_interval: Duration,
     event_loop_running: bool,
@@ -159,7 +157,6 @@ impl Window {
             window_id,
             window_info,
             mouse_cursor: MouseCursor::default(),
-            cursor_cache: HashMap::new(),
 
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
@@ -180,16 +177,23 @@ impl Window {
     }
 
     pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
-        if self.mouse_cursor != mouse_cursor {
-            crate::x11::cursor::set_cursor(
-                &mut self.xcb_connection,
+        if self.mouse_cursor == mouse_cursor {
+            return
+        }
+
+        let xid = self.xcb_connection.get_cursor_xid(mouse_cursor);
+
+        if xid != 0 {
+            xcb::change_window_attributes(
+                &self.xcb_connection.conn,
                 self.window_id,
-                &mut self.cursor_cache,
-                mouse_cursor
+                &[(xcb::CW_CURSOR, xid)]
             );
 
-            self.mouse_cursor = mouse_cursor;
+            self.xcb_connection.conn.flush();
         }
+
+        self.mouse_cursor = mouse_cursor;
     }
 
     #[inline]
