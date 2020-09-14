@@ -311,8 +311,11 @@ impl Window {
 
             xcb::CONFIGURE_NOTIFY => {
                 let event = unsafe { xcb::cast_event::<xcb::ConfigureNotifyEvent>(&event) };
+                let (width, height) = (event.width() as u32, event.height() as u32);
 
-                self.new_size = Some((event.width() as u32, event.height() as u32));
+                if width != self.window_info.width || height != self.window_info.height {
+                    self.new_size = Some((width, height));
+                }
             }
 
             ////
