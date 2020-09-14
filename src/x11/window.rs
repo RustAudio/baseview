@@ -2,6 +2,7 @@ use std::os::raw::{c_ulong, c_void};
 use std::sync::mpsc;
 use std::time::*;
 use std::thread;
+use std::collections::HashMap;
 
 use raw_window_handle::{
     unix::XlibHandle,
@@ -11,14 +12,16 @@ use raw_window_handle::{
 
 use super::XcbConnection;
 use crate::{
-    Event, KeyboardEvent, MouseButton, MouseEvent, Parent, ScrollDelta, WindowEvent, WindowHandler,
-    WindowInfo, WindowOpenOptions,
+    Event, KeyboardEvent, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta, WindowEvent,
+    WindowHandler,WindowInfo, WindowOpenOptions,
 };
 
 pub struct Window {
     xcb_connection: XcbConnection,
     window_id: u32,
     window_info: WindowInfo,
+    mouse_cursor: MouseCursor,
+    cursor_cache: HashMap<MouseCursor, c_ulong>,
 
     frame_interval: Duration,
     event_loop_running: bool,
@@ -155,6 +158,8 @@ impl Window {
             xcb_connection,
             window_id,
             window_info,
+            mouse_cursor: MouseCursor::default(),
+            cursor_cache: HashMap::new(),
 
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
@@ -172,6 +177,19 @@ impl Window {
 
     pub fn window_info(&self) -> &WindowInfo {
         &self.window_info
+    }
+
+    pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
+        if self.mouse_cursor != mouse_cursor {
+            crate::x11::cursor::set_cursor(
+                &mut self.xcb_connection,
+                self.window_id,
+                &mut self.cursor_cache,
+                mouse_cursor
+            );
+
+            self.mouse_cursor = mouse_cursor;
+        }
     }
 
     #[inline]

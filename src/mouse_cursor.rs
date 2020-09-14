@@ -1,18 +1,49 @@
-#[derive(Debug, Eq, PartialEq, Clone, Copy, PartialOrd, Ord)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, PartialOrd, Ord, Hash)]
 pub enum MouseCursor {
-    Idle,
-    Pointer,
-    Grab,
+    Default,
+    Hand,
+    HandGrabbing,
+    Help,
+
+    Hidden,
+
     Text,
-    Crosshair,
+    VerticalText,
+
     Working,
-    Grabbing,
-    ResizingHorizontally,
-    ResizingVertically,
+    PtrWorking,
+
+    NotAllowed,
+    PtrNotAllowed,
+
+    ZoomIn,
+    ZoomOut,
+
+    Alias,
+    Copy,
+    Move,
+    AllScroll,
+    Cell,
+    Crosshair,
+
+    EResize,
+    NResize,
+    NeResize,
+    NwResize,
+    SResize,
+    SeResize,
+    SwResize,
+    WResize,
+    EwResize,
+    NsResize,
+    NwseResize,
+    NeswResize,
+    ColResize,
+    RowResize,
 }
 
 impl Default for MouseCursor {
     fn default() -> Self {
-        Self::Idle
+        Self::Default
     }
 }
