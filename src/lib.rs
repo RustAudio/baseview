@@ -48,7 +48,7 @@ impl Default for WindowOpenOptions {
             width: 640,
             height: 480,
             parent: Parent::None,
-            frame_interval_secs: 15.0 / 1000.0,
+            frame_interval_secs: 1.0 / 60.0,
         }
     }
 }
