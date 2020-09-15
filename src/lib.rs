@@ -33,10 +33,24 @@ unsafe impl Send for Parent {}
 pub struct WindowOpenOptions {
     pub title: String,
 
-    pub width: usize,
-    pub height: usize,
+    pub width: u32,
+    pub height: u32,
 
     pub parent: Parent,
+
+    pub frame_interval_secs: f64,
+}
+
+impl Default for WindowOpenOptions {
+    fn default() -> Self {
+        Self {
+            title: String::from("baseview"),
+            width: 640,
+            height: 480,
+            parent: Parent::None,
+            frame_interval_secs: 15.0 / 1000.0,
+        }
+    }
 }
 
 pub trait WindowHandler {

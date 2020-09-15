@@ -28,6 +28,7 @@ fn main() {
         width: 512,
         height: 512,
         parent: baseview::Parent::None,
+        ..Default::default()
     };
 
     let handle = Window::open::<MyProgram>(window_open_options);

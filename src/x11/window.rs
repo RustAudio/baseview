@@ -158,7 +158,7 @@ impl Window {
             window_info,
             mouse_cursor: MouseCursor::default(),
 
-            frame_interval: Duration::from_millis(15),
+            frame_interval: Duration::from_secs_f64(options.frame_interval_secs),
             event_loop_running: false,
 
             new_size: None
