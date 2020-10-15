@@ -74,7 +74,7 @@ pub enum MouseEvent {
     CursorLeft,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum WindowEvent {
     Resized(WindowInfo),
     Focused,
