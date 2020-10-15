@@ -1,3 +1,5 @@
+use crate::WindowInfo;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum KeyboardEvent {
     KeyPressed(u32),
@@ -72,14 +74,7 @@ pub enum MouseEvent {
     CursorLeft,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct WindowInfo {
-    pub width: u32,
-    pub height: u32,
-    pub scale: f64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum WindowEvent {
     Resized(WindowInfo),
     Focused,

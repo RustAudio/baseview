@@ -27,9 +27,10 @@ fn main() {
         title: "baseview".into(),
         width: 512,
         height: 512,
+        scale: 1.0,
         parent: baseview::Parent::None,
     };
 
-    let handle = Window::open::<MyProgram>(window_open_options);
+    let (handle, _window_info) = Window::open::<MyProgram>(window_open_options).unwrap();
     handle.app_run_blocking();
 }

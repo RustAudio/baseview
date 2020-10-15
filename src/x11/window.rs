@@ -12,7 +12,7 @@ use raw_window_handle::{
 use super::XcbConnection;
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta, WindowEvent,
-    WindowHandler,WindowInfo, WindowOpenOptions,
+    WindowHandler,WindowInfo, WindowOpenOptions, WindowOpenResult, WindowHandle,
 };
 
 pub struct Window {
@@ -24,24 +24,11 @@ pub struct Window {
     frame_interval: Duration,
     event_loop_running: bool,
 
-    new_size: Option<(u32, u32)>
+    new_physical_size: Option<(u32, u32)>
 }
-
-// FIXME: move to outer crate context
-pub struct WindowHandle {
-    thread: std::thread::JoinHandle<()>,
-}
-
-impl WindowHandle {
-    pub fn app_run_blocking(self) {
-        let _ = self.thread.join();
-    }
-}
-
-type WindowOpenResult = Result<(), ()>;
 
 impl Window {
-    pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
+    pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> Result<(WindowHandle, WindowInfo), ()> {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
         let thread = thread::spawn(move || {
@@ -51,9 +38,9 @@ impl Window {
         });
 
         // FIXME: placeholder types for returning errors in the future
-        let _ = rx.recv();
+        let window_info = rx.recv().unwrap().unwrap();
 
-        WindowHandle { thread }
+        Ok((WindowHandle { thread }, window_info))
     }
 
     fn window_thread<H: WindowHandler>(
@@ -92,6 +79,10 @@ impl Window {
             ],
         );
 
+        let scaling = xcb_connection.get_scaling().unwrap_or(1.0) * options.scale;
+
+        let window_info = WindowInfo::from_logical_size(options.width, options.height, scaling);
+
         let window_id = xcb_connection.conn.generate_id();
         xcb::create_window(
             &xcb_connection.conn,
@@ -100,8 +91,8 @@ impl Window {
             parent_id,
             0,                     // x coordinate of the new window
             0,                     // y coordinate of the new window
-            options.width as u16,  // window width
-            options.height as u16, // window height
+            window_info.physical_width() as u16,        // window width
+            window_info.physical_height() as u16,       // window height
             0,                     // window border
             xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
             screen.root_visual(),
@@ -144,14 +135,6 @@ impl Window {
 
         xcb_connection.conn.flush();
 
-        let scaling = xcb_connection.get_scaling().unwrap_or(1.0);
-
-        let window_info = WindowInfo {
-            width: options.width as u32,
-            height: options.height as u32,
-            scale: scaling,
-        };
-
         let mut window = Self {
             xcb_connection,
             window_id,
@@ -161,15 +144,15 @@ impl Window {
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
 
-            new_size: None
+            new_physical_size: None,
         };
 
         let mut handler = H::build(&mut window);
 
-        let _ = tx.send(Ok(()));
+        let _ = tx.send(Ok(window_info));
 
         window.run_event_loop(&mut handler);
-        Ok(())
+        Ok(window_info)
     }
 
     pub fn window_info(&self) -> &WindowInfo {
@@ -201,15 +184,18 @@ impl Window {
         // the X server has a tendency to send spurious/extraneous configure notify events when a
         // window is resized, and we need to batch those together and just send one resize event
         // when they've all been coalesced.
-        self.new_size = None;
+        self.new_physical_size = None;
 
         while let Some(event) = self.xcb_connection.conn.poll_for_event() {
             self.handle_xcb_event(handler, event);
         }
 
-        if let Some((width, height)) = self.new_size.take() {
-            self.window_info.width = width;
-            self.window_info.height = height;
+        if let Some((width, height)) = self.new_physical_size.take() {
+            self.window_info = WindowInfo::from_physical_size(
+                width,
+                height,
+                self.window_info.scale()
+            );
 
             handler.on_event(self, Event::Window(
                 WindowEvent::Resized(self.window_info)
@@ -312,11 +298,11 @@ impl Window {
             xcb::CONFIGURE_NOTIFY => {
                 let event = unsafe { xcb::cast_event::<xcb::ConfigureNotifyEvent>(&event) };
 
-                let new_size = (event.width() as u32, event.height() as u32);
-                let cur_size = (self.window_info.width, self.window_info.height);
+                let new_physical_size = (event.width() as u32, event.height() as u32);
+                let cur_physical_size = (self.window_info.physical_width(), self.window_info.physical_height());
 
-                if self.new_size.is_some() || new_size != cur_size {
-                    self.new_size = Some(new_size);
+                if self.new_physical_size.is_some() || new_physical_size != cur_physical_size {
+                    self.new_physical_size = Some(new_physical_size);
                 }
             }
 
@@ -328,11 +314,16 @@ impl Window {
                 let detail = event.detail();
 
                 if detail != 4 && detail != 5 {
+                    let (logical_x, logical_y) = self.window_info.physical_to_logical(
+                        event.event_x() as f64,
+                        event.event_y() as f64
+                    );
+
                     handler.on_event(
                         self,
                         Event::Mouse(MouseEvent::CursorMoved {
-                            x: event.event_x() as i32,
-                            y: event.event_y() as i32,
+                            x: logical_x.round() as i32,
+                            y: logical_y.round() as i32,
                         }),
                     );
                 }

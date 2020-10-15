@@ -18,9 +18,11 @@ pub use macos::*;
 mod event;
 mod keyboard;
 mod mouse_cursor;
+mod window_info;
 pub use event::*;
 pub use keyboard::*;
 pub use mouse_cursor::MouseCursor;
+pub use window_info::WindowInfo;
 
 pub enum Parent {
     None,
@@ -33,11 +35,29 @@ unsafe impl Send for Parent {}
 pub struct WindowOpenOptions {
     pub title: String,
 
-    pub width: usize,
-    pub height: usize,
+    /// The logical width of the window
+    pub width: u32,
+    /// The logical height of the window
+    pub height: u32,
+
+    /// The dpi scale factor. This will used in conjunction with the dpi scale
+    /// factor of the system.
+    pub scale: f64,
 
     pub parent: Parent,
 }
+
+pub struct WindowHandle {
+    thread: std::thread::JoinHandle<()>,
+}
+
+impl WindowHandle {
+    pub fn app_run_blocking(self) {
+        let _ = self.thread.join();
+    }
+}
+
+type WindowOpenResult = Result<WindowInfo, ()>;
 
 pub trait WindowHandler {
     type Message;
