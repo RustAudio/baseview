@@ -129,19 +129,24 @@ impl Window {
 
         match options.resize {
             WindowResize::MinMax { min_logical_size, max_logical_size, keep_aspect } => {
+                let min_physical_width = (min_logical_size.0 as f64 * scaling).round() as i32;
+                let min_physical_height = (min_logical_size.1 as f64 * scaling).round() as i32;
+                let max_physical_width = (max_logical_size.0 as f64 * scaling).round() as i32;
+                let max_physical_height = (max_logical_size.1 as f64 * scaling).round() as i32;
+
                 let size_hints = if keep_aspect {
                     xcb_util::icccm::SizeHints::empty()
-                        .min_size(min_logical_size.0 as i32, min_logical_size.1 as i32)
-                        .max_size(max_logical_size.0 as i32, max_logical_size.1 as i32)
+                        .min_size(min_physical_width, min_physical_height)
+                        .max_size(max_physical_width, max_physical_height)
                         .aspect(
-                            (min_logical_size.0 as i32, min_logical_size.1 as i32),
-                            (max_logical_size.0 as i32, max_logical_size.1 as i32),
+                            (min_physical_width, min_physical_height),
+                            (max_physical_width, max_physical_height),
                         )
                         .build()
                 } else {
                     xcb_util::icccm::SizeHints::empty()
-                        .min_size(min_logical_size.0 as i32, min_logical_size.1 as i32)
-                        .max_size(max_logical_size.0 as i32, max_logical_size.1 as i32)
+                        .min_size(min_physical_width, min_physical_height)
+                        .max_size(max_physical_width, max_physical_height)
                         .build()
                 };
 
