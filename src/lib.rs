@@ -36,9 +36,9 @@ pub struct WindowOpenOptions {
     pub title: String,
 
     /// The logical width of the window
-    pub width: u32,
+    pub logical_width: u32,
     /// The logical height of the window
-    pub height: u32,
+    pub logical_height: u32,
 
     /// The dpi scale factor. This will used in conjunction with the dpi scale
     /// factor of the system.

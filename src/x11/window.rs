@@ -81,7 +81,11 @@ impl Window {
 
         let scaling = xcb_connection.get_scaling().unwrap_or(1.0) * options.scale;
 
-        let window_info = WindowInfo::from_logical_size(options.width, options.height, scaling);
+        let window_info = WindowInfo::from_logical_size(
+            options.logical_width,
+            options.logical_height,
+            scaling
+        );
 
         let window_id = xcb_connection.conn.generate_id();
         xcb::create_window(
