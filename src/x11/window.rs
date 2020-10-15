@@ -12,7 +12,7 @@ use raw_window_handle::{
 use super::XcbConnection;
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta, WindowEvent,
-    WindowHandle, WindowHandler, WindowInfo, WindowOpenOptions, WindowOpenResult,
+    WindowHandle, WindowHandler, WindowInfo, WindowOpenOptions, WindowOpenResult, WindowResize,
 };
 
 pub struct Window {
@@ -81,9 +81,10 @@ impl Window {
 
         let scaling = xcb_connection.get_scaling().unwrap_or(1.0) * options.scale;
 
+        let (logical_width, logical_height) = options.logical_size;
         let window_info = WindowInfo::from_logical_size(
-            options.logical_width,
-            options.logical_height,
+            logical_width,
+            logical_height,
             scaling
         );
 
@@ -125,6 +126,37 @@ impl Window {
             8, // view data as 8-bit
             title.as_bytes(),
         );
+
+        match options.resize {
+            WindowResize::MinMax { min_logical_size, max_logical_size, keep_aspect } => {
+                let size_hints = if keep_aspect {
+                    xcb_util::icccm::SizeHints::empty()
+                        .min_size(min_logical_size.0 as i32, min_logical_size.1 as i32)
+                        .max_size(max_logical_size.0 as i32, max_logical_size.1 as i32)
+                        .aspect(
+                            (min_logical_size.0 as i32, min_logical_size.1 as i32),
+                            (max_logical_size.0 as i32, max_logical_size.1 as i32),
+                        )
+                        .build()
+                } else {
+                    xcb_util::icccm::SizeHints::empty()
+                        .min_size(min_logical_size.0 as i32, min_logical_size.1 as i32)
+                        .max_size(max_logical_size.0 as i32, max_logical_size.1 as i32)
+                        .build()
+                };
+
+                xcb_connection.atoms.wm_normal_hints
+                    .map(|wm_normal_hints| {
+                        xcb_util::icccm::set_wm_size_hints(
+                            &xcb_connection.conn,
+                            window_id,
+                            wm_normal_hints,
+                            &size_hints,
+                        );
+                    });
+            }
+            _ => {}
+        }
 
         xcb_connection.atoms.wm_protocols
             .zip(xcb_connection.atoms.wm_delete_window)

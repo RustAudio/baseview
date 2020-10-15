@@ -25,8 +25,8 @@ impl WindowHandler for MyProgram {
 fn main() {
     let window_open_options = baseview::WindowOpenOptions {
         title: "baseview".into(),
-        logical_width: 512,
-        logical_height: 512,
+        logical_size: (512, 512),
+        resize: baseview::WindowResize::None,
         scale: 1.0,
         parent: baseview::Parent::None,
     };

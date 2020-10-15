@@ -32,13 +32,22 @@ pub enum Parent {
 
 unsafe impl Send for Parent {}
 
+pub enum WindowResize {
+    None,
+    MinMax {
+        min_logical_size: (u32, u32),
+        max_logical_size: (u32, u32),
+        keep_aspect: bool,
+    },
+}
+
 pub struct WindowOpenOptions {
     pub title: String,
 
-    /// The logical width of the window
-    pub logical_width: u32,
-    /// The logical height of the window
-    pub logical_height: u32,
+    /// The logical width and height of the window
+    pub logical_size: (u32, u32),
+
+    pub resize: WindowResize,
 
     /// The dpi scale factor. This will used in conjunction with the dpi scale
     /// factor of the system.
