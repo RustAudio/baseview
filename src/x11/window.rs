@@ -12,7 +12,7 @@ use raw_window_handle::{
 use super::XcbConnection;
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta, WindowEvent,
-    WindowHandler,WindowInfo, WindowOpenOptions, WindowOpenResult, WindowHandle,
+    WindowHandle, WindowHandler, WindowInfo, WindowOpenOptions, WindowOpenResult,
 };
 
 pub struct Window {
