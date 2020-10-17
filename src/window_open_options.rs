@@ -67,7 +67,7 @@ impl WindowOpenOptions {
                 WindowInfo::from_logical_size(initial_size, scale)
             },
             WindowSize::MinMaxPhysical { initial_size, .. } => {
-                WindowInfo::from_logical_size(initial_size, scale)
+                WindowInfo::from_physical_size(initial_size, scale)
             }
         }
     }
