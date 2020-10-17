@@ -1,7 +1,6 @@
 use crate::{Size, Point};
 
 /// The info about the window
-#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct WindowInfo {
     logical_size: Size,
