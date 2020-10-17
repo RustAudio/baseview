@@ -15,17 +15,15 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::*;
 
-mod coordinates;
 mod event;
 mod keyboard;
 mod mouse_cursor;
 mod window_info;
 mod window_open_options;
-pub use coordinates::*;
 pub use event::*;
 pub use keyboard::*;
 pub use mouse_cursor::MouseCursor;
-pub use window_info::WindowInfo;
+pub use window_info::*;
 pub use window_open_options::*;
 
 #[derive(Debug)]

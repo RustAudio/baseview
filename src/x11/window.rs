@@ -13,7 +13,7 @@ use super::XcbConnection;
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta, WindowEvent,
     WindowHandle, WindowHandler, WindowInfo, WindowOpenOptions, WindowOpenResult,
-    WindowScalePolicy, Size, Point,
+    WindowScalePolicy, PhyPoint, PhySize,
 };
 
 pub struct Window {
@@ -25,7 +25,7 @@ pub struct Window {
     frame_interval: Duration,
     event_loop_running: bool,
 
-    new_physical_size: Option<Size>
+    new_physical_size: Option<PhySize>
 }
 
 impl Window {
@@ -307,7 +307,7 @@ impl Window {
             xcb::CONFIGURE_NOTIFY => {
                 let event = unsafe { xcb::cast_event::<xcb::ConfigureNotifyEvent>(&event) };
 
-                let new_physical_size = Size::new(event.width() as u32, event.height() as u32);
+                let new_physical_size = PhySize::new(event.width() as u32, event.height() as u32);
 
                 if self.new_physical_size.is_some() || new_physical_size != self.window_info.physical_size() {
                     self.new_physical_size = Some(new_physical_size);
@@ -322,14 +322,13 @@ impl Window {
                 let detail = event.detail();
 
                 if detail != 4 && detail != 5 {
-                    let physical_pos = Point::new(event.event_x() as f64, event.event_y() as f64);
-                    let logical_pos = self.window_info.physical_to_logical(physical_pos);
+                    let physical_pos = PhyPoint::new(event.event_x() as i32, event.event_y() as i32);
+                    let logical_pos = physical_pos.to_logical(&self.window_info);
 
                     handler.on_event(
                         self,
                         Event::Mouse(MouseEvent::CursorMoved {
-                            logical_pos: logical_pos.into(),
-                            physical_pos: physical_pos.into(),
+                            position: logical_pos,
                         }),
                     );
                 }
