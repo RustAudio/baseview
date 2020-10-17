@@ -45,6 +45,36 @@ impl WindowHandle {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Point<T> {
+    pub x: T,
+    pub y: T,
+}
+
+impl<T> Point<T> {
+    pub fn new(x: T, y: T) -> Self {
+        Self { x, y }
+    }
+}
+
+impl From<Point<f64>> for Point<i32> {
+    fn from(p: Point<f64>) -> Point<i32> {
+        Point::new(p.x.round() as i32, p.y.round() as i32)
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Size {
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Size {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
+    }
+}
+
 type WindowOpenResult = Result<WindowInfo, ()>;
 
 pub trait WindowHandler {

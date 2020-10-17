@@ -158,10 +158,10 @@ impl XcbConnection {
     pub fn set_resize_policy(&self, window_id: u32, size: &WindowSize, scale: f64) {
         match size {
             WindowSize::MinMaxLogical { min_size, max_size, keep_aspect, .. } => {
-                let min_physical_width = (min_size.0 as f64 * scale).round() as i32;
-                let min_physical_height = (min_size.1 as f64 * scale).round() as i32;
-                let max_physical_width = (max_size.0 as f64 * scale).round() as i32;
-                let max_physical_height = (max_size.1 as f64 * scale).round() as i32;
+                let min_physical_width = (min_size.width as f64 * scale).round() as i32;
+                let min_physical_height = (min_size.height as f64 * scale).round() as i32;
+                let max_physical_width = (max_size.width as f64 * scale).round() as i32;
+                let max_physical_height = (max_size.height as f64 * scale).round() as i32;
 
                 let size_hints = if *keep_aspect {
                     xcb_util::icccm::SizeHints::empty()
@@ -192,17 +192,17 @@ impl XcbConnection {
             WindowSize::MinMaxPhysical { min_size, max_size, keep_aspect, .. } => {
                 let size_hints = if *keep_aspect {
                     xcb_util::icccm::SizeHints::empty()
-                        .min_size(min_size.0 as i32, min_size.1 as i32)
-                        .max_size(max_size.0 as i32, max_size.1 as i32)
+                        .min_size(min_size.width as i32, min_size.height as i32)
+                        .max_size(max_size.width as i32, max_size.height as i32)
                         .aspect(
-                            (min_size.0 as i32, min_size.1 as i32),
-                            (max_size.0 as i32, max_size.1 as i32),
+                            (min_size.width as i32, min_size.height as i32),
+                            (max_size.width as i32, max_size.height as i32),
                         )
                         .build()
                 } else {
                     xcb_util::icccm::SizeHints::empty()
-                        .min_size(min_size.0 as i32, min_size.1 as i32)
-                        .max_size(max_size.0 as i32, max_size.1 as i32)
+                        .min_size(min_size.width as i32, min_size.height as i32)
+                        .max_size(max_size.width as i32, max_size.height as i32)
                         .build()
                 };
 

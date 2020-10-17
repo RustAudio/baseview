@@ -1,31 +1,31 @@
-use crate::{WindowInfo, Parent};
+use crate::{WindowInfo, Parent, Size};
 
 /// The size of the window
 #[derive(Debug)]
 pub enum WindowSize {
     /// Use logical width and height
-    Logical(u32, u32),
+    Logical(Size),
     /// Use physical width and height
-    Physical(u32, u32),
+    Physical(Size),
     /// Use minimum and maximum logical width and height
     MinMaxLogical {
         /// The initial logical width and height
-        initial_size: (u32, u32),
+        initial_size: Size,
         /// The minimum logical width and height
-        min_size: (u32, u32),
+        min_size: Size,
         /// The maximum logical width and height
-        max_size: (u32, u32),
+        max_size: Size,
         /// Whether to keep the aspect ratio when resizing (true), or not (false)
         keep_aspect: bool,
     },
     /// Use minimum and maximum physical width and height
     MinMaxPhysical {
         /// The initial physical width and height
-        initial_size: (u32, u32),
+        initial_size: Size,
         /// The minimum physical width and height
-        min_size: (u32, u32),
+        min_size: Size,
         /// The maximum physical width and height
-        max_size: (u32, u32),
+        max_size: Size,
         /// Whether to keep the aspect ratio when resizing (true), or not (false)
         keep_aspect: bool,
     },
@@ -61,13 +61,13 @@ pub struct WindowOpenOptions {
 impl WindowOpenOptions {
     pub(crate) fn window_info_from_scale(&self, scale: f64) -> WindowInfo {
         match self.size {
-            WindowSize::Logical(w, h) => WindowInfo::from_logical_size(w, h, scale),
-            WindowSize::Physical(w, h) => WindowInfo::from_physical_size(w, h, scale),
+            WindowSize::Logical(size) => WindowInfo::from_logical_size(size, scale),
+            WindowSize::Physical(size) => WindowInfo::from_physical_size(size, scale),
             WindowSize::MinMaxLogical { initial_size, .. } => {
-                WindowInfo::from_logical_size(initial_size.0, initial_size.1, scale)
+                WindowInfo::from_logical_size(initial_size, scale)
             },
             WindowSize::MinMaxPhysical { initial_size, .. } => {
-                WindowInfo::from_logical_size(initial_size.0, initial_size.1, scale)
+                WindowInfo::from_logical_size(initial_size, scale)
             }
         }
     }
