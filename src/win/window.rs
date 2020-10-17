@@ -24,7 +24,7 @@ use raw_window_handle::{
 
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions,
+    WindowHandler, WindowInfo, WindowOpenOptions, WindowOpenResult, WindowScalePolicy, Size, Point,
 };
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -76,13 +76,21 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
 
         match msg {
             WM_MOUSEMOVE => {
-                let x = (lparam & 0xFFFF) as i32;
-                let y = ((lparam >> 16) & 0xFFFF) as i32;
-                window_state.borrow_mut().handler.on_event(
+                let x = (lparam & 0xFFFF) as f64;
+                let y = ((lparam >> 16) & 0xFFFF) as f64;
+                let physical_pos = Point::new(x, y);
+
+                let mut window_state = window_state.borrow_mut();
+
+                // FIXME: For some reason, the data in window_info is corrupted.
+                // let logical_pos = window_state.window_info.physical_to_logical(physical_pos);
+                let logical_pos = physical_pos;
+
+                window_state.handler.on_event(
                     &mut window,
                     Event::Mouse(MouseEvent::CursorMoved {
-                        x: x as i32,
-                        y: y as i32,
+                        logical_pos: logical_pos.into(),
+                        physical_pos: physical_pos.into(),
                     }),
                 );
                 return 0;
@@ -134,7 +142,7 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 
 struct WindowState<H> {
     window_class: ATOM,
-    scaling: Option<f64>, // DPI scale, 96.0 is "default".
+    window_info: WindowInfo,
     handler: H,
 }
 
@@ -166,7 +174,7 @@ impl WindowHandle {
 }
 
 impl Window {
-    pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
+    pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> Result<(WindowHandle, WindowInfo), ()> {
         unsafe {
             let title = (options.title.to_owned() + "\0").as_ptr() as *const i8;
 
@@ -180,13 +188,23 @@ impl Window {
                 | WS_MINIMIZEBOX
                 | WS_MAXIMIZEBOX
                 | WS_CLIPSIBLINGS;
+            
+            let scaling = match options.scale {
+                // TODO: Find system scale factor
+                WindowScalePolicy::TrySystemScaleFactor => 1.0,
+                WindowScalePolicy::TrySystemScaleFactorTimes(user_scale) => 1.0 * user_scale,
+                WindowScalePolicy::UseScaleFactor(user_scale) => user_scale,
+                WindowScalePolicy::NoScaling => 1.0,
+            };
+
+            let window_info = options.window_info_from_scale(scaling);
 
             let mut rect = RECT {
                 left: 0,
                 top: 0,
                 // todo: check if usize fits into i32
-                right: options.width as i32,
-                bottom: options.height as i32,
+                right: window_info.physical_size().width as i32,
+                bottom: window_info.physical_size().height as i32,
             };
 
             // todo: add check flags https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L351
@@ -226,7 +244,7 @@ impl Window {
 
             let window_state = Rc::new(RefCell::new(WindowState {
                 window_class,
-                scaling: None,
+                window_info,
                 handler,
             }));
 
@@ -235,7 +253,7 @@ impl Window {
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, Rc::into_raw(win) as *const _ as _);
             SetTimer(hwnd, 4242, 13, None);
 
-            WindowHandle { hwnd }
+            Ok((WindowHandle { hwnd }, window_info))
         }
     }
 }

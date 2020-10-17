@@ -1,6 +1,7 @@
 use crate::{Size, Point};
 
 /// The info about the window
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct WindowInfo {
     logical_size: Size,
@@ -11,27 +12,42 @@ pub struct WindowInfo {
 
 impl WindowInfo {
     pub fn from_logical_size(logical_size: Size, scale: f64) -> Self {
-        let scale_recip = 1.0 / scale;
+        let (scale_recip, physical_size) = if scale == 1.0 {
+            (1.0, logical_size)
+        } else {
+            (
+                1.0 / scale,
+                Size {
+                    width: (logical_size.width as f64 * scale).round() as u32,
+                    height: (logical_size.height as f64 * scale).round() as u32,
+                }
+            )
+        };
 
         Self {
             logical_size,
-            physical_size: Size {
-                width: (logical_size.width as f64 * scale).round() as u32,
-                height: (logical_size.height as f64 * scale).round() as u32,
-            },
+            physical_size,
             scale,
             scale_recip,
         }
     }
 
     pub fn from_physical_size(physical_size: Size, scale: f64) -> Self {
-        let scale_recip = 1.0 / scale;
+        let (scale_recip, logical_size) = if scale == 1.0 {
+            (1.0, physical_size)
+        } else {
+            let scale_recip = 1.0 / scale;
+            (
+                scale_recip,
+                Size {
+                    width: (physical_size.width as f64 * scale_recip).round() as u32,
+                    height: (physical_size.height as f64 * scale_recip).round() as u32,
+                }
+            )
+        };
 
         Self {
-            logical_size: Size {
-                width: (physical_size.width as f64 * scale_recip).round() as u32,
-                height: (physical_size.height as f64 * scale_recip).round() as u32,
-            },
+            logical_size,
             physical_size,
             scale,
             scale_recip,
