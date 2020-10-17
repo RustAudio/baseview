@@ -82,9 +82,7 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
 
                 let mut window_state = window_state.borrow_mut();
 
-                // FIXME: For some reason, the data in window_info is corrupted.
-                // let logical_pos = window_state.window_info.physical_to_logical(physical_pos);
-                let logical_pos = physical_pos;
+                let logical_pos = window_state.window_info.physical_to_logical(physical_pos);
 
                 window_state.handler.on_event(
                     &mut window,
@@ -242,15 +240,13 @@ impl Window {
 
             let handler = H::build(&mut window);
 
-            let window_state = Rc::new(RefCell::new(WindowState {
+            let window_state = Box::new(RefCell::new(WindowState {
                 window_class,
                 window_info,
                 handler,
             }));
 
-            let win = Rc::new(RefCell::new(window));
-
-            SetWindowLongPtrA(hwnd, GWLP_USERDATA, Rc::into_raw(win) as *const _ as _);
+            SetWindowLongPtrA(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
             SetTimer(hwnd, 4242, 13, None);
 
             Ok((WindowHandle { hwnd }, window_info))
