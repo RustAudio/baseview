@@ -41,18 +41,28 @@ pub enum ScrollDelta {
 pub struct MouseClick {
     pub button: MouseButton,
     pub click_count: usize,
-    pub x: i32,
-    pub y: i32,
+    /// The logical X coordinate of the mouse position
+    logical_x: i32,
+    /// The logical Y coordinate of the mouse position
+    logical_y: i32,
+    /// The physical X coordinate of the mouse position
+    physical_x: i32,
+    /// The physical Y coordinate of the mouse position
+    physical_y: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MouseEvent {
     /// The mouse cursor was moved
     CursorMoved {
-        /// The X coordinate of the mouse position
-        x: i32,
-        /// The Y coordinate of the mouse position
-        y: i32,
+        /// The logical X coordinate of the mouse position
+        logical_x: i32,
+        /// The logical Y coordinate of the mouse position
+        logical_y: i32,
+        /// The physical X coordinate of the mouse position
+        physical_x: i32,
+        /// The physical Y coordinate of the mouse position
+        physical_y: i32,
     },
 
     /// A mouse button was pressed.
@@ -74,7 +84,7 @@ pub enum MouseEvent {
     CursorLeft,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum WindowEvent {
     Resized(WindowInfo),
     Focused,

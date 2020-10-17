@@ -19,11 +19,14 @@ mod event;
 mod keyboard;
 mod mouse_cursor;
 mod window_info;
+mod window_open_options;
 pub use event::*;
 pub use keyboard::*;
 pub use mouse_cursor::MouseCursor;
 pub use window_info::WindowInfo;
+pub use window_open_options::*;
 
+#[derive(Debug)]
 pub enum Parent {
     None,
     AsIfParented,
@@ -31,30 +34,6 @@ pub enum Parent {
 }
 
 unsafe impl Send for Parent {}
-
-pub enum WindowResize {
-    None,
-    MinMax {
-        min_logical_size: (u32, u32),
-        max_logical_size: (u32, u32),
-        keep_aspect: bool,
-    },
-}
-
-pub struct WindowOpenOptions {
-    pub title: String,
-
-    /// The logical width and height of the window
-    pub logical_size: (u32, u32),
-
-    pub resize: WindowResize,
-
-    /// The dpi scale factor. This will used in conjunction with the dpi scale
-    /// factor of the system.
-    pub scale: f64,
-
-    pub parent: Parent,
-}
 
 pub struct WindowHandle {
     thread: std::thread::JoinHandle<()>,

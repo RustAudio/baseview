@@ -1,5 +1,5 @@
 /// The info about the window
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone)]
 pub struct WindowInfo {
     /// The physical the width of the window
     physical_width: u32,
@@ -66,11 +66,19 @@ impl WindowInfo {
         self.scale
     }
 
-    /// Convert physical mouse coordinates to logical coordinates
+    /// Convert physical coordinates to logical coordinates
     pub fn physical_to_logical(&self, x: f64, y: f64) -> (f64, f64) {
         (
             x * self.scale_recip,
             y * self.scale_recip
+        )
+    }
+
+    /// Convert logicalcoordinates to physical coordinates
+    pub fn logical_to_physical(&self, x: f64, y: f64) -> (f64, f64) {
+        (
+            x * self.scale,
+            y * self.scale
         )
     }
 }

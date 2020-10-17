@@ -12,7 +12,8 @@ use raw_window_handle::{
 use super::XcbConnection;
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta, WindowEvent,
-    WindowHandle, WindowHandler, WindowInfo, WindowOpenOptions, WindowOpenResult, WindowResize,
+    WindowHandle, WindowHandler, WindowInfo, WindowOpenOptions, WindowOpenResult,
+    WindowScalePolicy,
 };
 
 pub struct Window {
@@ -79,14 +80,16 @@ impl Window {
             ],
         );
 
-        let scaling = xcb_connection.get_scaling().unwrap_or(1.0) * options.scale;
+        let scaling = match options.scale {
+            WindowScalePolicy::TrySystemScaleFactor =>
+                xcb_connection.get_scaling().unwrap_or(1.0),
+            WindowScalePolicy::TrySystemScaleFactorTimes(user_scale) =>
+                xcb_connection.get_scaling().unwrap_or(1.0) * user_scale,
+            WindowScalePolicy::UseScaleFactor(user_scale) => user_scale,
+            WindowScalePolicy::NoScaling => 1.0,
+        };
 
-        let (logical_width, logical_height) = options.logical_size;
-        let window_info = WindowInfo::from_logical_size(
-            logical_width,
-            logical_height,
-            scaling
-        );
+        let window_info = options.window_info_from_scale(scaling);
 
         let window_id = xcb_connection.conn.generate_id();
         xcb::create_window(
@@ -127,42 +130,6 @@ impl Window {
             title.as_bytes(),
         );
 
-        match options.resize {
-            WindowResize::MinMax { min_logical_size, max_logical_size, keep_aspect } => {
-                let min_physical_width = (min_logical_size.0 as f64 * scaling).round() as i32;
-                let min_physical_height = (min_logical_size.1 as f64 * scaling).round() as i32;
-                let max_physical_width = (max_logical_size.0 as f64 * scaling).round() as i32;
-                let max_physical_height = (max_logical_size.1 as f64 * scaling).round() as i32;
-
-                let size_hints = if keep_aspect {
-                    xcb_util::icccm::SizeHints::empty()
-                        .min_size(min_physical_width, min_physical_height)
-                        .max_size(max_physical_width, max_physical_height)
-                        .aspect(
-                            (min_physical_width, min_physical_height),
-                            (max_physical_width, max_physical_height),
-                        )
-                        .build()
-                } else {
-                    xcb_util::icccm::SizeHints::empty()
-                        .min_size(min_physical_width, min_physical_height)
-                        .max_size(max_physical_width, max_physical_height)
-                        .build()
-                };
-
-                xcb_connection.atoms.wm_normal_hints
-                    .map(|wm_normal_hints| {
-                        xcb_util::icccm::set_wm_size_hints(
-                            &xcb_connection.conn,
-                            window_id,
-                            wm_normal_hints,
-                            &size_hints,
-                        );
-                    });
-            }
-            _ => {}
-        }
-
         xcb_connection.atoms.wm_protocols
             .zip(xcb_connection.atoms.wm_delete_window)
             .map(|(wm_protocols, wm_delete_window)| {
@@ -173,6 +140,8 @@ impl Window {
                     &[wm_delete_window],
                 );
             });
+        
+        xcb_connection.set_resize_policy(window_id, &options.size, scaling);
 
         xcb_connection.conn.flush();
 
@@ -363,8 +332,10 @@ impl Window {
                     handler.on_event(
                         self,
                         Event::Mouse(MouseEvent::CursorMoved {
-                            x: logical_x.round() as i32,
-                            y: logical_y.round() as i32,
+                            logical_x: logical_x.round() as i32,
+                            logical_y: logical_y.round() as i32,
+                            physical_x: event.event_x() as i32,
+                            physical_y: event.event_y() as i32,
                         }),
                     );
                 }
