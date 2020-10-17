@@ -26,9 +26,9 @@ fn main() {
     let window_open_options = baseview::WindowOpenOptions {
         title: "baseview".into(),
         size: WindowSize::MinMaxLogical {
-            initial_size: baseview::Size::new(512, 512),
-            min_size: baseview::Size::new(200, 200),
-            max_size: baseview::Size::new(1024, 1024),
+            initial_size: baseview::Size::new(512.0, 512.0),
+            min_size: baseview::Size::new(200.0, 200.0),
+            max_size: baseview::Size::new(1024.0, 1024.0),
             keep_aspect: false,
         },
         scale: WindowScalePolicy::TrySystemScaleFactor,

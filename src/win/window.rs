@@ -25,6 +25,7 @@ use raw_window_handle::{
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowOpenResult, WindowScalePolicy, Size, Point,
+    PhySize, PhyPoint,
 };
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -76,19 +77,19 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
 
         match msg {
             WM_MOUSEMOVE => {
-                let x = (lparam & 0xFFFF) as f64;
-                let y = ((lparam >> 16) & 0xFFFF) as f64;
-                let physical_pos = Point::new(x, y);
+                let x = (lparam & 0xFFFF) as i32;
+                let y = ((lparam >> 16) & 0xFFFF) as i32;
+
+                let physical_pos = PhyPoint { x, y };
 
                 let mut window_state = window_state.borrow_mut();
 
-                let logical_pos = window_state.window_info.physical_to_logical(physical_pos);
+                let logical_pos = physical_pos.to_logical(&window_state.window_info);
 
                 window_state.handler.on_event(
                     &mut window,
                     Event::Mouse(MouseEvent::CursorMoved {
-                        logical_pos: logical_pos.into(),
-                        physical_pos: physical_pos.into(),
+                        position: logical_pos,
                     }),
                 );
                 return 0;

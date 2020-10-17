@@ -1,4 +1,4 @@
-use crate::{WindowInfo, Parent, Size};
+use crate::{WindowInfo, Parent, Size, PhySize};
 
 /// The size of the window
 #[derive(Debug)]
@@ -6,7 +6,7 @@ pub enum WindowSize {
     /// Use logical width and height
     Logical(Size),
     /// Use physical width and height
-    Physical(Size),
+    Physical(PhySize),
     /// Use minimum and maximum logical width and height
     MinMaxLogical {
         /// The initial logical width and height
@@ -21,11 +21,11 @@ pub enum WindowSize {
     /// Use minimum and maximum physical width and height
     MinMaxPhysical {
         /// The initial physical width and height
-        initial_size: Size,
+        initial_size: PhySize,
         /// The minimum physical width and height
-        min_size: Size,
+        min_size: PhySize,
         /// The maximum physical width and height
-        max_size: Size,
+        max_size: PhySize,
         /// Whether to keep the aspect ratio when resizing (true), or not (false)
         keep_aspect: bool,
     },

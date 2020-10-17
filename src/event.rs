@@ -42,9 +42,7 @@ pub struct MouseClick {
     pub button: MouseButton,
     pub click_count: usize,
     /// The logical coordinates of the mouse position
-    logical_pos: Point<i32>,
-    /// The physical coordinates of the mouse position
-    physical_pos: Point<i32>,
+    pub position: Point,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -52,9 +50,7 @@ pub enum MouseEvent {
     /// The mouse cursor was moved
     CursorMoved {
         /// The logical coordinates of the mouse position
-        logical_pos: Point<i32>,
-        /// The physical coordinates of the mouse position
-        physical_pos: Point<i32>,
+        position: Point,
     },
 
     /// A mouse button was pressed.
