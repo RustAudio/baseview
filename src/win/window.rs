@@ -8,7 +8,7 @@ use winapi::um::winuser::{
     SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR,
     MB_OK, MB_TOPMOST, MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_PAINT, WM_SHOWWINDOW, WM_TIMER,
     WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-    WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+    WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, WM_DPICHANGED,
 };
 
 use std::cell::RefCell;
@@ -24,8 +24,7 @@ use raw_window_handle::{
 
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowOpenResult, WindowScalePolicy, Size, Point,
-    PhySize, PhyPoint,
+    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, Size, Point, PhySize, PhyPoint,
 };
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -107,6 +106,9 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
                     .handler
                     .on_event(&mut window, Event::Window(WindowEvent::WillClose));
                 return DefWindowProcA(hwnd, msg, wparam, lparam);
+            }
+            WM_DPICHANGED => {
+                // TODO: Notify app of DPI change
             }
             _ => {}
         }
@@ -194,8 +196,8 @@ impl Window {
             
             let scaling = match options.scale {
                 // TODO: Find system scale factor
-                WindowScalePolicy::TrySystemScaleFactor => 1.0,
-                WindowScalePolicy::TrySystemScaleFactorTimes(user_scale) => 1.0 * user_scale,
+                WindowScalePolicy::TrySystemScaleFactor => get_scaling().unwrap_or(1.0),
+                WindowScalePolicy::TrySystemScaleFactorTimes(user_scale) => get_scaling().unwrap_or(1.0) * user_scale,
                 WindowScalePolicy::UseScaleFactor(user_scale) => user_scale,
                 WindowScalePolicy::NoScaling => 1.0,
             };
@@ -254,7 +256,7 @@ impl Window {
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
             SetTimer(hwnd, 4242, 13, None);
 
-            Ok((WindowHandle { hwnd }, window_info))
+            WindowHandle { hwnd }
         }
     }
 }
@@ -266,4 +268,9 @@ unsafe impl HasRawWindowHandle for Window {
             ..WindowsHandle::empty()
         })
     }
+}
+
+fn get_scaling() -> Option<f64> {
+    // TODO: find system scaling
+    None
 }
