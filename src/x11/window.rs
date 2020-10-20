@@ -12,8 +12,7 @@ use raw_window_handle::{
 use super::XcbConnection;
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowOpenResult,
-    WindowScalePolicy, PhyPoint, PhySize,
+    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, PhyPoint, PhySize,
 };
 
 pub struct Window {
@@ -39,6 +38,8 @@ impl WindowHandle {
     }
 }
 
+type WindowOpenResult = Result<(), ()>;
+
 impl Window {
     pub fn open<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
         where H: WindowHandler,
@@ -54,9 +55,9 @@ impl Window {
         });
 
         // FIXME: placeholder types for returning errors in the future
-        let window_info = rx.recv().unwrap().unwrap();
+        let _ = rx.recv();
 
-        Ok((WindowHandle { thread }, window_info))
+        WindowHandle { thread }
     }
 
     fn window_thread<H, B>(options: WindowOpenOptions, build: B,
@@ -158,8 +159,6 @@ impl Window {
                     &[wm_delete_window],
                 );
             });
-        
-        xcb_connection.set_resize_policy(window_id, &options.size, scaling);
 
         xcb_connection.conn.flush();
 
@@ -177,10 +176,10 @@ impl Window {
 
         let mut handler = build(&mut window);
 
-        let _ = tx.send(Ok(window_info));
+        let _ = tx.send(Ok(()));
 
         window.run_event_loop(&mut handler);
-        Ok(window_info)
+        Ok(())
     }
 
     pub fn window_info(&self) -> &WindowInfo {

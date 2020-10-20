@@ -5,7 +5,7 @@
 use std::ffi::{CStr, CString};
 use std::collections::HashMap;
 
-use crate::{MouseCursor, WindowSize};
+use crate::MouseCursor;
 
 use super::cursor;
 
@@ -153,70 +153,5 @@ impl XcbConnection {
         *self.cursor_cache
             .entry(cursor)
             .or_insert_with(|| cursor::get_xcursor(dpy, cursor))
-    }
-
-    pub fn set_resize_policy(&self, window_id: u32, size: &WindowSize, scale: f64) {
-        match size {
-            WindowSize::MinMaxLogical { min_size, max_size, keep_aspect, .. } => {
-                let min_physical_width = (min_size.width as f64 * scale).round() as i32;
-                let min_physical_height = (min_size.height as f64 * scale).round() as i32;
-                let max_physical_width = (max_size.width as f64 * scale).round() as i32;
-                let max_physical_height = (max_size.height as f64 * scale).round() as i32;
-
-                let size_hints = if *keep_aspect {
-                    xcb_util::icccm::SizeHints::empty()
-                        .min_size(min_physical_width, min_physical_height)
-                        .max_size(max_physical_width, max_physical_height)
-                        .aspect(
-                            (min_physical_width, min_physical_height),
-                            (max_physical_width, max_physical_height),
-                        )
-                        .build()
-                } else {
-                    xcb_util::icccm::SizeHints::empty()
-                        .min_size(min_physical_width, min_physical_height)
-                        .max_size(max_physical_width, max_physical_height)
-                        .build()
-                };
-
-                self.atoms.wm_normal_hints
-                    .map(|wm_normal_hints| {
-                        xcb_util::icccm::set_wm_size_hints(
-                            &self.conn,
-                            window_id,
-                            wm_normal_hints,
-                            &size_hints,
-                        );
-                    });
-            }
-            WindowSize::MinMaxPhysical { min_size, max_size, keep_aspect, .. } => {
-                let size_hints = if *keep_aspect {
-                    xcb_util::icccm::SizeHints::empty()
-                        .min_size(min_size.width as i32, min_size.height as i32)
-                        .max_size(max_size.width as i32, max_size.height as i32)
-                        .aspect(
-                            (min_size.width as i32, min_size.height as i32),
-                            (max_size.width as i32, max_size.height as i32),
-                        )
-                        .build()
-                } else {
-                    xcb_util::icccm::SizeHints::empty()
-                        .min_size(min_size.width as i32, min_size.height as i32)
-                        .max_size(max_size.width as i32, max_size.height as i32)
-                        .build()
-                };
-
-                self.atoms.wm_normal_hints
-                    .map(|wm_normal_hints| {
-                        xcb_util::icccm::set_wm_size_hints(
-                            &self.conn,
-                            window_id,
-                            wm_normal_hints,
-                            &size_hints,
-                        );
-                    });
-            }
-            _ => {}
-        }
     }
 }

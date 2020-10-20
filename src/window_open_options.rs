@@ -7,28 +7,6 @@ pub enum WindowSize {
     Logical(Size),
     /// Use physical width and height
     Physical(PhySize),
-    /// Use minimum and maximum logical width and height
-    MinMaxLogical {
-        /// The initial logical width and height
-        initial_size: Size,
-        /// The minimum logical width and height
-        min_size: Size,
-        /// The maximum logical width and height
-        max_size: Size,
-        /// Whether to keep the aspect ratio when resizing (true), or not (false)
-        keep_aspect: bool,
-    },
-    /// Use minimum and maximum physical width and height
-    MinMaxPhysical {
-        /// The initial physical width and height
-        initial_size: PhySize,
-        /// The minimum physical width and height
-        min_size: PhySize,
-        /// The maximum physical width and height
-        max_size: PhySize,
-        /// Whether to keep the aspect ratio when resizing (true), or not (false)
-        keep_aspect: bool,
-    },
 }
 
 /// The dpi scaling policy of the window
@@ -63,12 +41,6 @@ impl WindowOpenOptions {
         match self.size {
             WindowSize::Logical(size) => WindowInfo::from_logical_size(size, scale),
             WindowSize::Physical(size) => WindowInfo::from_physical_size(size, scale),
-            WindowSize::MinMaxLogical { initial_size, .. } => {
-                WindowInfo::from_logical_size(initial_size, scale)
-            },
-            WindowSize::MinMaxPhysical { initial_size, .. } => {
-                WindowInfo::from_physical_size(initial_size, scale)
-            }
         }
     }
 }

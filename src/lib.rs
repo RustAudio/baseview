@@ -35,8 +35,6 @@ pub enum Parent {
 
 unsafe impl Send for Parent {}
 
-type WindowOpenResult = Result<WindowInfo, ()>;
-
 pub trait WindowHandler {
     type Message;
 
