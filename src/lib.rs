@@ -35,16 +35,6 @@ pub enum Parent {
 
 unsafe impl Send for Parent {}
 
-pub struct WindowHandle {
-    thread: std::thread::JoinHandle<()>,
-}
-
-impl WindowHandle {
-    pub fn app_run_blocking(self) {
-        let _ = self.thread.join();
-    }
-}
-
 type WindowOpenResult = Result<WindowInfo, ()>;
 
 pub trait WindowHandler {

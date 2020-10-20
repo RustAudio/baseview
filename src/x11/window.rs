@@ -12,7 +12,7 @@ use raw_window_handle::{
 use super::XcbConnection;
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta, WindowEvent,
-    WindowHandle, WindowHandler, WindowInfo, WindowOpenOptions, WindowOpenResult,
+    WindowHandler, WindowInfo, WindowOpenOptions, WindowOpenResult,
     WindowScalePolicy, PhyPoint, PhySize,
 };
 
@@ -26,6 +26,17 @@ pub struct Window {
     event_loop_running: bool,
 
     new_physical_size: Option<PhySize>
+}
+
+// FIXME: move to outer crate context
+pub struct WindowHandle {
+    thread: std::thread::JoinHandle<()>,
+}
+
+impl WindowHandle {
+    pub fn app_run_blocking(self) {
+        let _ = self.thread.join();
+    }
 }
 
 impl Window {
