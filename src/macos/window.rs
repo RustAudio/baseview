@@ -33,7 +33,11 @@ impl WindowHandle {
 }
 
 impl Window {
-    pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
+    pub fn open<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
+        where H: WindowHandler,
+              B: FnOnce(&mut Window) -> H,
+              B: Send + 'static
+    {
         unsafe {
             let _pool = NSAutoreleasePool::new(nil);
 
@@ -59,7 +63,7 @@ impl Window {
 
             let mut window = Window { ns_window, ns_view };
 
-            let handler = H::build(&mut window);
+            let handler = build(&mut window);
 
             // FIXME: only do this in the unparented case
             let current_app = NSRunningApplication::currentApplication(nil);
