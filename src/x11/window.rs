@@ -41,11 +41,15 @@ impl WindowHandle {
 type WindowOpenResult = Result<(), ()>;
 
 impl Window {
-    pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> WindowHandle {
+    pub fn open<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
+        where H: WindowHandler,
+              B: FnOnce(&mut Window) -> H,
+              B: Send + 'static
+    {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
         let thread = thread::spawn(move || {
-            if let Err(e) = Self::window_thread::<H>(options, tx.clone()) {
+            if let Err(e) = Self::window_thread::<H, B>(options, build, tx.clone()) {
                 let _ = tx.send(Err(e));
             }
         });
@@ -56,9 +60,12 @@ impl Window {
         WindowHandle { thread }
     }
 
-    fn window_thread<H: WindowHandler>(
-        options: WindowOpenOptions, tx: mpsc::SyncSender<WindowOpenResult>,
-    ) -> WindowOpenResult {
+    fn window_thread<H, B>(options: WindowOpenOptions, build: B,
+        tx: mpsc::SyncSender<WindowOpenResult>) -> WindowOpenResult
+        where H: WindowHandler,
+              B: FnOnce(&mut Window) -> H,
+              B: Send + 'static
+    {
         // Connect to the X server
         // FIXME: baseview error type instead of unwrap()
         let xcb_connection = XcbConnection::new().unwrap();
@@ -164,7 +171,7 @@ impl Window {
             new_size: None
         };
 
-        let mut handler = H::build(&mut window);
+        let mut handler = build(&mut window);
 
         let _ = tx.send(Ok(()));
 
