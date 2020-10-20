@@ -1,5 +1,3 @@
-use crate::{WindowInfo, Point};
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum KeyboardEvent {
     KeyPressed(u32),
@@ -41,16 +39,18 @@ pub enum ScrollDelta {
 pub struct MouseClick {
     pub button: MouseButton,
     pub click_count: usize,
-    /// The logical coordinates of the mouse position
-    pub position: Point,
+    pub x: i32,
+    pub y: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MouseEvent {
     /// The mouse cursor was moved
     CursorMoved {
-        /// The logical coordinates of the mouse position
-        position: Point,
+        /// The X coordinate of the mouse position
+        x: i32,
+        /// The Y coordinate of the mouse position
+        y: i32,
     },
 
     /// A mouse button was pressed.
@@ -72,7 +72,14 @@ pub enum MouseEvent {
     CursorLeft,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct WindowInfo {
+    pub width: u32,
+    pub height: u32,
+    pub scale: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WindowEvent {
     Resized(WindowInfo),
     Focused,

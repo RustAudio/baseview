@@ -12,7 +12,7 @@ use raw_window_handle::{
 use super::XcbConnection;
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, PhyPoint, PhySize,
+    WindowHandler,WindowInfo, WindowOpenOptions,
 };
 
 pub struct Window {
@@ -24,7 +24,7 @@ pub struct Window {
     frame_interval: Duration,
     event_loop_running: bool,
 
-    new_physical_size: Option<PhySize>
+    new_size: Option<(u32, u32)>
 }
 
 // FIXME: move to outer crate context
@@ -99,17 +99,6 @@ impl Window {
             ],
         );
 
-        let scaling = match options.scale {
-            WindowScalePolicy::TrySystemScaleFactor =>
-                xcb_connection.get_scaling().unwrap_or(1.0),
-            WindowScalePolicy::TrySystemScaleFactorTimes(user_scale) =>
-                xcb_connection.get_scaling().unwrap_or(1.0) * user_scale,
-            WindowScalePolicy::UseScaleFactor(user_scale) => user_scale,
-            WindowScalePolicy::NoScaling => 1.0,
-        };
-
-        let window_info = options.window_info_from_scale(scaling);
-
         let window_id = xcb_connection.conn.generate_id();
         xcb::create_window(
             &xcb_connection.conn,
@@ -118,8 +107,8 @@ impl Window {
             parent_id,
             0,                     // x coordinate of the new window
             0,                     // y coordinate of the new window
-            window_info.physical_size().width as u16,        // window width
-            window_info.physical_size().height as u16,       // window height
+            options.width as u16,  // window width
+            options.height as u16, // window height
             0,                     // window border
             xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
             screen.root_visual(),
@@ -162,6 +151,14 @@ impl Window {
 
         xcb_connection.conn.flush();
 
+        let scaling = xcb_connection.get_scaling().unwrap_or(1.0);
+
+        let window_info = WindowInfo {
+            width: options.width as u32,
+            height: options.height as u32,
+            scale: scaling,
+        };
+
         let mut window = Self {
             xcb_connection,
             window_id,
@@ -171,7 +168,7 @@ impl Window {
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
 
-            new_physical_size: None,
+            new_size: None
         };
 
         let mut handler = build(&mut window);
@@ -211,17 +208,15 @@ impl Window {
         // the X server has a tendency to send spurious/extraneous configure notify events when a
         // window is resized, and we need to batch those together and just send one resize event
         // when they've all been coalesced.
-        self.new_physical_size = None;
+        self.new_size = None;
 
         while let Some(event) = self.xcb_connection.conn.poll_for_event() {
             self.handle_xcb_event(handler, event);
         }
 
-        if let Some(size) = self.new_physical_size.take() {
-            self.window_info = WindowInfo::from_physical_size(
-                size,
-                self.window_info.scale()
-            );
+        if let Some((width, height)) = self.new_size.take() {
+            self.window_info.width = width;
+            self.window_info.height = height;
 
             handler.on_event(self, Event::Window(
                 WindowEvent::Resized(self.window_info)
@@ -324,10 +319,11 @@ impl Window {
             xcb::CONFIGURE_NOTIFY => {
                 let event = unsafe { xcb::cast_event::<xcb::ConfigureNotifyEvent>(&event) };
 
-                let new_physical_size = PhySize::new(event.width() as u32, event.height() as u32);
+                let new_size = (event.width() as u32, event.height() as u32);
+                let cur_size = (self.window_info.width, self.window_info.height);
 
-                if self.new_physical_size.is_some() || new_physical_size != self.window_info.physical_size() {
-                    self.new_physical_size = Some(new_physical_size);
+                if self.new_size.is_some() || new_size != cur_size {
+                    self.new_size = Some(new_size);
                 }
             }
 
@@ -339,13 +335,11 @@ impl Window {
                 let detail = event.detail();
 
                 if detail != 4 && detail != 5 {
-                    let physical_pos = PhyPoint::new(event.event_x() as i32, event.event_y() as i32);
-                    let logical_pos = physical_pos.to_logical(&self.window_info);
-
                     handler.on_event(
                         self,
                         Event::Mouse(MouseEvent::CursorMoved {
-                            position: logical_pos,
+                            x: event.event_x() as i32,
+                            y: event.event_y() as i32,
                         }),
                     );
                 }

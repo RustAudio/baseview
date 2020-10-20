@@ -13,7 +13,6 @@ use super::cursor;
 pub(crate) struct Atoms {
     pub wm_protocols: Option<u32>,
     pub wm_delete_window: Option<u32>,
-    pub wm_normal_hints: Option<u32>,
 }
 
 pub struct XcbConnection {
@@ -46,7 +45,7 @@ impl XcbConnection {
     pub fn new() -> Result<Self, xcb::base::ConnError> {
         let (conn, xlib_display) = xcb::Connection::connect_with_xlib_display()?;
 
-        let (wm_protocols, wm_delete_window, wm_normal_hints) = intern_atoms!(&conn, WM_PROTOCOLS, WM_DELETE_WINDOW, WM_NORMAL_HINTS);
+        let (wm_protocols, wm_delete_window) = intern_atoms!(&conn, WM_PROTOCOLS, WM_DELETE_WINDOW);
 
         Ok(Self {
             conn,
@@ -55,7 +54,6 @@ impl XcbConnection {
             atoms: Atoms {
                 wm_protocols,
                 wm_delete_window,
-                wm_normal_hints,
             },
 
             cursor_cache: HashMap::new()

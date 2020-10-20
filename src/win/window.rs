@@ -8,7 +8,7 @@ use winapi::um::winuser::{
     SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR,
     MB_OK, MB_TOPMOST, MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_PAINT, WM_SHOWWINDOW, WM_TIMER,
     WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-    WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, WM_DPICHANGED,
+    WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
 };
 
 use std::cell::RefCell;
@@ -24,7 +24,7 @@ use raw_window_handle::{
 
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, Size, Point, PhySize, PhyPoint,
+    WindowHandler, WindowInfo, WindowOpenOptions,
 };
 
 unsafe fn message_box(title: &str, msg: &str) {
@@ -78,17 +78,11 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
             WM_MOUSEMOVE => {
                 let x = (lparam & 0xFFFF) as i32;
                 let y = ((lparam >> 16) & 0xFFFF) as i32;
-
-                let physical_pos = PhyPoint { x, y };
-
-                let mut window_state = window_state.borrow_mut();
-
-                let logical_pos = physical_pos.to_logical(&window_state.window_info);
-
-                window_state.handler.on_event(
+                window_state.borrow_mut().handler.on_event(
                     &mut window,
                     Event::Mouse(MouseEvent::CursorMoved {
-                        position: logical_pos,
+                        x: x as i32,
+                        y: y as i32,
                     }),
                 );
                 return 0;
@@ -106,9 +100,6 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
                     .handler
                     .on_event(&mut window, Event::Window(WindowEvent::WillClose));
                 return DefWindowProcA(hwnd, msg, wparam, lparam);
-            }
-            WM_DPICHANGED => {
-                // TODO: Notify app of DPI change
             }
             _ => {}
         }
@@ -143,7 +134,7 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 
 struct WindowState<H> {
     window_class: ATOM,
-    window_info: WindowInfo,
+    scaling: Option<f64>, // DPI scale, 96.0 is "default".
     handler: H,
 }
 
@@ -193,23 +184,13 @@ impl Window {
                 | WS_MINIMIZEBOX
                 | WS_MAXIMIZEBOX
                 | WS_CLIPSIBLINGS;
-            
-            let scaling = match options.scale {
-                // TODO: Find system scale factor
-                WindowScalePolicy::TrySystemScaleFactor => get_scaling().unwrap_or(1.0),
-                WindowScalePolicy::TrySystemScaleFactorTimes(user_scale) => get_scaling().unwrap_or(1.0) * user_scale,
-                WindowScalePolicy::UseScaleFactor(user_scale) => user_scale,
-                WindowScalePolicy::NoScaling => 1.0,
-            };
-
-            let window_info = options.window_info_from_scale(scaling);
 
             let mut rect = RECT {
                 left: 0,
                 top: 0,
                 // todo: check if usize fits into i32
-                right: window_info.physical_size().width as i32,
-                bottom: window_info.physical_size().height as i32,
+                right: options.width as i32,
+                bottom: options.height as i32,
             };
 
             // todo: add check flags https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L351
@@ -247,13 +228,15 @@ impl Window {
 
             let handler = build(&mut window);
 
-            let window_state = Box::new(RefCell::new(WindowState {
+            let window_state = Rc::new(RefCell::new(WindowState {
                 window_class,
-                window_info,
+                scaling: None,
                 handler,
             }));
 
-            SetWindowLongPtrA(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
+            let win = Rc::new(RefCell::new(window));
+
+            SetWindowLongPtrA(hwnd, GWLP_USERDATA, Rc::into_raw(win) as *const _ as _);
             SetTimer(hwnd, 4242, 13, None);
 
             WindowHandle { hwnd }
@@ -268,9 +251,4 @@ unsafe impl HasRawWindowHandle for Window {
             ..WindowsHandle::empty()
         })
     }
-}
-
-fn get_scaling() -> Option<f64> {
-    // TODO: find system scaling
-    None
 }
