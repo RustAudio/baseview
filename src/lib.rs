@@ -18,10 +18,15 @@ pub use macos::*;
 mod event;
 mod keyboard;
 mod mouse_cursor;
+mod window_info;
+mod window_open_options;
 pub use event::*;
 pub use keyboard::*;
 pub use mouse_cursor::MouseCursor;
+pub use window_info::*;
+pub use window_open_options::*;
 
+#[derive(Debug)]
 pub enum Parent {
     None,
     AsIfParented,
@@ -29,15 +34,6 @@ pub enum Parent {
 }
 
 unsafe impl Send for Parent {}
-
-pub struct WindowOpenOptions {
-    pub title: String,
-
-    pub width: usize,
-    pub height: usize,
-
-    pub parent: Parent,
-}
 
 pub trait WindowHandler {
     type Message;
