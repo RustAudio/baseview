@@ -173,7 +173,11 @@ impl WindowHandle {
 }
 
 impl Window {
-    pub fn open<H: WindowHandler>(options: WindowOpenOptions) -> Result<(WindowHandle, WindowInfo), ()> {
+    pub fn open<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
+        where H: WindowHandler,
+              B: FnOnce(&mut Window) -> H,
+              B: Send + 'static
+    {
         unsafe {
             let title = (options.title.to_owned() + "\0").as_ptr() as *const i8;
 
@@ -239,7 +243,7 @@ impl Window {
 
             let mut window = Window { hwnd };
 
-            let handler = H::build(&mut window);
+            let handler = build(&mut window);
 
             let window_state = Box::new(RefCell::new(WindowState {
                 window_class,

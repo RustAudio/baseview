@@ -1,13 +1,9 @@
 use baseview::{Event, Window, WindowHandler, WindowSize, WindowScalePolicy};
 
-struct MyProgram {}
+struct OpenWindowExample;
 
-impl WindowHandler for MyProgram {
+impl WindowHandler for OpenWindowExample {
     type Message = ();
-
-    fn build(_window: &mut Window) -> Self {
-        Self {}
-    }
 
     fn on_frame(&mut self) {}
 
@@ -35,6 +31,6 @@ fn main() {
         parent: baseview::Parent::None,
     };
 
-    let (handle, _window_info) = Window::open::<MyProgram>(window_open_options).unwrap();
+    let handle = Window::open(window_open_options, |_| OpenWindowExample);
     handle.app_run_blocking();
 }
