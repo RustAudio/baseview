@@ -12,7 +12,7 @@ use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle}
 
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler,
-    WindowOpenOptions, WindowScalePolicy,
+    WindowOpenOptions, WindowScalePolicy, WindowInfo,
 };
 
 pub struct Window {
