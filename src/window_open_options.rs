@@ -6,7 +6,7 @@ pub enum WindowScalePolicy {
     /// Use the system's dpi scale factor
     SystemScaleFactor,
     /// Use the given dpi scale factor (e.g. `1.0` = 96 dpi)
-    UseScaleFactor(f64),
+    ScaleFactor(f64),
 }
 
 /// The options for opening a new window

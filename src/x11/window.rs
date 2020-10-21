@@ -101,7 +101,7 @@ impl Window {
 
         let scaling = match options.scale {
             WindowScalePolicy::SystemScaleFactor => xcb_connection.get_scaling().unwrap_or(1.0),
-            WindowScalePolicy::UseScaleFactor(scale) => scale
+            WindowScalePolicy::ScaleFactor(scale) => scale
         };
 
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
