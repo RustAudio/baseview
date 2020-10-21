@@ -12,7 +12,7 @@ use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle}
 
 use crate::{
     Event, KeyboardEvent, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler,
-    WindowOpenOptions, WindowScalePolicy,
+    WindowOpenOptions, WindowScalePolicy, WindowInfo,
 };
 
 pub struct Window {
@@ -42,14 +42,11 @@ impl Window {
             let _pool = NSAutoreleasePool::new(nil);
 
             let scaling = match options.scale {
-                // TODO: Find system scale factor
-                WindowScalePolicy::TrySystemScaleFactor => get_scaling().unwrap_or(1.0),
-                WindowScalePolicy::TrySystemScaleFactorTimes(user_scale) => get_scaling().unwrap_or(1.0) * user_scale,
-                WindowScalePolicy::UseScaleFactor(user_scale) => user_scale,
-                WindowScalePolicy::NoScaling => 1.0,
+                WindowScalePolicy::SystemScaleFactor => get_scaling().unwrap_or(1.0),
+                WindowScalePolicy::ScaleFactor(scale) => scale
             };
-
-            let window_info = options.window_info_from_scale(scaling);
+    
+            let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
             let rect = NSRect::new(
                 NSPoint::new(0.0, 0.0),
