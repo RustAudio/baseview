@@ -1,4 +1,4 @@
-use baseview::{Event, Window, WindowHandler, WindowSize, WindowScalePolicy};
+use baseview::{Event, Window, WindowHandler, WindowScalePolicy};
 
 struct OpenWindowExample;
 
@@ -21,8 +21,8 @@ impl WindowHandler for OpenWindowExample {
 fn main() {
     let window_open_options = baseview::WindowOpenOptions {
         title: "baseview".into(),
-        size: WindowSize::Logical(baseview::Size::new(512.0, 512.0)),
-        scale: WindowScalePolicy::TrySystemScaleFactor,
+        size: baseview::Size::new(512.0, 512.0),
+        scale: WindowScalePolicy::SystemScaleFactor,
         parent: baseview::Parent::None,
     };
 

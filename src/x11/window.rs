@@ -100,15 +100,11 @@ impl Window {
         );
 
         let scaling = match options.scale {
-            WindowScalePolicy::TrySystemScaleFactor =>
-                xcb_connection.get_scaling().unwrap_or(1.0),
-            WindowScalePolicy::TrySystemScaleFactorTimes(user_scale) =>
-                xcb_connection.get_scaling().unwrap_or(1.0) * user_scale,
-            WindowScalePolicy::UseScaleFactor(user_scale) => user_scale,
-            WindowScalePolicy::NoScaling => 1.0,
+            WindowScalePolicy::SystemScaleFactor => xcb_connection.get_scaling().unwrap_or(1.0),
+            WindowScalePolicy::UseScaleFactor(scale) => scale
         };
 
-        let window_info = options.window_info_from_scale(scaling);
+        let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
         let window_id = xcb_connection.conn.generate_id();
         xcb::create_window(
