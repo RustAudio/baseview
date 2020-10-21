@@ -14,7 +14,10 @@ pub enum WindowScalePolicy {
 pub struct WindowOpenOptions {
     pub title: String,
 
-    /// The logical size of the window
+    /// The logical size of the window.
+    ///
+    /// These dimensions will be scaled by the scaling policy specified in `scale`. Mouse
+    /// coordinates will be translated back into logical coordinates.
     pub size: Size,
 
     /// The dpi scaling policy
