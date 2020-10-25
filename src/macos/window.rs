@@ -12,7 +12,7 @@ use objc::{
     class,
     declare::ClassDecl,
     msg_send,
-    runtime::{Class, Object, Sel},
+    runtime::{Object, Sel},
     sel, sel_impl,
 };
 
@@ -34,9 +34,7 @@ pub struct Window {
 }
 
 
-pub struct WindowHandle {
-    subview: EventSubview,
-}
+pub struct WindowHandle;
 
 
 impl WindowHandle {
@@ -122,18 +120,16 @@ impl Window {
 
         let handler = build(&mut window);
 
-        let subview = Self::setup_event_delegate(options, window, handler);
+        Self::setup_event_delegate(options, window, handler);
 
-        WindowHandle {
-            subview,
-        }
+        WindowHandle
     }
 
     fn setup_event_delegate<H: WindowHandler>(
         window_options: WindowOpenOptions,
         window: Window,
         window_handler: H
-    ) -> EventSubview {
+    ){
         unsafe {
             let mut class = ClassDecl::new("EventSubview", class!(NSView)).unwrap();
 
@@ -166,18 +162,8 @@ impl Window {
             let event_delegate_reference = Box::into_raw(Box::new(event_delegate));
 
             (*event_subview).set_ivar(EVENT_DELEGATE_IVAR, event_delegate_reference as *mut c_void);
-
-            EventSubview {
-                id: event_subview
-            }
         }
     }
-}
-
-
-
-struct EventSubview {
-    id: id,
 }
 
 
