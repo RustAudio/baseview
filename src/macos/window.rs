@@ -1,7 +1,11 @@
+/// macOS window and event handling
+///
+/// Heavily inspired by implementation in https://github.com/antonok-edm/vst_window
+
 use std::ffi::c_void;
 
 use cocoa::appkit::{
-    NSApp, NSApplication, NSApplicationActivateIgnoringOtherApps,
+    NSApp, NSApplication, NSApplicationActivateIgnoringOtherApps, NSEvent,
     NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSRunningApplication, NSView,
     NSWindow, NSWindowStyleMask,
 };
@@ -199,7 +203,7 @@ extern "C" fn dealloc<H: WindowHandler>(this: &Object, _sel: Sel) {
 
 
 extern "C" fn mouse_down<H: WindowHandler>(this: &Object, _sel: Sel, event: id) {
-    let location = unsafe { cocoa::appkit::NSEvent::locationInWindow(event) };
+    let location = unsafe { NSEvent::locationInWindow(event) };
     let delegate: &mut EventDelegate<H> = EventDelegate::from_field(this);
 
     let position = Point {
