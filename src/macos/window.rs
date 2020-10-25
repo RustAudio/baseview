@@ -22,7 +22,7 @@ use crate::{
     WindowInfo, Parent, Size, Point
 };
 
-use super::subview::create_subview;
+use super::view::create_view;
 
 
 /// Name of the field used to store the `WindowState` pointer in the `BaseviewNSView` class.
@@ -65,7 +65,7 @@ impl Window {
                     let ns_view = handle.ns_view as *mut objc::runtime::Object;
 
                     unsafe {
-                        let subview = create_subview::<H>(&options);
+                        let subview = create_view::<H>(&options);
 
                         let _: id = msg_send![ns_view, addSubview: subview];
 
@@ -80,7 +80,7 @@ impl Window {
             },
             Parent::AsIfParented => {
                 let ns_view = unsafe {
-                    create_subview::<H>(&options)
+                    create_view::<H>(&options)
                 };
 
                 Window {
@@ -117,7 +117,7 @@ impl Window {
                     ns_window.setTitle_(NSString::alloc(nil).init_str(&options.title));
                     ns_window.makeKeyAndOrderFront_(nil);
 
-                    let subview = create_subview::<H>(&options);
+                    let subview = create_view::<H>(&options);
 
                     ns_window.setContentView_(subview);
 

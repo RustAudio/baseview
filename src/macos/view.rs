@@ -19,7 +19,7 @@ use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use super::window::{WindowState, WINDOW_STATE_IVAR_NAME};
 
 
-pub(super) unsafe fn create_subview<H: WindowHandler>(
+pub(super) unsafe fn create_view<H: WindowHandler>(
     window_options: &WindowOpenOptions,
 ) -> id {
     let mut class = ClassDecl::new("BaseviewNSView", class!(NSView))
@@ -69,16 +69,16 @@ pub(super) unsafe fn create_subview<H: WindowHandler>(
     class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
 
     let class = class.register();
-    let subview: id = msg_send![class, alloc];
+    let view: id = msg_send![class, alloc];
 
     let size = window_options.size;
 
-    subview.initWithFrame_(NSRect::new(
+    view.initWithFrame_(NSRect::new(
         NSPoint::new(0., 0.),
         NSSize::new(size.width, size.height),
     ));
 
-    subview
+    view
 }
 
 

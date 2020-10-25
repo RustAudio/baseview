@@ -1,4 +1,4 @@
 mod window;
-mod subview;
+mod view;
 
 pub use window::*;
