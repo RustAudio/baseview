@@ -98,7 +98,7 @@ extern "C" fn mouse_moved<H: WindowHandler>(this: &Object, _sel: Sel, event: id)
 }
 
 
-macro_rules! mouse_click_extern_fn {
+macro_rules! mouse_button_extern_fn {
     ($fn:ident, $event:expr) => {
         extern "C" fn $fn<H: WindowHandler>(this: &Object, _sel: Sel, event: id) {
             let location = unsafe { NSEvent::locationInWindow(event) };
@@ -113,11 +113,11 @@ macro_rules! mouse_click_extern_fn {
 }
 
 
-mouse_click_extern_fn!(left_mouse_down, ButtonPressed(MouseButton::Left));
-mouse_click_extern_fn!(left_mouse_up, ButtonReleased(MouseButton::Left));
+mouse_button_extern_fn!(left_mouse_down, ButtonPressed(MouseButton::Left));
+mouse_button_extern_fn!(left_mouse_up, ButtonReleased(MouseButton::Left));
 
-mouse_click_extern_fn!(right_mouse_down, ButtonPressed(MouseButton::Right));
-mouse_click_extern_fn!(right_mouse_up, ButtonReleased(MouseButton::Right));
+mouse_button_extern_fn!(right_mouse_down, ButtonPressed(MouseButton::Right));
+mouse_button_extern_fn!(right_mouse_up, ButtonReleased(MouseButton::Right));
 
-mouse_click_extern_fn!(middle_mouse_down, ButtonPressed(MouseButton::Middle));
-mouse_click_extern_fn!(middle_mouse_up, ButtonReleased(MouseButton::Middle));
+mouse_button_extern_fn!(middle_mouse_down, ButtonPressed(MouseButton::Middle));
+mouse_button_extern_fn!(middle_mouse_up, ButtonReleased(MouseButton::Middle));
