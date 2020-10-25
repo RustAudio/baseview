@@ -6,31 +6,27 @@ use std::ffi::c_void;
 use std::sync::Arc;
 
 use cocoa::appkit::{
-    NSApp, NSApplication, NSApplicationActivateIgnoringOtherApps, NSEvent,
-    NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSRunningApplication, NSView,
-    NSWindow, NSWindowStyleMask,
+    NSApp, NSApplication, NSApplicationActivateIgnoringOtherApps,
+    NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
+    NSRunningApplication, NSWindow, NSWindowStyleMask,
 };
 use cocoa::base::{id, nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 
-use objc::{
-    class,
-    declare::ClassDecl,
-    msg_send,
-    runtime::{Object, Sel},
-    sel, sel_impl,
-};
+use objc::{msg_send, runtime::Object, sel, sel_impl};
 
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    Event, KeyboardEvent, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler,
-    WindowOpenOptions, WindowScalePolicy, WindowInfo, Parent, Size, Point
+    Event, MouseEvent, WindowHandler, WindowOpenOptions, WindowScalePolicy,
+    WindowInfo, Parent, Size, Point
 };
+
+use super::subview::create_subview;
 
 
 /// Name of the field used to store the `WindowState` pointer in the `BaseviewNSView` class.
-const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
+pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
 
 
 pub struct Window {
@@ -69,7 +65,7 @@ impl Window {
                     let ns_view = handle.ns_view as *mut objc::runtime::Object;
 
                     unsafe {
-                        let subview = Self::create_subview::<H>(&options);
+                        let subview = create_subview::<H>(&options);
 
                         let _: id = msg_send![ns_view, addSubview: subview];
 
@@ -114,7 +110,7 @@ impl Window {
                     ns_window.setTitle_(NSString::alloc(nil).init_str(&options.title));
                     ns_window.makeKeyAndOrderFront_(nil);
 
-                    let subview = Self::create_subview::<H>(&options);
+                    let subview = create_subview::<H>(&options);
 
                     ns_window.setContentView_(subview);
 
@@ -148,43 +144,12 @@ impl Window {
 
         WindowHandle
     }
-
-    unsafe fn create_subview<H: WindowHandler>(
-        window_options: &WindowOpenOptions,
-    ) -> id {
-        let mut class = ClassDecl::new("BaseviewNSView", class!(NSView))
-            .unwrap();
-
-        class.add_method(
-            sel!(dealloc),
-            dealloc::<H> as extern "C" fn(&Object, Sel)
-        );
-
-        class.add_method(
-            sel!(mouseDown:),
-            mouse_down::<H> as extern "C" fn(&Object, Sel, id),
-        );
-
-        class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
-
-        let class = class.register();
-        let subview: id = msg_send![class, alloc];
-
-        let size = window_options.size;
-
-        subview.initWithFrame_(NSRect::new(
-            NSPoint::new(0., 0.),
-            NSSize::new(size.width, size.height),
-        ));
-
-        subview
-    }
 }
 
 
-struct WindowState<H: WindowHandler> {
-    window: Window,
-    window_handler: H,
+pub(super) struct WindowState<H: WindowHandler> {
+    pub(super) window: Window,
+    pub(super) window_handler: H,
     size: Size,
 }
 
@@ -196,36 +161,23 @@ impl <H: WindowHandler>WindowState<H> {
     /// create multiple mutable references to the `WindowState`. However, in practice macOS
     /// blocks for the entire duration of each event callback, so this should be fine.
     #[allow(clippy::mut_from_ref)]
-    fn from_field(obj: &Object) -> &mut Self {
+    pub(super) fn from_field(obj: &Object) -> &mut Self {
         unsafe {
             let state_ptr: *mut c_void = *obj.get_ivar(WINDOW_STATE_IVAR_NAME);
             &mut *(state_ptr as *mut Self)
         }
     }
-}
 
+    pub(super) fn trigger_cursor_moved(&mut self, location: NSPoint){
+        let position = Point {
+            x: (location.x / self.size.width),
+            y: 1.0 - (location.y / self.size.height),
+        };
 
-extern "C" fn dealloc<H: WindowHandler>(this: &Object, _sel: Sel) {
-    unsafe {
-        let state_ptr: *mut c_void = *this.get_ivar(WINDOW_STATE_IVAR_NAME);
-        Arc::from_raw(state_ptr as *mut WindowState<H>);
+        let event = Event::Mouse(MouseEvent::CursorMoved { position });
+
+        self.window_handler.on_event(&mut self.window, event);
     }
-}
-
-
-extern "C" fn mouse_down<H: WindowHandler>(this: &Object, _sel: Sel, event: id) {
-    let location = unsafe { NSEvent::locationInWindow(event) };
-    let state: &mut WindowState<H> = WindowState::from_field(this);
-
-    let position = Point {
-        x: (location.x / state.size.width),
-        y: 1.0 - (location.y / state.size.height),
-    };
-    let event = Event::Mouse(MouseEvent::CursorMoved { position });
-    state.window_handler.on_event(&mut state.window, event);
-
-    let event = Event::Mouse(MouseEvent::ButtonPressed(MouseButton::Left));
-    state.window_handler.on_event(&mut state.window, event);
 }
 
 
