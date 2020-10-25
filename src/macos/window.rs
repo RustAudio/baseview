@@ -3,6 +3,7 @@
 /// Heavily inspired by implementation in https://github.com/antonok-edm/vst_window
 
 use std::ffi::c_void;
+use std::sync::Arc;
 
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivateIgnoringOtherApps, NSEvent,
@@ -28,12 +29,15 @@ use crate::{
 };
 
 
-/// Name of the field used to store the `EventDelegate` pointer in the `EventSubview` class.
-const EVENT_DELEGATE_IVAR: &str = "EVENT_DELEGATE_IVAR";
+/// Name of the field used to store the `WindowState` pointer in the `BaseviewNSView` class.
+const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
 
 
 pub struct Window {
-    ns_window: id,
+    /// Only set if we created the parent window, i.e. we are running in
+    /// parentless mode
+    ns_window: Option<id>,
+    /// Our subclassed NSView
     ns_view: id,
 }
 
@@ -61,19 +65,21 @@ impl Window {
 
         let mut window = match options.parent {
             Parent::WithParent(parent) => {
-                match parent {
-                    RawWindowHandle::MacOS(handle) => {
-                        let ns_window = handle.ns_window as *mut objc::runtime::Object;
-                        let ns_view = handle.ns_view as *mut objc::runtime::Object;
+                if let RawWindowHandle::MacOS(handle) = parent {
+                    let ns_view = handle.ns_view as *mut objc::runtime::Object;
+
+                    unsafe {
+                        let subview = Self::create_subview::<H>(&options);
+
+                        let _: id = msg_send![ns_view, addSubview: subview];
 
                         Window {
-                            ns_window,
-                            ns_view,
+                            ns_window: None,
+                            ns_view: subview,
                         }
-                    },
-                    _ => {
-                        panic!("Not a macOS window");
                     }
+                } else {
+                    panic!("Not a macOS window");
                 }
             },
             Parent::AsIfParented => {
@@ -108,87 +114,92 @@ impl Window {
                     ns_window.setTitle_(NSString::alloc(nil).init_str(&options.title));
                     ns_window.makeKeyAndOrderFront_(nil);
 
-                    let ns_view = NSView::alloc(nil).init();
-                    ns_window.setContentView_(ns_view);
+                    let subview = Self::create_subview::<H>(&options);
+
+                    ns_window.setContentView_(subview);
 
                     let current_app = NSRunningApplication::currentApplication(nil);
                     current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
 
                     Window {
-                        ns_window,
-                        ns_view,
+                        ns_window: Some(ns_window),
+                        ns_view: subview,
                     }
                 }
             },
         };
 
-        let handler = build(&mut window);
+        let window_handler = build(&mut window);
 
-        Self::setup_event_delegate(options, window, handler);
+        let window_state = WindowState {
+            window,
+            window_handler,
+            size: options.size
+        };
+
+        let window_state = Arc::new(window_state);
+
+        unsafe {
+            (*window_state.window.ns_view).set_ivar(
+                WINDOW_STATE_IVAR_NAME,
+                Arc::into_raw(window_state.clone()) as *mut c_void
+            );
+        }
 
         WindowHandle
     }
 
-    fn setup_event_delegate<H: WindowHandler>(
-        window_options: WindowOpenOptions,
-        window: Window,
-        window_handler: H
-    ){
-        unsafe {
-            let mut class = ClassDecl::new("EventSubview", class!(NSView)).unwrap();
+    unsafe fn create_subview<H: WindowHandler>(
+        window_options: &WindowOpenOptions,
+    ) -> id {
+        let mut class = ClassDecl::new("BaseviewNSView", class!(NSView))
+            .unwrap();
 
-            class.add_method(sel!(dealloc), dealloc::<H> as extern "C" fn(&Object, Sel));
+        class.add_method(
+            sel!(dealloc),
+            dealloc::<H> as extern "C" fn(&Object, Sel)
+        );
 
-            class.add_method(
-                sel!(mouseDown:),
-                mouse_down::<H> as extern "C" fn(&Object, Sel, id),
-            );
+        class.add_method(
+            sel!(mouseDown:),
+            mouse_down::<H> as extern "C" fn(&Object, Sel, id),
+        );
 
-            class.add_ivar::<*mut c_void>(EVENT_DELEGATE_IVAR);
+        class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
 
-            let class = class.register();
-            let event_subview: id = msg_send![class, alloc];
+        let class = class.register();
+        let subview: id = msg_send![class, alloc];
 
-            let size = window_options.size;
+        let size = window_options.size;
 
-            event_subview.initWithFrame_(NSRect::new(
-                NSPoint::new(0., 0.),
-                NSSize::new(size.width, size.height),
-            ));
-            let _: id = msg_send![window.ns_view, addSubview: event_subview];
+        subview.initWithFrame_(NSRect::new(
+            NSPoint::new(0., 0.),
+            NSSize::new(size.width, size.height),
+        ));
 
-            let event_delegate = EventDelegate {
-                window,
-                window_handler,
-                size
-            };
-
-            let event_delegate_reference = Box::into_raw(Box::new(event_delegate));
-
-            (*event_subview).set_ivar(EVENT_DELEGATE_IVAR, event_delegate_reference as *mut c_void);
-        }
+        subview
     }
 }
 
 
-struct EventDelegate<H: WindowHandler> {
+struct WindowState<H: WindowHandler> {
     window: Window,
     window_handler: H,
     size: Size,
 }
 
 
-impl <H: WindowHandler>EventDelegate<H> {
-    /// Returns a mutable reference to an EventDelegate from an Objective-C callback.
+impl <H: WindowHandler>WindowState<H> {
+    /// Returns a mutable reference to an WindowState from an Objective-C callback.
     ///
     /// `clippy` has issues with this function signature, making the valid point that this could
-    /// create multiple mutable references to the `EventDelegate`. However, in practice macOS
+    /// create multiple mutable references to the `WindowState`. However, in practice macOS
     /// blocks for the entire duration of each event callback, so this should be fine.
     #[allow(clippy::mut_from_ref)]
     fn from_field(obj: &Object) -> &mut Self {
         unsafe {
-            let delegate_ptr: *mut c_void = *obj.get_ivar(EVENT_DELEGATE_IVAR);
-            &mut *(delegate_ptr as *mut Self)
+            let state_ptr: *mut c_void = *obj.get_ivar(WINDOW_STATE_IVAR_NAME);
+            &mut *(state_ptr as *mut Self)
         }
     }
 }
@@ -196,32 +207,36 @@ impl <H: WindowHandler>EventDelegate<H> {
 
 extern "C" fn dealloc<H: WindowHandler>(this: &Object, _sel: Sel) {
     unsafe {
-        let delegate_ptr: *mut c_void = *this.get_ivar(EVENT_DELEGATE_IVAR);
-        Box::from_raw(delegate_ptr as *mut EventDelegate<H>);
+        let state_ptr: *mut c_void = *this.get_ivar(WINDOW_STATE_IVAR_NAME);
+        Box::from_raw(state_ptr as *mut WindowState<H>);
     }
 }
 
 
 extern "C" fn mouse_down<H: WindowHandler>(this: &Object, _sel: Sel, event: id) {
     let location = unsafe { NSEvent::locationInWindow(event) };
-    let delegate: &mut EventDelegate<H> = EventDelegate::from_field(this);
+    let state: &mut WindowState<H> = WindowState::from_field(this);
 
     let position = Point {
-        x: (location.x / delegate.size.width),
-        y: 1.0 - (location.y / delegate.size.height),
+        x: (location.x / state.size.width),
+        y: 1.0 - (location.y / state.size.height),
     };
     let event = Event::Mouse(MouseEvent::CursorMoved { position });
-    delegate.window_handler.on_event(&mut delegate.window, event);
+    state.window_handler.on_event(&mut state.window, event);
 
     let event = Event::Mouse(MouseEvent::ButtonPressed(MouseButton::Left));
-    delegate.window_handler.on_event(&mut delegate.window, event);
+    state.window_handler.on_event(&mut state.window, event);
 }
 
 
 unsafe impl HasRawWindowHandle for Window {
     fn raw_window_handle(&self) -> RawWindowHandle {
+        let ns_window = self.ns_window.unwrap_or_else(
+            ::std::ptr::null_mut
+        ) as *mut c_void;
+
         RawWindowHandle::MacOS(MacOSHandle {
-            ns_window: self.ns_window as *mut c_void,
+            ns_window,
             ns_view: self.ns_view as *mut c_void,
             ..MacOSHandle::empty()
         })
