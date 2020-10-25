@@ -79,7 +79,14 @@ impl Window {
                 }
             },
             Parent::AsIfParented => {
-                unimplemented!()
+                let ns_view = unsafe {
+                    create_subview::<H>(&options)
+                };
+
+                Window {
+                    ns_window: None,
+                    ns_view,
+                }
             },
             Parent::None => {
                 let scaling = match options.scale {
