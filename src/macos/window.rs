@@ -208,7 +208,7 @@ impl <H: WindowHandler>WindowState<H> {
 extern "C" fn dealloc<H: WindowHandler>(this: &Object, _sel: Sel) {
     unsafe {
         let state_ptr: *mut c_void = *this.get_ivar(WINDOW_STATE_IVAR_NAME);
-        Box::from_raw(state_ptr as *mut WindowState<H>);
+        Arc::from_raw(state_ptr as *mut WindowState<H>);
     }
 }
 
