@@ -2,8 +2,8 @@ use std::ffi::c_void;
 use std::sync::Arc;
 
 use cocoa::appkit::{NSEvent, NSView};
-use cocoa::base::id;
-use cocoa::foundation::{NSPoint, NSRect, NSSize};
+use cocoa::base::{id, BOOL, YES};
+use cocoa::foundation::{NSPoint, NSRect, NSSize, NSString};
 
 use objc::{
     class,
@@ -13,7 +13,7 @@ use objc::{
     sel, sel_impl,
 };
 
-use crate::{Event, MouseButton, WindowHandler, WindowOpenOptions};
+use crate::{Event, MouseButton, KeyboardEvent, WindowHandler, WindowOpenOptions};
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
 use super::window::{WindowState, WINDOW_STATE_IVAR_NAME};
@@ -28,6 +28,19 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
     class.add_method(
         sel!(dealloc),
         dealloc::<H> as extern "C" fn(&Object, Sel)
+    );
+    class.add_method(
+        sel!(acceptsFirstResponder),
+        accepts_first_responder::<H> as extern "C" fn(&Object, Sel) -> BOOL
+    );
+
+    class.add_method(
+        sel!(keyDown:),
+        key_down::<H> as extern "C" fn(&Object, Sel, id),
+    );
+    class.add_method(
+        sel!(keyUp:),
+        key_up::<H> as extern "C" fn(&Object, Sel, id),
     );
 
     class.add_method(
@@ -88,6 +101,46 @@ extern "C" fn dealloc<H: WindowHandler>(this: &Object, _sel: Sel) {
         Arc::from_raw(state_ptr as *mut WindowState<H>);
     }
 }
+
+
+extern "C" fn accepts_first_responder<H: WindowHandler>(
+    _this: &Object,
+    _sel: Sel,
+) -> BOOL {
+    YES
+}
+
+
+macro_rules! key_extern_fn {
+    ($fn:ident, $event_variant:expr) => {
+        extern "C" fn $fn<H: WindowHandler>(this: &Object, _sel: Sel, event: id) {
+            let state: &mut WindowState<H> = WindowState::from_field(this);
+
+            let characters = unsafe {
+                let ns_string = NSEvent::characters(event);
+
+                let start = NSString::UTF8String(ns_string);
+                let len = NSString::len(ns_string);
+
+                let slice = ::std::slice::from_raw_parts(
+                    start as *const u8,
+                    len
+                );
+
+                ::std::str::from_utf8_unchecked(slice)
+            };
+
+            for c in characters.chars() {
+                let event = Event::Keyboard($event_variant(c as u32));
+                state.window_handler.on_event(&mut state.window, event);
+            }
+        }
+    };
+}
+
+
+key_extern_fn!(key_down, KeyboardEvent::KeyPressed);
+key_extern_fn!(key_up, KeyboardEvent::KeyReleased);
 
 
 extern "C" fn mouse_moved<H: WindowHandler>(this: &Object, _sel: Sel, event: id) {
