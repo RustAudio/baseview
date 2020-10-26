@@ -18,8 +18,8 @@ use objc::{msg_send, runtime::Object, sel, sel_impl};
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    Event, MouseEvent, WindowHandler, WindowOpenOptions, WindowScalePolicy,
-    WindowInfo, Parent, Size, Point
+    Event, Parent, Size, WindowHandler, WindowOpenOptions, WindowScalePolicy,
+    WindowInfo
 };
 
 use super::view::create_view;
@@ -179,17 +179,6 @@ impl <H: WindowHandler>WindowState<H> {
             let state_ptr: *mut c_void = *obj.get_ivar(WINDOW_STATE_IVAR_NAME);
             &mut *(state_ptr as *mut Self)
         }
-    }
-
-    pub(super) fn trigger_cursor_moved(&mut self, location: NSPoint){
-        let position = Point {
-            x: (location.x / self.size.width),
-            y: 1.0 - (location.y / self.size.height),
-        };
-
-        let event = Event::Mouse(MouseEvent::CursorMoved { position });
-
-        self.window_handler.on_event(&mut self.window, event);
     }
 }
 

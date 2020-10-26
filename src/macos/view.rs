@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::sync::Arc;
 
 use cocoa::appkit::{NSEvent, NSView};
-use cocoa::base::{id, BOOL, YES};
+use cocoa::base::{id, nil, BOOL, YES};
 use cocoa::foundation::{NSPoint, NSRect, NSSize, NSString};
 
 use objc::{
@@ -13,7 +13,10 @@ use objc::{
     sel, sel_impl,
 };
 
-use crate::{Event, MouseButton, KeyboardEvent, WindowHandler, WindowOpenOptions};
+use crate::{
+    Event, MouseButton, MouseEvent, KeyboardEvent, Point, WindowHandler,
+    WindowOpenOptions
+};
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
 use super::window::{WindowState, WINDOW_STATE_IVAR_NAME};
@@ -32,6 +35,10 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
     class.add_method(
         sel!(acceptsFirstResponder),
         accepts_first_responder::<H> as extern "C" fn(&Object, Sel) -> BOOL
+    );
+    class.add_method(
+        sel!(isFlipped),
+        is_flipped::<H> as extern "C" fn(&Object, Sel) -> BOOL
     );
 
     class.add_method(
@@ -111,6 +118,14 @@ extern "C" fn accepts_first_responder<H: WindowHandler>(
 }
 
 
+extern "C" fn is_flipped<H: WindowHandler>(
+    _this: &Object,
+    _sel: Sel,
+) -> BOOL {
+    YES
+}
+
+
 macro_rules! key_extern_fn {
     ($fn:ident, $event_variant:expr) => {
         extern "C" fn $fn<H: WindowHandler>(this: &Object, _sel: Sel, event: id) {
@@ -144,10 +159,22 @@ key_extern_fn!(key_up, KeyboardEvent::KeyReleased);
 
 
 extern "C" fn mouse_moved<H: WindowHandler>(this: &Object, _sel: Sel, event: id) {
-    let location = unsafe { NSEvent::locationInWindow(event) };
     let state: &mut WindowState<H> = WindowState::from_field(this);
 
-    state.trigger_cursor_moved(location);
+    let point: NSPoint = unsafe {
+        let point = NSEvent::locationInWindow(event);
+
+        msg_send![this, convertPoint:point fromView:nil]
+    };
+
+    let position = Point {
+        x: point.x,
+        y: point.y
+    };
+
+    let event = Event::Mouse(MouseEvent::CursorMoved { position });
+
+    state.window_handler.on_event(&mut state.window, event);
 }
 
 
