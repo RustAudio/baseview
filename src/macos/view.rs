@@ -153,11 +153,8 @@ extern "C" fn mouse_moved<H: WindowHandler>(this: &Object, _sel: Sel, event: id)
 
 macro_rules! mouse_button_extern_fn {
     ($fn:ident, $event:expr) => {
-        extern "C" fn $fn<H: WindowHandler>(this: &Object, _sel: Sel, event: id) {
-            let location = unsafe { NSEvent::locationInWindow(event) };
+        extern "C" fn $fn<H: WindowHandler>(this: &Object, _sel: Sel, _event: id) {
             let state: &mut WindowState<H> = WindowState::from_field(this);
-
-            state.trigger_cursor_moved(location);
 
             let event = Event::Mouse($event);
             state.window_handler.on_event(&mut state.window, event);
