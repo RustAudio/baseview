@@ -147,7 +147,7 @@ macro_rules! key_extern_fn {
 
             for c in characters.chars() {
                 let event = Event::Keyboard($event_variant(c as u32));
-                state.window_handler.on_event(&mut state.window, event);
+                state.trigger_event(event);
             }
         }
     };
@@ -174,7 +174,7 @@ extern "C" fn mouse_moved<H: WindowHandler>(this: &Object, _sel: Sel, event: id)
 
     let event = Event::Mouse(MouseEvent::CursorMoved { position });
 
-    state.window_handler.on_event(&mut state.window, event);
+    state.trigger_event(event);
 }
 
 
@@ -183,8 +183,7 @@ macro_rules! mouse_button_extern_fn {
         extern "C" fn $fn<H: WindowHandler>(this: &Object, _sel: Sel, _event: id) {
             let state: &mut WindowState<H> = WindowState::from_field(this);
 
-            let event = Event::Mouse($event);
-            state.window_handler.on_event(&mut state.window, event);
+            state.trigger_event(Event::Mouse($event));
         }
     };
 }

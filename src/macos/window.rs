@@ -161,8 +161,8 @@ impl Window {
 
 
 pub(super) struct WindowState<H: WindowHandler> {
-    pub(super) window: Window,
-    pub(super) window_handler: H,
+    window: Window,
+    window_handler: H,
     size: Size,
 }
 
@@ -179,6 +179,10 @@ impl <H: WindowHandler>WindowState<H> {
             let state_ptr: *mut c_void = *obj.get_ivar(WINDOW_STATE_IVAR_NAME);
             &mut *(state_ptr as *mut Self)
         }
+    }
+
+    pub(super) fn trigger_event(&mut self, event: Event){
+        self.window_handler.on_event(&mut self.window, event);
     }
 }
 
