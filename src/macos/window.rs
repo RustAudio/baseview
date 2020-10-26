@@ -134,18 +134,20 @@ impl Window {
 
         let window_handler = build(&mut window);
 
-        let window_state = WindowState {
+        let window_state_arc = Arc::new(WindowState {
             window,
             window_handler,
             size: options.size
-        };
+        });
 
-        let window_state = Arc::new(window_state);
+        let window_state_pointer = Arc::into_raw(
+            window_state_arc.clone()
+        ) as *mut c_void;
 
         unsafe {
-            (*window_state.window.ns_view).set_ivar(
+            (*window_state_arc.window.ns_view).set_ivar(
                 WINDOW_STATE_IVAR_NAME,
-                Arc::into_raw(window_state.clone()) as *mut c_void
+                window_state_pointer
             );
         }
 
