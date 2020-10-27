@@ -29,16 +29,21 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
         .unwrap();
 
     class.add_method(
-        sel!(dealloc),
-        dealloc::<H> as extern "C" fn(&Object, Sel)
-    );
-    class.add_method(
         sel!(acceptsFirstResponder),
-        accepts_first_responder::<H> as extern "C" fn(&Object, Sel) -> BOOL
+        property_yes::<H> as extern "C" fn(&Object, Sel) -> BOOL
     );
     class.add_method(
         sel!(isFlipped),
-        is_flipped::<H> as extern "C" fn(&Object, Sel) -> BOOL
+        property_yes::<H> as extern "C" fn(&Object, Sel) -> BOOL
+    );
+    class.add_method(
+        sel!(preservesContentInLiveResize),
+        property_no::<H> as extern "C" fn(&Object, Sel) -> BOOL
+    );
+
+    class.add_method(
+        sel!(dealloc),
+        dealloc::<H> as extern "C" fn(&Object, Sel)
     );
 
     class.add_method(
@@ -110,7 +115,7 @@ extern "C" fn dealloc<H: WindowHandler>(this: &Object, _sel: Sel) {
 }
 
 
-extern "C" fn accepts_first_responder<H: WindowHandler>(
+extern "C" fn property_yes<H: WindowHandler>(
     _this: &Object,
     _sel: Sel,
 ) -> BOOL {
@@ -118,7 +123,7 @@ extern "C" fn accepts_first_responder<H: WindowHandler>(
 }
 
 
-extern "C" fn is_flipped<H: WindowHandler>(
+extern "C" fn property_no<H: WindowHandler>(
     _this: &Object,
     _sel: Sel,
 ) -> BOOL {
