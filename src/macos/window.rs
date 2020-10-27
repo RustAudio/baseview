@@ -10,7 +10,7 @@ use cocoa::appkit::{
     NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
     NSRunningApplication, NSWindow, NSWindowStyleMask,
 };
-use cocoa::base::{id, nil, NO, YES};
+use cocoa::base::{id, nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 
 use objc::{msg_send, runtime::Object, sel, sel_impl};
@@ -62,12 +62,9 @@ impl Window {
         let mut window = match options.parent {
             Parent::WithParent(parent) => {
                 if let RawWindowHandle::MacOS(handle) = parent {
-                    let ns_window = handle.ns_window as *mut objc::runtime::Object;
                     let ns_view = handle.ns_view as *mut objc::runtime::Object;
 
                     unsafe {
-                        ns_window.setAcceptsMouseMovedEvents_(YES);
-
                         let subview = create_view::<H>(&options);
 
                         let _: id = msg_send![ns_view, addSubview: subview];
@@ -119,7 +116,6 @@ impl Window {
                     ns_window.center();
                     ns_window.setTitle_(NSString::alloc(nil).init_str(&options.title));
                     ns_window.makeKeyAndOrderFront_(nil);
-                    ns_window.setAcceptsMouseMovedEvents_(YES);
 
                     let subview = create_view::<H>(&options);
 

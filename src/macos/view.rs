@@ -3,13 +3,13 @@ use std::sync::Arc;
 
 use cocoa::appkit::{NSEvent, NSView};
 use cocoa::base::{id, nil, BOOL, YES};
-use cocoa::foundation::{NSPoint, NSRect, NSSize, NSString};
+use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize, NSString};
 
 use objc::{
     class,
     declare::ClassDecl,
     msg_send,
-    runtime::{Object, Sel},
+    runtime::{Class, Object, Sel},
     sel, sel_impl,
 };
 
@@ -45,6 +45,14 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
         sel!(dealloc),
         dealloc::<H> as extern "C" fn(&Object, Sel)
     );
+    class.add_method(
+        sel!(viewWillMoveToWindow:),
+        view_will_move_to_window::<H> as extern "C" fn(&Object, Sel, id)
+    );
+    class.add_method(
+        sel!(updateTrackingAreas:),
+        update_tracking_areas::<H> as extern "C" fn(&Object, Sel, id)
+    );
 
     class.add_method(
         sel!(keyDown:),
@@ -62,6 +70,16 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
     class.add_method(
         sel!(mouseDragged:),
         mouse_moved::<H> as extern "C" fn(&Object, Sel, id),
+    );
+
+    class.add_method(
+        sel!(mouseEntered:),
+        mouse_entered::<H> as extern "C" fn(&Object, Sel, id),
+    );
+
+    class.add_method(
+        sel!(mouseExited:),
+        mouse_exited::<H> as extern "C" fn(&Object, Sel, id),
     );
 
     class.add_method(
@@ -128,6 +146,85 @@ extern "C" fn property_no<H: WindowHandler>(
     _sel: Sel,
 ) -> BOOL {
     YES
+}
+
+
+/// Init/reinit tracking area
+///
+/// Info:
+/// https://developer.apple.com/documentation/appkit/nstrackingarea
+/// https://developer.apple.com/documentation/appkit/nstrackingarea/options
+/// https://developer.apple.com/documentation/appkit/nstrackingareaoptions
+unsafe fn reinit_tracking_area(this: &Object, tracking_area: *mut Object){
+    let option_u32: u32 = {
+        let mouse_entered_and_exited = 0x01;
+        let tracking_mouse_moved = 0x02;
+        let tracking_cursor_update = 0x04;
+        let tracking_active_in_active_app = 0x40;
+        let tracking_in_visible_rect = 0x200;
+        let tracking_enabled_during_mouse_drag = 0x400;
+
+        mouse_entered_and_exited | tracking_mouse_moved |
+            tracking_cursor_update | tracking_active_in_active_app |
+            tracking_in_visible_rect | tracking_enabled_during_mouse_drag
+    };
+
+    let bounds: NSRect = msg_send![this, bounds];
+
+    *tracking_area = msg_send![tracking_area,
+        initWithRect:bounds
+        options:option_u32
+        owner:this
+        userInfo:nil
+    ];
+}
+
+
+extern "C" fn view_will_move_to_window<H: WindowHandler>(this: &Object, _self: Sel, new_window: id){
+    unsafe {
+        let tracking_areas: *mut Object = msg_send![this, trackingAreas];
+        let tracking_area_count = NSArray::count(tracking_areas);
+
+        if new_window == nil {
+            if tracking_area_count != 0 {
+                let tracking_area = NSArray::objectAtIndex(tracking_areas, 0);
+
+
+                let _: () = msg_send![this, removeTrackingArea:tracking_area];
+                let _: () = msg_send![tracking_area, release];
+            }
+
+        } else {
+            if tracking_area_count == 0 {
+                let class = Class::get("NSTrackingArea").unwrap();
+
+                let tracking_area: *mut Object = msg_send![class, alloc];
+
+                reinit_tracking_area(this, tracking_area);
+
+                let _: () = msg_send![this, addTrackingArea:tracking_area];
+            }
+
+            let _: () = msg_send![new_window, setAcceptsMouseMovedEvents:YES];
+            let _: () = msg_send![new_window, makeFirstResponder:this];
+        }
+    }
+
+    unsafe {
+        let superview: &Object = msg_send![this, superview];
+
+        let _: () = msg_send![superview, viewWillMoveToWindow:new_window];
+    }
+}
+
+
+extern "C" fn update_tracking_areas<H: WindowHandler>(this: &Object, _self: Sel, _: id){
+    unsafe {
+        let tracking_areas: *mut Object = msg_send![this, trackingAreas];
+        let tracking_area = NSArray::objectAtIndex(tracking_areas, 0);
+
+        reinit_tracking_area(this, tracking_area);
+    }
 }
 
 
@@ -202,3 +299,6 @@ mouse_button_extern_fn!(right_mouse_up, ButtonReleased(MouseButton::Right));
 
 mouse_button_extern_fn!(middle_mouse_down, ButtonPressed(MouseButton::Middle));
 mouse_button_extern_fn!(middle_mouse_up, ButtonReleased(MouseButton::Middle));
+
+mouse_button_extern_fn!(mouse_entered, MouseEvent::CursorEntered);
+mouse_button_extern_fn!(mouse_exited, MouseEvent::CursorLeft);
