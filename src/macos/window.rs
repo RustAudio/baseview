@@ -18,7 +18,7 @@ use objc::{msg_send, runtime::Object, sel, sel_impl};
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    Event, Parent, Size, WindowHandler, WindowOpenOptions, WindowScalePolicy,
+    Event, Parent, WindowHandler, WindowOpenOptions, WindowScalePolicy,
     WindowInfo
 };
 
@@ -137,7 +137,6 @@ impl Window {
         let window_state_arc = Arc::new(WindowState {
             window,
             window_handler,
-            size: options.size
         });
 
         let window_state_pointer = Arc::into_raw(
@@ -159,7 +158,6 @@ impl Window {
 pub(super) struct WindowState<H: WindowHandler> {
     window: Window,
     window_handler: H,
-    size: Size,
 }
 
 
