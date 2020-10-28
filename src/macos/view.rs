@@ -66,6 +66,14 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
         sel!(mouseDragged:),
         mouse_moved::<H> as extern "C" fn(&Object, Sel, id),
     );
+    class.add_method(
+        sel!(rightMouseDragged:),
+        mouse_moved::<H> as extern "C" fn(&Object, Sel, id),
+    );
+    class.add_method(
+        sel!(otherMouseDragged:),
+        mouse_moved::<H> as extern "C" fn(&Object, Sel, id),
+    );
 
     class.add_method(
         sel!(mouseEntered:),
