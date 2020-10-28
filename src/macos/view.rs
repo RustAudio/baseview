@@ -293,7 +293,7 @@ extern "C" fn mouse_moved<H: WindowHandler>(this: &Object, _sel: Sel, event: id)
 }
 
 
-macro_rules! mouse_button_extern_fn {
+macro_rules! mouse_simple_extern_fn {
     ($fn:ident, $event:expr) => {
         extern "C" fn $fn<H: WindowHandler>(this: &Object, _sel: Sel, _event: id) {
             let state: &mut WindowState<H> = WindowState::from_field(this);
@@ -304,14 +304,14 @@ macro_rules! mouse_button_extern_fn {
 }
 
 
-mouse_button_extern_fn!(left_mouse_down, ButtonPressed(MouseButton::Left));
-mouse_button_extern_fn!(left_mouse_up, ButtonReleased(MouseButton::Left));
+mouse_simple_extern_fn!(left_mouse_down, ButtonPressed(MouseButton::Left));
+mouse_simple_extern_fn!(left_mouse_up, ButtonReleased(MouseButton::Left));
 
-mouse_button_extern_fn!(right_mouse_down, ButtonPressed(MouseButton::Right));
-mouse_button_extern_fn!(right_mouse_up, ButtonReleased(MouseButton::Right));
+mouse_simple_extern_fn!(right_mouse_down, ButtonPressed(MouseButton::Right));
+mouse_simple_extern_fn!(right_mouse_up, ButtonReleased(MouseButton::Right));
 
-mouse_button_extern_fn!(middle_mouse_down, ButtonPressed(MouseButton::Middle));
-mouse_button_extern_fn!(middle_mouse_up, ButtonReleased(MouseButton::Middle));
+mouse_simple_extern_fn!(middle_mouse_down, ButtonPressed(MouseButton::Middle));
+mouse_simple_extern_fn!(middle_mouse_up, ButtonReleased(MouseButton::Middle));
 
-mouse_button_extern_fn!(mouse_entered, MouseEvent::CursorEntered);
-mouse_button_extern_fn!(mouse_exited, MouseEvent::CursorLeft);
+mouse_simple_extern_fn!(mouse_entered, MouseEvent::CursorEntered);
+mouse_simple_extern_fn!(mouse_exited, MouseEvent::CursorLeft);
