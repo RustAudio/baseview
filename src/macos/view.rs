@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use cocoa::appkit::{NSEvent, NSView};
 use cocoa::base::{id, nil, BOOL, YES};
-use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize, NSString};
+use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize};
 
 use objc::{
     class,
@@ -14,7 +14,7 @@ use objc::{
 };
 
 use crate::{
-    Event, MouseButton, MouseEvent, KeyboardEvent, Point, WindowHandler,
+    Event, MouseButton, MouseEvent, Point, WindowHandler,
     WindowOpenOptions
 };
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
@@ -56,15 +56,6 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
     class.add_method(
         sel!(updateTrackingAreas:),
         update_tracking_areas::<H> as extern "C" fn(&Object, Sel, id)
-    );
-
-    class.add_method(
-        sel!(keyDown:),
-        key_down::<H> as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(
-        sel!(keyUp:),
-        key_up::<H> as extern "C" fn(&Object, Sel, id),
     );
 
     class.add_method(
@@ -239,38 +230,6 @@ extern "C" fn update_tracking_areas<H: WindowHandler>(this: &Object, _self: Sel,
         reinit_tracking_area(this, tracking_area);
     }
 }
-
-
-macro_rules! key_extern_fn {
-    ($fn:ident, $event_variant:expr) => {
-        extern "C" fn $fn<H: WindowHandler>(this: &Object, _sel: Sel, event: id) {
-            let state: &mut WindowState<H> = WindowState::from_field(this);
-
-            let characters = unsafe {
-                let ns_string = NSEvent::characters(event);
-
-                let start = NSString::UTF8String(ns_string);
-                let len = NSString::len(ns_string);
-
-                let slice = ::std::slice::from_raw_parts(
-                    start as *const u8,
-                    len
-                );
-
-                ::std::str::from_utf8_unchecked(slice)
-            };
-
-            for c in characters.chars() {
-                let event = Event::Keyboard($event_variant(c as u32));
-                state.trigger_event(event);
-            }
-        }
-    };
-}
-
-
-key_extern_fn!(key_down, KeyboardEvent::KeyPressed);
-key_extern_fn!(key_up, KeyboardEvent::KeyReleased);
 
 
 extern "C" fn mouse_moved<H: WindowHandler>(this: &Object, _sel: Sel, event: id) {
