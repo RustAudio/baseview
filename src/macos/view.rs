@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::sync::Arc;
 
 use cocoa::appkit::{NSEvent, NSView};
-use cocoa::base::{id, nil, BOOL, YES};
+use cocoa::base::{id, nil, BOOL, YES, NO};
 use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize};
 
 use objc::{
@@ -196,6 +196,8 @@ extern "C" fn view_will_move_to_window<H: WindowHandler>(this: &Object, _self: S
     unsafe {
         let tracking_areas: *mut Object = msg_send![this, trackingAreas];
         let tracking_area_count = NSArray::count(tracking_areas);
+
+        let _: () = msg_send![class!(NSEvent), setMouseCoalescingEnabled:NO];
 
         if new_window == nil {
             if tracking_area_count != 0 {
