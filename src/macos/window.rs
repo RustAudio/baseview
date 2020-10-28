@@ -43,9 +43,9 @@ pub struct WindowHandle;
 impl WindowHandle {
     pub fn app_run_blocking(self) {
         unsafe {
-            let app = NSApp();
-            app.setActivationPolicy_(NSApplicationActivationPolicyRegular);
-            app.run();
+            // Get reference to already created shared NSApplication object
+            // and run the main loop
+            NSApp().run();
         }
     }
 }
@@ -88,6 +88,18 @@ impl Window {
                 }
             },
             Parent::None => {
+                // It seems prudent to run NSApp() here before doing other
+                // work. It runs [NSApplication sharedApplication], which is
+                // what is run at the very start of the Xcode-generated main
+                // function of a cocoa app according to:
+                // https://developer.apple.com/documentation/appkit/nsapplication
+                unsafe {
+                    let app = NSApp();
+                    app.setActivationPolicy_(
+                        NSApplicationActivationPolicyRegular
+                    );
+                }
+
                 let scaling = match options.scale {
                     WindowScalePolicy::ScaleFactor(scale) => scale,
                     WindowScalePolicy::SystemScaleFactor => {
