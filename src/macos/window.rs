@@ -6,9 +6,8 @@ use std::ffi::c_void;
 use std::sync::Arc;
 
 use cocoa::appkit::{
-    NSApp, NSApplication, NSApplicationActivateIgnoringOtherApps,
-    NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
-    NSRunningApplication, NSWindow, NSWindowStyleMask,
+    NSApp, NSApplication, NSApplicationActivationPolicyRegular,
+    NSBackingStoreBuffered, NSWindow, NSWindowStyleMask,
 };
 use cocoa::base::{id, nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
@@ -127,13 +126,6 @@ impl Window {
                     let subview = create_view::<H>(&options);
 
                     ns_window.setContentView_(subview);
-
-                    let current_app = NSRunningApplication::currentApplication(
-                        nil
-                    );
-                    current_app.activateWithOptions_(
-                        NSApplicationActivateIgnoringOtherApps
-                    );
 
                     Window {
                         ns_window: Some(ns_window),
