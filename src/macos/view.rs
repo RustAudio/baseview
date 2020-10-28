@@ -192,7 +192,11 @@ unsafe fn reinit_tracking_area(this: &Object, tracking_area: *mut Object){
 }
 
 
-extern "C" fn view_will_move_to_window<H: WindowHandler>(this: &Object, _self: Sel, new_window: id){
+extern "C" fn view_will_move_to_window<H: WindowHandler>(
+    this: &Object,
+    _self: Sel,
+    new_window: id
+){
     unsafe {
         let tracking_areas: *mut Object = msg_send![this, trackingAreas];
         let tracking_area_count = NSArray::count(tracking_areas);
@@ -232,7 +236,11 @@ extern "C" fn view_will_move_to_window<H: WindowHandler>(this: &Object, _self: S
 }
 
 
-extern "C" fn update_tracking_areas<H: WindowHandler>(this: &Object, _self: Sel, _: id){
+extern "C" fn update_tracking_areas<H: WindowHandler>(
+    this: &Object,
+    _self: Sel,
+    _: id
+){
     unsafe {
         let tracking_areas: *mut Object = msg_send![this, trackingAreas];
         let tracking_area = NSArray::objectAtIndex(tracking_areas, 0);
@@ -242,7 +250,11 @@ extern "C" fn update_tracking_areas<H: WindowHandler>(this: &Object, _self: Sel,
 }
 
 
-extern "C" fn mouse_moved<H: WindowHandler>(this: &Object, _sel: Sel, event: id) {
+extern "C" fn mouse_moved<H: WindowHandler>(
+    this: &Object,
+    _sel: Sel,
+    event: id
+){
     let state: &mut WindowState<H> = WindowState::from_field(this);
 
     let point: NSPoint = unsafe {
@@ -264,7 +276,11 @@ extern "C" fn mouse_moved<H: WindowHandler>(this: &Object, _sel: Sel, event: id)
 
 macro_rules! mouse_simple_extern_fn {
     ($fn:ident, $event:expr) => {
-        extern "C" fn $fn<H: WindowHandler>(this: &Object, _sel: Sel, _event: id) {
+        extern "C" fn $fn<H: WindowHandler>(
+            this: &Object,
+            _sel: Sel,
+            _event: id,
+        ){
             let state: &mut WindowState<H> = WindowState::from_field(this);
 
             state.trigger_event(Event::Mouse($event));

@@ -1,6 +1,6 @@
-/// macOS window and event handling
+/// macOS window handling
 ///
-/// Heavily inspired by implementation in https://github.com/antonok-edm/vst_window
+/// Inspired by implementation in https://github.com/antonok-edm/vst_window
 
 use std::ffi::c_void;
 use std::sync::Arc;
@@ -90,11 +90,16 @@ impl Window {
             },
             Parent::None => {
                 let scaling = match options.scale {
-                    WindowScalePolicy::SystemScaleFactor => get_scaling().unwrap_or(1.0),
-                    WindowScalePolicy::ScaleFactor(scale) => scale
+                    WindowScalePolicy::ScaleFactor(scale) => scale,
+                    WindowScalePolicy::SystemScaleFactor => {
+                        get_scaling().unwrap_or(1.0)
+                    },
                 };
         
-                let window_info = WindowInfo::from_logical_size(options.size, scaling);
+                let window_info = WindowInfo::from_logical_size(
+                    options.size,
+                    scaling
+                );
 
                 let rect = NSRect::new(
                     NSPoint::new(0.0, 0.0),
@@ -114,15 +119,21 @@ impl Window {
                         )
                         .autorelease();
                     ns_window.center();
-                    ns_window.setTitle_(NSString::alloc(nil).init_str(&options.title));
+                    ns_window.setTitle_(
+                        NSString::alloc(nil).init_str(&options.title)
+                    );
                     ns_window.makeKeyAndOrderFront_(nil);
 
                     let subview = create_view::<H>(&options);
 
                     ns_window.setContentView_(subview);
 
-                    let current_app = NSRunningApplication::currentApplication(nil);
-                    current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
+                    let current_app = NSRunningApplication::currentApplication(
+                        nil
+                    );
+                    current_app.activateWithOptions_(
+                        NSApplicationActivateIgnoringOtherApps
+                    );
 
                     Window {
                         ns_window: Some(ns_window),
@@ -194,6 +205,7 @@ unsafe impl HasRawWindowHandle for Window {
         })
     }
 }
+
 
 fn get_scaling() -> Option<f64> {
     // TODO: find system scaling
