@@ -40,6 +40,10 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
         sel!(preservesContentInLiveResize),
         property_no::<H> as extern "C" fn(&Object, Sel) -> BOOL
     );
+    class.add_method(
+        sel!(acceptsFirstMouse:),
+        accepts_first_mouse::<H> as extern "C" fn(&Object, Sel, id) -> BOOL
+    );
 
     class.add_method(
         sel!(dealloc),
@@ -144,6 +148,15 @@ extern "C" fn property_yes<H: WindowHandler>(
 extern "C" fn property_no<H: WindowHandler>(
     _this: &Object,
     _sel: Sel,
+) -> BOOL {
+    YES
+}
+
+
+extern "C" fn accepts_first_mouse<H: WindowHandler>(
+    _this: &Object,
+    _sel: Sel,
+    _event: id
 ) -> BOOL {
     YES
 }
