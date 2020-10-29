@@ -195,7 +195,7 @@ extern "C" fn accepts_first_mouse<H: WindowHandler>(
 /// https://developer.apple.com/documentation/appkit/nstrackingarea/options
 /// https://developer.apple.com/documentation/appkit/nstrackingareaoptions
 unsafe fn reinit_tracking_area(this: &Object, tracking_area: *mut Object){
-    let option_u32: u32 = {
+    let options: usize = {
         let mouse_entered_and_exited = 0x01;
         let tracking_mouse_moved = 0x02;
         let tracking_cursor_update = 0x04;
@@ -212,7 +212,7 @@ unsafe fn reinit_tracking_area(this: &Object, tracking_area: *mut Object){
 
     *tracking_area = msg_send![tracking_area,
         initWithRect:bounds
-        options:option_u32
+        options:options
         owner:this
         userInfo:nil
     ];
