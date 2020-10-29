@@ -13,6 +13,7 @@ use objc::{
     sel, sel_impl,
 };
 use once_cell::sync::OnceCell;
+use uuid::Uuid;
 
 use crate::{
     Event, MouseButton, MouseEvent, Point, WindowHandler,
@@ -49,21 +50,10 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
 
 
 unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
-    let mut class = None;
-
     // Use unique class names to make sure that differing class definitions in
     // plugins compiled with different versions of baseview don't cause issues.
-    for _ in 0..10 {
-        let class_name = format!("BaseviewNSView_{}", ::fastrand::usize(0..));
-
-        class = ClassDecl::new(&class_name, class!(NSView));
-
-        if class.is_some(){
-            break
-        }
-    }
-
-    let mut class = class.unwrap();
+    let class_name = format!("BaseviewNSView_{}", Uuid::new_v4().to_simple());
+    let mut class = ClassDecl::new(&class_name, class!(NSView)).unwrap();
 
     class.add_method(
         sel!(acceptsFirstResponder),
