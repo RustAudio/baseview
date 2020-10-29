@@ -24,7 +24,8 @@ use crate::{
 use super::view::create_view;
 
 
-/// Name of the field used to store the `WindowState` pointer in the `BaseviewNSView` class.
+/// Name of the field used to store the `WindowState` pointer in the custom
+/// view class.
 pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
 
 

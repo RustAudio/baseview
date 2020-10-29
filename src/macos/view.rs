@@ -22,10 +22,32 @@ use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use super::window::{WindowState, WINDOW_STATE_IVAR_NAME};
 
 
+const BASEVIEW_CLASS_NAME: &str = "BaseviewNSView";
+
+
 pub(super) unsafe fn create_view<H: WindowHandler>(
     window_options: &WindowOpenOptions,
 ) -> id {
-    let mut class = ClassDecl::new("BaseviewNSView", class!(NSView))
+    // Check if class is already declared first to prevent issues when
+    // opening multiple windows or reopening closed windows
+    let class = Class::get(BASEVIEW_CLASS_NAME)
+        .unwrap_or_else(|| create_view_class::<H>());
+
+    let view: id = msg_send![class, alloc];
+
+    let size = window_options.size;
+
+    view.initWithFrame_(NSRect::new(
+        NSPoint::new(0., 0.),
+        NSSize::new(size.width, size.height),
+    ));
+
+    view
+}
+
+
+unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
+    let mut class = ClassDecl::new(BASEVIEW_CLASS_NAME, class!(NSView))
         .unwrap();
 
     class.add_method(
@@ -115,16 +137,8 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
     class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
 
     let class = class.register();
-    let view: id = msg_send![class, alloc];
 
-    let size = window_options.size;
-
-    view.initWithFrame_(NSRect::new(
-        NSPoint::new(0., 0.),
-        NSSize::new(size.width, size.height),
-    ));
-
-    view
+    class
 }
 
 
