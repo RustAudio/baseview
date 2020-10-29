@@ -12,6 +12,7 @@ use objc::{
     runtime::{Class, Object, Sel},
     sel, sel_impl,
 };
+use once_cell::sync::OnceCell;
 
 use crate::{
     Event, MouseButton, MouseEvent, Point, WindowHandler,
@@ -22,16 +23,17 @@ use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use super::window::{WindowState, WINDOW_STATE_IVAR_NAME};
 
 
-const BASEVIEW_CLASS_NAME: &str = "BaseviewNSView";
+// Store class here so that it doesn't need to be recreated each time the
+// editor window is opened, while still allowing the name to be randomized.
+static VIEW_CLASS: OnceCell<&'static Class> = OnceCell::new();
 
 
 pub(super) unsafe fn create_view<H: WindowHandler>(
     window_options: &WindowOpenOptions,
 ) -> id {
-    // Check if class is already declared first to prevent issues when
-    // opening multiple windows or reopening closed windows
-    let class = Class::get(BASEVIEW_CLASS_NAME)
-        .unwrap_or_else(|| create_view_class::<H>());
+    let class = *VIEW_CLASS.get_or_init(|| {
+        create_view_class::<H>()
+    });
 
     let view: id = msg_send![class, alloc];
 
@@ -47,8 +49,21 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
 
 
 unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
-    let mut class = ClassDecl::new(BASEVIEW_CLASS_NAME, class!(NSView))
-        .unwrap();
+    let mut class = None;
+
+    // Use unique class names to make sure that differing class definitions in
+    // plugins compiled with different versions of baseview don't cause issues.
+    for _ in 0..10 {
+        let class_name = format!("BaseviewNSView_{}", ::fastrand::usize(0..));
+
+        class = ClassDecl::new(&class_name, class!(NSView));
+
+        if class.is_some(){
+            break
+        }
+    }
+
+    let mut class = class.unwrap();
 
     class.add_method(
         sel!(acceptsFirstResponder),
@@ -136,9 +151,7 @@ unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
 
     class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
 
-    let class = class.register();
-
-    class
+    class.register()
 }
 
 
