@@ -131,9 +131,12 @@ impl Window {
                         )
                         .autorelease();
                     ns_window.center();
-                    ns_window.setTitle_(
-                        NSString::alloc(nil).init_str(&options.title)
-                    );
+
+                    let title = NSString::alloc(nil)
+                        .init_str(&options.title)
+                        .autorelease();
+                    ns_window.setTitle_(title);
+
                     ns_window.makeKeyAndOrderFront_(nil);
 
                     let subview = create_view::<H>(&options);
