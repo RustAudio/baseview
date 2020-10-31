@@ -246,9 +246,9 @@ extern "C" fn view_will_move_to_window<H: WindowHandler>(
     }
 
     unsafe {
-        let superview: &Object = msg_send![this, superview];
+        let superclass = msg_send![this, superclass];
 
-        let _: () = msg_send![superview, viewWillMoveToWindow:new_window];
+        let () = msg_send![super(this, superclass), viewWillMoveToWindow:new_window];
     }
 }
 
