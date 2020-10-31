@@ -73,8 +73,8 @@ unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
     );
 
     class.add_method(
-        sel!(dealloc),
-        dealloc::<H> as extern "C" fn(&Object, Sel)
+        sel!(release),
+        release::<H> as extern "C" fn(&Object, Sel)
     );
     class.add_method(
         sel!(viewWillMoveToWindow:),
@@ -145,10 +145,24 @@ unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
 }
 
 
-extern "C" fn dealloc<H: WindowHandler>(this: &Object, _sel: Sel) {
+extern "C" fn release<H: WindowHandler>(this: &Object, _sel: Sel) {
     unsafe {
-        let state_ptr: *mut c_void = *this.get_ivar(WINDOW_STATE_IVAR_NAME);
-        Arc::from_raw(state_ptr as *mut WindowState<H>);
+        let superclass = msg_send![this, superclass];
+
+        let () = msg_send![super(this, superclass), release];
+    }
+
+    unsafe {
+        let retain_count: usize = msg_send![this, retainCount];
+
+        if retain_count == 1 {
+            let state_ptr: *mut c_void = *this.get_ivar(
+                WINDOW_STATE_IVAR_NAME
+            );
+
+            // Drop WindowState
+            Arc::from_raw(state_ptr as *mut WindowState<H>);
+        }
     }
 }
 
