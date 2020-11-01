@@ -12,7 +12,6 @@ use objc::{
     runtime::{Class, Object, Sel},
     sel, sel_impl,
 };
-use once_cell::sync::OnceCell;
 use uuid::Uuid;
 
 use crate::{
@@ -24,17 +23,10 @@ use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use super::window::{WindowState, WINDOW_STATE_IVAR_NAME};
 
 
-// Store class here so that it doesn't need to be recreated each time the
-// editor window is opened, while still allowing the name to be randomized.
-static VIEW_CLASS: OnceCell<&'static Class> = OnceCell::new();
-
-
 pub(super) unsafe fn create_view<H: WindowHandler>(
     window_options: &WindowOpenOptions,
 ) -> id {
-    let class = *VIEW_CLASS.get_or_init(|| {
-        create_view_class::<H>()
-    });
+    let class = create_view_class::<H>();
 
     let view: id = msg_send![class, alloc];
 
@@ -50,8 +42,11 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
 
 
 unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
-    // Use unique class names to make sure that differing class definitions in
-    // plugins compiled with different versions of baseview don't cause issues.
+    // Use unique class names so that there are no conflicts between different
+    // instances. The class is deleted when the view is released. Previously,
+    // the class was stored in a OnceCell after creation. This way, we didn't
+    // have to recreate it each time a view was opened, but now we don't leave
+    // any class definitions lying around when the plugin is closed.
     let class_name = format!("BaseviewNSView_{}", Uuid::new_v4().to_simple());
     let mut class = ClassDecl::new(&class_name, class!(NSView)).unwrap();
 
@@ -162,6 +157,10 @@ extern "C" fn release<H: WindowHandler>(this: &Object, _sel: Sel) {
 
             // Drop WindowState
             Arc::from_raw(state_ptr as *mut WindowState<H>);
+
+            // Delete class
+            let class = msg_send![this, class];
+            ::objc::runtime::objc_disposeClassPair(class);
         }
     }
 }
