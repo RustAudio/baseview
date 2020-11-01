@@ -140,6 +140,31 @@ unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
 }
 
 
+extern "C" fn property_yes<H: WindowHandler>(
+    _this: &Object,
+    _sel: Sel,
+) -> BOOL {
+    YES
+}
+
+
+extern "C" fn property_no<H: WindowHandler>(
+    _this: &Object,
+    _sel: Sel,
+) -> BOOL {
+    YES
+}
+
+
+extern "C" fn accepts_first_mouse<H: WindowHandler>(
+    _this: &Object,
+    _sel: Sel,
+    _event: id
+) -> BOOL {
+    YES
+}
+
+
 extern "C" fn release<H: WindowHandler>(this: &Object, _sel: Sel) {
     unsafe {
         let superclass = msg_send![this, superclass];
@@ -163,31 +188,6 @@ extern "C" fn release<H: WindowHandler>(this: &Object, _sel: Sel) {
             ::objc::runtime::objc_disposeClassPair(class);
         }
     }
-}
-
-
-extern "C" fn property_yes<H: WindowHandler>(
-    _this: &Object,
-    _sel: Sel,
-) -> BOOL {
-    YES
-}
-
-
-extern "C" fn property_no<H: WindowHandler>(
-    _this: &Object,
-    _sel: Sel,
-) -> BOOL {
-    YES
-}
-
-
-extern "C" fn accepts_first_mouse<H: WindowHandler>(
-    _this: &Object,
-    _sel: Sel,
-    _event: id
-) -> BOOL {
-    YES
 }
 
 
