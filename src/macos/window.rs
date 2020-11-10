@@ -200,8 +200,8 @@ impl <H: WindowHandler>WindowState<H> {
 
 unsafe impl HasRawWindowHandle for Window {
     fn raw_window_handle(&self) -> RawWindowHandle {
-        let ns_window = self.ns_window.unwrap_or_else(
-            ::std::ptr::null_mut
+        let ns_window = self.ns_window.unwrap_or(
+            ::std::ptr::null_mut()
         ) as *mut c_void;
 
         RawWindowHandle::MacOS(MacOSHandle {
