@@ -181,17 +181,15 @@ pub(super) struct WindowState<H: WindowHandler> {
 
 
 impl <H: WindowHandler>WindowState<H> {
-    /// Returns a mutable reference to an WindowState from an Objective-C callback.
+    /// Returns a mutable reference to a WindowState from an Objective-C field
     ///
-    /// `clippy` has issues with this function signature, making the valid point that this could
-    /// create multiple mutable references to the `WindowState`. However, in practice macOS
-    /// blocks for the entire duration of each event callback, so this should be fine.
-    #[allow(clippy::mut_from_ref)]
-    pub(super) fn from_field(obj: &Object) -> &mut Self {
-        unsafe {
-            let state_ptr: *mut c_void = *obj.get_ivar(WINDOW_STATE_IVAR_NAME);
-            &mut *(state_ptr as *mut Self)
-        }
+    /// Don't use this to create two simulataneous references to a single
+    /// WindowState. Apparently, macOS blocks for the duration of an event,
+    /// callback, meaning that this shouldn't be a problem in practice.
+    pub(super) unsafe fn from_field(obj: &Object) -> &mut Self {
+        let state_ptr: *mut c_void = *obj.get_ivar(WINDOW_STATE_IVAR_NAME);
+
+        &mut *(state_ptr as *mut Self)
     }
 
     pub(super) fn trigger_event(&mut self, event: Event){

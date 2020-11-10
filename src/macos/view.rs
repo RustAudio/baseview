@@ -285,8 +285,6 @@ extern "C" fn mouse_moved<H: WindowHandler>(
     _sel: Sel,
     event: id
 ){
-    let state: &mut WindowState<H> = WindowState::from_field(this);
-
     let point: NSPoint = unsafe {
         let point = NSEvent::locationInWindow(event);
 
@@ -300,6 +298,10 @@ extern "C" fn mouse_moved<H: WindowHandler>(
 
     let event = Event::Mouse(MouseEvent::CursorMoved { position });
 
+    let state: &mut WindowState<H> = unsafe {
+        WindowState::from_field(this)
+    };
+
     state.trigger_event(event);
 }
 
@@ -311,7 +313,9 @@ macro_rules! mouse_simple_extern_fn {
             _sel: Sel,
             _event: id,
         ){
-            let state: &mut WindowState<H> = WindowState::from_field(this);
+            let state: &mut WindowState<H> = unsafe {
+                WindowState::from_field(this)
+            };
 
             state.trigger_event(Event::Mouse($event));
         }
