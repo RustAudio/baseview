@@ -7,6 +7,8 @@ authors = [
     "Mirko Covizzi <mrkcvzz@gmail.com>",
     "Micah Johnston <micah@glowcoil.com>",
     "Billy Messenger <billydm@protonmail.com>",
+    "Anton Lazarev <https://antonok.com>",
+    "Joakim Frostegård <joakim.frostegard@gmail.com>",
 ]
 edition = "2018"
 
@@ -25,5 +27,6 @@ nix = "0.18"
 winapi = { version = "0.3.8", features = ["libloaderapi", "winuser", "windef", "minwindef", "guiddef", "combaseapi", "wingdi", "errhandlingapi"] }
 
 [target.'cfg(target_os="macos")'.dependencies]
-cocoa = "0.23.0"
+cocoa = "0.24.0"
 objc = "0.2.7"
+uuid = { version = "0.8", features = ["v4"] }
