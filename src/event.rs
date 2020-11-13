@@ -1,11 +1,11 @@
-use crate::{WindowInfo, Point};
+use crate::{WindowInfo, Point, KeyEvent};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum KeyboardEvent {
-    KeyPressed(u32),
-    KeyReleased(u32),
-    CharacterInput(char),
+    KeyPressed(KeyEvent),
+    KeyReleased(KeyEvent),
 }
+
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum MouseButton {
