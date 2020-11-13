@@ -16,6 +16,8 @@ use crate::{
     WindowScalePolicy, PhyPoint, PhySize,
 };
 
+use super::keyboard::{convert_key_press_event, convert_key_release_event};
+
 pub struct Window {
     xcb_connection: XcbConnection,
     window_id: u32,

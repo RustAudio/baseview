@@ -225,7 +225,7 @@ impl IntoKey for &str {
 }
 
 
-#[cfg(any(all(feature = "x11", target_os = "linux"), target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 /// Map key code to location.
 ///
 /// The logic for this is adapted from InitKeyEvent in TextInputHandler (in the Mozilla

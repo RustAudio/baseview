@@ -18,12 +18,9 @@
 
 //! X11 keyboard handling
 
-use super::super::shared;
-use crate::keyboard::code_to_location;
-use crate::keyboard::{Code, KbKey, Modifiers};
-use x11rb::protocol::xproto::{Keycode, KeyPressEvent};
+use xcb::xproto;
 
-use crate::keyboard::KeyEvent;
+use crate::keyboard::*;
 
 
 /// Convert a hardware scan code to a key.
@@ -368,15 +365,15 @@ fn hardware_keycode_to_code(hw_keycode: u16) -> Code {
 fn key_mods(mods: u16) -> Modifiers {
     let mut ret = Modifiers::default();
     let mut key_masks = [
-        (xproto::ModMask::Shift, Modifiers::SHIFT),
-        (xproto::ModMask::Control, Modifiers::CONTROL),
+        (xproto::MOD_MASK_SHIFT, Modifiers::SHIFT),
+        (xproto::MOD_MASK_CONTROL, Modifiers::CONTROL),
         // X11's mod keys are configurable, but this seems
         // like a reasonable default for US keyboards, at least,
         // where the "windows" key seems to be MOD_MASK_4.
-        (xproto::ModMask::M1, Modifiers::ALT),
-        (xproto::ModMask::M2, Modifiers::NUM_LOCK),
-        (xproto::ModMask::M4, Modifiers::META),
-        (xproto::ModMask::Lock, Modifiers::CAPS_LOCK),
+        (xproto::MOD_MASK_1, Modifiers::ALT),
+        (xproto::MOD_MASK_2, Modifiers::NUM_LOCK),
+        (xproto::MOD_MASK_4, Modifiers::META),
+        (xproto::MOD_MASK_LOCK, Modifiers::CAPS_LOCK),
     ];
     for (mask, modifiers) in &mut key_masks {
         if mods & (*mask as u16) != 0 {
@@ -391,7 +388,7 @@ pub(super) fn convert_key_press_event(
     key_press: &xcb::KeyPressEvent,
 ) -> KeyEvent {
     let hw_keycode = key_press.detail();
-    let code = hardware_keycode_to_code(hw_keycode);
+    let code = hardware_keycode_to_code(hw_keycode.into());
     let mods = key_mods(key_press.state());
     let key = code_to_key(code, mods);
     let location = code_to_location(code);
@@ -413,7 +410,7 @@ pub(super) fn convert_key_release_event(
     key_release: &xcb::KeyReleaseEvent
 ) -> KeyEvent {
     let hw_keycode = key_release.detail();
-    let code = hardware_keycode_to_code(hw_keycode);
+    let code = hardware_keycode_to_code(hw_keycode.into());
     let mods = key_mods(key_release.state());
     let key = code_to_key(code, mods);
     let location = code_to_location(code);
