@@ -11,13 +11,14 @@ use cocoa::appkit::{
 };
 use cocoa::base::{id, nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
+use keyboard_types::KeyboardEvent;
 
 use objc::{msg_send, runtime::Object, sel, sel_impl};
 
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    Event, keyboard::KeyEvent, Parent, WindowHandler, WindowOpenOptions,
+    Event, Parent, WindowHandler, WindowOpenOptions,
     WindowScalePolicy, WindowInfo
 };
 
@@ -202,7 +203,7 @@ impl <H: WindowHandler>WindowState<H> {
     pub(super) fn process_native_key_event(
         &mut self,
         event: *mut Object
-    ) -> Option<KeyEvent> {
+    ) -> Option<KeyboardEvent> {
         self.keyboard_state.process_native_event(event)
     }
 }
