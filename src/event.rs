@@ -1,10 +1,6 @@
-use crate::{WindowInfo, Point};
+use keyboard_types::KeyboardEvent;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum KeyboardEvent {
-    KeyPressed(keyboard_types::KeyboardEvent),
-    KeyReleased(keyboard_types::KeyboardEvent),
-}
+use crate::{WindowInfo, Point};
 
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

@@ -15,7 +15,7 @@ use objc::{
 use uuid::Uuid;
 
 use crate::{
-    Event, KeyboardEvent, MouseButton, MouseEvent, Point, WindowHandler,
+    Event, MouseButton, MouseEvent, Point, WindowHandler,
     WindowOpenOptions
 };
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
@@ -351,9 +351,7 @@ extern "C" fn key_down<H: WindowHandler>(this: &Object, _: Sel, event: id){
     };
 
     if let Some(key_event) = state.process_native_key_event(event){
-        let event = Event::Keyboard(KeyboardEvent::KeyPressed(key_event));
-
-        state.trigger_event(event);
+        state.trigger_event(Event::Keyboard(key_event));
     }
 }
 
@@ -364,8 +362,6 @@ extern "C" fn key_up<H: WindowHandler>(this: &Object, _: Sel, event: id){
     };
 
     if let Some(key_event) = state.process_native_key_event(event){
-        let event = Event::Keyboard(KeyboardEvent::KeyReleased(key_event));
-
-        state.trigger_event(event);
+        state.trigger_event(Event::Keyboard(key_event));
     }
 }

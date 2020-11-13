@@ -23,7 +23,7 @@ use raw_window_handle::{
 };
 
 use crate::{
-    Event, KeyboardEvent, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta, WindowEvent,
+    Event, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, Size, Point, PhySize, PhyPoint,
 };
 
