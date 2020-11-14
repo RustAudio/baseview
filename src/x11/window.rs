@@ -11,9 +11,12 @@ use raw_window_handle::{
 
 use super::XcbConnection;
 use crate::{
-    Event, KeyboardEvent, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, PhyPoint, PhySize,
+    Event, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta,
+    WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    WindowScalePolicy, PhyPoint, PhySize,
 };
+
+use super::keyboard::{convert_key_press_event, convert_key_release_event};
 
 pub struct Window {
     xcb_connection: XcbConnection,
@@ -392,21 +395,19 @@ impl Window {
             ////
             xcb::KEY_PRESS => {
                 let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
-                let detail = event.detail();
 
                 handler.on_event(
                     self,
-                    Event::Keyboard(KeyboardEvent::KeyPressed(detail as u32)),
+                    Event::Keyboard(convert_key_press_event(&event))
                 );
             }
 
             xcb::KEY_RELEASE => {
                 let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
-                let detail = event.detail();
 
                 handler.on_event(
                     self,
-                    Event::Keyboard(KeyboardEvent::KeyReleased(detail as u32)),
+                    Event::Keyboard(convert_key_release_event(&event))
                 );
             }
 

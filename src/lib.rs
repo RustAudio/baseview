@@ -21,7 +21,6 @@ mod mouse_cursor;
 mod window_info;
 mod window_open_options;
 pub use event::*;
-pub use keyboard::*;
 pub use mouse_cursor::MouseCursor;
 pub use window_info::*;
 pub use window_open_options::*;

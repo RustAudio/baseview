@@ -11,17 +11,19 @@ use cocoa::appkit::{
 };
 use cocoa::base::{id, nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
+use keyboard_types::KeyboardEvent;
 
 use objc::{msg_send, runtime::Object, sel, sel_impl};
 
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    Event, Parent, WindowHandler, WindowOpenOptions, WindowScalePolicy,
-    WindowInfo
+    Event, Parent, WindowHandler, WindowOpenOptions,
+    WindowScalePolicy, WindowInfo
 };
 
 use super::view::create_view;
+use super::keyboard::KeyboardState;
 
 
 /// Name of the field used to store the `WindowState` pointer in the custom
@@ -156,6 +158,7 @@ impl Window {
         let window_state_arc = Arc::new(WindowState {
             window,
             window_handler,
+            keyboard_state: KeyboardState::new(),
         });
 
         let window_state_pointer = Arc::into_raw(
@@ -177,6 +180,7 @@ impl Window {
 pub(super) struct WindowState<H: WindowHandler> {
     window: Window,
     window_handler: H,
+    keyboard_state: KeyboardState,
 }
 
 
@@ -194,6 +198,13 @@ impl <H: WindowHandler>WindowState<H> {
 
     pub(super) fn trigger_event(&mut self, event: Event){
         self.window_handler.on_event(&mut self.window, event);
+    }
+
+    pub(super) fn process_native_key_event(
+        &mut self,
+        event: *mut Object
+    ) -> Option<KeyboardEvent> {
+        self.keyboard_state.process_native_event(event)
     }
 }
 

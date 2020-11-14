@@ -1,11 +1,7 @@
+use keyboard_types::KeyboardEvent;
+
 use crate::{WindowInfo, Point};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum KeyboardEvent {
-    KeyPressed(u32),
-    KeyReleased(u32),
-    CharacterInput(char),
-}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum MouseButton {

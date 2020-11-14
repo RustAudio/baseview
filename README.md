@@ -16,9 +16,19 @@ Below is a proposed list of milestones (roughly in-order) and their status. Subj
 | Cross-platform API for window spawning          | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | Window uses an OpenGL surface                   | :heavy_check_mark: |                    | :heavy_check_mark: |
 | Can find DPI scale factor                       |                    |                    | :heavy_check_mark: |
-| Basic event handling (mouse, keyboard)          |                    |                    | :heavy_check_mark: |
-| Parent window support                           |                    |                    |                    |
+| Basic event handling (mouse, keyboard)          |                    | :heavy_check_mark: | :heavy_check_mark: |
+| Parent window support                           | :heavy_check_mark: | :heavy_check_mark: |                    |
 | *(Converge on a common API for all platforms?)* |                    |                    |                    |
+
+## Prerequisites
+
+### Linux
+
+Install dependencies, e.g.,
+
+```sh
+sudo apt-get install libx11-dev libxcursor-dev libxcb-dri2-0-dev libxcb-icccm4-dev libx11-xcb-dev
+```
 
 ## License
 

@@ -134,6 +134,15 @@ unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
         middle_mouse_up::<H> as extern "C" fn(&Object, Sel, id),
     );
 
+    class.add_method(
+        sel!(keyDown:),
+        key_down::<H> as extern "C" fn(&Object, Sel, id),
+    );
+    class.add_method(
+        sel!(keyUp:),
+        key_up::<H> as extern "C" fn(&Object, Sel, id),
+    );
+
     class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
 
     class.register()
@@ -334,3 +343,25 @@ mouse_simple_extern_fn!(middle_mouse_up, ButtonReleased(MouseButton::Middle));
 
 mouse_simple_extern_fn!(mouse_entered, MouseEvent::CursorEntered);
 mouse_simple_extern_fn!(mouse_exited, MouseEvent::CursorLeft);
+
+
+extern "C" fn key_down<H: WindowHandler>(this: &Object, _: Sel, event: id){
+    let state: &mut WindowState<H> = unsafe {
+        WindowState::from_field(this)
+    };
+
+    if let Some(key_event) = state.process_native_key_event(event){
+        state.trigger_event(Event::Keyboard(key_event));
+    }
+}
+
+
+extern "C" fn key_up<H: WindowHandler>(this: &Object, _: Sel, event: id){
+    let state: &mut WindowState<H> = unsafe {
+        WindowState::from_field(this)
+    };
+
+    if let Some(key_event) = state.process_native_key_event(event){
+        state.trigger_event(Event::Keyboard(key_event));
+    }
+}
