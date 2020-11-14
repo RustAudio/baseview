@@ -20,6 +20,16 @@ Below is a proposed list of milestones (roughly in-order) and their status. Subj
 | Parent window support                           |                    |                    |                    |
 | *(Converge on a common API for all platforms?)* |                    |                    |                    |
 
+## Prerequisites
+
+### Linux
+
+Install dependencies, e.g.,
+
+```sh
+sudo apt-get install libx11-dev libxcursor-dev libxcb-dri2-0-dev libxcb-icccm4-dev libx11-xcb-dev
+```
+
 ## License
 
 Licensed under either of <a href="LICENSE-APACHE">Apache License, Version
