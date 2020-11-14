@@ -11,6 +11,7 @@ authors = [
     "Joakim Frostegård <joakim.frostegard@gmail.com>",
 ]
 edition = "2018"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 log = "0.4.11"
