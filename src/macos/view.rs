@@ -68,6 +68,11 @@ unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
     );
 
     class.add_method(
+        sel!(triggerOnFrame:),
+        trigger_on_frame::<H> as extern "C" fn(&Object, Sel, id)
+    );
+
+    class.add_method(
         sel!(release),
         release::<H> as extern "C" fn(&Object, Sel)
     );
@@ -171,6 +176,19 @@ extern "C" fn accepts_first_mouse<H: WindowHandler>(
     _event: id
 ) -> BOOL {
     YES
+}
+
+
+extern "C" fn trigger_on_frame<H: WindowHandler>(
+    this: &Object,
+    _sel: Sel,
+    _event: id
+){
+    let state: &mut WindowState<H> = unsafe {
+        WindowState::from_field(this)
+    };
+
+    state.trigger_frame();
 }
 
 

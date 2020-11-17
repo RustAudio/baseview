@@ -9,7 +9,7 @@ use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular,
     NSBackingStoreBuffered, NSWindow, NSWindowStyleMask,
 };
-use cocoa::base::{id, nil, NO};
+use cocoa::base::{id, nil, NO, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use keyboard_types::KeyboardEvent;
 
@@ -172,6 +172,24 @@ impl Window {
             );
         }
 
+        // Activate timer after window handler is setup
+        // Maybe a more complicated setup would be better, see
+        // https://github.com/wrl/rutabaga/blob/7609a15e194eaa4033ae8551155e2852b63d5780/src/platform/cocoa/event.m#L99
+        // At the very least, it should be invalidated at some point
+        unsafe {
+            let timer_interval = 0.015;
+            let selector = sel!(triggerOnFrame:);
+
+            let _: id = msg_send![
+                ::objc::class!(NSTimer),
+                scheduledTimerWithTimeInterval:timer_interval
+                target:window_state_arc.window.ns_view
+                selector:selector
+                userInfo:nil
+                repeats:YES
+            ];
+        }
+
         WindowHandle
     }
 }
@@ -198,6 +216,10 @@ impl <H: WindowHandler>WindowState<H> {
 
     pub(super) fn trigger_event(&mut self, event: Event){
         self.window_handler.on_event(&mut self.window, event);
+    }
+
+    pub(super) fn trigger_frame(&mut self){
+        self.window_handler.on_frame()
     }
 
     pub(super) fn process_native_key_event(
