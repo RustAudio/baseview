@@ -205,16 +205,15 @@ extern "C" fn release<H: WindowHandler>(this: &Object, _sel: Sel) {
 
         if retain_count == 1 {
             // Invalidate frame timer
-            let frame_timer: *mut c_void = *this.get_ivar(
+            let frame_timer_ptr: *mut c_void = *this.get_ivar(
                 FRAME_TIMER_IVAR_NAME
             );
-            let _: () = msg_send![frame_timer as id, invalidate];
+            let _: () = msg_send![frame_timer_ptr as id, invalidate];
 
+            // Drop WindowState
             let state_ptr: *mut c_void = *this.get_ivar(
                 WINDOW_STATE_IVAR_NAME
             );
-
-            // Drop WindowState
             Arc::from_raw(state_ptr as *mut WindowState<H>);
 
             // Delete class
