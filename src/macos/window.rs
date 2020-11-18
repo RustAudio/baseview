@@ -30,6 +30,8 @@ use super::keyboard::KeyboardState;
 /// view class.
 pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
 
+pub(super) const FRAME_TIMER_IVAR_NAME: &str = "FRAME_TIMER";
+
 
 pub struct Window {
     /// Only set if we created the parent window, i.e. we are running in
@@ -172,15 +174,13 @@ impl Window {
             );
         }
 
-        // Activate timer after window handler is setup
-        // Maybe a more complicated setup would be better, see
-        // https://github.com/wrl/rutabaga/blob/7609a15e194eaa4033ae8551155e2852b63d5780/src/platform/cocoa/event.m#L99
-        // At the very least, it should be invalidated at some point
+        // Activate timer after window handler is setup and save a pointer to
+        // it, so that it can be invalidated when view is released.
         unsafe {
             let timer_interval = 0.015;
             let selector = sel!(triggerOnFrame:);
 
-            let _: id = msg_send![
+            let timer: id = msg_send![
                 ::objc::class!(NSTimer),
                 scheduledTimerWithTimeInterval:timer_interval
                 target:window_state_arc.window.ns_view
@@ -188,6 +188,11 @@ impl Window {
                 userInfo:nil
                 repeats:YES
             ];
+
+            (*window_state_arc.window.ns_view).set_ivar(
+                FRAME_TIMER_IVAR_NAME,
+                timer as *mut c_void,
+            )
         }
 
         WindowHandle

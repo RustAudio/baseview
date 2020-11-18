@@ -20,7 +20,7 @@ use crate::{
 };
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
-use super::window::{WindowState, WINDOW_STATE_IVAR_NAME};
+use super::window::{WindowState, WINDOW_STATE_IVAR_NAME, FRAME_TIMER_IVAR_NAME};
 
 
 pub(super) unsafe fn create_view<H: WindowHandler>(
@@ -149,6 +149,7 @@ unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
     );
 
     class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
+    class.add_ivar::<*mut c_void>(FRAME_TIMER_IVAR_NAME);
 
     class.register()
 }
@@ -203,6 +204,12 @@ extern "C" fn release<H: WindowHandler>(this: &Object, _sel: Sel) {
         let retain_count: usize = msg_send![this, retainCount];
 
         if retain_count == 1 {
+            // Invalidate frame timer
+            let frame_timer: *mut c_void = *this.get_ivar(
+                FRAME_TIMER_IVAR_NAME
+            );
+            let _: () = msg_send![frame_timer as id, invalidate];
+
             let state_ptr: *mut c_void = *this.get_ivar(
                 WINDOW_STATE_IVAR_NAME
             );
