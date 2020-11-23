@@ -58,12 +58,12 @@ impl WindowHandle {
 impl Window {
     pub fn open<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
         where H: WindowHandler,
-              B: FnOnce(&mut Window) -> H,
+              B: FnOnce(&mut crate::window::Window) -> H,
               B: Send + 'static
     {
         let _pool = unsafe { NSAutoreleasePool::new(nil) };
 
-        let mut window = match options.parent {
+        let window = match options.parent {
             Parent::WithParent(parent) => {
                 if let RawWindowHandle::MacOS(handle) = parent {
                     let ns_view = handle.ns_view as *mut objc::runtime::Object;
@@ -155,10 +155,12 @@ impl Window {
             },
         };
 
+        let mut window = crate::window::Window(window);
+
         let window_handler = build(&mut window);
 
         let window_state_arc = Arc::new(WindowState {
-            window,
+            window: window,
             window_handler,
             keyboard_state: KeyboardState::new(),
         });
@@ -168,7 +170,7 @@ impl Window {
         ) as *mut c_void;
 
         unsafe {
-            (*window_state_arc.window.ns_view).set_ivar(
+            (*window_state_arc.window.0.ns_view).set_ivar(
                 WINDOW_STATE_IVAR_NAME,
                 window_state_pointer
             );
@@ -183,13 +185,13 @@ impl Window {
             let timer: id = msg_send![
                 ::objc::class!(NSTimer),
                 scheduledTimerWithTimeInterval:timer_interval
-                target:window_state_arc.window.ns_view
+                target:window_state_arc.window.0.ns_view
                 selector:selector
                 userInfo:nil
                 repeats:YES
             ];
 
-            (*window_state_arc.window.ns_view).set_ivar(
+            (*window_state_arc.window.0.ns_view).set_ivar(
                 FRAME_TIMER_IVAR_NAME,
                 timer as *mut c_void,
             )
@@ -201,7 +203,7 @@ impl Window {
 
 
 pub(super) struct WindowState<H: WindowHandler> {
-    window: Window,
+    window: crate::window::Window,
     window_handler: H,
     keyboard_state: KeyboardState,
 }
