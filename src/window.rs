@@ -19,10 +19,10 @@ impl WindowHandle {
 }
 
 
-pub struct Window(pub(crate) platform::Window);
+pub struct Window<'a>(pub(crate) &'a mut platform::Window);
 
 
-impl Window {
+impl <'a>Window<'a> {
     pub fn open<H, B>(
         options: WindowOpenOptions,
         build: B

@@ -63,7 +63,7 @@ impl Window {
     {
         let _pool = unsafe { NSAutoreleasePool::new(nil) };
 
-        let window = match options.parent {
+        let mut window = match options.parent {
             Parent::WithParent(parent) => {
                 if let RawWindowHandle::MacOS(handle) = parent {
                     let ns_view = handle.ns_view as *mut objc::runtime::Object;
@@ -155,12 +155,10 @@ impl Window {
             },
         };
 
-        let mut window = crate::window::Window(window);
-
-        let window_handler = build(&mut window);
+        let window_handler = build(&mut crate::window::Window(&mut window));
 
         let window_state_arc = Arc::new(WindowState {
-            window: window,
+            window,
             window_handler,
             keyboard_state: KeyboardState::new(),
         });
@@ -170,7 +168,7 @@ impl Window {
         ) as *mut c_void;
 
         unsafe {
-            (*window_state_arc.window.0.ns_view).set_ivar(
+            (*window_state_arc.window.ns_view).set_ivar(
                 WINDOW_STATE_IVAR_NAME,
                 window_state_pointer
             );
@@ -185,13 +183,13 @@ impl Window {
             let timer: id = msg_send![
                 ::objc::class!(NSTimer),
                 scheduledTimerWithTimeInterval:timer_interval
-                target:window_state_arc.window.0.ns_view
+                target:window_state_arc.window.ns_view
                 selector:selector
                 userInfo:nil
                 repeats:YES
             ];
 
-            (*window_state_arc.window.0.ns_view).set_ivar(
+            (*window_state_arc.window.ns_view).set_ivar(
                 FRAME_TIMER_IVAR_NAME,
                 timer as *mut c_void,
             )
@@ -203,7 +201,7 @@ impl Window {
 
 
 pub(super) struct WindowState<H: WindowHandler> {
-    window: crate::window::Window,
+    window: Window,
     window_handler: H,
     keyboard_state: KeyboardState,
 }
@@ -222,7 +220,10 @@ impl <H: WindowHandler>WindowState<H> {
     }
 
     pub(super) fn trigger_event(&mut self, event: Event){
-        self.window_handler.on_event(&mut self.window, event);
+        self.window_handler.on_event(
+            &mut crate::window::Window(&mut self.window),
+            event
+        );
     }
 
     pub(super) fn trigger_frame(&mut self){
