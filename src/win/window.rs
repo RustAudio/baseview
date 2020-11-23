@@ -72,7 +72,7 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
     let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
     if !win_ptr.is_null() {
         let window_state = &*(win_ptr as *const RefCell<WindowState<H>>);
-        let mut window = Window { hwnd };
+        let mut window = crate::window::Window(Window { hwnd });
 
         match msg {
             WM_MOUSEMOVE => {
@@ -177,7 +177,7 @@ impl WindowHandle {
 impl Window {
     pub fn open<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
         where H: WindowHandler,
-              B: FnOnce(&mut Window) -> H,
+              B: FnOnce(&mut crate::window::Window) -> H,
               B: Send + 'static
     {
         unsafe {
@@ -240,7 +240,7 @@ impl Window {
             );
             // todo: manage error ^
 
-            let mut window = Window { hwnd };
+            let mut window = crate::window::Window(Window { hwnd });
 
             let handler = build(&mut window);
 
