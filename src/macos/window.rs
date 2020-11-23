@@ -9,7 +9,7 @@ use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular,
     NSBackingStoreBuffered, NSWindow, NSWindowStyleMask,
 };
-use cocoa::base::{id, nil, NO};
+use cocoa::base::{id, nil, NO, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use keyboard_types::KeyboardEvent;
 
@@ -29,6 +29,8 @@ use super::keyboard::KeyboardState;
 /// Name of the field used to store the `WindowState` pointer in the custom
 /// view class.
 pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
+
+pub(super) const FRAME_TIMER_IVAR_NAME: &str = "FRAME_TIMER";
 
 
 pub struct Window {
@@ -172,6 +174,27 @@ impl Window {
             );
         }
 
+        // Activate timer after window handler is setup and save a pointer to
+        // it, so that it can be invalidated when view is released.
+        unsafe {
+            let timer_interval = 0.015;
+            let selector = sel!(triggerOnFrame:);
+
+            let timer: id = msg_send![
+                ::objc::class!(NSTimer),
+                scheduledTimerWithTimeInterval:timer_interval
+                target:window_state_arc.window.ns_view
+                selector:selector
+                userInfo:nil
+                repeats:YES
+            ];
+
+            (*window_state_arc.window.ns_view).set_ivar(
+                FRAME_TIMER_IVAR_NAME,
+                timer as *mut c_void,
+            )
+        }
+
         WindowHandle
     }
 }
@@ -198,6 +221,10 @@ impl <H: WindowHandler>WindowState<H> {
 
     pub(super) fn trigger_event(&mut self, event: Event){
         self.window_handler.on_event(&mut self.window, event);
+    }
+
+    pub(super) fn trigger_frame(&mut self){
+        self.window_handler.on_frame()
     }
 
     pub(super) fn process_native_key_event(
