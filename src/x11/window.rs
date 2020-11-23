@@ -411,6 +411,10 @@ impl Window {
                 );
             }
 
+            x if x > (x11::xlib::LASTEvent as u8) => {
+                // Gobble up unspecified event
+            }
+
             _ => {
                 println!("Unhandled event type: {:?}", event_type);
             }
