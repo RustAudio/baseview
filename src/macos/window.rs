@@ -58,7 +58,7 @@ impl WindowHandle {
 impl Window {
     pub fn open<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
         where H: WindowHandler,
-              B: FnOnce(&mut crate::window::Window) -> H,
+              B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
     {
         let _pool = unsafe { NSAutoreleasePool::new(nil) };
@@ -155,7 +155,7 @@ impl Window {
             },
         };
 
-        let window_handler = build(&mut crate::window::Window(&mut window));
+        let window_handler = build(&mut crate::Window(&mut window));
 
         let window_state_arc = Arc::new(WindowState {
             window,
@@ -221,7 +221,7 @@ impl <H: WindowHandler>WindowState<H> {
 
     pub(super) fn trigger_event(&mut self, event: Event){
         self.window_handler.on_event(
-            &mut crate::window::Window(&mut self.window),
+            &mut crate::Window(&mut self.window),
             event
         );
     }
