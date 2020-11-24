@@ -44,7 +44,10 @@ impl WindowHandle {
 type WindowOpenResult = Result<(), ()>;
 
 impl Window {
-    pub fn open<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
+    pub fn open<H, B>(
+        options: WindowOpenOptions,
+        build: B
+    ) -> crate::WindowHandle
         where H: WindowHandler,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
@@ -60,7 +63,7 @@ impl Window {
         // FIXME: placeholder types for returning errors in the future
         let _ = rx.recv();
 
-        WindowHandle { thread }
+        crate::WindowHandle(WindowHandle { thread })
     }
 
     fn window_thread<H, B>(options: WindowOpenOptions, build: B,

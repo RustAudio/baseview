@@ -176,7 +176,10 @@ impl WindowHandle {
 }
 
 impl Window {
-    pub fn open<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
+    pub fn open<H, B>(
+        options: WindowOpenOptions,
+        build: B
+    ) -> crate::WindowHandle
         where H: WindowHandler,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
@@ -252,7 +255,7 @@ impl Window {
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
             SetTimer(hwnd, 4242, 13, None);
 
-            WindowHandle { hwnd }
+            crate::WindowHandle(WindowHandle { hwnd })
         }
     }
 }

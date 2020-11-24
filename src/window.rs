@@ -9,7 +9,7 @@ use crate::x11 as platform;
 use crate::macos as platform;
 
 
-pub struct WindowHandle(platform::WindowHandle);
+pub struct WindowHandle(pub(crate) platform::WindowHandle);
 
 
 impl WindowHandle {
@@ -31,6 +31,6 @@ impl <'a>Window<'a> {
               B: FnOnce(&mut Window) -> H,
               B: Send + 'static
     {
-        WindowHandle(platform::Window::open::<H, B>(options, build))
+        platform::Window::open::<H, B>(options, build)
     }
 }

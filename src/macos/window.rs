@@ -56,7 +56,10 @@ impl WindowHandle {
 }
 
 impl Window {
-    pub fn open<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
+    pub fn open<H, B>(
+        options: WindowOpenOptions,
+        build: B
+    ) -> crate::WindowHandle
         where H: WindowHandler,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
@@ -195,7 +198,7 @@ impl Window {
             )
         }
 
-        WindowHandle
+        crate::WindowHandle(WindowHandle)
     }
 }
 
