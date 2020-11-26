@@ -1,3 +1,5 @@
+use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
+
 use crate::WindowHandler;
 use crate::window_open_options::WindowOpenOptions;
 
@@ -32,5 +34,12 @@ impl <'a>Window<'a> {
               B: Send + 'static
     {
         platform::Window::open::<H, B>(options, build)
+    }
+}
+
+
+unsafe impl <'a>HasRawWindowHandle for Window<'a> {
+    fn raw_window_handle(&self) -> RawWindowHandle {
+        self.0.raw_window_handle()
     }
 }
