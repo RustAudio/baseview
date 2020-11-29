@@ -39,21 +39,20 @@ fn main() {
         parent: baseview::Parent::None,
     };
 
-    let handle = Window::open(window_open_options, |_| OpenWindowExample);
+    let (mut handle, opt_app_runner) = Window::open(
+        window_open_options,
+        |_| OpenWindowExample
+    );
 
-    {
-        let handle = handle.clone();
+    ::std::thread::spawn(move || {
+        loop {
+            ::std::thread::sleep(Duration::from_secs(5));
 
-        ::std::thread::spawn(move || {
-            loop {
-                ::std::thread::sleep(Duration::from_secs(5));
-
-                if let Err(_) = handle.try_send_message(Message::Hello){
-                    println!("Failed sending message");
-                }
+            if let Err(_) = handle.try_send_message(Message::Hello){
+                println!("Failed sending message");
             }
-        });
-    }
+        }
+    });
 
-    handle.app_run_blocking();
+    opt_app_runner.unwrap().app_run_blocking();
 }
