@@ -58,3 +58,32 @@ unsafe impl <'a>HasRawWindowHandle for Window<'a> {
         self.0.raw_window_handle()
     }
 }
+
+
+// Compile-time API assertions
+#[doc(hidden)]
+mod assertions {
+    use crate::{WindowHandle, WindowHandler, Event, Window};
+
+    struct TestWindowHandler {
+        #[allow(dead_code)]
+        ptr: *mut ::std::ffi::c_void,
+    }
+
+    impl WindowHandler for TestWindowHandler {
+        type Message = ();
+
+        fn on_event(&mut self, _: &mut Window, _: Event) {
+            
+        }
+        fn on_message(&mut self, _: &mut Window, _: Self::Message) {
+            
+        }
+        fn on_frame(&mut self) {
+            
+        }
+    }
+
+    static_assertions::assert_not_impl_any!(TestWindowHandler: Send);
+    static_assertions::assert_impl_all!(WindowHandle<TestWindowHandler>: Send);
+}
