@@ -3,7 +3,7 @@
 /// Inspired by implementation in https://github.com/antonok-edm/vst_window
 
 use std::ffi::c_void;
-use std::sync::{Arc, mpsc::{self, Sender, Receiver}};
+use std::sync::Arc;
 
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular,
@@ -16,6 +16,7 @@ use keyboard_types::KeyboardEvent;
 use objc::{msg_send, runtime::Object, sel, sel_impl};
 
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
+use rtrb::{RingBuffer, Producer, Consumer, PushError};
 
 use crate::{
     Event, Parent, WindowHandler, WindowOpenOptions,
@@ -42,22 +43,10 @@ pub struct Window {
 }
 
 
-pub struct WindowHandle<H: WindowHandler> {
-    message_tx: Sender<H::Message>,
-}
+pub struct AppRunner;
 
 
-// Implement Clone manually to avoid H: Clone bound
-impl <H: WindowHandler>Clone for WindowHandle<H> {
-    fn clone(&self) -> Self {
-        Self {
-            message_tx: self.message_tx.clone()
-        }
-    }
-}
-
-
-impl <H: WindowHandler>WindowHandle<H> {
+impl AppRunner {
     pub fn app_run_blocking(self) {
         unsafe {
             // Get reference to already created shared NSApplication object
@@ -65,28 +54,37 @@ impl <H: WindowHandler>WindowHandle<H> {
             NSApp().run();
         }
     }
+}
 
+
+pub struct WindowHandle<H: WindowHandler> {
+    message_tx: Producer<H::Message>,
+}
+
+
+impl <H: WindowHandler>WindowHandle<H> {
     pub fn try_send_message(
-        &self,
+        &mut self,
         message: H::Message
     ) -> Result<(), H::Message> {
-        self.message_tx.send(message)
-            .map_err(|err| err.0)
+        self.message_tx.push(message)
+            .map_err(|PushError::Full(message)| message)
     }
 }
+
 
 impl Window {
     pub fn open<H, B>(
         options: WindowOpenOptions,
         build: B
-    ) -> crate::WindowHandle<H>
+    ) -> (crate::WindowHandle<H>, Option<crate::AppRunner>)
         where H: WindowHandler,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
     {
         let _pool = unsafe { NSAutoreleasePool::new(nil) };
 
-        let mut window = match options.parent {
+        let (mut window, opt_app_runner) = match options.parent {
             Parent::WithParent(parent) => {
                 if let RawWindowHandle::MacOS(handle) = parent {
                     let ns_view = handle.ns_view as *mut objc::runtime::Object;
@@ -96,10 +94,12 @@ impl Window {
 
                         let _: id = msg_send![ns_view, addSubview: subview];
 
-                        Window {
+                        let window = Window {
                             ns_window: None,
                             ns_view: subview,
-                        }
+                        };
+
+                        (window, None)
                     }
                 } else {
                     panic!("Not a macOS window");
@@ -110,10 +110,12 @@ impl Window {
                     create_view::<H>(&options)
                 };
 
-                Window {
+                let window = Window {
                     ns_window: None,
                     ns_view,
-                }
+                };
+
+                (window, None)
             },
             Parent::None => {
                 // It seems prudent to run NSApp() here before doing other
@@ -170,17 +172,19 @@ impl Window {
 
                     ns_window.setContentView_(subview);
 
-                    Window {
+                    let window = Window {
                         ns_window: Some(ns_window),
                         ns_view: subview,
-                    }
+                    };
+
+                    (window, Some(crate::AppRunner(AppRunner)))
                 }
             },
         };
 
         let window_handler = build(&mut crate::Window(&mut window));
 
-        let (message_tx, message_rx) = mpsc::channel();
+        let (message_tx, message_rx) = RingBuffer::new(100).split();
 
         let window_state_arc = Arc::new(WindowState {
             window,
@@ -221,9 +225,11 @@ impl Window {
             )
         }
 
-        crate::WindowHandle(WindowHandle {
+        let window_handle = crate::WindowHandle(WindowHandle {
             message_tx
-        })
+        });
+
+        (window_handle, opt_app_runner)
     }
 }
 
@@ -232,7 +238,7 @@ pub(super) struct WindowState<H: WindowHandler> {
     window: Window,
     window_handler: H,
     keyboard_state: KeyboardState,
-    message_rx: Receiver<H::Message>,
+    message_rx: Consumer<H::Message>,
 }
 
 
@@ -249,7 +255,7 @@ impl <H: WindowHandler>WindowState<H> {
     }
 
     pub(super) fn handle_messages(&mut self){
-        for message in self.message_rx.try_iter(){
+        while let Ok(message) = self.message_rx.pop(){
             self.window_handler.on_message(
                 &mut crate::Window(&mut self.window),
                 message
