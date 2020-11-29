@@ -20,7 +20,10 @@ use crate::{
 };
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
-use super::window::{WindowState, WINDOW_STATE_IVAR_NAME, FRAME_TIMER_IVAR_NAME};
+use super::window::{
+    WindowState, WINDOW_STATE_IVAR_NAME, FRAME_TIMER_IVAR_NAME,
+    RUNTIME_TIMER_IVAR_NAME
+};
 
 
 pub(super) unsafe fn create_view<H: WindowHandler>(
@@ -67,6 +70,10 @@ unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
         accepts_first_mouse::<H> as extern "C" fn(&Object, Sel, id) -> BOOL
     );
 
+    class.add_method(
+        sel!(runtimeTick:),
+        runtime_tick::<H> as extern "C" fn(&Object, Sel, id)
+    );
     class.add_method(
         sel!(triggerOnFrame:),
         trigger_on_frame::<H> as extern "C" fn(&Object, Sel, id)
@@ -150,6 +157,7 @@ unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
 
     class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
     class.add_ivar::<*mut c_void>(FRAME_TIMER_IVAR_NAME);
+    class.add_ivar::<*mut c_void>(RUNTIME_TIMER_IVAR_NAME);
 
     class.register()
 }
@@ -193,6 +201,19 @@ extern "C" fn trigger_on_frame<H: WindowHandler>(
 }
 
 
+extern "C" fn runtime_tick<H: WindowHandler>(
+    this: &Object,
+    _sel: Sel,
+    _event: id
+){
+    let state: &mut WindowState<H> = unsafe {
+        WindowState::from_field(this)
+    };
+
+    state.handle_messages();
+}
+
+
 extern "C" fn release<H: WindowHandler>(this: &Object, _sel: Sel) {
     unsafe {
         let superclass = msg_send![this, superclass];
@@ -207,6 +228,12 @@ extern "C" fn release<H: WindowHandler>(this: &Object, _sel: Sel) {
             // Invalidate frame timer
             let frame_timer_ptr: *mut c_void = *this.get_ivar(
                 FRAME_TIMER_IVAR_NAME
+            );
+            let _: () = msg_send![frame_timer_ptr as id, invalidate];
+
+            // Invalidate runtime timer
+            let frame_timer_ptr: *mut c_void = *this.get_ivar(
+                RUNTIME_TIMER_IVAR_NAME
             );
             let _: () = msg_send![frame_timer_ptr as id, invalidate];
 

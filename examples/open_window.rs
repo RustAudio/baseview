@@ -1,9 +1,19 @@
+use std::time::Duration;
+
 use baseview::{Event, Window, WindowHandler, WindowScalePolicy};
+
+
+#[derive(Debug, Clone)]
+enum Message {
+    Hello
+}
+
 
 struct OpenWindowExample;
 
+
 impl WindowHandler for OpenWindowExample {
-    type Message = ();
+    type Message = Message;
 
     fn on_frame(&mut self) {}
 
@@ -15,8 +25,11 @@ impl WindowHandler for OpenWindowExample {
         }
     }
 
-    fn on_message(&mut self, _window: &mut Window, _message: Self::Message) {}
+    fn on_message(&mut self, _window: &mut Window, message: Self::Message) {
+        println!("Message: {:?}", message);
+    }
 }
+
 
 fn main() {
     let window_open_options = baseview::WindowOpenOptions {
@@ -27,5 +40,20 @@ fn main() {
     };
 
     let handle = Window::open(window_open_options, |_| OpenWindowExample);
+
+    {
+        let handle = handle.clone();
+
+        ::std::thread::spawn(move || {
+            loop {
+                ::std::thread::sleep(Duration::from_secs(5));
+
+                if let Err(_) = handle.try_send_message(Message::Hello){
+                    println!("Failed sending message");
+                }
+            }
+        });
+    }
+
     handle.app_run_blocking();
 }
