@@ -82,6 +82,7 @@ mod assertions {
         }
     }
 
+    // Assert that WindowHandle is Send even if WindowHandler isn't
     static_assertions::assert_not_impl_any!(TestWindowHandler: Send);
     static_assertions::assert_impl_all!(WindowHandle<TestWindowHandler>: Send);
 }
