@@ -30,12 +30,25 @@ pub struct Window {
     new_physical_size: Option<PhySize>
 }
 
-// FIXME: move to outer crate context
-pub struct WindowHandle {
+pub struct WindowHandle<H: WindowHandler> {
+    // FIXME: replace this with channel sender
+    phantom_data: std::marker::PhantomData<H::Message>,
+}
+
+impl <H: WindowHandler>WindowHandle<H> {
+    pub fn try_send_message(
+        &mut self,
+        message: H::Message
+    ) -> Result<(), H::Message> {
+        Err(message)
+    }
+}
+
+pub struct AppRunner {
     thread: std::thread::JoinHandle<()>,
 }
 
-impl WindowHandle {
+impl AppRunner {
     pub fn app_run_blocking(self) {
         let _ = self.thread.join();
     }
@@ -47,11 +60,13 @@ impl Window {
     pub fn open<H, B>(
         options: WindowOpenOptions,
         build: B
-    ) -> crate::WindowHandle
+    ) -> (crate::WindowHandle<H>, Option<crate::AppRunner>)
         where H: WindowHandler,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
     {
+        let is_not_parented = matches!(options.parent, Parent::None);
+
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
         let thread = thread::spawn(move || {
@@ -63,7 +78,17 @@ impl Window {
         // FIXME: placeholder types for returning errors in the future
         let _ = rx.recv();
 
-        crate::WindowHandle(WindowHandle { thread })
+        let window_handle = crate::WindowHandle(WindowHandle {
+            phantom_data: std::marker::PhantomData
+        });
+
+        let opt_app_runner = if is_not_parented {
+            Some(crate::AppRunner(AppRunner { thread }))
+        } else {
+            None
+        };
+
+        (window_handle, opt_app_runner)
     }
 
     fn window_thread<H, B>(options: WindowOpenOptions, build: B,
