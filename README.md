@@ -16,7 +16,7 @@ Below is a proposed list of milestones (roughly in-order) and their status. Subj
 | Cross-platform API for window spawning          | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | Window uses an OpenGL surface                   | :heavy_check_mark: |                    | :heavy_check_mark: |
 | Can find DPI scale factor                       |                    |                    | :heavy_check_mark: |
-| Basic event handling (mouse, keyboard)          |                    | :heavy_check_mark: | :heavy_check_mark: |
+| Basic event handling (mouse, keyboard)          | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | Parent window support                           | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | *(Converge on a common API for all platforms?)* |                    |                    |                    |
 

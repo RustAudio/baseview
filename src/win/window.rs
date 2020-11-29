@@ -8,7 +8,8 @@ use winapi::um::winuser::{
     SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR,
     MB_OK, MB_TOPMOST, MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_PAINT, WM_SHOWWINDOW, WM_TIMER,
     WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-    WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, WM_DPICHANGED,
+    WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, WM_DPICHANGED, WM_CHAR, WM_SYSCHAR, WM_KEYDOWN,
+    WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP, WM_INPUTLANGCHANGE
 };
 
 use std::cell::RefCell;
@@ -26,6 +27,9 @@ use crate::{
     Event, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, Size, Point, PhySize, PhyPoint,
 };
+
+use super::keyboard::KeyboardState;
+
 
 unsafe fn message_box(title: &str, msg: &str) {
     let title = (title.to_owned() + "\0").as_ptr() as *const i8;
@@ -110,6 +114,22 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
             }
             WM_DPICHANGED => {
                 // TODO: Notify app of DPI change
+            },
+            WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP
+            | WM_SYSKEYUP | WM_INPUTLANGCHANGE => {
+                // Will swallow menu key events. See druid code for how to
+                // solve that
+                let opt_event = window_state.borrow_mut()
+                    .keyboard_state
+                    .process_message(hwnd, msg, wparam, lparam);
+
+                if let Some(event) = opt_event {
+                    window_state.borrow_mut()
+                        .handler
+                        .on_event(&mut window, Event::Keyboard(event));
+                }
+
+                return 0;
             }
             _ => {}
         }
@@ -145,6 +165,7 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 struct WindowState<H> {
     window_class: ATOM,
     window_info: WindowInfo,
+    keyboard_state: KeyboardState,
     handler: H,
 }
 
@@ -249,6 +270,7 @@ impl Window {
             let window_state = Box::new(RefCell::new(WindowState {
                 window_class,
                 window_info,
+                keyboard_state: KeyboardState::new(),
                 handler,
             }));
 
