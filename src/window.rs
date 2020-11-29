@@ -21,7 +21,9 @@ impl AppRunner {
 }
 
 
-pub struct WindowHandle<H: WindowHandler>(pub(crate) platform::WindowHandle<H>);
+pub struct WindowHandle<H: WindowHandler>(
+    pub(crate) platform::WindowHandle<H>
+);
 
 
 impl <H: WindowHandler>WindowHandle<H> {
@@ -71,15 +73,9 @@ mod assertions {
     impl WindowHandler for TestWindowHandler {
         type Message = ();
 
-        fn on_event(&mut self, _: &mut Window, _: Event) {
-            
-        }
-        fn on_message(&mut self, _: &mut Window, _: Self::Message) {
-            
-        }
-        fn on_frame(&mut self) {
-            
-        }
+        fn on_event(&mut self, _: &mut Window, _: Event) {}
+        fn on_message(&mut self, _: &mut Window, _: Self::Message) {}
+        fn on_frame(&mut self) {}
     }
 
     // Assert that WindowHandle is Send even if WindowHandler isn't
