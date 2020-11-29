@@ -3,7 +3,7 @@
 /// Inspired by implementation in https://github.com/antonok-edm/vst_window
 
 use std::ffi::c_void;
-use std::sync::Arc;
+use std::sync::{Arc, mpsc::{self, Sender, Receiver}};
 
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular,
@@ -31,6 +31,7 @@ use super::keyboard::KeyboardState;
 pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
 
 pub(super) const FRAME_TIMER_IVAR_NAME: &str = "FRAME_TIMER";
+pub(super) const RUNTIME_TIMER_IVAR_NAME: &str = "RUNTIME_TIMER";
 
 
 pub struct Window {
@@ -42,10 +43,22 @@ pub struct Window {
 }
 
 
-pub struct WindowHandle;
+pub struct WindowHandle<H: WindowHandler> {
+    message_tx: Sender<H::Message>,
+}
 
 
-impl WindowHandle {
+// Implement Clone manually to avoid H: Clone bound
+impl <H: WindowHandler>Clone for WindowHandle<H> {
+    fn clone(&self) -> Self {
+        Self {
+            message_tx: self.message_tx.clone()
+        }
+    }
+}
+
+
+impl <H: WindowHandler>WindowHandle<H> {
     pub fn app_run_blocking(self) {
         unsafe {
             // Get reference to already created shared NSApplication object
@@ -53,13 +66,21 @@ impl WindowHandle {
             NSApp().run();
         }
     }
+
+    pub fn try_send_message(
+        &self,
+        message: H::Message
+    ) -> Result<(), H::Message> {
+        self.message_tx.send(message)
+            .map_err(|err| err.0)
+    }
 }
 
 impl Window {
     pub fn open<H, B>(
         options: WindowOpenOptions,
         build: B
-    ) -> crate::WindowHandle
+    ) -> crate::WindowHandle<H>
         where H: WindowHandler,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
@@ -160,10 +181,13 @@ impl Window {
 
         let window_handler = build(&mut crate::Window(&mut window));
 
+        let (message_tx, message_rx) = mpsc::channel();
+
         let window_state_arc = Arc::new(WindowState {
             window,
             window_handler,
             keyboard_state: KeyboardState::new(),
+            message_rx
         });
 
         let window_state_pointer = Arc::into_raw(
@@ -177,8 +201,7 @@ impl Window {
             );
         }
 
-        // Activate timer after window handler is setup and save a pointer to
-        // it, so that it can be invalidated when view is released.
+        // Setup frame timer once window state is stored
         unsafe {
             let timer_interval = 0.015;
             let selector = sel!(triggerOnFrame:);
@@ -192,13 +215,37 @@ impl Window {
                 repeats:YES
             ];
 
+            // Store pointer to timer for invalidation when view is released
             (*window_state_arc.window.ns_view).set_ivar(
                 FRAME_TIMER_IVAR_NAME,
                 timer as *mut c_void,
             )
         }
 
-        crate::WindowHandle(WindowHandle)
+        // Setup runtime timer once window state is stored
+        unsafe {
+            let timer_interval = 0.01;
+            let selector = sel!(runtimeTick:);
+
+            let timer: id = msg_send![
+                ::objc::class!(NSTimer),
+                scheduledTimerWithTimeInterval:timer_interval
+                target:window_state_arc.window.ns_view
+                selector:selector
+                userInfo:nil
+                repeats:YES
+            ];
+
+            // Store pointer to timer for invalidation when view is released
+            (*window_state_arc.window.ns_view).set_ivar(
+                RUNTIME_TIMER_IVAR_NAME,
+                timer as *mut c_void,
+            )
+        }
+
+        crate::WindowHandle(WindowHandle {
+            message_tx
+        })
     }
 }
 
@@ -207,6 +254,7 @@ pub(super) struct WindowState<H: WindowHandler> {
     window: Window,
     window_handler: H,
     keyboard_state: KeyboardState,
+    message_rx: Receiver<H::Message>,
 }
 
 
@@ -220,6 +268,15 @@ impl <H: WindowHandler>WindowState<H> {
         let state_ptr: *mut c_void = *obj.get_ivar(WINDOW_STATE_IVAR_NAME);
 
         &mut *(state_ptr as *mut Self)
+    }
+
+    pub(super) fn handle_messages(&mut self){
+        for message in self.message_rx.try_iter(){
+            self.window_handler.on_message(
+                &mut crate::Window(&mut self.window),
+                message
+            )
+        }
     }
 
     pub(super) fn trigger_event(&mut self, event: Event){
