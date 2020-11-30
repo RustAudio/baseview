@@ -9,7 +9,9 @@ use winapi::um::winuser::{
     MB_OK, MB_TOPMOST, MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_PAINT, WM_SHOWWINDOW, WM_TIMER,
     WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
     WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, WM_DPICHANGED, WM_CHAR, WM_SYSCHAR, WM_KEYDOWN,
-    WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP, WM_INPUTLANGCHANGE
+    WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP, WM_INPUTLANGCHANGE,
+    GET_XBUTTON_WPARAM, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP, XBUTTON1, XBUTTON2,
 };
 
 use std::cell::RefCell;
@@ -97,6 +99,38 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
                     }),
                 );
                 return 0;
+            }
+            WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP |
+            WM_RBUTTONDOWN | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
+                let button = match msg {
+                    WM_LBUTTONDOWN | WM_LBUTTONUP => Some(MouseButton::Left),
+                    WM_MBUTTONDOWN | WM_MBUTTONUP => Some(MouseButton::Middle),
+                    WM_RBUTTONDOWN | WM_RBUTTONUP => Some(MouseButton::Right),
+                    WM_XBUTTONDOWN | WM_XBUTTONUP => match GET_XBUTTON_WPARAM(wparam) {
+                        XBUTTON1 => Some(MouseButton::Back),
+                        XBUTTON2 => Some(MouseButton::Forward),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+
+                if let Some(button) = button {
+                    let event = match msg {
+                        WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN | WM_XBUTTONDOWN => {
+                            MouseEvent::ButtonPressed(button)
+                        }
+                        WM_LBUTTONUP | WM_MBUTTONUP | WM_RBUTTONUP | WM_XBUTTONUP => {
+                            MouseEvent::ButtonReleased(button)
+                        }
+                        _ => {
+                            unreachable!()
+                        }
+                    };
+
+                    window_state.borrow_mut()
+                        .handler
+                        .on_event(&mut window, Event::Mouse(event));
+                }
             }
             WM_TIMER => {
                 handle_timer(&window_state, wparam);
