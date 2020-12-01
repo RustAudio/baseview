@@ -1,7 +1,3 @@
-/// macOS window handling
-///
-/// Inspired by implementation in https://github.com/antonok-edm/vst_window
-
 use std::ffi::c_void;
 use std::sync::Arc;
 
