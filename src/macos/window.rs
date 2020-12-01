@@ -33,6 +33,8 @@ pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
 
 pub(super) const FRAME_TIMER_IVAR_NAME: &str = "FRAME_TIMER";
 
+const MESSAGE_QUEUE_LEN: usize = 128;
+
 
 pub struct Window {
     /// Only set if we created the parent window, i.e. we are running in
@@ -184,7 +186,8 @@ impl Window {
 
         let window_handler = build(&mut crate::Window(&mut window));
 
-        let (message_tx, message_rx) = RingBuffer::new(100).split();
+        let (message_tx, message_rx) = RingBuffer::new(MESSAGE_QUEUE_LEN)
+            .split();
 
         let window_state_arc = Arc::new(WindowState {
             window,
