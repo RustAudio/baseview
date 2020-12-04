@@ -18,6 +18,7 @@ Below is a proposed list of milestones (roughly in-order) and their status. Subj
 | Can find DPI scale factor                       |                    |                    | :heavy_check_mark: |
 | Basic event handling (mouse, keyboard)          | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | Parent window support                           | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| Send messages                                   |                    | :heavy_check_mark: |                    |
 | *(Converge on a common API for all platforms?)* |                    |                    |                    |
 
 ## Prerequisites

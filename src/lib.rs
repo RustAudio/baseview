@@ -20,6 +20,8 @@ pub use window::*;
 pub use window_info::*;
 pub use window_open_options::*;
 
+const MESSAGE_QUEUE_LEN: usize = 128;
+
 #[derive(Debug)]
 pub enum Parent {
     None,
@@ -30,7 +32,7 @@ pub enum Parent {
 unsafe impl Send for Parent {}
 
 pub trait WindowHandler {
-    type Message;
+    type Message: Send;
 
     fn on_frame(&mut self);
     fn on_event(&mut self, window: &mut Window, event: Event);
