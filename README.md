@@ -15,7 +15,7 @@ Below is a proposed list of milestones (roughly in-order) and their status. Subj
 | Spawns a window, no parent                      | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | Cross-platform API for window spawning          | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | Window uses an OpenGL surface                   | :heavy_check_mark: |                    | :heavy_check_mark: |
-| Can find DPI scale factor                       |                    |                    | :heavy_check_mark: |
+| Can find DPI scale factor                       |                    | :heavy_check_mark: | :heavy_check_mark: |
 | Basic event handling (mouse, keyboard)          | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | Parent window support                           | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | Send messages                                   |                    | :heavy_check_mark: |                    |
