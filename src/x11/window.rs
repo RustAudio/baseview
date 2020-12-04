@@ -2,7 +2,6 @@ use std::os::raw::{c_ulong, c_void};
 use std::sync::mpsc;
 use std::time::*;
 use std::thread;
-use std::sync::Arc;
 
 use raw_window_handle::{
     unix::XlibHandle,
@@ -310,7 +309,7 @@ impl Window {
                     self.drain_xcb_events(handler);
                 }
             }
-            
+
             while let Ok(message) = message_rx.pop(){
                 handler.on_message(
                     &mut crate::Window(self),
