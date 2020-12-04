@@ -14,12 +14,10 @@ use super::XcbConnection;
 use crate::{
     Event, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta,
     WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
-    WindowScalePolicy, PhyPoint, PhySize,
+    WindowScalePolicy, PhyPoint, PhySize, MESSAGE_QUEUE_LEN,
 };
 
 use super::keyboard::{convert_key_press_event, convert_key_release_event};
-
-const MESSAGE_QUEUE_LEN: usize = 128;
 
 pub struct Window {
     xcb_connection: XcbConnection,
