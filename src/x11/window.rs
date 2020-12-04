@@ -426,9 +426,7 @@ impl Window {
                 );
             }
 
-            _ => {
-                println!("Unhandled event type: {:?}", event_type);
-            }
+            _ => {}
         }
     }
 }
