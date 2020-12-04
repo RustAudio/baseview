@@ -128,9 +128,7 @@ impl Window {
 
                 let scaling = match options.scale {
                     WindowScalePolicy::ScaleFactor(scale) => scale,
-                    WindowScalePolicy::SystemScaleFactor => {
-                        get_scaling().unwrap_or(1.0)
-                    },
+                    WindowScalePolicy::SystemScaleFactor => 1.0,
                 };
         
                 let window_info = WindowInfo::from_logical_size(
@@ -292,10 +290,4 @@ unsafe impl HasRawWindowHandle for Window {
             ..MacOSHandle::empty()
         })
     }
-}
-
-
-fn get_scaling() -> Option<f64> {
-    // TODO: find system scaling
-    None
 }
