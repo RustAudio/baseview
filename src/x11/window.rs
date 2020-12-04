@@ -2,6 +2,7 @@ use std::os::raw::{c_ulong, c_void};
 use std::sync::mpsc;
 use std::time::*;
 use std::thread;
+use std::sync::Arc;
 
 use raw_window_handle::{
     unix::XlibHandle,
@@ -272,6 +273,8 @@ impl Window {
     // switch between poll() and select() (the latter of which is fine on *BSD), and we should do
     // the same.
     fn run_event_loop<H: WindowHandler>(&mut self, handler: &mut H, message_rx: Consumer<H::Message>) {
+        let mut message_rx = message_rx;
+
         use nix::poll::*;
 
         let xcb_fd = unsafe {
@@ -306,6 +309,13 @@ impl Window {
                 if revents.contains(PollFlags::POLLIN) {
                     self.drain_xcb_events(handler);
                 }
+            }
+            
+            while let Ok(message) = message_rx.pop(){
+                handler.on_message(
+                    &mut crate::Window(self),
+                    message
+                )
             }
         }
     }

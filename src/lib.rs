@@ -30,7 +30,7 @@ pub enum Parent {
 unsafe impl Send for Parent {}
 
 pub trait WindowHandler {
-    type Message: Send;
+    type Message: Send + 'static;
 
     fn on_frame(&mut self);
     fn on_event(&mut self, window: &mut Window, event: Event);
