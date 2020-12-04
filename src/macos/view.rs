@@ -20,7 +20,9 @@ use crate::{
 };
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
-use super::window::{WindowState, WINDOW_STATE_IVAR_NAME, FRAME_TIMER_IVAR_NAME};
+use super::window::{
+    WindowState, WINDOW_STATE_IVAR_NAME, FRAME_TIMER_IVAR_NAME
+};
 
 
 pub(super) unsafe fn create_view<H: WindowHandler>(
@@ -189,6 +191,7 @@ extern "C" fn trigger_on_frame<H: WindowHandler>(
         WindowState::from_field(this)
     };
 
+    state.handle_messages();
     state.trigger_frame();
 }
 

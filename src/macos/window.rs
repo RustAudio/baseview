@@ -1,7 +1,3 @@
-/// macOS window handling
-///
-/// Inspired by implementation in https://github.com/antonok-edm/vst_window
-
 use std::ffi::c_void;
 use std::sync::Arc;
 
@@ -16,6 +12,7 @@ use keyboard_types::KeyboardEvent;
 use objc::{msg_send, runtime::Object, sel, sel_impl};
 
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
+use rtrb::{RingBuffer, Producer, Consumer, PushError};
 
 use crate::{
     Event, Parent, WindowHandler, WindowOpenOptions,
@@ -32,6 +29,8 @@ pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
 
 pub(super) const FRAME_TIMER_IVAR_NAME: &str = "FRAME_TIMER";
 
+const MESSAGE_QUEUE_LEN: usize = 128;
+
 
 pub struct Window {
     /// Only set if we created the parent window, i.e. we are running in
@@ -42,10 +41,10 @@ pub struct Window {
 }
 
 
-pub struct WindowHandle;
+pub struct AppRunner;
 
 
-impl WindowHandle {
+impl AppRunner {
     pub fn app_run_blocking(self) {
         unsafe {
             // Get reference to already created shared NSApplication object
@@ -55,18 +54,35 @@ impl WindowHandle {
     }
 }
 
+
+pub struct WindowHandle<H: WindowHandler> {
+    message_tx: Producer<H::Message>,
+}
+
+
+impl <H: WindowHandler>WindowHandle<H> {
+    pub fn try_send_message(
+        &mut self,
+        message: H::Message
+    ) -> Result<(), H::Message> {
+        self.message_tx.push(message)
+            .map_err(|PushError::Full(message)| message)
+    }
+}
+
+
 impl Window {
     pub fn open<H, B>(
         options: WindowOpenOptions,
         build: B
-    ) -> crate::WindowHandle
+    ) -> (crate::WindowHandle<H>, Option<crate::AppRunner>)
         where H: WindowHandler,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
     {
         let _pool = unsafe { NSAutoreleasePool::new(nil) };
 
-        let mut window = match options.parent {
+        let (mut window, opt_app_runner) = match options.parent {
             Parent::WithParent(parent) => {
                 if let RawWindowHandle::MacOS(handle) = parent {
                     let ns_view = handle.ns_view as *mut objc::runtime::Object;
@@ -76,10 +92,12 @@ impl Window {
 
                         let _: id = msg_send![ns_view, addSubview: subview];
 
-                        Window {
+                        let window = Window {
                             ns_window: None,
                             ns_view: subview,
-                        }
+                        };
+
+                        (window, None)
                     }
                 } else {
                     panic!("Not a macOS window");
@@ -90,10 +108,12 @@ impl Window {
                     create_view::<H>(&options)
                 };
 
-                Window {
+                let window = Window {
                     ns_window: None,
                     ns_view,
-                }
+                };
+
+                (window, None)
             },
             Parent::None => {
                 // It seems prudent to run NSApp() here before doing other
@@ -150,20 +170,26 @@ impl Window {
 
                     ns_window.setContentView_(subview);
 
-                    Window {
+                    let window = Window {
                         ns_window: Some(ns_window),
                         ns_view: subview,
-                    }
+                    };
+
+                    (window, Some(crate::AppRunner(AppRunner)))
                 }
             },
         };
 
         let window_handler = build(&mut crate::Window(&mut window));
 
+        let (message_tx, message_rx) = RingBuffer::new(MESSAGE_QUEUE_LEN)
+            .split();
+
         let window_state_arc = Arc::new(WindowState {
             window,
             window_handler,
             keyboard_state: KeyboardState::new(),
+            message_rx
         });
 
         let window_state_pointer = Arc::into_raw(
@@ -177,8 +203,7 @@ impl Window {
             );
         }
 
-        // Activate timer after window handler is setup and save a pointer to
-        // it, so that it can be invalidated when view is released.
+        // Setup frame timer once window state is stored
         unsafe {
             let timer_interval = 0.015;
             let selector = sel!(triggerOnFrame:);
@@ -192,13 +217,18 @@ impl Window {
                 repeats:YES
             ];
 
+            // Store pointer to timer for invalidation when view is released
             (*window_state_arc.window.ns_view).set_ivar(
                 FRAME_TIMER_IVAR_NAME,
                 timer as *mut c_void,
             )
         }
 
-        crate::WindowHandle(WindowHandle)
+        let window_handle = crate::WindowHandle(WindowHandle {
+            message_tx
+        });
+
+        (window_handle, opt_app_runner)
     }
 }
 
@@ -207,6 +237,7 @@ pub(super) struct WindowState<H: WindowHandler> {
     window: Window,
     window_handler: H,
     keyboard_state: KeyboardState,
+    message_rx: Consumer<H::Message>,
 }
 
 
@@ -220,6 +251,15 @@ impl <H: WindowHandler>WindowState<H> {
         let state_ptr: *mut c_void = *obj.get_ivar(WINDOW_STATE_IVAR_NAME);
 
         &mut *(state_ptr as *mut Self)
+    }
+
+    pub(super) fn handle_messages(&mut self){
+        while let Ok(message) = self.message_rx.pop(){
+            self.window_handler.on_message(
+                &mut crate::Window(&mut self.window),
+                message
+            )
+        }
     }
 
     pub(super) fn trigger_event(&mut self, event: Event){
