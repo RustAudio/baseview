@@ -8,6 +8,7 @@ use raw_window_handle::{
     HasRawWindowHandle,
     RawWindowHandle
 };
+use rtrb::{RingBuffer, Producer, Consumer, PushError};
 
 use super::XcbConnection;
 use crate::{
@@ -18,6 +19,8 @@ use crate::{
 
 use super::keyboard::{convert_key_press_event, convert_key_release_event};
 
+const MESSAGE_QUEUE_LEN: usize = 128;
+
 pub struct Window {
     xcb_connection: XcbConnection,
     window_id: u32,
@@ -27,12 +30,11 @@ pub struct Window {
     frame_interval: Duration,
     event_loop_running: bool,
 
-    new_physical_size: Option<PhySize>
+    new_physical_size: Option<PhySize>,
 }
 
 pub struct WindowHandle<H: WindowHandler> {
-    // FIXME: replace this with channel sender
-    phantom_data: std::marker::PhantomData<H::Message>,
+    message_tx: Producer<H::Message>,
 }
 
 impl <H: WindowHandler>WindowHandle<H> {
@@ -40,7 +42,8 @@ impl <H: WindowHandler>WindowHandle<H> {
         &mut self,
         message: H::Message
     ) -> Result<(), H::Message> {
-        Err(message)
+        self.message_tx.push(message)
+            .map_err(|PushError::Full(message)| message)
     }
 }
 
@@ -69,8 +72,11 @@ impl Window {
 
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
+        let (message_tx, message_rx) = RingBuffer::new(MESSAGE_QUEUE_LEN)
+            .split();
+
         let thread = thread::spawn(move || {
-            if let Err(e) = Self::window_thread::<H, B>(options, build, tx.clone()) {
+            if let Err(e) = Self::window_thread::<H, B>(options, build, tx.clone(), message_rx) {
                 let _ = tx.send(Err(e));
             }
         });
@@ -79,7 +85,7 @@ impl Window {
         let _ = rx.recv();
 
         let window_handle = crate::WindowHandle(WindowHandle {
-            phantom_data: std::marker::PhantomData
+            message_tx
         });
 
         let opt_app_runner = if is_not_parented {
@@ -92,7 +98,9 @@ impl Window {
     }
 
     fn window_thread<H, B>(options: WindowOpenOptions, build: B,
-        tx: mpsc::SyncSender<WindowOpenResult>) -> WindowOpenResult
+        tx: mpsc::SyncSender<WindowOpenResult>,
+        message_rx: Consumer<H::Message>,
+    ) -> WindowOpenResult
         where H: WindowHandler,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
@@ -205,7 +213,7 @@ impl Window {
 
         let _ = tx.send(Ok(()));
 
-        window.run_event_loop(&mut handler);
+        window.run_event_loop(&mut handler, message_rx);
         Ok(())
     }
 
@@ -263,7 +271,7 @@ impl Window {
     // FIXME: poll() acts fine on linux, sometimes funky on *BSD. XCB upstream uses a define to
     // switch between poll() and select() (the latter of which is fine on *BSD), and we should do
     // the same.
-    fn run_event_loop<H: WindowHandler>(&mut self, handler: &mut H) {
+    fn run_event_loop<H: WindowHandler>(&mut self, handler: &mut H, message_rx: Consumer<H::Message>) {
         use nix::poll::*;
 
         let xcb_fd = unsafe {
