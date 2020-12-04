@@ -271,9 +271,7 @@ impl Window {
     // FIXME: poll() acts fine on linux, sometimes funky on *BSD. XCB upstream uses a define to
     // switch between poll() and select() (the latter of which is fine on *BSD), and we should do
     // the same.
-    fn run_event_loop<H: WindowHandler>(&mut self, handler: &mut H, message_rx: Consumer<H::Message>) {
-        let mut message_rx = message_rx;
-
+    fn run_event_loop<H: WindowHandler>(&mut self, handler: &mut H, mut message_rx: Consumer<H::Message>) {
         use nix::poll::*;
 
         let xcb_fd = unsafe {
