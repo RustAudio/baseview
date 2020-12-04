@@ -16,7 +16,7 @@ use rtrb::{RingBuffer, Producer, Consumer, PushError};
 
 use crate::{
     Event, Parent, WindowHandler, WindowOpenOptions,
-    WindowScalePolicy, WindowInfo
+    WindowScalePolicy, WindowInfo, MESSAGE_QUEUE_LEN
 };
 
 use super::view::create_view;
@@ -28,8 +28,6 @@ use super::keyboard::KeyboardState;
 pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
 
 pub(super) const FRAME_TIMER_IVAR_NAME: &str = "FRAME_TIMER";
-
-const MESSAGE_QUEUE_LEN: usize = 128;
 
 
 pub struct Window {

@@ -20,6 +20,8 @@ pub use window::*;
 pub use window_info::*;
 pub use window_open_options::*;
 
+const MESSAGE_QUEUE_LEN: usize = 128;
+
 #[derive(Debug)]
 pub enum Parent {
     None,
