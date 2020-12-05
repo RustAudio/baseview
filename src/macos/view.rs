@@ -149,6 +149,10 @@ unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
         sel!(keyUp:),
         key_up::<H> as extern "C" fn(&Object, Sel, id),
     );
+    class.add_method(
+        sel!(flagsChanged:),
+        flags_changed::<H> as extern "C" fn(&Object, Sel, id),
+    );
 
     class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
     class.add_ivar::<*mut c_void>(FRAME_TIMER_IVAR_NAME);
@@ -384,6 +388,17 @@ extern "C" fn key_down<H: WindowHandler>(this: &Object, _: Sel, event: id){
 
 
 extern "C" fn key_up<H: WindowHandler>(this: &Object, _: Sel, event: id){
+    let state: &mut WindowState<H> = unsafe {
+        WindowState::from_field(this)
+    };
+
+    if let Some(key_event) = state.process_native_key_event(event){
+        state.trigger_event(Event::Keyboard(key_event));
+    }
+}
+
+
+extern "C" fn flags_changed<H: WindowHandler>(this: &Object, _: Sel, event: id){
     let state: &mut WindowState<H> = unsafe {
         WindowState::from_field(this)
     };
