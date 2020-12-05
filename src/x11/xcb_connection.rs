@@ -82,7 +82,7 @@ impl XcbConnection {
                         addr: std::ptr::null_mut(),
                     };
 
-                    let mut value_type: *mut libc::c_char = std::ptr::null_mut();
+                    let mut value_type: *mut std::os::raw::c_char = std::ptr::null_mut();
                     let name_c_str = CString::new("Xft.dpi").unwrap();
                     let c_str = CString::new("Xft.Dpi").unwrap();
 
