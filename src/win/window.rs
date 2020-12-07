@@ -136,9 +136,6 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
                 handle_timer(&window_state, wparam);
                 return 0;
             }
-            WM_PAINT => {
-                return 0;
-            }
             WM_CLOSE => {
                 window_state
                     .borrow_mut()
