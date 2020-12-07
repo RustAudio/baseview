@@ -5,7 +5,8 @@ use winapi::um::combaseapi::CoCreateGuid;
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA,
     GetMessageA, GetWindowLongPtrA, MessageBoxA, PostMessageA, RegisterClassA, SetTimer,
-    SetWindowLongPtrA, TranslateMessage, UnregisterClassA, CS_OWNDC, GWLP_USERDATA, MB_ICONERROR,
+    SetWindowLongPtrA, TranslateMessage, UnregisterClassA, LoadCursorW,
+    CS_OWNDC, GWLP_USERDATA, MB_ICONERROR, IDC_ARROW,
     MB_OK, MB_TOPMOST, MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_PAINT, WM_SHOWWINDOW, WM_TIMER,
     WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
     WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, WM_DPICHANGED, WM_CHAR, WM_SYSCHAR, WM_KEYDOWN,
@@ -179,7 +180,7 @@ unsafe fn register_wnd_class<H: WindowHandler>() -> ATOM {
         cbClsExtra: 0,
         cbWndExtra: 0,
         hIcon: null_mut(),
-        hCursor: null_mut(),
+        hCursor: LoadCursorW(null_mut(), IDC_ARROW),
         hbrBackground: null_mut(),
         lpszMenuName: null_mut(),
     };
