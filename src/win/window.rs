@@ -60,13 +60,6 @@ unsafe fn generate_guid() -> String {
 
 const WIN_FRAME_TIMER: usize = 4242;
 
-unsafe fn handle_timer<H: WindowHandler>(window_state: &RefCell<WindowState<H>>, timer_id: usize) {
-    match timer_id {
-        WIN_FRAME_TIMER => {}
-        _ => (),
-    }
-}
-
 unsafe extern "system" fn wnd_proc<H: WindowHandler>(
     hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM,
 ) -> LRESULT {
@@ -133,7 +126,12 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
                 }
             }
             WM_TIMER => {
-                handle_timer(&window_state, wparam);
+                match wparam {
+                    WIN_FRAME_TIMER => {
+                        window_state.borrow_mut().handler.on_frame();
+                    }
+                    _ => (),
+                }
                 return 0;
             }
             WM_CLOSE => {
@@ -320,7 +318,7 @@ impl Window {
             }));
 
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
-            SetTimer(hwnd, 4242, 13, None);
+            SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
 
             let window_handle = crate::WindowHandle(WindowHandle {
                 phantom_data: std::marker::PhantomData,
