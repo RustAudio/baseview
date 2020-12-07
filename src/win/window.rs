@@ -151,8 +151,6 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
             },
             WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP
             | WM_SYSKEYUP | WM_INPUTLANGCHANGE => {
-                // Will swallow menu key events. See druid code for how to
-                // solve that
                 let opt_event = window_state.borrow_mut()
                     .keyboard_state
                     .process_message(hwnd, msg, wparam, lparam);
@@ -163,7 +161,9 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
                         .on_event(&mut window, Event::Keyboard(event));
                 }
 
-                return 0;
+                if msg != WM_SYSKEYDOWN {
+                    return 0;
+                }
             }
             _ => {}
         }
