@@ -25,10 +25,10 @@ use super::window::{
 };
 
 
-pub(super) unsafe fn create_view<H: WindowHandler>(
+pub(super) unsafe fn create_view(
     window_options: &WindowOpenOptions,
 ) -> id {
-    let class = create_view_class::<H>();
+    let class = create_view_class();
 
     let view: id = msg_send![class, alloc];
 
@@ -43,7 +43,7 @@ pub(super) unsafe fn create_view<H: WindowHandler>(
 }
 
 
-unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
+unsafe fn create_view_class() -> &'static Class {
     // Use unique class names so that there are no conflicts between different
     // instances. The class is deleted when the view is released. Previously,
     // the class was stored in a OnceCell after creation. This way, we didn't
@@ -54,104 +54,104 @@ unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
 
     class.add_method(
         sel!(acceptsFirstResponder),
-        property_yes::<H> as extern "C" fn(&Object, Sel) -> BOOL
+        property_yes as extern "C" fn(&Object, Sel) -> BOOL
     );
     class.add_method(
         sel!(isFlipped),
-        property_yes::<H> as extern "C" fn(&Object, Sel) -> BOOL
+        property_yes as extern "C" fn(&Object, Sel) -> BOOL
     );
     class.add_method(
         sel!(preservesContentInLiveResize),
-        property_no::<H> as extern "C" fn(&Object, Sel) -> BOOL
+        property_no as extern "C" fn(&Object, Sel) -> BOOL
     );
     class.add_method(
         sel!(acceptsFirstMouse:),
-        accepts_first_mouse::<H> as extern "C" fn(&Object, Sel, id) -> BOOL
+        accepts_first_mouse as extern "C" fn(&Object, Sel, id) -> BOOL
     );
 
     class.add_method(
         sel!(triggerOnFrame:),
-        trigger_on_frame::<H> as extern "C" fn(&Object, Sel, id)
+        trigger_on_frame as extern "C" fn(&Object, Sel, id)
     );
 
     class.add_method(
         sel!(release),
-        release::<H> as extern "C" fn(&Object, Sel)
+        release as extern "C" fn(&Object, Sel)
     );
     class.add_method(
         sel!(viewWillMoveToWindow:),
-        view_will_move_to_window::<H> as extern "C" fn(&Object, Sel, id)
+        view_will_move_to_window as extern "C" fn(&Object, Sel, id)
     );
     class.add_method(
         sel!(updateTrackingAreas:),
-        update_tracking_areas::<H> as extern "C" fn(&Object, Sel, id)
+        update_tracking_areas as extern "C" fn(&Object, Sel, id)
     );
 
     class.add_method(
         sel!(mouseMoved:),
-        mouse_moved::<H> as extern "C" fn(&Object, Sel, id),
+        mouse_moved as extern "C" fn(&Object, Sel, id),
     );
     class.add_method(
         sel!(mouseDragged:),
-        mouse_moved::<H> as extern "C" fn(&Object, Sel, id),
+        mouse_moved as extern "C" fn(&Object, Sel, id),
     );
     class.add_method(
         sel!(rightMouseDragged:),
-        mouse_moved::<H> as extern "C" fn(&Object, Sel, id),
+        mouse_moved as extern "C" fn(&Object, Sel, id),
     );
     class.add_method(
         sel!(otherMouseDragged:),
-        mouse_moved::<H> as extern "C" fn(&Object, Sel, id),
+        mouse_moved as extern "C" fn(&Object, Sel, id),
     );
 
     class.add_method(
         sel!(mouseEntered:),
-        mouse_entered::<H> as extern "C" fn(&Object, Sel, id),
+        mouse_entered as extern "C" fn(&Object, Sel, id),
     );
 
     class.add_method(
         sel!(mouseExited:),
-        mouse_exited::<H> as extern "C" fn(&Object, Sel, id),
+        mouse_exited as extern "C" fn(&Object, Sel, id),
     );
 
     class.add_method(
         sel!(mouseDown:),
-        left_mouse_down::<H> as extern "C" fn(&Object, Sel, id),
+        left_mouse_down as extern "C" fn(&Object, Sel, id),
     );
     class.add_method(
         sel!(mouseUp:),
-        left_mouse_up::<H> as extern "C" fn(&Object, Sel, id),
+        left_mouse_up as extern "C" fn(&Object, Sel, id),
     );
 
     class.add_method(
         sel!(rightMouseDown:),
-        right_mouse_down::<H> as extern "C" fn(&Object, Sel, id),
+        right_mouse_down as extern "C" fn(&Object, Sel, id),
     );
     class.add_method(
         sel!(rightMouseUp:),
-        right_mouse_up::<H> as extern "C" fn(&Object, Sel, id),
+        right_mouse_up as extern "C" fn(&Object, Sel, id),
     );
 
     class.add_method(
         sel!(otherMouseDown:),
-        middle_mouse_down::<H> as extern "C" fn(&Object, Sel, id),
+        middle_mouse_down as extern "C" fn(&Object, Sel, id),
     );
     class.add_method(
         sel!(otherMouseUp:),
-        middle_mouse_up::<H> as extern "C" fn(&Object, Sel, id),
+        middle_mouse_up as extern "C" fn(&Object, Sel, id),
     );
 
     class.add_method(
         sel!(keyDown:),
-        key_down::<H> as extern "C" fn(&Object, Sel, id),
+        key_down as extern "C" fn(&Object, Sel, id),
     );
     class.add_method(
         sel!(keyUp:),
-        key_up::<H> as extern "C" fn(&Object, Sel, id),
+        key_up as extern "C" fn(&Object, Sel, id),
     );
     class.add_method(
         sel!(flagsChanged:),
-        flags_changed::<H> as extern "C" fn(&Object, Sel, id),
+        flags_changed as extern "C" fn(&Object, Sel, id),
     );
 
     class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
@@ -161,7 +161,7 @@ unsafe fn create_view_class<H: WindowHandler>() -> &'static Class {
 }
 
 
-extern "C" fn property_yes<H: WindowHandler>(
+extern "C" fn property_yes(
     _this: &Object,
     _sel: Sel,
 ) -> BOOL {
@@ -169,7 +169,7 @@ extern "C" fn property_yes<H: WindowHandler>(
 }
 
 
-extern "C" fn property_no<H: WindowHandler>(
+extern "C" fn property_no(
     _this: &Object,
     _sel: Sel,
 ) -> BOOL {
@@ -177,7 +177,7 @@ extern "C" fn property_no<H: WindowHandler>(
 }
 
 
-extern "C" fn accepts_first_mouse<H: WindowHandler>(
+extern "C" fn accepts_first_mouse(
     _this: &Object,
     _sel: Sel,
     _event: id
@@ -186,12 +186,12 @@ extern "C" fn accepts_first_mouse<H: WindowHandler>(
 }
 
 
-extern "C" fn trigger_on_frame<H: WindowHandler>(
+extern "C" fn trigger_on_frame(
     this: &Object,
     _sel: Sel,
     _event: id
 ){
-    let state: &mut WindowState<H> = unsafe {
+    let state: &mut WindowState = unsafe {
         WindowState::from_field(this)
     };
 
@@ -199,7 +199,7 @@ extern "C" fn trigger_on_frame<H: WindowHandler>(
 }
 
 
-extern "C" fn release<H: WindowHandler>(this: &Object, _sel: Sel) {
+extern "C" fn release(this: &Object, _sel: Sel) {
     unsafe {
         let superclass = msg_send![this, superclass];
 
@@ -220,7 +220,7 @@ extern "C" fn release<H: WindowHandler>(this: &Object, _sel: Sel) {
             let state_ptr: *mut c_void = *this.get_ivar(
                 WINDOW_STATE_IVAR_NAME
             );
-            Arc::from_raw(state_ptr as *mut WindowState<H>);
+            Arc::from_raw(state_ptr as *mut WindowState);
 
             // Delete class
             let class = msg_send![this, class];
@@ -261,7 +261,7 @@ unsafe fn reinit_tracking_area(this: &Object, tracking_area: *mut Object){
 }
 
 
-extern "C" fn view_will_move_to_window<H: WindowHandler>(
+extern "C" fn view_will_move_to_window(
     this: &Object,
     _self: Sel,
     new_window: id
@@ -305,7 +305,7 @@ extern "C" fn view_will_move_to_window<H: WindowHandler>(
 }
 
 
-extern "C" fn update_tracking_areas<H: WindowHandler>(
+extern "C" fn update_tracking_areas(
     this: &Object,
     _self: Sel,
     _: id
@@ -319,7 +319,7 @@ extern "C" fn update_tracking_areas<H: WindowHandler>(
 }
 
 
-extern "C" fn mouse_moved<H: WindowHandler>(
+extern "C" fn mouse_moved(
     this: &Object,
     _sel: Sel,
     event: id
@@ -337,7 +337,7 @@ extern "C" fn mouse_moved<H: WindowHandler>(
 
     let event = Event::Mouse(MouseEvent::CursorMoved { position });
 
-    let state: &mut WindowState<H> = unsafe {
+    let state: &mut WindowState = unsafe {
         WindowState::from_field(this)
     };
 
@@ -347,12 +347,12 @@ extern "C" fn mouse_moved<H: WindowHandler>(
 
 macro_rules! mouse_simple_extern_fn {
     ($fn:ident, $event:expr) => {
-        extern "C" fn $fn<H: WindowHandler>(
+        extern "C" fn $fn(
             this: &Object,
             _sel: Sel,
             _event: id,
         ){
-            let state: &mut WindowState<H> = unsafe {
+            let state: &mut WindowState = unsafe {
                 WindowState::from_field(this)
             };
 
@@ -375,8 +375,8 @@ mouse_simple_extern_fn!(mouse_entered, MouseEvent::CursorEntered);
 mouse_simple_extern_fn!(mouse_exited, MouseEvent::CursorLeft);
 
 
-extern "C" fn key_down<H: WindowHandler>(this: &Object, _: Sel, event: id){
-    let state: &mut WindowState<H> = unsafe {
+extern "C" fn key_down(this: &Object, _: Sel, event: id){
+    let state: &mut WindowState = unsafe {
         WindowState::from_field(this)
     };
 
@@ -386,8 +386,8 @@ extern "C" fn key_down<H: WindowHandler>(this: &Object, _: Sel, event: id){
 }
 
 
-extern "C" fn key_up<H: WindowHandler>(this: &Object, _: Sel, event: id){
-    let state: &mut WindowState<H> = unsafe {
+extern "C" fn key_up(this: &Object, _: Sel, event: id){
+    let state: &mut WindowState = unsafe {
         WindowState::from_field(this)
     };
 
@@ -397,8 +397,8 @@ extern "C" fn key_up<H: WindowHandler>(this: &Object, _: Sel, event: id){
 }
 
 
-extern "C" fn flags_changed<H: WindowHandler>(this: &Object, _: Sel, event: id){
-    let state: &mut WindowState<H> = unsafe {
+extern "C" fn flags_changed(this: &Object, _: Sel, event: id){
+    let state: &mut WindowState = unsafe {
         WindowState::from_field(this)
     };
 

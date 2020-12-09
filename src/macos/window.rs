@@ -71,7 +71,7 @@ impl Window {
                     let ns_view = handle.ns_view as *mut objc::runtime::Object;
 
                     unsafe {
-                        let subview = create_view::<H>(&options);
+                        let subview = create_view(&options);
 
                         let _: id = msg_send![ns_view, addSubview: subview];
 
@@ -88,7 +88,7 @@ impl Window {
             },
             Parent::AsIfParented => {
                 let ns_view = unsafe {
-                    create_view::<H>(&options)
+                    create_view(&options)
                 };
 
                 let window = Window {
@@ -147,7 +147,7 @@ impl Window {
 
                     ns_window.makeKeyAndOrderFront_(nil);
 
-                    let subview = create_view::<H>(&options);
+                    let subview = create_view(&options);
 
                     ns_window.setContentView_(subview);
 
@@ -161,7 +161,7 @@ impl Window {
             },
         };
 
-        let window_handler = build(&mut crate::Window(&mut window));
+        let window_handler = Box::new(build(&mut crate::Window(&mut window)));
 
         let window_state_arc = Arc::new(WindowState {
             window,
@@ -208,14 +208,14 @@ impl Window {
 }
 
 
-pub(super) struct WindowState<H: WindowHandler> {
+pub(super) struct WindowState {
     window: Window,
-    window_handler: H,
+    window_handler: Box<dyn WindowHandler>,
     keyboard_state: KeyboardState,
 }
 
 
-impl<H: WindowHandler> WindowState<H> {
+impl WindowState {
     /// Returns a mutable reference to a WindowState from an Objective-C field
     ///
     /// Don't use this to create two simulataneous references to a single
