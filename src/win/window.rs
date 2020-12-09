@@ -16,7 +16,7 @@ use winapi::um::winuser::{
 };
 
 use std::cell::RefCell;
-use std::ffi::c_void;
+use std::ffi::{CString, c_void};
 use std::ptr::null_mut;
 use std::rc::Rc;
 
@@ -250,7 +250,7 @@ impl Window {
               B: Send + 'static
     {
         unsafe {
-            let title = (options.title.to_owned() + "\0").as_ptr() as *const i8;
+            let mut title = CString::new(&options.title[..]).unwrap();
 
             let window_class = register_wnd_class::<H>();
             // todo: manage error ^
@@ -296,7 +296,7 @@ impl Window {
             let hwnd = CreateWindowExA(
                 0,
                 window_class as _,
-                title,
+                title.as_ptr(),
                 flags,
                 0,
                 0,
