@@ -1,21 +1,24 @@
 use std::time::Duration;
 
-use baseview::{Event, Window, WindowHandler, WindowScalePolicy};
+use rtrb::{RingBuffer, Consumer};
 
+use baseview::{Event, Window, WindowHandler, WindowScalePolicy};
 
 #[derive(Debug, Clone)]
 enum Message {
     Hello
 }
 
-
-struct OpenWindowExample;
-
+struct OpenWindowExample {
+    rx: Consumer<Message>,
+}
 
 impl WindowHandler for OpenWindowExample {
-    type Message = Message;
-
-    fn on_frame(&mut self) {}
+    fn on_frame(&mut self) {
+        while let Ok(message) = self.rx.pop() {
+            println!("Message: {:?}", message);
+        }
+    }
 
     fn on_event(&mut self, _window: &mut Window, event: Event) {
         match event {
@@ -24,12 +27,7 @@ impl WindowHandler for OpenWindowExample {
             Event::Window(e) => println!("Window event: {:?}", e),
         }
     }
-
-    fn on_message(&mut self, _window: &mut Window, message: Self::Message) {
-        println!("Message: {:?}", message);
-    }
 }
-
 
 fn main() {
     let window_open_options = baseview::WindowOpenOptions {
@@ -39,16 +37,18 @@ fn main() {
         parent: baseview::Parent::None,
     };
 
-    let (mut handle, opt_app_runner) = Window::open(
+    let (mut tx, rx) = RingBuffer::new(128).split();
+
+    let (_handle, opt_app_runner) = Window::open(
         window_open_options,
-        |_| OpenWindowExample
+        |_| OpenWindowExample { rx }
     );
 
     ::std::thread::spawn(move || {
         loop {
             ::std::thread::sleep(Duration::from_secs(5));
 
-            if let Err(_) = handle.try_send_message(Message::Hello){
+            if let Err(_) = tx.push(Message::Hello) {
                 println!("Failed sending message");
             }
         }

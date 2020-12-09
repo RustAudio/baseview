@@ -195,7 +195,6 @@ extern "C" fn trigger_on_frame<H: WindowHandler>(
         WindowState::from_field(this)
     };
 
-    state.handle_messages();
     state.trigger_frame();
 }
 

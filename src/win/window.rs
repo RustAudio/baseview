@@ -195,19 +195,7 @@ pub struct Window {
     hwnd: HWND,
 }
 
-pub struct WindowHandle<H: WindowHandler> {
-    // FIXME: replace this with channel sender
-    phantom_data: std::marker::PhantomData<H::Message>,
-}
-
-impl <H: WindowHandler>WindowHandle<H> {
-    pub fn try_send_message(
-        &mut self,
-        message: H::Message
-    ) -> Result<(), H::Message> {
-        Err(message)
-    }
-}
+pub struct WindowHandle;
 
 pub struct AppRunner {
     hwnd: HWND,
@@ -236,7 +224,7 @@ impl Window {
     pub fn open<H, B>(
         options: WindowOpenOptions,
         build: B
-    ) -> (crate::WindowHandle<H>, Option<crate::AppRunner>)
+    ) -> (crate::WindowHandle, Option<crate::AppRunner>)
         where H: WindowHandler,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
@@ -313,9 +301,7 @@ impl Window {
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
             SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
 
-            let window_handle = crate::WindowHandle(WindowHandle {
-                phantom_data: std::marker::PhantomData,
-            });
+            let window_handle = crate::WindowHandle(WindowHandle);
 
             let opt_app_runner = if let crate::Parent::None = options.parent {
                 Some(crate::AppRunner(AppRunner { hwnd }))

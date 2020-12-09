@@ -12,11 +12,10 @@ use keyboard_types::KeyboardEvent;
 use objc::{msg_send, runtime::Object, sel, sel_impl};
 
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
-use rtrb::{RingBuffer, Producer, Consumer, PushError};
 
 use crate::{
     Event, Parent, WindowHandler, WindowOpenOptions,
-    WindowScalePolicy, WindowInfo, MESSAGE_QUEUE_LEN
+    WindowScalePolicy, WindowInfo
 };
 
 use super::view::create_view;
@@ -41,7 +40,6 @@ pub struct Window {
 
 pub struct AppRunner;
 
-
 impl AppRunner {
     pub fn app_run_blocking(self) {
         unsafe {
@@ -53,27 +51,14 @@ impl AppRunner {
 }
 
 
-pub struct WindowHandle<H: WindowHandler> {
-    message_tx: Producer<H::Message>,
-}
-
-
-impl <H: WindowHandler>WindowHandle<H> {
-    pub fn try_send_message(
-        &mut self,
-        message: H::Message
-    ) -> Result<(), H::Message> {
-        self.message_tx.push(message)
-            .map_err(|PushError::Full(message)| message)
-    }
-}
+pub struct WindowHandle;
 
 
 impl Window {
     pub fn open<H, B>(
         options: WindowOpenOptions,
         build: B
-    ) -> (crate::WindowHandle<H>, Option<crate::AppRunner>)
+    ) -> (crate::WindowHandle, Option<crate::AppRunner>)
         where H: WindowHandler,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
@@ -178,14 +163,10 @@ impl Window {
 
         let window_handler = build(&mut crate::Window(&mut window));
 
-        let (message_tx, message_rx) = RingBuffer::new(MESSAGE_QUEUE_LEN)
-            .split();
-
         let window_state_arc = Arc::new(WindowState {
             window,
             window_handler,
             keyboard_state: KeyboardState::new(),
-            message_rx
         });
 
         let window_state_pointer = Arc::into_raw(
@@ -220,9 +201,7 @@ impl Window {
             )
         }
 
-        let window_handle = crate::WindowHandle(WindowHandle {
-            message_tx
-        });
+        let window_handle = crate::WindowHandle(WindowHandle);
 
         (window_handle, opt_app_runner)
     }
@@ -233,11 +212,10 @@ pub(super) struct WindowState<H: WindowHandler> {
     window: Window,
     window_handler: H,
     keyboard_state: KeyboardState,
-    message_rx: Consumer<H::Message>,
 }
 
 
-impl <H: WindowHandler>WindowState<H> {
+impl<H: WindowHandler> WindowState<H> {
     /// Returns a mutable reference to a WindowState from an Objective-C field
     ///
     /// Don't use this to create two simulataneous references to a single
@@ -247,15 +225,6 @@ impl <H: WindowHandler>WindowState<H> {
         let state_ptr: *mut c_void = *obj.get_ivar(WINDOW_STATE_IVAR_NAME);
 
         &mut *(state_ptr as *mut Self)
-    }
-
-    pub(super) fn handle_messages(&mut self){
-        while let Ok(message) = self.message_rx.pop(){
-            self.window_handler.on_message(
-                &mut crate::Window(&mut self.window),
-                message
-            )
-        }
     }
 
     pub(super) fn trigger_event(&mut self, event: Event){
