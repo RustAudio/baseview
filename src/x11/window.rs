@@ -49,7 +49,7 @@ impl Window {
     pub fn open<H, B>(
         options: WindowOpenOptions,
         build: B
-    ) -> (crate::WindowHandle, Option<crate::AppRunner>)
+    ) -> Option<crate::AppRunner>
         where H: WindowHandler,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
@@ -67,15 +67,11 @@ impl Window {
         // FIXME: placeholder types for returning errors in the future
         let _ = rx.recv();
 
-        let window_handle = crate::WindowHandle(WindowHandle);
-
-        let opt_app_runner = if is_not_parented {
+        if is_not_parented {
             Some(crate::AppRunner(AppRunner { thread }))
         } else {
             None
-        };
-
-        (window_handle, opt_app_runner)
+        }
     }
 
     fn window_thread<H, B>(

@@ -39,7 +39,7 @@ fn main() {
 
     let (mut tx, rx) = RingBuffer::new(128).split();
 
-    let (_handle, opt_app_runner) = Window::open(
+    let opt_app_runner = Window::open(
         window_open_options,
         |_| OpenWindowExample { rx }
     );
