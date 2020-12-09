@@ -53,7 +53,7 @@ unsafe fn generate_guid() -> String {
 
 const WIN_FRAME_TIMER: usize = 4242;
 
-unsafe extern "system" fn wnd_proc<H: WindowHandler>(
+unsafe extern "system" fn wnd_proc(
     hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM,
 ) -> LRESULT {
     if msg == WM_CREATE {
@@ -63,7 +63,7 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
 
     let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
     if !win_ptr.is_null() {
-        let window_state = &*(win_ptr as *const RefCell<WindowState<H>>);
+        let window_state = &*(win_ptr as *const RefCell<WindowState>);
         let mut window = Window { hwnd };
         let mut window = crate::Window(&mut window);
 
@@ -160,13 +160,13 @@ unsafe extern "system" fn wnd_proc<H: WindowHandler>(
     return DefWindowProcA(hwnd, msg, wparam, lparam);
 }
 
-unsafe fn register_wnd_class<H: WindowHandler>() -> ATOM {
+unsafe fn register_wnd_class() -> ATOM {
     // We generate a unique name for the new window class to prevent name collisions
     let class_name = format!("Baseview-{}", generate_guid()).as_ptr() as *const i8;
 
     let wnd_class = WNDCLASSA {
         style: CS_OWNDC,
-        lpfnWndProc: Some(wnd_proc::<H>),
+        lpfnWndProc: Some(wnd_proc),
         hInstance: null_mut(),
         lpszClassName: class_name,
         cbClsExtra: 0,
@@ -184,11 +184,11 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
     UnregisterClassA(wnd_class as _, null_mut());
 }
 
-struct WindowState<H> {
+struct WindowState {
     window_class: ATOM,
     window_info: WindowInfo,
     keyboard_state: KeyboardState,
-    handler: H,
+    handler: Box<dyn WindowHandler>,
 }
 
 pub struct Window {
@@ -225,14 +225,14 @@ impl Window {
         options: WindowOpenOptions,
         build: B
     ) -> (crate::WindowHandle, Option<crate::AppRunner>)
-        where H: WindowHandler,
+        where H: WindowHandler + 'static,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
     {
         unsafe {
             let mut title = CString::new(&options.title[..]).unwrap();
 
-            let window_class = register_wnd_class::<H>();
+            let window_class = register_wnd_class();
             // todo: manage error ^
 
             let mut flags = WS_POPUPWINDOW
@@ -289,7 +289,7 @@ impl Window {
             );
             // todo: manage error ^
 
-            let handler = build(&mut crate::Window(&mut Window { hwnd }));
+            let handler = Box::new(build(&mut crate::Window(&mut Window { hwnd })));
 
             let window_state = Box::new(RefCell::new(WindowState {
                 window_class,
