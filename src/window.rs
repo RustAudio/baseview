@@ -27,7 +27,7 @@ impl<'a> Window<'a> {
         options: WindowOpenOptions,
         build: B
     ) -> (WindowHandle, Option<AppRunner>)
-        where H: WindowHandler,
+        where H: WindowHandler + 'static,
               B: FnOnce(&mut Window) -> H,
               B: Send + 'static
     {
