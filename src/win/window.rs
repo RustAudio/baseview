@@ -3,11 +3,11 @@ use winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM};
 use winapi::shared::windef::{HWND, RECT};
 use winapi::um::combaseapi::CoCreateGuid;
 use winapi::um::winuser::{
-    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DestroyWindow, DispatchMessageA,
-    GetMessageA, GetWindowLongPtrA, MessageBoxA, PostMessageA, RegisterClassA, SetTimer,
+    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DispatchMessageA,
+    GetMessageA, GetWindowLongPtrA, PostMessageA, RegisterClassA, SetTimer,
     SetWindowLongPtrA, TranslateMessage, UnregisterClassA, LoadCursorW,
-    CS_OWNDC, GWLP_USERDATA, MB_ICONERROR, IDC_ARROW,
-    MB_OK, MB_TOPMOST, MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_PAINT, WM_SHOWWINDOW, WM_TIMER,
+    CS_OWNDC, GWLP_USERDATA, IDC_ARROW,
+    MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_SHOWWINDOW, WM_TIMER,
     WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
     WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, WM_DPICHANGED, WM_CHAR, WM_SYSCHAR, WM_KEYDOWN,
     WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP, WM_INPUTLANGCHANGE,
@@ -18,7 +18,6 @@ use winapi::um::winuser::{
 use std::cell::RefCell;
 use std::ffi::{CString, c_void};
 use std::ptr::null_mut;
-use std::rc::Rc;
 
 use raw_window_handle::{
     windows::WindowsHandle,
@@ -27,18 +26,11 @@ use raw_window_handle::{
 };
 
 use crate::{
-    Event, MouseButton, MouseEvent, Parent::WithParent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, Size, Point, PhySize, PhyPoint,
+    Event, MouseButton, MouseEvent, Parent::WithParent, WindowEvent,
+    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, PhyPoint,
 };
 
 use super::keyboard::KeyboardState;
-
-
-unsafe fn message_box(title: &str, msg: &str) {
-    let title = (title.to_owned() + "\0").as_ptr() as *const i8;
-    let msg = (msg.to_owned() + "\0").as_ptr() as *const i8;
-    MessageBoxA(null_mut(), msg, title, MB_ICONERROR | MB_OK | MB_TOPMOST);
-}
 
 unsafe fn generate_guid() -> String {
     let mut guid: GUID = std::mem::zeroed();
