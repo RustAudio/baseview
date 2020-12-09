@@ -14,10 +14,7 @@ use objc::{
 };
 use uuid::Uuid;
 
-use crate::{
-    Event, MouseButton, MouseEvent, Point, WindowHandler,
-    WindowOpenOptions
-};
+use crate::{Event, MouseButton, MouseEvent, Point, WindowOpenOptions};
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
 use super::window::{

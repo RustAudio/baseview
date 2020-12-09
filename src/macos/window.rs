@@ -59,7 +59,7 @@ impl Window {
         options: WindowOpenOptions,
         build: B
     ) -> (crate::WindowHandle, Option<crate::AppRunner>)
-        where H: WindowHandler,
+        where H: WindowHandler + 'static,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
     {

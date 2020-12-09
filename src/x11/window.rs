@@ -223,7 +223,7 @@ impl Window {
     }
 
     #[inline]
-    fn drain_xcb_events<H: WindowHandler>(&mut self, handler: &mut H) {
+    fn drain_xcb_events(&mut self, handler: &mut dyn WindowHandler) {
         // the X server has a tendency to send spurious/extraneous configure notify events when a
         // window is resized, and we need to batch those together and just send one resize event
         // when they've all been coalesced.
@@ -252,7 +252,7 @@ impl Window {
     // FIXME: poll() acts fine on linux, sometimes funky on *BSD. XCB upstream uses a define to
     // switch between poll() and select() (the latter of which is fine on *BSD), and we should do
     // the same.
-    fn run_event_loop<H: WindowHandler>(&mut self, handler: &mut H) {
+    fn run_event_loop(&mut self, handler: &mut dyn WindowHandler) {
         use nix::poll::*;
 
         let xcb_fd = unsafe {
@@ -291,7 +291,7 @@ impl Window {
         }
     }
 
-    fn handle_xcb_event<H: WindowHandler>(&mut self, handler: &mut H, event: xcb::GenericEvent) {
+    fn handle_xcb_event(&mut self, handler: &mut dyn WindowHandler, event: xcb::GenericEvent) {
         let event_type = event.response_type() & !0x80;
 
         // For all of the keyboard and mouse events, you can fetch
