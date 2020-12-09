@@ -195,8 +195,6 @@ pub struct Window {
     hwnd: HWND,
 }
 
-pub struct WindowHandle;
-
 pub struct AppRunner {
     hwnd: HWND,
 }
@@ -224,7 +222,7 @@ impl Window {
     pub fn open<H, B>(
         options: WindowOpenOptions,
         build: B
-    ) -> (crate::WindowHandle, Option<crate::AppRunner>)
+    ) -> Option<crate::AppRunner>
         where H: WindowHandler + 'static,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
@@ -301,15 +299,11 @@ impl Window {
             SetWindowLongPtrA(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
             SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
 
-            let window_handle = crate::WindowHandle(WindowHandle);
-
-            let opt_app_runner = if let crate::Parent::None = options.parent {
+            if let crate::Parent::None = options.parent {
                 Some(crate::AppRunner(AppRunner { hwnd }))
             } else {
                 None
-            };
-
-            (window_handle, opt_app_runner)
+            }
         }
     }
 }

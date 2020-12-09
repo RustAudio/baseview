@@ -29,15 +29,6 @@ pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
 pub(super) const FRAME_TIMER_IVAR_NAME: &str = "FRAME_TIMER";
 
 
-pub struct Window {
-    /// Only set if we created the parent window, i.e. we are running in
-    /// parentless mode
-    ns_window: Option<id>,
-    /// Our subclassed NSView
-    ns_view: id,
-}
-
-
 pub struct AppRunner;
 
 impl AppRunner {
@@ -51,14 +42,19 @@ impl AppRunner {
 }
 
 
-pub struct WindowHandle;
-
+pub struct Window {
+    /// Only set if we created the parent window, i.e. we are running in
+    /// parentless mode
+    ns_window: Option<id>,
+    /// Our subclassed NSView
+    ns_view: id,
+}
 
 impl Window {
     pub fn open<H, B>(
         options: WindowOpenOptions,
         build: B
-    ) -> (crate::WindowHandle, Option<crate::AppRunner>)
+    ) -> Option<crate::AppRunner>
         where H: WindowHandler + 'static,
               B: FnOnce(&mut crate::Window) -> H,
               B: Send + 'static
@@ -201,9 +197,7 @@ impl Window {
             )
         }
 
-        let window_handle = crate::WindowHandle(WindowHandle);
-
-        (window_handle, opt_app_runner)
+        opt_app_runner
     }
 }
 
