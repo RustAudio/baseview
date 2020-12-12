@@ -64,7 +64,7 @@ impl Window {
             }
         };
 
-        let window_handler = Box::new(build(&mut crate::Window(&mut window)));
+        let window_handler = Box::new(build(&mut crate::Window::new(&mut window)));
 
         let retain_count_after_build: usize = unsafe {
             msg_send![window.ns_view, retainCount]
@@ -190,7 +190,7 @@ impl WindowState {
 
     pub(super) fn trigger_event(&mut self, event: Event){
         self.window_handler.on_event(
-            &mut crate::Window(&mut self.window),
+            &mut crate::Window::new(&mut self.window),
             event
         );
     }

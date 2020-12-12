@@ -67,7 +67,7 @@ unsafe extern "system" fn wnd_proc(
     let window_state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RefCell<WindowState>;
     if !window_state_ptr.is_null() {
         let mut window = Window { hwnd };
-        let mut window = crate::Window(&mut window);
+        let mut window = crate::Window::new(&mut window);
 
         match msg {
             WM_MOUSEMOVE => {
@@ -320,7 +320,7 @@ impl Window {
             );
             // todo: manage error ^
 
-            let handler = Box::new(build(&mut crate::Window(&mut Window { hwnd })));
+            let handler = Box::new(build(&mut crate::Window::new(&mut Window { hwnd })));
 
             let window_state = Box::new(RefCell::new(WindowState {
                 window_class,
