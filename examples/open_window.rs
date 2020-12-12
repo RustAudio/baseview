@@ -34,15 +34,9 @@ fn main() {
         title: "baseview".into(),
         size: baseview::Size::new(512.0, 512.0),
         scale: WindowScalePolicy::SystemScaleFactor,
-        parent: baseview::Parent::None,
     };
 
     let (mut tx, rx) = RingBuffer::new(128).split();
-
-    let opt_app_runner = Window::open(
-        window_open_options,
-        |_| OpenWindowExample { rx }
-    );
 
     ::std::thread::spawn(move || {
         loop {
@@ -54,5 +48,8 @@ fn main() {
         }
     });
 
-    opt_app_runner.unwrap().app_run_blocking();
+    Window::open_blocking(
+        window_open_options,
+        |_| OpenWindowExample { rx }
+    );
 }

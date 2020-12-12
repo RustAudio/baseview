@@ -1,4 +1,4 @@
-use crate::{Parent, Size};
+use crate::Size;
 
 /// The dpi scaling policy of the window
 #[derive(Debug)]
@@ -10,7 +10,6 @@ pub enum WindowScalePolicy {
 }
 
 /// The options for opening a new window
-#[derive(Debug)]
 pub struct WindowOpenOptions {
     pub title: String,
 
@@ -22,6 +21,4 @@ pub struct WindowOpenOptions {
 
     /// The dpi scaling policy
     pub scale: WindowScalePolicy,
-
-    pub parent: Parent,
 }

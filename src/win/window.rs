@@ -29,7 +29,7 @@ use raw_window_handle::{
 };
 
 use crate::{
-    Event, MouseButton, MouseEvent, Parent::WithParent, WindowEvent,
+    Event, MouseButton, MouseEvent, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, PhyPoint,
 };
 
@@ -225,17 +225,49 @@ pub struct Window {
     hwnd: HWND,
 }
 
-pub struct AppRunner {
-    hwnd: HWND,
-}
+impl Window {
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B)
+    where
+        P: HasRawWindowHandle,
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut crate::Window) -> H,
+        B: Send + 'static,
+    {
+        let parent = match parent.raw_window_handle() {
+            RawWindowHandle::Windows(h) => h.hwnd as HWND,
+            h => panic!("unsupported parent handle {:?}", h),
+        };
 
-impl AppRunner {
-    pub fn app_run_blocking(self) {
+        Self::open(true, parent, options, build);
+    }
+
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> RawWindowHandle
+    where
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut crate::Window) -> H,
+        B: Send + 'static,
+    {
+        let hwnd = Self::open(true, null_mut(), options, build);
+
+        RawWindowHandle::Windows(WindowsHandle {
+            hwnd: hwnd as *mut std::ffi::c_void,
+            ..WindowsHandle::empty()
+        })
+    }
+
+    pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
+    where
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut crate::Window) -> H,
+        B: Send + 'static,
+    {
+        let hwnd = Self::open(false, null_mut(), options, build);
+
         unsafe {
             let mut msg: MSG = std::mem::zeroed();
 
             loop {
-                let status = GetMessageW(&mut msg, self.hwnd, 0, 0);
+                let status = GetMessageW(&mut msg, hwnd, 0, 0);
 
                 if status == -1 {
                     break;
@@ -246,16 +278,16 @@ impl AppRunner {
             }
         }
     }
-}
 
-impl Window {
-    pub fn open<H, B>(
+    fn open<H, B>(
+        parented: bool,
+        parent: HWND,
         options: WindowOpenOptions,
         build: B
-    ) -> Option<crate::AppRunner>
-        where H: WindowHandler + 'static,
-              B: FnOnce(&mut crate::Window) -> H,
-              B: Send + 'static
+    ) -> HWND
+    where H: WindowHandler + 'static,
+          B: FnOnce(&mut crate::Window) -> H,
+          B: Send + 'static,
     {
         unsafe {
             let mut title: Vec<u16> = OsStr::new(&options.title[..])
@@ -265,14 +297,6 @@ impl Window {
 
             let window_class = register_wnd_class();
             // todo: manage error ^
-
-            let mut flags = WS_POPUPWINDOW
-                | WS_CAPTION
-                | WS_VISIBLE
-                | WS_SIZEBOX
-                | WS_MINIMIZEBOX
-                | WS_MAXIMIZEBOX
-                | WS_CLIPSIBLINGS;
             
             let scaling = match options.scale {
                 WindowScalePolicy::SystemScaleFactor => get_scaling().unwrap_or(1.0),
@@ -289,20 +313,21 @@ impl Window {
                 bottom: window_info.physical_size().height as i32,
             };
 
-            // todo: add check flags https://github.com/wrl/rutabaga/blob/f30ff67e157375cafdbafe5fb549f1790443a3a8/src/platform/win/window.c#L351
-            let parent = match options.parent {
-                WithParent(RawWindowHandle::Windows(h)) => {
-                    flags = WS_CHILD | WS_VISIBLE;
-                    h.hwnd
-                }
-
-                WithParent(h) => panic!("unsupported parent handle {:?}", h),
-
-                _ => {
-                    AdjustWindowRectEx(&mut rect, flags, FALSE, 0);
-                    null_mut()
-                }
+            let flags = if parented {
+                WS_CHILD | WS_VISIBLE
+            } else {
+                WS_POPUPWINDOW
+                    | WS_CAPTION
+                    | WS_VISIBLE
+                    | WS_SIZEBOX
+                    | WS_MINIMIZEBOX
+                    | WS_MAXIMIZEBOX
+                    | WS_CLIPSIBLINGS
             };
+
+            if !parented {
+                AdjustWindowRectEx(&mut rect, flags, FALSE, 0);
+            }
 
             let hwnd = CreateWindowExW(
                 0,
@@ -333,11 +358,7 @@ impl Window {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
             SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
 
-            if let crate::Parent::None = options.parent {
-                Some(crate::AppRunner(AppRunner { hwnd }))
-            } else {
-                None
-            }
+            hwnd
         }
     }
 }
