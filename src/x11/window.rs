@@ -11,7 +11,7 @@ use raw_window_handle::{
 
 use super::XcbConnection;
 use crate::{
-    Event, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta,
+    Event, MouseButton, MouseCursor, MouseEvent, ScrollDelta,
     WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
     WindowScalePolicy, PhyPoint, PhySize,
 };
@@ -30,57 +30,77 @@ pub struct Window {
     new_physical_size: Option<PhySize>,
 }
 
-pub struct WindowHandle;
+// Hack to allow sending a RawWindowHandle between threads. Do not make public
+struct SendableRwh(RawWindowHandle);
 
+unsafe impl Send for SendableRwh {}
 
-pub struct AppRunner {
-    thread: std::thread::JoinHandle<()>,
-}
-
-impl AppRunner {
-    pub fn app_run_blocking(self) {
-        let _ = self.thread.join();
-    }
-}
-
-type WindowOpenResult = Result<(), ()>;
+type WindowOpenResult = Result<SendableRwh, ()>;
 
 impl Window {
-    pub fn open<H, B>(
-        options: WindowOpenOptions,
-        build: B
-    ) -> Option<crate::AppRunner>
-        where H: WindowHandler,
-              B: FnOnce(&mut crate::Window) -> H,
-              B: Send + 'static
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B)
+    where
+        P: HasRawWindowHandle,
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut crate::Window) -> H,
+        B: Send + 'static,
     {
-        let is_not_parented = matches!(options.parent, Parent::None);
+        // Convert parent into something that X understands
+        let parent_id = match parent.raw_window_handle() {
+            RawWindowHandle::Xlib(h) => h.window as u32,
+            RawWindowHandle::Xcb(h) => h.window,
+            h => panic!("unsupported parent handle type {:?}", h),
+        };
 
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
         let thread = thread::spawn(move || {
-            if let Err(e) = Self::window_thread::<H, B>(options, build, tx.clone()) {
-                let _ = tx.send(Err(e));
-            }
+            Self::window_thread(Some(parent_id), options, build, tx.clone());
         });
 
-        // FIXME: placeholder types for returning errors in the future
-        let _ = rx.recv();
+        let _ = rx.recv().unwrap().unwrap();
+    }
 
-        if is_not_parented {
-            Some(crate::AppRunner(AppRunner { thread }))
-        } else {
-            None
-        }
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> RawWindowHandle
+    where
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut crate::Window) -> H,
+        B: Send + 'static,
+    {
+        let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
+
+        let thread = thread::spawn(move || {
+            Self::window_thread(None, options, build, tx.clone());
+        });
+
+        rx.recv().unwrap().unwrap().0
+    }
+
+    pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
+    where
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut crate::Window) -> H,
+        B: Send + 'static,
+    {
+        let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
+
+        let thread = thread::spawn(move || {
+            Self::window_thread(None, options, build, tx.clone());
+        });
+
+        let _ = rx.recv().unwrap().unwrap();
+
+        thread.join();
     }
 
     fn window_thread<H, B>(
+        parent: Option<u32>,
         options: WindowOpenOptions, build: B,
         tx: mpsc::SyncSender<WindowOpenResult>,
-    ) -> WindowOpenResult
-        where H: WindowHandler,
-              B: FnOnce(&mut crate::Window) -> H,
-              B: Send + 'static
+    )
+    where H: WindowHandler + 'static,
+          B: FnOnce(&mut crate::Window) -> H,
+          B: Send + 'static,
     {
         // Connect to the X server
         // FIXME: baseview error type instead of unwrap()
@@ -95,15 +115,7 @@ impl Window {
 
         let foreground = xcb_connection.conn.generate_id();
 
-        // Convert parent into something that X understands
-        let parent_id = match options.parent {
-            Parent::WithParent(RawWindowHandle::Xlib(h)) => h.window as u32,
-            Parent::WithParent(RawWindowHandle::Xcb(h)) => h.window,
-            Parent::WithParent(h) =>
-                panic!("unsupported parent handle type {:?}", h),
-
-            Parent::None | Parent::AsIfParented => screen.root(),
-        };
+        let parent_id = parent.unwrap_or_else(|| screen.root());
 
         xcb::create_gc(
             &xcb_connection.conn,
@@ -188,10 +200,9 @@ impl Window {
 
         let mut handler = build(&mut crate::Window::new(&mut window));
 
-        let _ = tx.send(Ok(()));
+        let _ = tx.send(Ok(SendableRwh(window.raw_window_handle())));
 
         window.run_event_loop(&mut handler);
-        Ok(())
     }
 
     pub fn window_info(&self) -> &WindowInfo {

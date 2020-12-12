@@ -2,22 +2,19 @@ use std::marker::PhantomData;
 
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 
-use crate::WindowHandler;
+use crate::event::Event;
 use crate::window_open_options::WindowOpenOptions;
 
+#[cfg(target_os = "macos")]
+use crate::macos as platform;
 #[cfg(target_os = "windows")]
 use crate::win as platform;
 #[cfg(target_os = "linux")]
 use crate::x11 as platform;
-#[cfg(target_os = "macos")]
-use crate::macos as platform;
 
-pub struct AppRunner(pub(crate) platform::AppRunner);
-
-impl AppRunner {
-    pub fn app_run_blocking(self){
-        self.0.app_run_blocking();
-    }
+pub trait WindowHandler {
+    fn on_frame(&mut self);
+    fn on_event(&mut self, window: &mut Window, event: Event);
 }
 
 pub struct Window<'a> {
@@ -34,15 +31,32 @@ impl<'a> Window<'a> {
         }
     }
 
-    pub fn open<H, B>(
-        options: WindowOpenOptions,
-        build: B
-    ) -> Option<AppRunner>
-        where H: WindowHandler + 'static,
-              B: FnOnce(&mut Window) -> H,
-              B: Send + 'static
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B)
+    where
+        P: HasRawWindowHandle,
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut Window) -> H,
+        B: Send + 'static,
     {
-        platform::Window::open::<H, B>(options, build)
+        platform::Window::open_parented::<P, H, B>(parent, options, build)
+    }
+
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> RawWindowHandle
+    where
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut Window) -> H,
+        B: Send + 'static,
+    {
+        platform::Window::open_as_if_parented::<H, B>(options, build)
+    }
+
+    pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
+    where
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut Window) -> H,
+        B: Send + 'static,
+    {
+        platform::Window::open_blocking::<H, B>(options, build)
     }
 }
 
