@@ -186,7 +186,7 @@ impl Window {
             new_physical_size: None,
         };
 
-        let mut handler = build(&mut crate::Window(&mut window));
+        let mut handler = build(&mut crate::Window::new(&mut window));
 
         let _ = tx.send(Ok(()));
 
@@ -238,7 +238,7 @@ impl Window {
             let window_info = self.window_info;
 
             handler.on_event(
-                &mut crate::Window(self),
+                &mut crate::Window::new(self),
                 Event::Window(WindowEvent::Resized(window_info))
             )
         }
@@ -326,7 +326,7 @@ impl Window {
 
                 if wm_delete_window == data32[0] {
                     handler.on_event(
-                        &mut crate::Window(self),
+                        &mut crate::Window::new(self),
                         Event::Window(WindowEvent::WillClose)
                     );
 
@@ -357,7 +357,7 @@ impl Window {
                     let logical_pos = physical_pos.to_logical(&self.window_info);
 
                     handler.on_event(
-                        &mut crate::Window(self),
+                        &mut crate::Window::new(self),
                         Event::Mouse(MouseEvent::CursorMoved {
                             position: logical_pos,
                         }),
@@ -372,7 +372,7 @@ impl Window {
                 match detail {
                     4 => {
                         handler.on_event(
-                            &mut crate::Window(self),
+                            &mut crate::Window::new(self),
                             Event::Mouse(MouseEvent::WheelScrolled(ScrollDelta::Lines {
                                 x: 0.0,
                                 y: 1.0,
@@ -381,7 +381,7 @@ impl Window {
                     }
                     5 => {
                         handler.on_event(
-                            &mut crate::Window(self),
+                            &mut crate::Window::new(self),
                             Event::Mouse(MouseEvent::WheelScrolled(ScrollDelta::Lines {
                                 x: 0.0,
                                 y: -1.0,
@@ -391,7 +391,7 @@ impl Window {
                     detail => {
                         let button_id = mouse_id(detail);
                         handler.on_event(
-                            &mut crate::Window(self),
+                            &mut crate::Window::new(self),
                             Event::Mouse(MouseEvent::ButtonPressed(button_id))
                         );
                     }
@@ -405,7 +405,7 @@ impl Window {
                 if detail != 4 && detail != 5 {
                     let button_id = mouse_id(detail);
                     handler.on_event(
-                        &mut crate::Window(self),
+                        &mut crate::Window::new(self),
                         Event::Mouse(MouseEvent::ButtonReleased(button_id))
                     );
                 }
@@ -418,7 +418,7 @@ impl Window {
                 let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
 
                 handler.on_event(
-                    &mut crate::Window(self),
+                    &mut crate::Window::new(self),
                     Event::Keyboard(convert_key_press_event(&event))
                 );
             }
@@ -427,7 +427,7 @@ impl Window {
                 let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
 
                 handler.on_event(
-                    &mut crate::Window(self),
+                    &mut crate::Window::new(self),
                     Event::Keyboard(convert_key_release_event(&event))
                 );
             }

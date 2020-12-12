@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 
 use crate::WindowHandler;
@@ -18,9 +20,20 @@ impl AppRunner {
     }
 }
 
-pub struct Window<'a>(pub(crate) &'a mut platform::Window);
+pub struct Window<'a> {
+    window: &'a mut platform::Window,
+    // so that Window is !Send on all platforms
+    phantom: PhantomData<*mut ()>,
+}
 
 impl<'a> Window<'a> {
+    pub(crate) fn new(window: &mut platform::Window) -> Window {
+        Window {
+            window,
+            phantom: PhantomData,
+        }
+    }
+
     pub fn open<H, B>(
         options: WindowOpenOptions,
         build: B
@@ -35,6 +48,6 @@ impl<'a> Window<'a> {
 
 unsafe impl<'a> HasRawWindowHandle for Window<'a> {
     fn raw_window_handle(&self) -> RawWindowHandle {
-        self.0.raw_window_handle()
+        self.window.raw_window_handle()
     }
 }
