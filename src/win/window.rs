@@ -3,12 +3,12 @@ use winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM};
 use winapi::shared::windef::{HWND, RECT};
 use winapi::um::combaseapi::CoCreateGuid;
 use winapi::um::winuser::{
-    AdjustWindowRectEx, CreateWindowExA, DefWindowProcA, DispatchMessageA,
-    GetMessageA, GetWindowLongPtrA, PostMessageA, RegisterClassA, SetTimer,
-    SetWindowLongPtrA, TranslateMessage, UnregisterClassA, LoadCursorW,
+    AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DispatchMessageW,
+    GetMessageW, GetWindowLongPtrW, PostMessageW, RegisterClassW, SetTimer,
+    SetWindowLongPtrW, TranslateMessage, UnregisterClassW, LoadCursorW,
     CS_OWNDC, GWLP_USERDATA, IDC_ARROW,
     MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_SHOWWINDOW, WM_TIMER,
-    WNDCLASSA, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
+    WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
     WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, WM_DPICHANGED, WM_CHAR, WM_SYSCHAR, WM_KEYDOWN,
     WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP, WM_INPUTLANGCHANGE,
     GET_XBUTTON_WPARAM, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
@@ -16,7 +16,8 @@ use winapi::um::winuser::{
 };
 
 use std::cell::RefCell;
-use std::ffi::{CString, c_void};
+use std::ffi::{OsStr, c_void};
+use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 
 use raw_window_handle::{
@@ -57,11 +58,11 @@ unsafe extern "system" fn wnd_proc(
     hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM,
 ) -> LRESULT {
     if msg == WM_CREATE {
-        PostMessageA(hwnd, WM_SHOWWINDOW, 0, 0);
+        PostMessageW(hwnd, WM_SHOWWINDOW, 0, 0);
         return 0;
     }
 
-    let win_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *const c_void;
+    let win_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const c_void;
     if !win_ptr.is_null() {
         let window_state = &*(win_ptr as *const RefCell<WindowState>);
         let mut window = Window { hwnd };
@@ -132,7 +133,7 @@ unsafe extern "system" fn wnd_proc(
                     .borrow_mut()
                     .handler
                     .on_event(&mut window, Event::Window(WindowEvent::WillClose));
-                return DefWindowProcA(hwnd, msg, wparam, lparam);
+                return DefWindowProcW(hwnd, msg, wparam, lparam);
             }
             WM_DPICHANGED => {
                 // TODO: Notify app of DPI change
@@ -157,18 +158,22 @@ unsafe extern "system" fn wnd_proc(
         }
     }
 
-    return DefWindowProcA(hwnd, msg, wparam, lparam);
+    return DefWindowProcW(hwnd, msg, wparam, lparam);
 }
 
 unsafe fn register_wnd_class() -> ATOM {
     // We generate a unique name for the new window class to prevent name collisions
-    let class_name = format!("Baseview-{}", generate_guid()).as_ptr() as *const i8;
+    let class_name_str = format!("Baseview-{}", generate_guid());
+    let mut class_name: Vec<u16> = OsStr::new(&class_name_str)
+        .encode_wide()
+        .collect();
+    class_name.push(0);
 
-    let wnd_class = WNDCLASSA {
+    let wnd_class = WNDCLASSW {
         style: CS_OWNDC,
         lpfnWndProc: Some(wnd_proc),
         hInstance: null_mut(),
-        lpszClassName: class_name,
+        lpszClassName: class_name.as_ptr(),
         cbClsExtra: 0,
         cbWndExtra: 0,
         hIcon: null_mut(),
@@ -177,11 +182,11 @@ unsafe fn register_wnd_class() -> ATOM {
         lpszMenuName: null_mut(),
     };
 
-    RegisterClassA(&wnd_class)
+    RegisterClassW(&wnd_class)
 }
 
 unsafe fn unregister_wnd_class(wnd_class: ATOM) {
-    UnregisterClassA(wnd_class as _, null_mut());
+    UnregisterClassW(wnd_class as _, null_mut());
 }
 
 struct WindowState {
@@ -205,14 +210,14 @@ impl AppRunner {
             let mut msg: MSG = std::mem::zeroed();
 
             loop {
-                let status = GetMessageA(&mut msg, self.hwnd, 0, 0);
+                let status = GetMessageW(&mut msg, self.hwnd, 0, 0);
 
                 if status == -1 {
                     break;
                 }
 
                 TranslateMessage(&mut msg);
-                DispatchMessageA(&mut msg);
+                DispatchMessageW(&mut msg);
             }
         }
     }
@@ -228,7 +233,10 @@ impl Window {
               B: Send + 'static
     {
         unsafe {
-            let mut title = CString::new(&options.title[..]).unwrap();
+            let mut title: Vec<u16> = OsStr::new(&options.title[..])
+                .encode_wide()
+                .collect();
+            title.push(0);
 
             let window_class = register_wnd_class();
             // todo: manage error ^
@@ -271,7 +279,7 @@ impl Window {
                 }
             };
 
-            let hwnd = CreateWindowExA(
+            let hwnd = CreateWindowExW(
                 0,
                 window_class as _,
                 title.as_ptr(),
@@ -296,7 +304,7 @@ impl Window {
                 handler,
             }));
 
-            SetWindowLongPtrA(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
             SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
 
             if let crate::Parent::None = options.parent {
