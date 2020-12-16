@@ -197,6 +197,25 @@ impl Window {
             )
         }
 
+        // Make our view receive WindowWillClose notifications
+        unsafe {
+            let notification_center: id = msg_send![
+                ::objc::class!(NSNotificationCenter),
+                defaultCenter
+            ];
+
+            let selector = sel!(windowWillClose);
+            let name: id = create_ns_string("NSWindowWillCloseNotification");
+
+            let _: () = msg_send![
+                notification_center,
+                addObserver:window_state_arc.window.ns_view
+                selector:selector
+                name:name
+                object:nil // FIXME: receive messages from plugin window only?
+            ];
+        }
+
         opt_app_runner
     }
 }
@@ -252,5 +271,15 @@ unsafe impl HasRawWindowHandle for Window {
             ns_view: self.ns_view as *mut c_void,
             ..MacOSHandle::empty()
         })
+    }
+}
+
+
+fn create_ns_string(from: &str) -> id {
+    unsafe {
+        NSString::init_str(
+            msg_send!(::objc::class!(NSString), alloc),
+            from
+        )
     }
 }

@@ -14,7 +14,7 @@ use objc::{
 };
 use uuid::Uuid;
 
-use crate::{Event, MouseButton, MouseEvent, Point, WindowOpenOptions};
+use crate::{Event, MouseButton, MouseEvent, Point, WindowEvent, WindowOpenOptions};
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
 use super::window::{
@@ -149,6 +149,10 @@ unsafe fn create_view_class() -> &'static Class {
     class.add_method(
         sel!(flagsChanged:),
         flags_changed as extern "C" fn(&Object, Sel, id),
+    );
+    class.add_method(
+        sel!(windowWillClose),
+        window_will_close as extern "C" fn(&Object, Sel),
     );
 
     class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
@@ -402,4 +406,13 @@ extern "C" fn flags_changed(this: &Object, _: Sel, event: id){
     if let Some(key_event) = state.process_native_key_event(event){
         state.trigger_event(Event::Keyboard(key_event));
     }
+}
+
+
+extern "C" fn window_will_close(this: &Object, _: Sel){
+    let state: &mut WindowState = unsafe {
+        WindowState::from_field(this)
+    };
+
+    state.trigger_event(Event::Window(WindowEvent::WillClose));
 }
