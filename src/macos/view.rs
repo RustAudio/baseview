@@ -170,7 +170,7 @@ extern "C" fn property_no(
     _this: &Object,
     _sel: Sel,
 ) -> BOOL {
-    YES
+    NO
 }
 
 
