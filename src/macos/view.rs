@@ -14,7 +14,9 @@ use objc::{
 };
 use uuid::Uuid;
 
-use crate::{Event, MouseButton, MouseEvent, Point, WindowOpenOptions};
+use crate::{
+    Event, MouseButton, MouseEvent, Point, WindowEvent, WindowOpenOptions
+};
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
 use super::window::{
@@ -207,6 +209,9 @@ extern "C" fn release(this: &Object, _sel: Sel) {
         let retain_count: usize = msg_send![this, retainCount];
 
         if retain_count == 1 {
+            WindowState::from_field(this)
+                .trigger_event(Event::Window(WindowEvent::WillClose));
+
             // Invalidate frame timer
             let frame_timer_ptr: *mut c_void = *this.get_ivar(
                 FRAME_TIMER_IVAR_NAME
