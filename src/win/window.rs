@@ -13,6 +13,7 @@ use winapi::um::winuser::{
     WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP, WM_INPUTLANGCHANGE,
     GET_XBUTTON_WPARAM, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
     WM_RBUTTONDOWN, WM_RBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP, XBUTTON1, XBUTTON2,
+    SetCapture, GetCapture, ReleaseCapture, IsWindow
 };
 
 use std::cell::RefCell;
@@ -68,6 +69,8 @@ unsafe extern "system" fn wnd_proc(
         let mut window = Window { hwnd };
         let mut window = crate::Window(&mut window);
 
+        let mut mouse_button_counter = window_state.borrow().mouse_button_counter;
+
         match msg {
             WM_MOUSEMOVE => {
                 let x = (lparam & 0xFFFF) as i32;
@@ -104,9 +107,18 @@ unsafe extern "system" fn wnd_proc(
                 if let Some(button) = button {
                     let event = match msg {
                         WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN | WM_XBUTTONDOWN => {
+                            // Capture the mouse cursor on button down
+                            mouse_button_counter = mouse_button_counter.saturating_add(1);
+                            SetCapture(hwnd);
                             MouseEvent::ButtonPressed(button)
                         }
                         WM_LBUTTONUP | WM_MBUTTONUP | WM_RBUTTONUP | WM_XBUTTONUP => {
+                            // Release the mouse cursor capture when all buttons are released
+                            mouse_button_counter = mouse_button_counter.saturating_sub(1);
+                            if mouse_button_counter == 0 {
+                                ReleaseCapture();
+                            }
+                            
                             MouseEvent::ButtonReleased(button)
                         }
                         _ => {
@@ -156,6 +168,8 @@ unsafe extern "system" fn wnd_proc(
             }
             _ => {}
         }
+
+        window_state.borrow_mut().mouse_button_counter = mouse_button_counter;
     }
 
     return DefWindowProcW(hwnd, msg, wparam, lparam);
@@ -193,6 +207,7 @@ struct WindowState {
     window_class: ATOM,
     window_info: WindowInfo,
     keyboard_state: KeyboardState,
+    mouse_button_counter: usize,
     handler: Box<dyn WindowHandler>,
 }
 
@@ -301,6 +316,7 @@ impl Window {
                 window_class,
                 window_info,
                 keyboard_state: KeyboardState::new(),
+                mouse_button_counter: 0,
                 handler,
             }));
 
