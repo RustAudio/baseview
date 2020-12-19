@@ -69,8 +69,6 @@ unsafe extern "system" fn wnd_proc(
         let mut window = Window { hwnd };
         let mut window = crate::Window(&mut window);
 
-        let mut mouse_button_counter = window_state.borrow().mouse_button_counter;
-
         match msg {
             WM_MOUSEMOVE => {
                 let x = (lparam & 0xFFFF) as i32;
@@ -92,6 +90,9 @@ unsafe extern "system" fn wnd_proc(
             }
             WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP |
             WM_RBUTTONDOWN | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
+
+                let mut mouse_button_counter = window_state.borrow().mouse_button_counter;
+
                 let button = match msg {
                     WM_LBUTTONDOWN | WM_LBUTTONUP => Some(MouseButton::Left),
                     WM_MBUTTONDOWN | WM_MBUTTONUP => Some(MouseButton::Middle),
@@ -125,6 +126,8 @@ unsafe extern "system" fn wnd_proc(
                             unreachable!()
                         }
                     };
+
+                    window_state.borrow_mut().mouse_button_counter = mouse_button_counter;
 
                     window_state.borrow_mut()
                         .handler
@@ -169,7 +172,7 @@ unsafe extern "system" fn wnd_proc(
             _ => {}
         }
 
-        window_state.borrow_mut().mouse_button_counter = mouse_button_counter;
+        
     }
 
     return DefWindowProcW(hwnd, msg, wparam, lparam);
