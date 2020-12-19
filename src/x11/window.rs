@@ -262,7 +262,7 @@ impl Window {
         while self.event_loop_running {
             let now = Instant::now();
             let until_next_frame = if now > next_frame {
-                next_frame = Instant::now() + self.frame_interval;
+                next_frame = now + self.frame_interval;
                 self.frame_interval
             } else {
                 next_frame - now
