@@ -106,14 +106,16 @@ unsafe extern "system" fn wnd_proc(
                 if let Some(button) = button {
                     let event = match msg {
                         WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN | WM_XBUTTONDOWN => {
+                            // Capture the mouse cursor on button down
                             mouse_button_counter = mouse_button_counter.saturating_add(1);
-                            window.0.set_mouse_capture();
+                            SetCapture(hwnd);
                             MouseEvent::ButtonPressed(button)
                         }
                         WM_LBUTTONUP | WM_MBUTTONUP | WM_RBUTTONUP | WM_XBUTTONUP => {
+                            // Release the mouse cursor capture when all buttons are released
                             mouse_button_counter = mouse_button_counter.saturating_sub(1);
                             if mouse_button_counter == 0 {
-                                window.0.release_mouse_capture();
+                                ReleaseCapture();
                             }
                             
                             MouseEvent::ButtonReleased(button)
@@ -319,29 +321,6 @@ impl Window {
                 None
             }
         }
-    }
-
-    // Captures the mouse cursor for this window
-    pub fn set_mouse_capture(&self) {
-        unsafe {
-            if IsWindow(self.hwnd) != 0 {
-                SetCapture(self.hwnd);
-            }
-        }  
-    }
-
-    // Returns true if this window has captured the mouse
-    pub fn get_mouse_capture(&self) -> bool {
-        unsafe {
-            GetCapture() == self.hwnd
-        }  
-    }
-
-    // Releases the mouse capture from all windows
-    pub fn release_mouse_capture(&self) {
-        unsafe {
-            ReleaseCapture();
-        }  
     }
 }
 
