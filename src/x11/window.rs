@@ -322,9 +322,9 @@ impl Window {
             ////
             // window
             ////
-            xcb::EXPOSE => {
+            //xcb::EXPOSE => {
                 //handler.on_frame();
-            }
+            //}
 
             xcb::CLIENT_MESSAGE => {
                 let event = unsafe { xcb::cast_event::<xcb::ClientMessageEvent>(&event) };
