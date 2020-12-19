@@ -104,11 +104,11 @@ unsafe extern "system" fn wnd_proc(
                 if let Some(button) = button {
                     let event = match msg {
                         WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN | WM_XBUTTONDOWN => {
-                            window.set_mouse_capture();
+                            window.0.set_mouse_capture();
                             MouseEvent::ButtonPressed(button)
                         }
                         WM_LBUTTONUP | WM_MBUTTONUP | WM_RBUTTONUP | WM_XBUTTONUP => {
-                            window.release_mouse_capture();
+                            window.0.release_mouse_capture();
                             MouseEvent::ButtonReleased(button)
                         }
                         _ => {

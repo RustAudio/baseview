@@ -31,21 +31,6 @@ impl<'a> Window<'a> {
     {
         platform::Window::open::<H, B>(options, build)
     }
-
-    // Captures the mouse cursor for this window
-    pub fn set_mouse_capture(&self) {
-        platform::Window::set_mouse_capture(self.0);
-    }
-
-    // Returns true if this window has captured the mouse
-    pub fn get_mouse_capture(&self) -> bool {
-        platform::Window::get_mouse_capture(self.0)
-    }
-
-    // Releases the mouse capture from all windows
-    pub fn release_mouse_capture(&self) {
-        platform::Window::release_mouse_capture(self.0)
-    }
 }
 
 unsafe impl<'a> HasRawWindowHandle for Window<'a> {
