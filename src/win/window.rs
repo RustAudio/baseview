@@ -68,6 +68,8 @@ unsafe extern "system" fn wnd_proc(
         let mut window = Window { hwnd };
         let mut window = crate::Window(&mut window);
 
+        let mut mouse_button_counter = window_state.borrow().mouse_button_counter;
+
         match msg {
             WM_MOUSEMOVE => {
                 let x = (lparam & 0xFFFF) as i32;
@@ -104,11 +106,16 @@ unsafe extern "system" fn wnd_proc(
                 if let Some(button) = button {
                     let event = match msg {
                         WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN | WM_XBUTTONDOWN => {
+                            mouse_button_counter = mouse_button_counter.saturating_add(1);
                             window.0.set_mouse_capture();
                             MouseEvent::ButtonPressed(button)
                         }
                         WM_LBUTTONUP | WM_MBUTTONUP | WM_RBUTTONUP | WM_XBUTTONUP => {
-                            window.0.release_mouse_capture();
+                            mouse_button_counter = mouse_button_counter.saturating_sub(1);
+                            if mouse_button_counter == 0 {
+                                window.0.release_mouse_capture();
+                            }
+                            
                             MouseEvent::ButtonReleased(button)
                         }
                         _ => {
@@ -158,6 +165,8 @@ unsafe extern "system" fn wnd_proc(
             }
             _ => {}
         }
+
+        window_state.borrow_mut().mouse_button_counter = mouse_button_counter;
     }
 
     return DefWindowProcA(hwnd, msg, wparam, lparam);
@@ -191,6 +200,7 @@ struct WindowState {
     window_class: ATOM,
     window_info: WindowInfo,
     keyboard_state: KeyboardState,
+    mouse_button_counter: usize,
     handler: Box<dyn WindowHandler>,
 }
 
@@ -296,6 +306,7 @@ impl Window {
                 window_class,
                 window_info,
                 keyboard_state: KeyboardState::new(),
+                mouse_button_counter: 0,
                 handler,
             }));
 
