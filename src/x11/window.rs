@@ -269,7 +269,7 @@ impl Window {
 
                 // Make sure the application recieves a resize event right before
                 // rendering the frame, otherwise a panic could occur.
-                let interim_events = self.collect_interim_events(handler);
+                let interim_events = self.collect_interim_events();
 
                 if let Some(size) = self.new_physical_size.take() {
                     self.window_info = WindowInfo::from_physical_size(
@@ -315,8 +315,9 @@ impl Window {
         }
     }
 
-    fn collect_interim_events(&mut self, handler: &mut dyn WindowHandler) -> Vec<xcb::GenericEvent> {
-        let mut events: Vec<xcb::GenericEvent> = Vec::new();
+    #[inline]
+    fn collect_interim_events(&mut self) -> Vec<xcb::GenericEvent> {
+        let mut events: Vec<xcb::GenericEvent> = Vec::with_capacity(10);
 
         // the X server has a tendency to send spurious/extraneous configure notify events when a
         // window is resized, and we need to batch those together and just send one resize event
