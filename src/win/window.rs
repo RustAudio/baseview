@@ -13,6 +13,7 @@ use winapi::um::winuser::{
     WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP, WM_INPUTLANGCHANGE,
     GET_XBUTTON_WPARAM, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
     WM_RBUTTONDOWN, WM_RBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP, XBUTTON1, XBUTTON2,
+    SetCapture, GetCapture, ReleaseCapture, IsWindow
 };
 
 use std::cell::RefCell;
@@ -103,9 +104,11 @@ unsafe extern "system" fn wnd_proc(
                 if let Some(button) = button {
                     let event = match msg {
                         WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN | WM_XBUTTONDOWN => {
+                            window.set_mouse_capture();
                             MouseEvent::ButtonPressed(button)
                         }
                         WM_LBUTTONUP | WM_MBUTTONUP | WM_RBUTTONUP | WM_XBUTTONUP => {
+                            window.release_mouse_capture();
                             MouseEvent::ButtonReleased(button)
                         }
                         _ => {
@@ -305,6 +308,29 @@ impl Window {
                 None
             }
         }
+    }
+
+    // Captures the mouse cursor for this window
+    pub fn set_mouse_capture(&self) {
+        unsafe {
+            if IsWindow(self.hwnd) != 0 {
+                SetCapture(self.hwnd);
+            }
+        }  
+    }
+
+    // Returns true if this window has captured the mouse
+    pub fn get_mouse_capture(&self) -> bool {
+        unsafe {
+            GetCapture() == self.hwnd
+        }  
+    }
+
+    // Releases the mouse capture from all windows
+    pub fn release_mouse_capture(&self) {
+        unsafe {
+            ReleaseCapture();
+        }  
     }
 }
 
