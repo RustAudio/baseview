@@ -81,4 +81,5 @@ pub enum Event {
     Mouse(MouseEvent),
     Keyboard(KeyboardEvent),
     Window(WindowEvent),
+    MainEventsCleared,
 }

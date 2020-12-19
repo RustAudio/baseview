@@ -262,8 +262,6 @@ impl Window {
         while self.event_loop_running {
             let now = Instant::now();
             let until_next_frame = if now > next_frame {
-                handler.on_frame();
-
                 next_frame = Instant::now() + self.frame_interval;
                 self.frame_interval
             } else {
@@ -282,6 +280,16 @@ impl Window {
 
                 if revents.contains(PollFlags::POLLIN) {
                     self.drain_xcb_events(handler);
+
+                    handler.on_event(
+                        &mut crate::Window(self),
+                        Event::MainEventsCleared
+                    );
+
+                    // Make sure any resize events get sent right before rendering.
+                    self.drain_xcb_events(handler);
+
+                    handler.on_frame();
                 }
             }
         }
@@ -315,7 +323,7 @@ impl Window {
             // window
             ////
             xcb::EXPOSE => {
-                handler.on_frame();
+                //handler.on_frame();
             }
 
             xcb::CLIENT_MESSAGE => {

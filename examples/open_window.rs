@@ -25,6 +25,7 @@ impl WindowHandler for OpenWindowExample {
             Event::Mouse(e) => println!("Mouse event: {:?}", e),
             Event::Keyboard(e) => println!("Keyboard event: {:?}", e),
             Event::Window(e) => println!("Window event: {:?}", e),
+            _ => {}
         }
     }
 }
