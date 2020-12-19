@@ -271,6 +271,20 @@ impl Window {
                 // rendering the frame, otherwise a panic could occur.
                 let interim_events = self.collect_interim_events(handler);
 
+                if let Some(size) = self.new_physical_size.take() {
+                    self.window_info = WindowInfo::from_physical_size(
+                        size,
+                        self.window_info.scale()
+                    );
+        
+                    let window_info = self.window_info;
+        
+                    handler.on_event(
+                        &mut crate::Window(self),
+                        Event::Window(WindowEvent::Resized(window_info))
+                    )
+                }
+
                 handler.on_frame();
 
                 // Drain the rest of the non-resize events after rendering.
@@ -325,20 +339,6 @@ impl Window {
                 // Store other events to send after the user has finished rendering.
                 _ => events.push(event),
             }
-        }
-
-        if let Some(size) = self.new_physical_size.take() {
-            self.window_info = WindowInfo::from_physical_size(
-                size,
-                self.window_info.scale()
-            );
-
-            let window_info = self.window_info;
-
-            handler.on_event(
-                &mut crate::Window(self),
-                Event::Window(WindowEvent::Resized(window_info))
-            )
         }
 
         events
