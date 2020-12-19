@@ -266,11 +266,17 @@ impl Window {
                     &mut crate::Window(self),
                     Event::MainEventsCleared
                 );
-                
-                // Make sure any resize events get sent right before rendering.
-                self.drain_xcb_events(handler);
+
+                // Make sure the application recieves a resize event right before
+                // rendering the frame, otherwise a panic could occur.
+                let interim_events = self.collect_interim_events(handler);
 
                 handler.on_frame();
+
+                // Drain the rest of the non-resize events after rendering.
+                for event in interim_events {
+                    self.handle_xcb_event(handler, event);
+                }
 
                 next_frame = now + self.frame_interval;
                 self.frame_interval
@@ -293,6 +299,49 @@ impl Window {
                 }
             }
         }
+    }
+
+    fn collect_interim_events(&mut self, handler: &mut dyn WindowHandler) -> Vec<xcb::GenericEvent> {
+        let mut events: Vec<xcb::GenericEvent> = Vec::new();
+
+        // the X server has a tendency to send spurious/extraneous configure notify events when a
+        // window is resized, and we need to batch those together and just send one resize event
+        // when they've all been coalesced.
+        self.new_physical_size = None;
+
+        while let Some(event) = self.xcb_connection.conn.poll_for_event() {
+            let event_type = event.response_type() & !0x80;
+
+            match event_type {
+                xcb::CONFIGURE_NOTIFY => {
+                    let event = unsafe { xcb::cast_event::<xcb::ConfigureNotifyEvent>(&event) };
+
+                    let new_physical_size = PhySize::new(event.width() as u32, event.height() as u32);
+                    
+                    if self.new_physical_size.is_some() || new_physical_size != self.window_info.physical_size() {
+                        self.new_physical_size = Some(new_physical_size);
+                    }
+                }
+                // Store other events to send after the user has finished rendering.
+                _ => events.push(event),
+            }
+        }
+
+        if let Some(size) = self.new_physical_size.take() {
+            self.window_info = WindowInfo::from_physical_size(
+                size,
+                self.window_info.scale()
+            );
+
+            let window_info = self.window_info;
+
+            handler.on_event(
+                &mut crate::Window(self),
+                Event::Window(WindowEvent::Resized(window_info))
+            )
+        }
+
+        events
     }
 
     fn handle_xcb_event(&mut self, handler: &mut dyn WindowHandler, event: xcb::GenericEvent) {
