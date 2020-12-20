@@ -19,10 +19,17 @@
 //! X11 keyboard handling
 
 use xcb::xproto;
+use std::mem::MaybeUninit;
+use std::os::raw::{c_int, c_char};
 
 use keyboard_types::*;
 
 use crate::keyboard::code_to_location;
+
+
+// A base buffer size of 1kB uses a negligible amount of RAM while preventing us from having to
+// re-allocate (and make another round-trip) in the *vast* majority of cases.
+const TEXT_BUFFER_SIZE: usize = 1024;
 
 
 /// Convert a hardware scan code to a key.
@@ -427,4 +434,58 @@ pub(super) fn convert_key_release_event(
         repeat: false,
         is_composing: false,
     }
+}
+
+pub fn lookup_utf8(key_event: &xcb::KeyPressEvent, conn: &xcb::Connection) -> Option<String> {
+    // `assume_init` is safe here because the array consists of `MaybeUninit` values,
+    // which do not require initialization.
+    let mut buffer: [MaybeUninit<u8>; TEXT_BUFFER_SIZE] =
+        unsafe { MaybeUninit::uninit().assume_init() };
+
+    let mut xkey_event = {
+        // Xcb does not have a replacement for XLookupString, and the xlib version needs an XKeyEvent.
+        //
+        // If you look at the source code of XLookupString, we can see it only ever uses three fields of XKeyEvent:
+        // * display - your Display
+        // * keycode- the pressed key
+        // * state - the state of the modifier keys, e.g. shift or caps lock
+        //
+        // This workaround is described here:
+        // https://stackoverflow.com/questions/43004441/how-to-get-unicode-input-from-xcb-without-further-ado
+        x11::xlib::XKeyEvent {
+            type_: 0,
+            serial: 0,
+            send_event: 0,
+            display: conn.get_raw_dpy(),
+            window: 0,
+            root: 0,
+            subwindow: 0,
+            time: 0,
+            x: 0,
+            y: 0,
+            x_root: 0,
+            y_root: 0,
+            state: key_event.state() as u32,
+            keycode: key_event.detail() as u32,
+            same_screen: 0,
+        }
+    };
+
+    let (_, count) = {
+        let mut keysym: x11::xlib::KeySym = 0;
+        let count = unsafe {
+            x11::xlib::XLookupString(
+                &mut xkey_event,
+                buffer.as_mut_ptr() as *mut c_char,
+                buffer.len() as c_int,
+                &mut keysym,
+                std::ptr::null_mut(),
+            )
+        };
+        (keysym, count)
+    };
+    
+    let bytes = unsafe { std::slice::from_raw_parts(buffer.as_ptr() as *const u8, count as usize) };
+
+    std::str::from_utf8(bytes).ok().map(|s| String::from(s))
 }

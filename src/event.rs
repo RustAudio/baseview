@@ -2,7 +2,6 @@ use keyboard_types::KeyboardEvent;
 
 use crate::{WindowInfo, Point};
 
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum MouseButton {
     Left,
@@ -80,5 +79,7 @@ pub enum WindowEvent {
 pub enum Event {
     Mouse(MouseEvent),
     Keyboard(KeyboardEvent),
+    /// The window received a unicode character.
+    ReceivedCharacter(char),
     Window(WindowEvent),
 }
