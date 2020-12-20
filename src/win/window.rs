@@ -71,8 +71,8 @@ unsafe extern "system" fn wnd_proc(
 
         match msg {
             WM_MOUSEMOVE => {
-                let x = (lparam & 0xFFFF) as i32;
-                let y = ((lparam >> 16) & 0xFFFF) as i32;
+                let x = (lparam & 0xFFFF) as i16 as i32;
+                let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
                 let physical_pos = PhyPoint { x, y };
 
