@@ -79,7 +79,5 @@ pub enum WindowEvent {
 pub enum Event {
     Mouse(MouseEvent),
     Keyboard(KeyboardEvent),
-    /// The window received a unicode character.
-    ReceivedCharacter(char),
     Window(WindowEvent),
 }

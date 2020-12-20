@@ -9,7 +9,7 @@ use raw_window_handle::{
     RawWindowHandle
 };
 
-use super::{XcbConnection, keyboard};
+use super::XcbConnection;
 use crate::{
     Event, MouseButton, MouseCursor, MouseEvent, Parent, ScrollDelta,
     WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
@@ -421,27 +421,22 @@ impl Window {
             xcb::KEY_PRESS => {
                 let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
 
+                let key_event = convert_key_press_event(&event, &self.xcb_connection.conn);
+
                 handler.on_event(
                     &mut crate::Window(self),
-                    Event::Keyboard(convert_key_press_event(&event))
+                    Event::Keyboard(key_event)
                 );
-
-                if let Some(written) = keyboard::lookup_utf8(&event, &self.xcb_connection.conn) {
-                    for chr in written.chars() {
-                        handler.on_event(
-                            &mut crate::Window(self),
-                            Event::ReceivedCharacter(chr)
-                        );
-                    }
-                }
             }
 
             xcb::KEY_RELEASE => {
                 let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
 
+                let key_event = convert_key_release_event(&event, &self.xcb_connection.conn);
+
                 handler.on_event(
                     &mut crate::Window(self),
-                    Event::Keyboard(convert_key_release_event(&event))
+                    Event::Keyboard(key_event)
                 );
             }
 

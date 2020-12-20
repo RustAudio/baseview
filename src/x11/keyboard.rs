@@ -20,7 +20,7 @@
 
 use xcb::xproto;
 use std::mem::MaybeUninit;
-use std::os::raw::{c_int, c_char};
+use std::os::raw::{c_int, c_char, c_uint};
 
 use keyboard_types::*;
 
@@ -36,77 +36,8 @@ const TEXT_BUFFER_SIZE: usize = 1024;
 ///
 /// Note: this is a hardcoded layout. We need to detect the user's
 /// layout from the system and apply it.
-fn code_to_key(code: Code, m: Modifiers) -> Key {
-    fn a(s: &str) -> Key {
-        Key::Character(s.into())
-    }
-    fn s(mods: Modifiers, base: &str, shifted: &str) -> Key {
-        if mods.contains(Modifiers::SHIFT) {
-            Key::Character(shifted.into())
-        } else {
-            Key::Character(base.into())
-        }
-    }
-    fn n(mods: Modifiers, base: Key, num: &str) -> Key {
-        if mods.contains(Modifiers::NUM_LOCK) != mods.contains(Modifiers::SHIFT) {
-            Key::Character(num.into())
-        } else {
-            base
-        }
-    }
+fn code_to_key(code: Code) -> Key {
     match code {
-        Code::KeyA => s(m, "a", "A"),
-        Code::KeyB => s(m, "b", "B"),
-        Code::KeyC => s(m, "c", "C"),
-        Code::KeyD => s(m, "d", "D"),
-        Code::KeyE => s(m, "e", "E"),
-        Code::KeyF => s(m, "f", "F"),
-        Code::KeyG => s(m, "g", "G"),
-        Code::KeyH => s(m, "h", "H"),
-        Code::KeyI => s(m, "i", "I"),
-        Code::KeyJ => s(m, "j", "J"),
-        Code::KeyK => s(m, "k", "K"),
-        Code::KeyL => s(m, "l", "L"),
-        Code::KeyM => s(m, "m", "M"),
-        Code::KeyN => s(m, "n", "N"),
-        Code::KeyO => s(m, "o", "O"),
-        Code::KeyP => s(m, "p", "P"),
-        Code::KeyQ => s(m, "q", "Q"),
-        Code::KeyR => s(m, "r", "R"),
-        Code::KeyS => s(m, "s", "S"),
-        Code::KeyT => s(m, "t", "T"),
-        Code::KeyU => s(m, "u", "U"),
-        Code::KeyV => s(m, "v", "V"),
-        Code::KeyW => s(m, "w", "W"),
-        Code::KeyX => s(m, "x", "X"),
-        Code::KeyY => s(m, "y", "Y"),
-        Code::KeyZ => s(m, "z", "Z"),
-
-        Code::Digit0 => s(m, "0", ")"),
-        Code::Digit1 => s(m, "1", "!"),
-        Code::Digit2 => s(m, "2", "@"),
-        Code::Digit3 => s(m, "3", "#"),
-        Code::Digit4 => s(m, "4", "$"),
-        Code::Digit5 => s(m, "5", "%"),
-        Code::Digit6 => s(m, "6", "^"),
-        Code::Digit7 => s(m, "7", "&"),
-        Code::Digit8 => s(m, "8", "*"),
-        Code::Digit9 => s(m, "9", "("),
-
-        Code::Backquote => s(m, "`", "~"),
-        Code::Minus => s(m, "-", "_"),
-        Code::Equal => s(m, "=", "+"),
-        Code::BracketLeft => s(m, "[", "{"),
-        Code::BracketRight => s(m, "]", "}"),
-        Code::Backslash => s(m, "\\", "|"),
-        Code::Semicolon => s(m, ";", ":"),
-        Code::Quote => s(m, "'", "\""),
-        Code::Comma => s(m, ",", "<"),
-        Code::Period => s(m, ".", ">"),
-        Code::Slash => s(m, "/", "?"),
-
-        Code::Space => a(" "),
-
         Code::Escape => Key::Escape,
         Code::Backspace => Key::Backspace,
         Code::Tab => Key::Tab,
@@ -114,7 +45,6 @@ fn code_to_key(code: Code, m: Modifiers) -> Key {
         Code::ControlLeft => Key::Control,
         Code::ShiftLeft => Key::Shift,
         Code::ShiftRight => Key::Shift,
-        Code::NumpadMultiply => a("*"),
         Code::AltLeft => Key::Alt,
         Code::CapsLock => Key::CapsLock,
         Code::F1 => Key::F1,
@@ -129,30 +59,14 @@ fn code_to_key(code: Code, m: Modifiers) -> Key {
         Code::F10 => Key::F10,
         Code::NumLock => Key::NumLock,
         Code::ScrollLock => Key::ScrollLock,
-        Code::Numpad0 => n(m, Key::Insert, "0"),
-        Code::Numpad1 => n(m, Key::End, "1"),
-        Code::Numpad2 => n(m, Key::ArrowDown, "2"),
-        Code::Numpad3 => n(m, Key::PageDown, "3"),
-        Code::Numpad4 => n(m, Key::ArrowLeft, "4"),
-        Code::Numpad5 => n(m, Key::Clear, "5"),
-        Code::Numpad6 => n(m, Key::ArrowRight, "6"),
-        Code::Numpad7 => n(m, Key::Home, "7"),
-        Code::Numpad8 => n(m, Key::ArrowUp, "8"),
-        Code::Numpad9 => n(m, Key::PageUp, "9"),
-        Code::NumpadSubtract => a("-"),
-        Code::NumpadAdd => a("+"),
-        Code::NumpadDecimal => n(m, Key::Delete, "."),
-        Code::IntlBackslash => s(m, "\\", "|"),
         Code::F11 => Key::F11,
         Code::F12 => Key::F12,
         // This mapping is based on the picture in the w3c spec.
-        Code::IntlRo => a("\\"),
         Code::Convert => Key::Convert,
         Code::KanaMode => Key::KanaMode,
         Code::NonConvert => Key::NonConvert,
         Code::NumpadEnter => Key::Enter,
         Code::ControlRight => Key::Control,
-        Code::NumpadDivide => a("/"),
         Code::PrintScreen => Key::PrintScreen,
         Code::AltRight => Key::Alt,
         Code::Home => Key::Home,
@@ -168,12 +82,9 @@ fn code_to_key(code: Code, m: Modifiers) -> Key {
         Code::AudioVolumeMute => Key::AudioVolumeMute,
         Code::AudioVolumeDown => Key::AudioVolumeDown,
         Code::AudioVolumeUp => Key::AudioVolumeUp,
-        Code::NumpadEqual => a("="),
         Code::Pause => Key::Pause,
-        Code::NumpadComma => a(","),
         Code::Lang1 => Key::HangulMode,
         Code::Lang2 => Key::HanjaMode,
-        Code::IntlYen => a("¥"),
         Code::MetaLeft => Key::Meta,
         Code::MetaRight => Key::Meta,
         Code::ContextMenu => Key::ContextMenu,
@@ -395,13 +306,19 @@ fn key_mods(mods: u16) -> Modifiers {
 
 pub(super) fn convert_key_press_event(
     key_press: &xcb::KeyPressEvent,
+    conn: &xcb::Connection,
 ) -> KeyboardEvent {
     let hw_keycode = key_press.detail();
     let code = hardware_keycode_to_code(hw_keycode.into());
     let modifiers = key_mods(key_press.state());
-    let key = code_to_key(code, modifiers);
     let location = code_to_location(code);
     let state = KeyState::Down;
+
+    let key = if let Some(written) = lookup_utf8(key_press.state() as c_uint, key_press.detail() as c_uint, conn) {
+        Key::Character(written)
+    } else {
+        code_to_key(code)
+    };
 
     KeyboardEvent {
         code,
@@ -416,14 +333,20 @@ pub(super) fn convert_key_press_event(
 
 
 pub(super) fn convert_key_release_event(
-    key_release: &xcb::KeyReleaseEvent
+    key_release: &xcb::KeyReleaseEvent,
+    conn: &xcb::Connection,
 ) -> KeyboardEvent {
     let hw_keycode = key_release.detail();
     let code = hardware_keycode_to_code(hw_keycode.into());
     let modifiers = key_mods(key_release.state());
-    let key = code_to_key(code, modifiers);
     let location = code_to_location(code);
     let state = KeyState::Up;
+
+    let key = if let Some(written) = lookup_utf8(key_release.state() as c_uint, key_release.detail() as c_uint, conn) {
+        Key::Character(written)
+    } else {
+        code_to_key(code)
+    };
 
     KeyboardEvent {
         code,
@@ -436,7 +359,7 @@ pub(super) fn convert_key_release_event(
     }
 }
 
-pub fn lookup_utf8(key_event: &xcb::KeyPressEvent, conn: &xcb::Connection) -> Option<String> {
+fn lookup_utf8(key_state: c_uint, key_code: c_uint, conn: &xcb::Connection) -> Option<String> {
     // `assume_init` is safe here because the array consists of `MaybeUninit` values,
     // which do not require initialization.
     let mut buffer: [MaybeUninit<u8>; TEXT_BUFFER_SIZE] =
@@ -465,8 +388,8 @@ pub fn lookup_utf8(key_event: &xcb::KeyPressEvent, conn: &xcb::Connection) -> Op
             y: 0,
             x_root: 0,
             y_root: 0,
-            state: key_event.state() as u32,
-            keycode: key_event.detail() as u32,
+            state: key_state,
+            keycode: key_code,
             same_screen: 0,
         }
     };
