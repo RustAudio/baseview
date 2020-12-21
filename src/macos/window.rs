@@ -170,17 +170,17 @@ impl Window {
 
         let window_state_ptr = Arc::into_raw(
             window_state_arc.clone()
-        ) as *mut c_void;
+        ) as *mut WindowState;
 
         unsafe {
             (*window_state_arc.window.ns_view).set_ivar(
                 WINDOW_STATE_IVAR_NAME,
-                window_state_ptr
+                window_state_ptr as *mut c_void
             );
         }
 
         unsafe {
-            WindowState::setup_timer(window_state_arc)
+            WindowState::setup_timer(window_state_ptr)
         }
 
         opt_app_runner
@@ -227,9 +227,7 @@ impl WindowState {
     }
 
     /// Don't call until WindowState pointer is stored in view
-    unsafe fn setup_timer(window_state: Arc<WindowState>){
-        let window_state_ptr = Arc::as_ptr(&window_state) as *mut WindowState;
-
+    unsafe fn setup_timer(window_state_ptr: *mut WindowState){
         extern "C" fn timer_callback(
             _: *mut __CFRunLoopTimer,
             window_state_ptr: *mut c_void,
@@ -263,7 +261,7 @@ impl WindowState {
         CFRunLoop::get_current()
             .add_timer(&timer, kCFRunLoopDefaultMode);
         
-        let window_state = &mut *(window_state_ptr as *mut WindowState);
+        let window_state = &mut *(window_state_ptr);
 
         window_state.frame_timer = Some(timer);
     }
