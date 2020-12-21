@@ -19,9 +19,7 @@ use crate::{
 };
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
-use super::window::{
-    WindowState, WINDOW_STATE_IVAR_NAME, FRAME_TIMER_IVAR_NAME
-};
+use super::window::{WindowState, WINDOW_STATE_IVAR_NAME};
 
 
 pub(super) unsafe fn create_view(
@@ -66,11 +64,6 @@ unsafe fn create_view_class() -> &'static Class {
     class.add_method(
         sel!(acceptsFirstMouse:),
         accepts_first_mouse as extern "C" fn(&Object, Sel, id) -> BOOL
-    );
-
-    class.add_method(
-        sel!(triggerOnFrame:),
-        trigger_on_frame as extern "C" fn(&Object, Sel, id)
     );
 
     class.add_method(
@@ -154,7 +147,6 @@ unsafe fn create_view_class() -> &'static Class {
     );
 
     class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
-    class.add_ivar::<*mut c_void>(FRAME_TIMER_IVAR_NAME);
 
     class.register()
 }
@@ -185,19 +177,6 @@ extern "C" fn accepts_first_mouse(
 }
 
 
-extern "C" fn trigger_on_frame(
-    this: &Object,
-    _sel: Sel,
-    _event: id
-){
-    let state: &mut WindowState = unsafe {
-        WindowState::from_field(this)
-    };
-
-    state.trigger_frame();
-}
-
-
 extern "C" fn release(this: &Object, _sel: Sel) {
     unsafe {
         let superclass = msg_send![this, superclass];
@@ -209,14 +188,10 @@ extern "C" fn release(this: &Object, _sel: Sel) {
         let retain_count: usize = msg_send![this, retainCount];
 
         if retain_count == 1 {
-            WindowState::from_field(this)
-                .trigger_event(Event::Window(WindowEvent::WillClose));
+            let window_state = WindowState::from_field(this);
 
-            // Invalidate frame timer
-            let frame_timer_ptr: *mut c_void = *this.get_ivar(
-                FRAME_TIMER_IVAR_NAME
-            );
-            let _: () = msg_send![frame_timer_ptr as id, invalidate];
+            window_state.trigger_event(Event::Window(WindowEvent::WillClose));
+            window_state.remove_timer();
 
             // Drop WindowState
             let state_ptr: *mut c_void = *this.get_ivar(
