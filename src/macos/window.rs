@@ -5,8 +5,12 @@ use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular,
     NSBackingStoreBuffered, NSWindow, NSWindowStyleMask,
 };
-use cocoa::base::{id, nil, NO, YES};
+use cocoa::base::{id, nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
+use core_foundation::runloop::{
+    CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer,
+    kCFRunLoopDefaultMode,
+};
 use keyboard_types::KeyboardEvent;
 
 use objc::{msg_send, runtime::Object, sel, sel_impl};
@@ -25,8 +29,6 @@ use super::keyboard::KeyboardState;
 /// Name of the field used to store the `WindowState` pointer in the custom
 /// view class.
 pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
-
-pub(super) const FRAME_TIMER_IVAR_NAME: &str = "FRAME_TIMER";
 
 
 pub struct AppRunner;
@@ -163,38 +165,22 @@ impl Window {
             window,
             window_handler,
             keyboard_state: KeyboardState::new(),
+            frame_timer: None
         });
 
-        let window_state_pointer = Arc::into_raw(
+        let window_state_ptr = Arc::into_raw(
             window_state_arc.clone()
         ) as *mut c_void;
 
         unsafe {
             (*window_state_arc.window.ns_view).set_ivar(
                 WINDOW_STATE_IVAR_NAME,
-                window_state_pointer
+                window_state_ptr
             );
         }
 
-        // Setup frame timer once window state is stored
         unsafe {
-            let timer_interval = 0.015;
-            let selector = sel!(triggerOnFrame:);
-
-            let timer: id = msg_send![
-                ::objc::class!(NSTimer),
-                scheduledTimerWithTimeInterval:timer_interval
-                target:window_state_arc.window.ns_view
-                selector:selector
-                userInfo:nil
-                repeats:YES
-            ];
-
-            // Store pointer to timer for invalidation when view is released
-            (*window_state_arc.window.ns_view).set_ivar(
-                FRAME_TIMER_IVAR_NAME,
-                timer as *mut c_void,
-            )
+            WindowState::setup_timer(window_state_arc)
         }
 
         opt_app_runner
@@ -206,6 +192,7 @@ pub(super) struct WindowState {
     window: Window,
     window_handler: Box<dyn WindowHandler>,
     keyboard_state: KeyboardState,
+    frame_timer: Option<CFRunLoopTimer>,
 }
 
 
@@ -237,6 +224,56 @@ impl WindowState {
         event: *mut Object
     ) -> Option<KeyboardEvent> {
         self.keyboard_state.process_native_event(event)
+    }
+
+    /// Don't call until WindowState pointer is stored in view
+    unsafe fn setup_timer(window_state: Arc<WindowState>){
+        let window_state_ptr = Arc::as_ptr(&window_state) as *mut WindowState;
+
+        extern "C" fn timer_callback(
+            _: *mut __CFRunLoopTimer,
+            window_state_ptr: *mut c_void,
+        ){
+            unsafe {
+                let window_state = &mut *(
+                    window_state_ptr as *mut WindowState
+                );
+
+                window_state.trigger_frame();
+            }
+        }
+
+        let mut timer_context = CFRunLoopTimerContext {
+            version: 0,
+            info: window_state_ptr as *mut c_void,
+            retain: None,
+            release: None,
+            copyDescription: None,
+        };
+
+        let timer = CFRunLoopTimer::new(
+            0.0,
+            0.015,
+            0,
+            0,
+            timer_callback,
+            &mut timer_context,
+        );
+
+        CFRunLoop::get_current()
+            .add_timer(&timer, kCFRunLoopDefaultMode);
+        
+        let window_state = &mut *(window_state_ptr as *mut WindowState);
+
+        window_state.frame_timer = Some(timer);
+    }
+
+    /// Call when freeing view
+    pub(super) unsafe fn remove_timer(&mut self){
+        if let Some(frame_timer) = self.frame_timer.take(){
+            CFRunLoop::get_current()
+                .remove_timer(&frame_timer, kCFRunLoopDefaultMode);
+        }
     }
 }
 
