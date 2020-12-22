@@ -204,7 +204,9 @@ extern "C" fn release(this: &Object, _sel: Sel) {
                 BASEVIEW_WINDOW_STATE_IVAR
             );
             Box::from_raw(state_ptr as *mut WindowState);
+        }
 
+        if retain_count == 1 {
             // Delete class
             let class = msg_send![this, class];
             ::objc::runtime::objc_disposeClassPair(class);
