@@ -20,7 +20,7 @@ use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use super::window::{
     WindowState,
     WINDOW_STATE_IVAR_NAME,
-    RETAIN_COUNT_INCREASE_IVAR_NAME
+    RETAIN_COUNT_AFTER_BUILD
 };
 
 
@@ -149,7 +149,7 @@ unsafe fn create_view_class() -> &'static Class {
     );
 
     class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
-    class.add_ivar::<usize>(RETAIN_COUNT_INCREASE_IVAR_NAME);
+    class.add_ivar::<usize>(RETAIN_COUNT_AFTER_BUILD);
 
     class.register()
 }
@@ -189,11 +189,11 @@ extern "C" fn release(this: &Object, _sel: Sel) {
 
     unsafe {
         let retain_count: usize = msg_send![this, retainCount];
-        let increase: &usize = (*this).get_ivar(
-            RETAIN_COUNT_INCREASE_IVAR_NAME
+        let retain_count_after_build: usize = *(*this).get_ivar(
+            RETAIN_COUNT_AFTER_BUILD
         );
 
-        if retain_count == 1 + increase {
+        if retain_count == retain_count_after_build {
             WindowState::from_field(this).remove_timer();
 
             // Drop WindowState

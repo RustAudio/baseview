@@ -31,7 +31,7 @@ use super::keyboard::KeyboardState;
 pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
 
 /// Increase in view retain count from callling `build`.
-pub(super) const RETAIN_COUNT_INCREASE_IVAR_NAME: &str = "RETAIN_COUNT_INCREASE";
+pub(super) const RETAIN_COUNT_AFTER_BUILD: &str = "RETAIN_COUNT_AFTER_BUILD";
 
 
 pub struct AppRunner;
@@ -66,38 +66,44 @@ impl Window {
     {
         let _pool = unsafe { NSAutoreleasePool::new(nil) };
 
-        let (mut window, opt_app_runner, view) = match options.parent {
+        let mut window = unsafe {
+            Window {
+                ns_window: None,
+                ns_view: create_view(&options),
+            }
+        };
+
+        let window_handler = Box::new(build(&mut crate::Window(&mut window)));
+
+        unsafe {
+            let retain_count_after_build: usize = msg_send![
+                window.ns_view,
+                retainCount
+            ];
+
+            (*window.ns_view).set_ivar(
+                RETAIN_COUNT_AFTER_BUILD,
+                retain_count_after_build
+            );
+        };
+
+        let opt_app_runner = match options.parent {
             Parent::WithParent(parent) => {
                 if let RawWindowHandle::MacOS(handle) = parent {
-                    let ns_view = handle.ns_view as *mut objc::runtime::Object;
-
                     unsafe {
-                        let subview = create_view(&options);
-
-                        let _: id = msg_send![ns_view, addSubview: subview];
-
-                        let window = Window {
-                            ns_window: None,
-                            ns_view: subview,
-                        };
-
-                        (window, None, subview)
+                        let () = msg_send![
+                            handle.ns_view as *mut Object,
+                            addSubview: window.ns_view
+                        ];
                     }
+
+                    None
                 } else {
                     panic!("Not a macOS window");
                 }
             },
             Parent::AsIfParented => {
-                let ns_view = unsafe {
-                    create_view(&options)
-                };
-
-                let window = Window {
-                    ns_window: None,
-                    ns_view,
-                };
-
-                (window, None, ns_view)
+                None
             },
             Parent::None => {
                 // It seems prudent to run NSApp() here before doing other
@@ -148,32 +154,13 @@ impl Window {
 
                     ns_window.makeKeyAndOrderFront_(nil);
 
-                    let subview = create_view(&options);
+                    ns_window.setContentView_(window.ns_view);
 
-                    ns_window.setContentView_(subview);
+                    window.ns_window = Some(ns_window);
 
-                    let window = Window {
-                        ns_window: Some(ns_window),
-                        ns_view: subview,
-                    };
-
-                    (window, Some(crate::AppRunner(AppRunner)), subview)
+                    Some(crate::AppRunner(AppRunner))
                 }
             },
-        };
-
-        let retain_count_before: usize = unsafe {
-            msg_send![view, retainCount]
-        };
-
-        let window_handler = Box::new(build(&mut crate::Window(&mut window)));
-
-        unsafe {
-            let retain_count_after: usize = msg_send![view, retainCount];
-
-            let increase = retain_count_after - retain_count_before;
-
-            (*view).set_ivar(RETAIN_COUNT_INCREASE_IVAR_NAME, increase);
         };
 
         let window_state_arc = Arc::new(WindowState {
