@@ -30,6 +30,9 @@ use super::keyboard::KeyboardState;
 /// view class.
 pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
 
+/// Increase in view retain count from callling `build`.
+pub(super) const RETAIN_COUNT_INCREASE_IVAR_NAME: &str = "RETAIN_COUNT_INCREASE";
+
 
 pub struct AppRunner;
 
@@ -63,7 +66,7 @@ impl Window {
     {
         let _pool = unsafe { NSAutoreleasePool::new(nil) };
 
-        let (mut window, opt_app_runner) = match options.parent {
+        let (mut window, opt_app_runner, view) = match options.parent {
             Parent::WithParent(parent) => {
                 if let RawWindowHandle::MacOS(handle) = parent {
                     let ns_view = handle.ns_view as *mut objc::runtime::Object;
@@ -78,7 +81,7 @@ impl Window {
                             ns_view: subview,
                         };
 
-                        (window, None)
+                        (window, None, subview)
                     }
                 } else {
                     panic!("Not a macOS window");
@@ -94,7 +97,7 @@ impl Window {
                     ns_view,
                 };
 
-                (window, None)
+                (window, None, ns_view)
             },
             Parent::None => {
                 // It seems prudent to run NSApp() here before doing other
@@ -154,12 +157,24 @@ impl Window {
                         ns_view: subview,
                     };
 
-                    (window, Some(crate::AppRunner(AppRunner)))
+                    (window, Some(crate::AppRunner(AppRunner)), subview)
                 }
             },
         };
 
+        let retain_count_before: usize = unsafe {
+            msg_send![view, retainCount]
+        };
+
         let window_handler = Box::new(build(&mut crate::Window(&mut window)));
+
+        unsafe {
+            let retain_count_after: usize = msg_send![view, retainCount];
+
+            let increase = retain_count_after - retain_count_before;
+
+            (*view).set_ivar(RETAIN_COUNT_INCREASE_IVAR_NAME, increase);
+        };
 
         let window_state_arc = Arc::new(WindowState {
             window,
