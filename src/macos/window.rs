@@ -88,19 +88,18 @@ impl Window {
         };
 
         let opt_app_runner = match options.parent {
-            Parent::WithParent(parent) => {
-                if let RawWindowHandle::MacOS(handle) = parent {
-                    unsafe {
-                        let () = msg_send![
-                            handle.ns_view as *mut Object,
-                            addSubview: window.ns_view
-                        ];
-                    }
-
-                    None
-                } else {
-                    panic!("Not a macOS window");
+            Parent::WithParent(RawWindowHandle::MacOS(handle)) => {
+                unsafe {
+                    let () = msg_send![
+                        handle.ns_view as *mut Object,
+                        addSubview: window.ns_view
+                    ];
                 }
+
+                None
+            },
+            Parent::WithParent(_) => {
+                panic!("Not a macOS window");
             },
             Parent::AsIfParented => {
                 None
