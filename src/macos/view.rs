@@ -16,11 +16,15 @@ use uuid::Uuid;
 use crate::{Event, MouseButton, MouseEvent, Point, WindowOpenOptions};
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
-use super::window::{
-    WindowState,
-    WINDOW_STATE_IVAR_NAME,
-    RETAIN_COUNT_AFTER_BUILD
-};
+use super::window::WindowState;
+
+
+/// Name of the field used to store the `WindowState` pointer.
+pub(super) const BASEVIEW_WINDOW_STATE_IVAR: &str = "baseview_window_state";
+
+/// Name of the field use to store retain count of view after calling
+/// user-supplied `build` fn.
+pub(super) const BASEVIEW_RETAIN_COUNT_IVAR: &str = "baseview_retain_count";
 
 
 pub(super) unsafe fn create_view(
@@ -147,8 +151,8 @@ unsafe fn create_view_class() -> &'static Class {
         flags_changed as extern "C" fn(&Object, Sel, id),
     );
 
-    class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
-    class.add_ivar::<usize>(RETAIN_COUNT_AFTER_BUILD);
+    class.add_ivar::<*mut c_void>(BASEVIEW_WINDOW_STATE_IVAR);
+    class.add_ivar::<usize>(BASEVIEW_RETAIN_COUNT_IVAR);
 
     class.register()
 }
@@ -189,7 +193,7 @@ extern "C" fn release(this: &Object, _sel: Sel) {
     unsafe {
         let retain_count: usize = msg_send![this, retainCount];
         let retain_count_after_build: usize = *(*this).get_ivar(
-            RETAIN_COUNT_AFTER_BUILD
+            BASEVIEW_RETAIN_COUNT_IVAR
         );
 
         if retain_count == retain_count_after_build {
@@ -197,7 +201,7 @@ extern "C" fn release(this: &Object, _sel: Sel) {
 
             // Drop WindowState
             let state_ptr: *mut c_void = *this.get_ivar(
-                WINDOW_STATE_IVAR_NAME
+                BASEVIEW_WINDOW_STATE_IVAR
             );
             Box::from_raw(state_ptr as *mut WindowState);
 

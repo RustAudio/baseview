@@ -21,16 +21,8 @@ use crate::{
     WindowScalePolicy, WindowInfo
 };
 
-use super::view::create_view;
+use super::view::{create_view, BASEVIEW_WINDOW_STATE_IVAR, BASEVIEW_RETAIN_COUNT_IVAR};
 use super::keyboard::KeyboardState;
-
-
-/// Name of the field used to store the `WindowState` pointer in the custom
-/// view class.
-pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
-
-/// Increase in view retain count from callling `build`.
-pub(super) const RETAIN_COUNT_AFTER_BUILD: &str = "RETAIN_COUNT_AFTER_BUILD";
 
 
 pub struct AppRunner;
@@ -81,7 +73,7 @@ impl Window {
             ];
 
             (*window.ns_view).set_ivar(
-                RETAIN_COUNT_AFTER_BUILD,
+                BASEVIEW_RETAIN_COUNT_IVAR,
                 retain_count_after_build
             );
         };
@@ -170,7 +162,7 @@ impl Window {
 
         unsafe {
             (*(*window_state_ptr).window.ns_view).set_ivar(
-                WINDOW_STATE_IVAR_NAME,
+                BASEVIEW_WINDOW_STATE_IVAR,
                 window_state_ptr as *mut c_void
             );
 
@@ -197,7 +189,7 @@ impl WindowState {
     /// WindowState. Apparently, macOS blocks for the duration of an event,
     /// callback, meaning that this shouldn't be a problem in practice.
     pub(super) unsafe fn from_field(obj: &Object) -> &mut Self {
-        let state_ptr: *mut c_void = *obj.get_ivar(WINDOW_STATE_IVAR_NAME);
+        let state_ptr: *mut c_void = *obj.get_ivar(BASEVIEW_WINDOW_STATE_IVAR);
 
         &mut *(state_ptr as *mut Self)
     }
