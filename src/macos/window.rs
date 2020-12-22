@@ -21,7 +21,7 @@ use crate::{
     WindowScalePolicy, WindowInfo
 };
 
-use super::view::{create_view, BASEVIEW_WINDOW_STATE_IVAR, BASEVIEW_RETAIN_COUNT_IVAR};
+use super::view::{create_view, BASEVIEW_WINDOW_STATE_IVAR};
 use super::keyboard::KeyboardState;
 
 
@@ -66,16 +66,8 @@ impl Window {
 
         let window_handler = Box::new(build(&mut crate::Window(&mut window)));
 
-        unsafe {
-            let retain_count_after_build: usize = msg_send![
-                window.ns_view,
-                retainCount
-            ];
-
-            (*window.ns_view).set_ivar(
-                BASEVIEW_RETAIN_COUNT_IVAR,
-                retain_count_after_build
-            );
+        let retain_count_after_build: usize = unsafe {
+            msg_send![window.ns_view, retainCount]
         };
 
         let opt_app_runner = match options.parent {
@@ -157,7 +149,8 @@ impl Window {
             window,
             window_handler,
             keyboard_state: KeyboardState::new(),
-            frame_timer: None
+            frame_timer: None,
+            retain_count_after_build,
         }));
 
         unsafe {
@@ -179,6 +172,7 @@ pub(super) struct WindowState {
     window_handler: Box<dyn WindowHandler>,
     keyboard_state: KeyboardState,
     frame_timer: Option<CFRunLoopTimer>,
+    pub retain_count_after_build: usize,
 }
 
 

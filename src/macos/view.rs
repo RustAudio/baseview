@@ -22,10 +22,6 @@ use super::window::WindowState;
 /// Name of the field used to store the `WindowState` pointer.
 pub(super) const BASEVIEW_WINDOW_STATE_IVAR: &str = "baseview_window_state";
 
-/// Name of the field use to store retain count of view after calling
-/// user-supplied `build` fn.
-pub(super) const BASEVIEW_RETAIN_COUNT_IVAR: &str = "baseview_retain_count";
-
 
 pub(super) unsafe fn create_view(
     window_options: &WindowOpenOptions,
@@ -152,7 +148,6 @@ unsafe fn create_view_class() -> &'static Class {
     );
 
     class.add_ivar::<*mut c_void>(BASEVIEW_WINDOW_STATE_IVAR);
-    class.add_ivar::<usize>(BASEVIEW_RETAIN_COUNT_IVAR);
 
     class.register()
 }
@@ -192,15 +187,15 @@ extern "C" fn release(this: &mut Object, _sel: Sel) {
 
     unsafe {
         let retain_count: usize = msg_send![this, retainCount];
-        let retain_count_after_build: usize = *(*this).get_ivar(
-            BASEVIEW_RETAIN_COUNT_IVAR
-        );
 
-        if retain_count <= retain_count_after_build {
-            let state_ptr: *mut c_void = *this.get_ivar(
-                BASEVIEW_WINDOW_STATE_IVAR
-            );
-            if !state_ptr.is_null(){
+        let state_ptr: *mut c_void = *this.get_ivar(
+            BASEVIEW_WINDOW_STATE_IVAR
+        );
+        if !state_ptr.is_null(){
+            let retain_count_after_build = WindowState::from_field(this)
+                .retain_count_after_build;
+
+            if retain_count <= retain_count_after_build {
                 WindowState::from_field(this).remove_timer();
 
                 this.set_ivar(
