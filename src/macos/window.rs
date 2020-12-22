@@ -1,5 +1,4 @@
 use std::ffi::c_void;
-use std::sync::Arc;
 
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular,
@@ -162,26 +161,20 @@ impl Window {
             },
         };
 
-        let window_state_arc = Arc::new(WindowState {
+        let window_state_ptr = Box::into_raw(Box::new(WindowState {
             window,
             window_handler,
             keyboard_state: KeyboardState::new(),
             frame_timer: None
-        });
-
-        let window_state_ptr = Arc::into_raw(
-            window_state_arc.clone()
-        ) as *mut WindowState;
+        }));
 
         unsafe {
-            (*window_state_arc.window.ns_view).set_ivar(
+            (*(*window_state_ptr).window.ns_view).set_ivar(
                 WINDOW_STATE_IVAR_NAME,
                 window_state_ptr as *mut c_void
             );
-        }
 
-        unsafe {
-            WindowState::setup_timer(window_state_ptr)
+            WindowState::setup_timer(window_state_ptr);
         }
 
         opt_app_runner

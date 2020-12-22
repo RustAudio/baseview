@@ -1,5 +1,4 @@
 use std::ffi::c_void;
-use std::sync::Arc;
 
 use cocoa::appkit::{NSEvent, NSView};
 use cocoa::base::{id, nil, BOOL, YES, NO};
@@ -200,7 +199,7 @@ extern "C" fn release(this: &Object, _sel: Sel) {
             let state_ptr: *mut c_void = *this.get_ivar(
                 WINDOW_STATE_IVAR_NAME
             );
-            Arc::from_raw(state_ptr as *mut WindowState);
+            Box::from_raw(state_ptr as *mut WindowState);
 
             // Delete class
             let class = msg_send![this, class];
