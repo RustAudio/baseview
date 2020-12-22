@@ -73,7 +73,7 @@ unsafe fn create_view_class() -> &'static Class {
 
     class.add_method(
         sel!(release),
-        release as extern "C" fn(&Object, Sel)
+        release as extern "C" fn(&mut Object, Sel)
     );
     class.add_method(
         sel!(viewWillMoveToWindow:),
@@ -183,7 +183,7 @@ extern "C" fn accepts_first_mouse(
 }
 
 
-extern "C" fn release(this: &Object, _sel: Sel) {
+extern "C" fn release(this: &mut Object, _sel: Sel) {
     unsafe {
         let superclass = msg_send![this, superclass];
 
@@ -196,14 +196,21 @@ extern "C" fn release(this: &Object, _sel: Sel) {
             BASEVIEW_RETAIN_COUNT_IVAR
         );
 
-        if retain_count == retain_count_after_build {
-            WindowState::from_field(this).remove_timer();
-
-            // Drop WindowState
+        if retain_count <= retain_count_after_build {
             let state_ptr: *mut c_void = *this.get_ivar(
                 BASEVIEW_WINDOW_STATE_IVAR
             );
-            Box::from_raw(state_ptr as *mut WindowState);
+            if !state_ptr.is_null(){
+                WindowState::from_field(this).remove_timer();
+
+                this.set_ivar(
+                    BASEVIEW_WINDOW_STATE_IVAR,
+                    ::std::ptr::null() as *const c_void
+                );
+
+                // Drop WindowState
+                Box::from_raw(state_ptr as *mut WindowState);
+            }
         }
 
         if retain_count == 1 {
