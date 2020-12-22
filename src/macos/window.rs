@@ -21,7 +21,7 @@ use crate::{
     WindowScalePolicy, WindowInfo
 };
 
-use super::view::{create_view, BASEVIEW_WINDOW_STATE_IVAR};
+use super::view::{create_view, BASEVIEW_STATE_IVAR};
 use super::keyboard::KeyboardState;
 
 
@@ -155,7 +155,7 @@ impl Window {
 
         unsafe {
             (*(*window_state_ptr).window.ns_view).set_ivar(
-                BASEVIEW_WINDOW_STATE_IVAR,
+                BASEVIEW_STATE_IVAR,
                 window_state_ptr as *mut c_void
             );
 
@@ -183,7 +183,7 @@ impl WindowState {
     /// WindowState. Apparently, macOS blocks for the duration of an event,
     /// callback, meaning that this shouldn't be a problem in practice.
     pub(super) unsafe fn from_field(obj: &Object) -> &mut Self {
-        let state_ptr: *mut c_void = *obj.get_ivar(BASEVIEW_WINDOW_STATE_IVAR);
+        let state_ptr: *mut c_void = *obj.get_ivar(BASEVIEW_STATE_IVAR);
 
         &mut *(state_ptr as *mut Self)
     }

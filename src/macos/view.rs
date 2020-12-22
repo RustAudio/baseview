@@ -20,7 +20,7 @@ use super::window::WindowState;
 
 
 /// Name of the field used to store the `WindowState` pointer.
-pub(super) const BASEVIEW_WINDOW_STATE_IVAR: &str = "baseview_window_state";
+pub(super) const BASEVIEW_STATE_IVAR: &str = "baseview_state";
 
 
 pub(super) unsafe fn create_view(
@@ -147,7 +147,7 @@ unsafe fn create_view_class() -> &'static Class {
         flags_changed as extern "C" fn(&Object, Sel, id),
     );
 
-    class.add_ivar::<*mut c_void>(BASEVIEW_WINDOW_STATE_IVAR);
+    class.add_ivar::<*mut c_void>(BASEVIEW_STATE_IVAR);
 
     class.register()
 }
@@ -188,9 +188,8 @@ extern "C" fn release(this: &mut Object, _sel: Sel) {
     unsafe {
         let retain_count: usize = msg_send![this, retainCount];
 
-        let state_ptr: *mut c_void = *this.get_ivar(
-            BASEVIEW_WINDOW_STATE_IVAR
-        );
+        let state_ptr: *mut c_void = *this.get_ivar(BASEVIEW_STATE_IVAR);
+
         if !state_ptr.is_null(){
             let retain_count_after_build = WindowState::from_field(this)
                 .retain_count_after_build;
@@ -199,7 +198,7 @@ extern "C" fn release(this: &mut Object, _sel: Sel) {
                 WindowState::from_field(this).remove_timer();
 
                 this.set_ivar(
-                    BASEVIEW_WINDOW_STATE_IVAR,
+                    BASEVIEW_STATE_IVAR,
                     ::std::ptr::null() as *const c_void
                 );
 
