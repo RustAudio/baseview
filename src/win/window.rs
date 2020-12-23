@@ -6,14 +6,15 @@ use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DispatchMessageW,
     GetMessageW, GetWindowLongPtrW, PostMessageW, RegisterClassW, SetTimer,
     SetWindowLongPtrW, TranslateMessage, UnregisterClassW, LoadCursorW,
+    DestroyWindow,
     CS_OWNDC, GWLP_USERDATA, IDC_ARROW,
-    MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_SHOWWINDOW, WM_TIMER,
+    MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_SHOWWINDOW, WM_TIMER, WM_NCDESTROY,
     WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
     WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, WM_DPICHANGED, WM_CHAR, WM_SYSCHAR, WM_KEYDOWN,
     WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP, WM_INPUTLANGCHANGE,
     GET_XBUTTON_WPARAM, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
     WM_RBUTTONDOWN, WM_RBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP, XBUTTON1, XBUTTON2,
-    SetCapture, GetCapture, ReleaseCapture, IsWindow
+    SetCapture, GetCapture, ReleaseCapture, IsWindow,
 };
 
 use std::cell::RefCell;
@@ -63,9 +64,8 @@ unsafe extern "system" fn wnd_proc(
         return 0;
     }
 
-    let win_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const c_void;
-    if !win_ptr.is_null() {
-        let window_state = &*(win_ptr as *const RefCell<WindowState>);
+    let window_state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RefCell<WindowState>;
+    if !window_state_ptr.is_null() {
         let mut window = Window { hwnd };
         let mut window = crate::Window(&mut window);
 
@@ -76,7 +76,7 @@ unsafe extern "system" fn wnd_proc(
 
                 let physical_pos = PhyPoint { x, y };
 
-                let mut window_state = window_state.borrow_mut();
+                let mut window_state = (&*window_state_ptr).borrow_mut();
 
                 let logical_pos = physical_pos.to_logical(&window_state.window_info);
 
@@ -91,7 +91,7 @@ unsafe extern "system" fn wnd_proc(
             WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP |
             WM_RBUTTONDOWN | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
 
-                let mut mouse_button_counter = window_state.borrow().mouse_button_counter;
+                let mut mouse_button_counter = (&*window_state_ptr).borrow().mouse_button_counter;
 
                 let button = match msg {
                     WM_LBUTTONDOWN | WM_LBUTTONUP => Some(MouseButton::Left),
@@ -127,9 +127,9 @@ unsafe extern "system" fn wnd_proc(
                         }
                     };
 
-                    window_state.borrow_mut().mouse_button_counter = mouse_button_counter;
+                    (&*window_state_ptr).borrow_mut().mouse_button_counter = mouse_button_counter;
 
-                    window_state.borrow_mut()
+                    (&*window_state_ptr).borrow_mut()
                         .handler
                         .on_event(&mut window, Event::Mouse(event));
                 }
@@ -137,17 +137,19 @@ unsafe extern "system" fn wnd_proc(
             WM_TIMER => {
                 match wparam {
                     WIN_FRAME_TIMER => {
-                        window_state.borrow_mut().handler.on_frame();
+                        (&*window_state_ptr).borrow_mut().handler.on_frame();
                     }
                     _ => (),
                 }
                 return 0;
             }
             WM_CLOSE => {
-                window_state
+                (&*window_state_ptr)
                     .borrow_mut()
                     .handler
                     .on_event(&mut window, Event::Window(WindowEvent::WillClose));
+                // DestroyWindow(hwnd);
+                // return 0;
                 return DefWindowProcW(hwnd, msg, wparam, lparam);
             }
             WM_DPICHANGED => {
@@ -155,12 +157,12 @@ unsafe extern "system" fn wnd_proc(
             },
             WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP
             | WM_SYSKEYUP | WM_INPUTLANGCHANGE => {
-                let opt_event = window_state.borrow_mut()
+                let opt_event = (&*window_state_ptr).borrow_mut()
                     .keyboard_state
                     .process_message(hwnd, msg, wparam, lparam);
 
                 if let Some(event) = opt_event {
-                    window_state.borrow_mut()
+                    (&*window_state_ptr).borrow_mut()
                         .handler
                         .on_event(&mut window, Event::Keyboard(event));
                 }
@@ -168,6 +170,11 @@ unsafe extern "system" fn wnd_proc(
                 if msg != WM_SYSKEYDOWN {
                     return 0;
                 }
+            }
+            WM_NCDESTROY => {
+                let window_state = Box::from_raw(window_state_ptr);
+                unregister_wnd_class(window_state.borrow().window_class);
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             }
             _ => {}
         }
