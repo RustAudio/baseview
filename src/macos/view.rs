@@ -1,5 +1,4 @@
 use std::ffi::c_void;
-use std::sync::Arc;
 
 use cocoa::appkit::{NSEvent, NSView};
 use cocoa::base::{id, nil, BOOL, YES, NO};
@@ -17,9 +16,11 @@ use uuid::Uuid;
 use crate::{Event, MouseButton, MouseEvent, Point, WindowOpenOptions};
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
-use super::window::{
-    WindowState, WINDOW_STATE_IVAR_NAME, FRAME_TIMER_IVAR_NAME
-};
+use super::window::WindowState;
+
+
+/// Name of the field used to store the `WindowState` pointer.
+pub(super) const BASEVIEW_STATE_IVAR: &str = "baseview_state";
 
 
 pub(super) unsafe fn create_view(
@@ -67,13 +68,8 @@ unsafe fn create_view_class() -> &'static Class {
     );
 
     class.add_method(
-        sel!(triggerOnFrame:),
-        trigger_on_frame as extern "C" fn(&Object, Sel, id)
-    );
-
-    class.add_method(
         sel!(release),
-        release as extern "C" fn(&Object, Sel)
+        release as extern "C" fn(&mut Object, Sel)
     );
     class.add_method(
         sel!(viewWillMoveToWindow:),
@@ -151,8 +147,7 @@ unsafe fn create_view_class() -> &'static Class {
         flags_changed as extern "C" fn(&Object, Sel, id),
     );
 
-    class.add_ivar::<*mut c_void>(WINDOW_STATE_IVAR_NAME);
-    class.add_ivar::<*mut c_void>(FRAME_TIMER_IVAR_NAME);
+    class.add_ivar::<*mut c_void>(BASEVIEW_STATE_IVAR);
 
     class.register()
 }
@@ -170,7 +165,7 @@ extern "C" fn property_no(
     _this: &Object,
     _sel: Sel,
 ) -> BOOL {
-    YES
+    NO
 }
 
 
@@ -183,20 +178,7 @@ extern "C" fn accepts_first_mouse(
 }
 
 
-extern "C" fn trigger_on_frame(
-    this: &Object,
-    _sel: Sel,
-    _event: id
-){
-    let state: &mut WindowState = unsafe {
-        WindowState::from_field(this)
-    };
-
-    state.trigger_frame();
-}
-
-
-extern "C" fn release(this: &Object, _sel: Sel) {
+extern "C" fn release(this: &mut Object, _sel: Sel) {
     unsafe {
         let superclass = msg_send![this, superclass];
 
@@ -206,19 +188,26 @@ extern "C" fn release(this: &Object, _sel: Sel) {
     unsafe {
         let retain_count: usize = msg_send![this, retainCount];
 
+        let state_ptr: *mut c_void = *this.get_ivar(BASEVIEW_STATE_IVAR);
+
+        if !state_ptr.is_null(){
+            let retain_count_after_build = WindowState::from_field(this)
+                .retain_count_after_build;
+
+            if retain_count <= retain_count_after_build {
+                WindowState::from_field(this).remove_timer();
+
+                this.set_ivar(
+                    BASEVIEW_STATE_IVAR,
+                    ::std::ptr::null() as *const c_void
+                );
+
+                // Drop WindowState
+                Box::from_raw(state_ptr as *mut WindowState);
+            }
+        }
+
         if retain_count == 1 {
-            // Invalidate frame timer
-            let frame_timer_ptr: *mut c_void = *this.get_ivar(
-                FRAME_TIMER_IVAR_NAME
-            );
-            let _: () = msg_send![frame_timer_ptr as id, invalidate];
-
-            // Drop WindowState
-            let state_ptr: *mut c_void = *this.get_ivar(
-                WINDOW_STATE_IVAR_NAME
-            );
-            Arc::from_raw(state_ptr as *mut WindowState);
-
             // Delete class
             let class = msg_send![this, class];
             ::objc::runtime::objc_disposeClassPair(class);

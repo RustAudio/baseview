@@ -1,12 +1,15 @@
 use std::ffi::c_void;
-use std::sync::Arc;
 
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular,
     NSBackingStoreBuffered, NSWindow, NSWindowStyleMask,
 };
-use cocoa::base::{id, nil, NO, YES};
+use cocoa::base::{id, nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
+use core_foundation::runloop::{
+    CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer,
+    kCFRunLoopDefaultMode,
+};
 use keyboard_types::KeyboardEvent;
 
 use objc::{msg_send, runtime::Object, sel, sel_impl};
@@ -18,15 +21,8 @@ use crate::{
     WindowScalePolicy, WindowInfo
 };
 
-use super::view::create_view;
+use super::view::{create_view, BASEVIEW_STATE_IVAR};
 use super::keyboard::KeyboardState;
-
-
-/// Name of the field used to store the `WindowState` pointer in the custom
-/// view class.
-pub(super) const WINDOW_STATE_IVAR_NAME: &str = "WINDOW_STATE_IVAR_NAME";
-
-pub(super) const FRAME_TIMER_IVAR_NAME: &str = "FRAME_TIMER";
 
 
 pub struct AppRunner;
@@ -61,38 +57,35 @@ impl Window {
     {
         let _pool = unsafe { NSAutoreleasePool::new(nil) };
 
-        let (mut window, opt_app_runner) = match options.parent {
-            Parent::WithParent(parent) => {
-                if let RawWindowHandle::MacOS(handle) = parent {
-                    let ns_view = handle.ns_view as *mut objc::runtime::Object;
+        let mut window = unsafe {
+            Window {
+                ns_window: None,
+                ns_view: create_view(&options),
+            }
+        };
 
-                    unsafe {
-                        let subview = create_view(&options);
+        let window_handler = Box::new(build(&mut crate::Window(&mut window)));
 
-                        let _: id = msg_send![ns_view, addSubview: subview];
+        let retain_count_after_build: usize = unsafe {
+            msg_send![window.ns_view, retainCount]
+        };
 
-                        let window = Window {
-                            ns_window: None,
-                            ns_view: subview,
-                        };
-
-                        (window, None)
-                    }
-                } else {
-                    panic!("Not a macOS window");
+        let opt_app_runner = match options.parent {
+            Parent::WithParent(RawWindowHandle::MacOS(handle)) => {
+                unsafe {
+                    let () = msg_send![
+                        handle.ns_view as *mut Object,
+                        addSubview: window.ns_view
+                    ];
                 }
+
+                None
+            },
+            Parent::WithParent(_) => {
+                panic!("Not a macOS window");
             },
             Parent::AsIfParented => {
-                let ns_view = unsafe {
-                    create_view(&options)
-                };
-
-                let window = Window {
-                    ns_window: None,
-                    ns_view,
-                };
-
-                (window, None)
+                None
             },
             Parent::None => {
                 // It seems prudent to run NSApp() here before doing other
@@ -143,58 +136,30 @@ impl Window {
 
                     ns_window.makeKeyAndOrderFront_(nil);
 
-                    let subview = create_view(&options);
+                    ns_window.setContentView_(window.ns_view);
 
-                    ns_window.setContentView_(subview);
+                    window.ns_window = Some(ns_window);
 
-                    let window = Window {
-                        ns_window: Some(ns_window),
-                        ns_view: subview,
-                    };
-
-                    (window, Some(crate::AppRunner(AppRunner)))
+                    Some(crate::AppRunner(AppRunner))
                 }
             },
         };
 
-        let window_handler = Box::new(build(&mut crate::Window(&mut window)));
-
-        let window_state_arc = Arc::new(WindowState {
+        let window_state_ptr = Box::into_raw(Box::new(WindowState {
             window,
             window_handler,
             keyboard_state: KeyboardState::new(),
-        });
-
-        let window_state_pointer = Arc::into_raw(
-            window_state_arc.clone()
-        ) as *mut c_void;
+            frame_timer: None,
+            retain_count_after_build,
+        }));
 
         unsafe {
-            (*window_state_arc.window.ns_view).set_ivar(
-                WINDOW_STATE_IVAR_NAME,
-                window_state_pointer
+            (*(*window_state_ptr).window.ns_view).set_ivar(
+                BASEVIEW_STATE_IVAR,
+                window_state_ptr as *mut c_void
             );
-        }
 
-        // Setup frame timer once window state is stored
-        unsafe {
-            let timer_interval = 0.015;
-            let selector = sel!(triggerOnFrame:);
-
-            let timer: id = msg_send![
-                ::objc::class!(NSTimer),
-                scheduledTimerWithTimeInterval:timer_interval
-                target:window_state_arc.window.ns_view
-                selector:selector
-                userInfo:nil
-                repeats:YES
-            ];
-
-            // Store pointer to timer for invalidation when view is released
-            (*window_state_arc.window.ns_view).set_ivar(
-                FRAME_TIMER_IVAR_NAME,
-                timer as *mut c_void,
-            )
+            WindowState::setup_timer(window_state_ptr);
         }
 
         opt_app_runner
@@ -206,6 +171,8 @@ pub(super) struct WindowState {
     window: Window,
     window_handler: Box<dyn WindowHandler>,
     keyboard_state: KeyboardState,
+    frame_timer: Option<CFRunLoopTimer>,
+    pub retain_count_after_build: usize,
 }
 
 
@@ -216,7 +183,7 @@ impl WindowState {
     /// WindowState. Apparently, macOS blocks for the duration of an event,
     /// callback, meaning that this shouldn't be a problem in practice.
     pub(super) unsafe fn from_field(obj: &Object) -> &mut Self {
-        let state_ptr: *mut c_void = *obj.get_ivar(WINDOW_STATE_IVAR_NAME);
+        let state_ptr: *mut c_void = *obj.get_ivar(BASEVIEW_STATE_IVAR);
 
         &mut *(state_ptr as *mut Self)
     }
@@ -237,6 +204,54 @@ impl WindowState {
         event: *mut Object
     ) -> Option<KeyboardEvent> {
         self.keyboard_state.process_native_event(event)
+    }
+
+    /// Don't call until WindowState pointer is stored in view
+    unsafe fn setup_timer(window_state_ptr: *mut WindowState){
+        extern "C" fn timer_callback(
+            _: *mut __CFRunLoopTimer,
+            window_state_ptr: *mut c_void,
+        ){
+            unsafe {
+                let window_state = &mut *(
+                    window_state_ptr as *mut WindowState
+                );
+
+                window_state.trigger_frame();
+            }
+        }
+
+        let mut timer_context = CFRunLoopTimerContext {
+            version: 0,
+            info: window_state_ptr as *mut c_void,
+            retain: None,
+            release: None,
+            copyDescription: None,
+        };
+
+        let timer = CFRunLoopTimer::new(
+            0.0,
+            0.015,
+            0,
+            0,
+            timer_callback,
+            &mut timer_context,
+        );
+
+        CFRunLoop::get_current()
+            .add_timer(&timer, kCFRunLoopDefaultMode);
+        
+        let window_state = &mut *(window_state_ptr);
+
+        window_state.frame_timer = Some(timer);
+    }
+
+    /// Call when freeing view
+    pub(super) unsafe fn remove_timer(&mut self){
+        if let Some(frame_timer) = self.frame_timer.take(){
+            CFRunLoop::get_current()
+                .remove_timer(&frame_timer, kCFRunLoopDefaultMode);
+        }
     }
 }
 
