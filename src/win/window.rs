@@ -137,7 +137,7 @@ unsafe extern "system" fn wnd_proc(
             WM_TIMER => {
                 match wparam {
                     WIN_FRAME_TIMER => {
-                        (&*window_state_ptr).borrow_mut().handler.on_frame();
+                        (&*window_state_ptr).borrow_mut().handler.on_frame(&mut window);
                     }
                     _ => (),
                 }

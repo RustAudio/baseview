@@ -273,7 +273,7 @@ impl Window {
         while self.event_loop_running {
             let now = Instant::now();
             let until_next_frame = if now > next_frame {
-                handler.on_frame();
+                handler.on_frame(&mut crate::Window::new(self));
 
                 next_frame = Instant::now() + self.frame_interval;
                 self.frame_interval

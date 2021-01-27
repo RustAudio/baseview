@@ -217,15 +217,14 @@ impl WindowState {
         &mut *(state_ptr as *mut Self)
     }
 
-    pub(super) fn trigger_event(&mut self, event: Event){
-        self.window_handler.on_event(
-            &mut crate::Window::new(&mut self.window),
-            event
-        );
+    pub(super) fn trigger_event(&mut self, event: Event) {
+        self.window_handler
+            .on_event(&mut crate::Window::new(&mut self.window), event);
     }
 
-    pub(super) fn trigger_frame(&mut self){
-        self.window_handler.on_frame()
+    pub(super) fn trigger_frame(&mut self) {
+        self.window_handler
+            .on_frame(&mut crate::Window::new(&mut self.window));
     }
 
     pub(super) fn process_native_key_event(
@@ -236,11 +235,11 @@ impl WindowState {
     }
 
     /// Don't call until WindowState pointer is stored in view
-    unsafe fn setup_timer(window_state_ptr: *mut WindowState){
+    unsafe fn setup_timer(window_state_ptr: *mut WindowState) {
         extern "C" fn timer_callback(
             _: *mut __CFRunLoopTimer,
             window_state_ptr: *mut c_void,
-        ){
+        ) {
             unsafe {
                 let window_state = &mut *(
                     window_state_ptr as *mut WindowState
@@ -276,8 +275,8 @@ impl WindowState {
     }
 
     /// Call when freeing view
-    pub(super) unsafe fn remove_timer(&mut self){
-        if let Some(frame_timer) = self.frame_timer.take(){
+    pub(super) unsafe fn remove_timer(&mut self) {
+        if let Some(frame_timer) = self.frame_timer.take() {
             CFRunLoop::get_current()
                 .remove_timer(&frame_timer, kCFRunLoopDefaultMode);
         }

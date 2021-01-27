@@ -13,7 +13,7 @@ use crate::win as platform;
 use crate::x11 as platform;
 
 pub trait WindowHandler {
-    fn on_frame(&mut self);
+    fn on_frame(&mut self, window: &mut Window);
     fn on_event(&mut self, window: &mut Window, event: Event);
 }
 
