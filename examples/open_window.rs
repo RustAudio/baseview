@@ -14,7 +14,7 @@ struct OpenWindowExample {
 }
 
 impl WindowHandler for OpenWindowExample {
-    fn on_frame(&mut self) {
+    fn on_frame(&mut self, _window: &mut Window) {
         while let Ok(message) = self.rx.pop() {
             println!("Message: {:?}", message);
         }
