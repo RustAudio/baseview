@@ -21,4 +21,7 @@ pub struct WindowOpenOptions {
 
     /// The dpi scaling policy
     pub scale: WindowScalePolicy,
+
+    /// Capture keys if opened with parent
+    pub capture_keys: bool,
 }

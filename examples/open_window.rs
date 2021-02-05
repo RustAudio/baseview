@@ -34,6 +34,7 @@ fn main() {
         title: "baseview".into(),
         size: baseview::Size::new(512.0, 512.0),
         scale: WindowScalePolicy::SystemScaleFactor,
+        capture_keys: true,
     };
 
     let (mut tx, rx) = RingBuffer::new(128).split();

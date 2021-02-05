@@ -26,7 +26,7 @@ pub(super) const BASEVIEW_STATE_IVAR: &str = "baseview_state";
 pub(super) unsafe fn create_view(
     window_options: &WindowOpenOptions,
 ) -> id {
-    let class = create_view_class();
+    let class = create_view_class(window_options);
 
     let view: id = msg_send![class, alloc];
 
@@ -41,7 +41,9 @@ pub(super) unsafe fn create_view(
 }
 
 
-unsafe fn create_view_class() -> &'static Class {
+unsafe fn create_view_class(
+    window_options: &WindowOpenOptions
+) -> &'static Class {
     // Use unique class names so that there are no conflicts between different
     // instances. The class is deleted when the view is released. Previously,
     // the class was stored in a OnceCell after creation. This way, we didn't
@@ -50,10 +52,26 @@ unsafe fn create_view_class() -> &'static Class {
     let class_name = format!("BaseviewNSView_{}", Uuid::new_v4().to_simple());
     let mut class = ClassDecl::new(&class_name, class!(NSView)).unwrap();
 
-    class.add_method(
-        sel!(acceptsFirstResponder),
-        property_yes as extern "C" fn(&Object, Sel) -> BOOL
-    );
+    if window_options.capture_keys {
+        class.add_method(
+            sel!(acceptsFirstResponder),
+            property_yes as extern "C" fn(&Object, Sel) -> BOOL
+        );
+        class.add_method(
+            sel!(keyDown:),
+            key_down as extern "C" fn(&Object, Sel, id),
+        );
+        class.add_method(
+            sel!(keyUp:),
+            key_up as extern "C" fn(&Object, Sel, id),
+        );
+    } else {
+        class.add_method(
+            sel!(acceptsFirstResponder),
+            property_no as extern "C" fn(&Object, Sel) -> BOOL
+        );
+    }
+
     class.add_method(
         sel!(isFlipped),
         property_yes as extern "C" fn(&Object, Sel) -> BOOL
@@ -134,14 +152,6 @@ unsafe fn create_view_class() -> &'static Class {
         middle_mouse_up as extern "C" fn(&Object, Sel, id),
     );
 
-    class.add_method(
-        sel!(keyDown:),
-        key_down as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(
-        sel!(keyUp:),
-        key_up as extern "C" fn(&Object, Sel, id),
-    );
     class.add_method(
         sel!(flagsChanged:),
         flags_changed as extern "C" fn(&Object, Sel, id),
