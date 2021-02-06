@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 
-use crate::event::Event;
+use crate::event::{Event, EventStatus};
 use crate::window_open_options::WindowOpenOptions;
 
 #[cfg(target_os = "macos")]
@@ -14,7 +14,7 @@ use crate::x11 as platform;
 
 pub trait WindowHandler {
     fn on_frame(&mut self, window: &mut Window);
-    fn on_event(&mut self, window: &mut Window, event: Event);
+    fn on_event(&mut self, window: &mut Window, event_status: &mut EventStatus, event: Event);
 }
 
 pub struct Window<'a> {

@@ -68,7 +68,7 @@ pub enum MouseEvent {
     CursorLeft,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum WindowEvent {
     Resized(WindowInfo),
     Focused,
@@ -76,9 +76,16 @@ pub enum WindowEvent {
     WillClose,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Event {
     Mouse(MouseEvent),
     Keyboard(KeyboardEvent),
     Window(WindowEvent),
+}
+
+
+#[derive(Debug)]
+pub enum EventStatus {
+    Ignored,
+    Captured
 }

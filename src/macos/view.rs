@@ -13,7 +13,7 @@ use objc::{
 };
 use uuid::Uuid;
 
-use crate::{Event, MouseButton, MouseEvent, Point, WindowOpenOptions};
+use crate::{Event, EventStatus, MouseButton, MouseEvent, Point, WindowOpenOptions};
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
 use super::window::WindowState;
@@ -321,44 +321,60 @@ extern "C" fn mouse_moved(
         y: point.y
     };
 
-    let event = Event::Mouse(MouseEvent::CursorMoved { position });
-
     let state: &mut WindowState = unsafe {
         WindowState::from_field(this)
     };
 
-    state.trigger_event(event);
+    let status = state.trigger_event(
+        Event::Mouse(MouseEvent::CursorMoved { position })
+    );
+
+    if let EventStatus::Ignored = status {
+        unsafe {
+            let superclass = msg_send![this, superclass];
+
+            let () = msg_send![super(this, superclass), mouseMoved:event];
+        }
+    }
 }
 
 
 macro_rules! mouse_simple_extern_fn {
-    ($fn:ident, $event:expr) => {
+    ($sel:ident, $fn:ident, $event:expr) => {
         extern "C" fn $fn(
             this: &Object,
             _sel: Sel,
-            _event: id,
+            event: id,
         ){
             let state: &mut WindowState = unsafe {
                 WindowState::from_field(this)
             };
 
-            state.trigger_event(Event::Mouse($event));
+            let status = state.trigger_event(Event::Mouse($event));
+
+            if let EventStatus::Ignored = status {
+                unsafe {
+                    let superclass = msg_send![this, superclass];
+
+                    let () = msg_send![super(this, superclass), $sel:event];
+                }
+            }
         }
     };
 }
 
 
-mouse_simple_extern_fn!(left_mouse_down, ButtonPressed(MouseButton::Left));
-mouse_simple_extern_fn!(left_mouse_up, ButtonReleased(MouseButton::Left));
+mouse_simple_extern_fn!(mouseDown, left_mouse_down, ButtonPressed(MouseButton::Left));
+mouse_simple_extern_fn!(mouseUp, left_mouse_up, ButtonReleased(MouseButton::Left));
 
-mouse_simple_extern_fn!(right_mouse_down, ButtonPressed(MouseButton::Right));
-mouse_simple_extern_fn!(right_mouse_up, ButtonReleased(MouseButton::Right));
+mouse_simple_extern_fn!(rightMouseDown, right_mouse_down, ButtonPressed(MouseButton::Right));
+mouse_simple_extern_fn!(rightMouseUp, right_mouse_up, ButtonReleased(MouseButton::Right));
 
-mouse_simple_extern_fn!(middle_mouse_down, ButtonPressed(MouseButton::Middle));
-mouse_simple_extern_fn!(middle_mouse_up, ButtonReleased(MouseButton::Middle));
+mouse_simple_extern_fn!(otherMouseDown, middle_mouse_down, ButtonPressed(MouseButton::Middle));
+mouse_simple_extern_fn!(otherMouseUp, middle_mouse_up, ButtonReleased(MouseButton::Middle));
 
-mouse_simple_extern_fn!(mouse_entered, MouseEvent::CursorEntered);
-mouse_simple_extern_fn!(mouse_exited, MouseEvent::CursorLeft);
+mouse_simple_extern_fn!(mouseEntered, mouse_entered, MouseEvent::CursorEntered);
+mouse_simple_extern_fn!(mouseExited, mouse_exited, MouseEvent::CursorLeft);
 
 
 extern "C" fn key_down(this: &Object, _: Sel, event: id){
@@ -367,7 +383,15 @@ extern "C" fn key_down(this: &Object, _: Sel, event: id){
     };
 
     if let Some(key_event) = state.process_native_key_event(event){
-        state.trigger_event(Event::Keyboard(key_event));
+        let status = state.trigger_event(Event::Keyboard(key_event));
+
+        if let EventStatus::Ignored = status {
+            unsafe {
+                let superclass = msg_send![this, superclass];
+
+                let () = msg_send![super(this, superclass), keyDown:event];
+            }
+        }
     }
 }
 
@@ -378,7 +402,15 @@ extern "C" fn key_up(this: &Object, _: Sel, event: id){
     };
 
     if let Some(key_event) = state.process_native_key_event(event){
-        state.trigger_event(Event::Keyboard(key_event));
+        let status = state.trigger_event(Event::Keyboard(key_event));
+
+        if let EventStatus::Ignored = status {
+            unsafe {
+                let superclass = msg_send![this, superclass];
+
+                let () = msg_send![super(this, superclass), keyUp:event];
+            }
+        }
     }
 }
 
@@ -389,6 +421,14 @@ extern "C" fn flags_changed(this: &Object, _: Sel, event: id){
     };
 
     if let Some(key_event) = state.process_native_key_event(event){
-        state.trigger_event(Event::Keyboard(key_event));
+        let status = state.trigger_event(Event::Keyboard(key_event));
+
+        if let EventStatus::Ignored = status {
+            unsafe {
+                let superclass = msg_send![this, superclass];
+
+                let () = msg_send![super(this, superclass), flagsChanged:event];
+            }
+        }
     }
 }
