@@ -365,6 +365,10 @@ extern "C" fn mouse_moved(
     _sel: Sel,
     event: id
 ){
+    let state: &mut WindowState = unsafe {
+        WindowState::from_field(this)
+    };
+
     let point: NSPoint = unsafe {
         let point = NSEvent::locationInWindow(event);
 
@@ -374,10 +378,6 @@ extern "C" fn mouse_moved(
     let position = Point {
         x: point.x,
         y: point.y
-    };
-
-    let state: &mut WindowState = unsafe {
-        WindowState::from_field(this)
     };
 
     let status = state.trigger_event(
