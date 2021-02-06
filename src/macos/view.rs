@@ -45,6 +45,36 @@ macro_rules! add_simple_mouse_class_method {
                 }
             }
         }
+
+        $class.add_method(
+            sel!($sel:),
+            $sel as extern "C" fn(&Object, Sel, id),
+        );
+    };
+}
+
+
+macro_rules! add_simple_keyboard_class_method {
+    ($class:ident, $sel:ident) => {
+        #[allow(non_snake_case)]
+        extern "C" fn $sel(this: &Object, _: Sel, event: id){
+            let state: &mut WindowState = unsafe {
+                WindowState::from_field(this)
+            };
+
+            if let Some(key_event) = state.process_native_key_event(event){
+                let status = state.trigger_event(Event::Keyboard(key_event));
+
+                if let EventStatus::Ignored = status {
+                    unsafe {
+                        let superclass = msg_send![this, superclass];
+
+                        let () = msg_send![super(this, superclass), $sel:event];
+                    }
+                }
+            }
+        }
+
         $class.add_method(
             sel!($sel:),
             $sel as extern "C" fn(&Object, Sel, id),
@@ -168,18 +198,9 @@ unsafe fn create_view_class() -> &'static Class {
         MouseEvent::CursorLeft
     );
 
-    class.add_method(
-        sel!(keyDown:),
-        key_down as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(
-        sel!(keyUp:),
-        key_up as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(
-        sel!(flagsChanged:),
-        flags_changed as extern "C" fn(&Object, Sel, id),
-    );
+    add_simple_keyboard_class_method!(class, keyDown);
+    add_simple_keyboard_class_method!(class, keyUp);
+    add_simple_keyboard_class_method!(class, flagsChanged);
 
     class.add_ivar::<*mut c_void>(BASEVIEW_STATE_IVAR);
 
@@ -368,63 +389,6 @@ extern "C" fn mouse_moved(
             let superclass = msg_send![this, superclass];
 
             let () = msg_send![super(this, superclass), mouseMoved:event];
-        }
-    }
-}
-
-
-extern "C" fn key_down(this: &Object, _: Sel, event: id){
-    let state: &mut WindowState = unsafe {
-        WindowState::from_field(this)
-    };
-
-    if let Some(key_event) = state.process_native_key_event(event){
-        let status = state.trigger_event(Event::Keyboard(key_event));
-
-        if let EventStatus::Ignored = status {
-            unsafe {
-                let superclass = msg_send![this, superclass];
-
-                let () = msg_send![super(this, superclass), keyDown:event];
-            }
-        }
-    }
-}
-
-
-extern "C" fn key_up(this: &Object, _: Sel, event: id){
-    let state: &mut WindowState = unsafe {
-        WindowState::from_field(this)
-    };
-
-    if let Some(key_event) = state.process_native_key_event(event){
-        let status = state.trigger_event(Event::Keyboard(key_event));
-
-        if let EventStatus::Ignored = status {
-            unsafe {
-                let superclass = msg_send![this, superclass];
-
-                let () = msg_send![super(this, superclass), keyUp:event];
-            }
-        }
-    }
-}
-
-
-extern "C" fn flags_changed(this: &Object, _: Sel, event: id){
-    let state: &mut WindowState = unsafe {
-        WindowState::from_field(this)
-    };
-
-    if let Some(key_event) = state.process_native_key_event(event){
-        let status = state.trigger_event(Event::Keyboard(key_event));
-
-        if let EventStatus::Ignored = status {
-            unsafe {
-                let superclass = msg_send![this, superclass];
-
-                let () = msg_send![super(this, superclass), flagsChanged:event];
-            }
         }
     }
 }
