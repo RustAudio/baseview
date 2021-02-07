@@ -219,15 +219,8 @@ impl WindowState {
     }
 
     pub(super) fn trigger_event(&mut self, event: Event) -> EventStatus {
-        let mut status = EventStatus::Ignored;
-
-        self.window_handler.on_event(
-            &mut crate::Window::new(&mut self.window),
-            &mut status,
-            event
-        );
-        
-        status
+        self.window_handler
+            .on_event(&mut crate::Window::new(&mut self.window), event)
     }
 
     pub(super) fn trigger_frame(&mut self) {

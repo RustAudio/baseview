@@ -20,19 +20,14 @@ impl WindowHandler for OpenWindowExample {
         }
     }
 
-    fn on_event(
-        &mut self,
-        _window: &mut Window,
-        event_status: &mut EventStatus,
-        event: Event,
-    ){
+    fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
         match event {
             Event::Mouse(e) => println!("Mouse event: {:?}", e),
             Event::Keyboard(e) => println!("Keyboard event: {:?}", e),
             Event::Window(e) => println!("Window event: {:?}", e),
         }
 
-        *event_status = EventStatus::Captured;
+        EventStatus::Captured
     }
 }
 
