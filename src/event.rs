@@ -84,11 +84,12 @@ pub enum Event {
 }
 
 
-/// Return value for WindowHandler::on_event, indicating whether the event was
-/// handled by your window or should be passed back to the platform.
+/// Return value for [`crate::WindowHandler::on_event()`], indicating whether
+/// the event was handled by your window or should be passed back to the
+/// platform.
 ///
 /// Some event types, such as window events, must always be handled. Baseview
-/// will ignore the EventStatus in such cases.
+/// will ignore the [`EventStatus`] in such cases.
 #[derive(Debug)]
 pub enum EventStatus {
     /// Event was handled by your window and will not be sent back to the
