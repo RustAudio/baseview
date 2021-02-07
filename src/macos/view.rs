@@ -29,21 +29,13 @@ macro_rules! add_simple_mouse_class_method {
         extern "C" fn $sel(
             this: &Object,
             _: Sel,
-            event: id,
+            _event: id,
         ){
             let state: &mut WindowState = unsafe {
                 WindowState::from_field(this)
             };
 
-            let status = state.trigger_event(Event::Mouse($event));
-
-            if let EventStatus::Ignored = status {
-                unsafe {
-                    let superclass = msg_send![this, superclass];
-
-                    let () = msg_send![super(this, superclass), $sel:event];
-                }
-            }
+            state.trigger_event(Event::Mouse($event));
         }
 
         $class.add_method(
@@ -380,15 +372,7 @@ extern "C" fn mouse_moved(
         y: point.y
     };
 
-    let status = state.trigger_event(
+    state.trigger_event(
         Event::Mouse(MouseEvent::CursorMoved { position })
     );
-
-    if let EventStatus::Ignored = status {
-        unsafe {
-            let superclass = msg_send![this, superclass];
-
-            let () = msg_send![super(this, superclass), mouseMoved:event];
-        }
-    }
 }

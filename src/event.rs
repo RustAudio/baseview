@@ -88,11 +88,10 @@ pub enum Event {
 /// indicating whether the event was handled by your window or should be passed
 /// back to the platform.
 ///
-/// Some event types, such as window events, must always be handled, and this
-/// value will be ignored in such cases. The event types that are in fact
-/// passed back to the platform when [`EventStatus::Ignored`] is returned are:
-///   - All [`Event::Mouse`] variants
-///   - All [`Event::Keyboard`] variants
+/// For most event types, this value won't have any effect. This is the case
+/// when there is no clear meaning of passing back the event to the platform,
+/// or it isn't obviously useful. Currently, only [`Event::Keyboard`] variants
+/// support passing back the underlying event to the platform.
 #[derive(Debug)]
 pub enum EventStatus {
     /// Event was handled by your window and will not be sent back to the
