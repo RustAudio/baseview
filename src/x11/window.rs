@@ -251,7 +251,7 @@ impl Window {
             handler.on_event(
                 &mut crate::Window::new(self),
                 Event::Window(WindowEvent::Resized(window_info))
-            )
+            );
         }
     }
 
