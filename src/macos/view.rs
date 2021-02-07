@@ -26,11 +26,7 @@ pub(super) const BASEVIEW_STATE_IVAR: &str = "baseview_state";
 macro_rules! add_simple_mouse_class_method {
     ($class:ident, $sel:ident, $event:expr) => {
         #[allow(non_snake_case)]
-        extern "C" fn $sel(
-            this: &Object,
-            _: Sel,
-            _event: id,
-        ){
+        extern "C" fn $sel(this: &Object, _: Sel, _: id){
             let state: &mut WindowState = unsafe {
                 WindowState::from_field(this)
             };
