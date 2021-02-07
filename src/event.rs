@@ -86,6 +86,13 @@ pub enum Event {
 
 #[derive(Debug)]
 pub enum EventStatus {
+    /// Event was handled by your window and will not be sent back to the
+    /// platform for further processing.
+    Captured,
+    /// Event was not handled by your window, so pass it back to the platform.
+    /// For parented windows, this usually means that the parent window will
+    /// receive the event. This can be useful for cases such as using DAW
+    /// functionality for playing piano keys with the keyboard while a plugin
+    /// window is in focus.
     Ignored,
-    Captured
 }
