@@ -88,8 +88,11 @@ pub enum Event {
 /// indicating whether the event was handled by your window or should be passed
 /// back to the platform.
 ///
-/// Some event types, such as window events, must always be handled, and this value
-/// will be ignored in such cases.
+/// Some event types, such as window events, must always be handled, and this
+/// value will be ignored in such cases. The event types that are in fact
+/// passed back to the platform when [`EventStatus::Ignored`] is returned are:
+///   - All [`Event::Mouse`] variants
+///   - All [`Event::Keyboard`] variants
 #[derive(Debug)]
 pub enum EventStatus {
     /// Event was handled by your window and will not be sent back to the
@@ -97,8 +100,8 @@ pub enum EventStatus {
     Captured,
     /// Event was **not** handled by your window, so pass it back to the
     /// platform. For parented windows, this usually means that the parent
-    /// window will receive the event. This can be useful for cases such as
-    /// using DAW functionality for playing piano keys with the keyboard while
-    /// a plugin window is in focus.
+    /// window will receive the event. This is useful for cases such as using
+    /// DAW functionality for playing piano keys with the keyboard while a
+    /// plugin window is in focus.
     Ignored,
 }
