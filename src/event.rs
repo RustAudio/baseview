@@ -84,21 +84,21 @@ pub enum Event {
 }
 
 
-/// Return value for [`crate::WindowHandler::on_event()`], indicating whether
-/// the event was handled by your window or should be passed back to the
-/// platform.
+/// Return value for [WindowHandler::on_event](`crate::WindowHandler::on_event()`),
+/// indicating whether the event was handled by your window or should be passed
+/// back to the platform.
 ///
-/// Some event types, such as window events, must always be handled. Baseview
-/// will ignore the [`EventStatus`] in such cases.
+/// Some event types, such as window events, must always be handled, and this value
+/// will be ignored in such cases.
 #[derive(Debug)]
 pub enum EventStatus {
     /// Event was handled by your window and will not be sent back to the
     /// platform for further processing.
     Captured,
-    /// Event was not handled by your window, so pass it back to the platform.
-    /// For parented windows, this usually means that the parent window will
-    /// receive the event. This can be useful for cases such as using DAW
-    /// functionality for playing piano keys with the keyboard while a plugin
-    /// window is in focus.
+    /// Event was **not** handled by your window, so pass it back to the
+    /// platform. For parented windows, this usually means that the parent
+    /// window will receive the event. This can be useful for cases such as
+    /// using DAW functionality for playing piano keys with the keyboard while
+    /// a plugin window is in focus.
     Ignored,
 }
