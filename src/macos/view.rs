@@ -13,7 +13,7 @@ use objc::{
 };
 use uuid::Uuid;
 
-use crate::{Event, MouseButton, MouseEvent, Point, WindowOpenOptions};
+use crate::{Event, EventStatus, MouseButton, MouseEvent, Point, WindowOpenOptions};
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
 use super::window::WindowState;
@@ -21,6 +21,54 @@ use super::window::WindowState;
 
 /// Name of the field used to store the `WindowState` pointer.
 pub(super) const BASEVIEW_STATE_IVAR: &str = "baseview_state";
+
+
+macro_rules! add_simple_mouse_class_method {
+    ($class:ident, $sel:ident, $event:expr) => {
+        #[allow(non_snake_case)]
+        extern "C" fn $sel(this: &Object, _: Sel, _: id){
+            let state: &mut WindowState = unsafe {
+                WindowState::from_field(this)
+            };
+
+            state.trigger_event(Event::Mouse($event));
+        }
+
+        $class.add_method(
+            sel!($sel:),
+            $sel as extern "C" fn(&Object, Sel, id),
+        );
+    };
+}
+
+
+macro_rules! add_simple_keyboard_class_method {
+    ($class:ident, $sel:ident) => {
+        #[allow(non_snake_case)]
+        extern "C" fn $sel(this: &Object, _: Sel, event: id){
+            let state: &mut WindowState = unsafe {
+                WindowState::from_field(this)
+            };
+
+            if let Some(key_event) = state.process_native_key_event(event){
+                let status = state.trigger_event(Event::Keyboard(key_event));
+
+                if let EventStatus::Ignored = status {
+                    unsafe {
+                        let superclass = msg_send![this, superclass];
+
+                        let () = msg_send![super(this, superclass), $sel:event];
+                    }
+                }
+            }
+        }
+
+        $class.add_method(
+            sel!($sel:),
+            $sel as extern "C" fn(&Object, Sel, id),
+        );
+    };
+}
 
 
 pub(super) unsafe fn create_view(
@@ -97,55 +145,50 @@ unsafe fn create_view_class() -> &'static Class {
         mouse_moved as extern "C" fn(&Object, Sel, id),
     );
 
-    class.add_method(
-        sel!(mouseEntered:),
-        mouse_entered as extern "C" fn(&Object, Sel, id),
+    add_simple_mouse_class_method!(
+        class,
+        mouseDown,
+        ButtonPressed(MouseButton::Left)
+    );
+    add_simple_mouse_class_method!(
+        class,
+        mouseUp,
+        ButtonReleased(MouseButton::Left)
+    );
+    add_simple_mouse_class_method!(
+        class,
+        rightMouseDown,
+        ButtonPressed(MouseButton::Right)
+    );
+    add_simple_mouse_class_method!(
+        class,
+        rightMouseUp,
+        ButtonReleased(MouseButton::Right)
+    );
+    add_simple_mouse_class_method!(
+        class,
+        otherMouseDown,
+        ButtonPressed(MouseButton::Middle)
+    );
+    add_simple_mouse_class_method!(
+        class,
+        otherMouseUp,
+        ButtonReleased(MouseButton::Middle)
+    );
+    add_simple_mouse_class_method!(
+        class,
+        mouseEntered,
+        MouseEvent::CursorEntered
+    );
+    add_simple_mouse_class_method!(
+        class,
+        mouseExited,
+        MouseEvent::CursorLeft
     );
 
-    class.add_method(
-        sel!(mouseExited:),
-        mouse_exited as extern "C" fn(&Object, Sel, id),
-    );
-
-    class.add_method(
-        sel!(mouseDown:),
-        left_mouse_down as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(
-        sel!(mouseUp:),
-        left_mouse_up as extern "C" fn(&Object, Sel, id),
-    );
-
-    class.add_method(
-        sel!(rightMouseDown:),
-        right_mouse_down as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(
-        sel!(rightMouseUp:),
-        right_mouse_up as extern "C" fn(&Object, Sel, id),
-    );
-
-    class.add_method(
-        sel!(otherMouseDown:),
-        middle_mouse_down as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(
-        sel!(otherMouseUp:),
-        middle_mouse_up as extern "C" fn(&Object, Sel, id),
-    );
-
-    class.add_method(
-        sel!(keyDown:),
-        key_down as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(
-        sel!(keyUp:),
-        key_up as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(
-        sel!(flagsChanged:),
-        flags_changed as extern "C" fn(&Object, Sel, id),
-    );
+    add_simple_keyboard_class_method!(class, keyDown);
+    add_simple_keyboard_class_method!(class, keyUp);
+    add_simple_keyboard_class_method!(class, flagsChanged);
 
     class.add_ivar::<*mut c_void>(BASEVIEW_STATE_IVAR);
 
@@ -310,6 +353,10 @@ extern "C" fn mouse_moved(
     _sel: Sel,
     event: id
 ){
+    let state: &mut WindowState = unsafe {
+        WindowState::from_field(this)
+    };
+
     let point: NSPoint = unsafe {
         let point = NSEvent::locationInWindow(event);
 
@@ -321,74 +368,7 @@ extern "C" fn mouse_moved(
         y: point.y
     };
 
-    let event = Event::Mouse(MouseEvent::CursorMoved { position });
-
-    let state: &mut WindowState = unsafe {
-        WindowState::from_field(this)
-    };
-
-    state.trigger_event(event);
-}
-
-
-macro_rules! mouse_simple_extern_fn {
-    ($fn:ident, $event:expr) => {
-        extern "C" fn $fn(
-            this: &Object,
-            _sel: Sel,
-            _event: id,
-        ){
-            let state: &mut WindowState = unsafe {
-                WindowState::from_field(this)
-            };
-
-            state.trigger_event(Event::Mouse($event));
-        }
-    };
-}
-
-
-mouse_simple_extern_fn!(left_mouse_down, ButtonPressed(MouseButton::Left));
-mouse_simple_extern_fn!(left_mouse_up, ButtonReleased(MouseButton::Left));
-
-mouse_simple_extern_fn!(right_mouse_down, ButtonPressed(MouseButton::Right));
-mouse_simple_extern_fn!(right_mouse_up, ButtonReleased(MouseButton::Right));
-
-mouse_simple_extern_fn!(middle_mouse_down, ButtonPressed(MouseButton::Middle));
-mouse_simple_extern_fn!(middle_mouse_up, ButtonReleased(MouseButton::Middle));
-
-mouse_simple_extern_fn!(mouse_entered, MouseEvent::CursorEntered);
-mouse_simple_extern_fn!(mouse_exited, MouseEvent::CursorLeft);
-
-
-extern "C" fn key_down(this: &Object, _: Sel, event: id){
-    let state: &mut WindowState = unsafe {
-        WindowState::from_field(this)
-    };
-
-    if let Some(key_event) = state.process_native_key_event(event){
-        state.trigger_event(Event::Keyboard(key_event));
-    }
-}
-
-
-extern "C" fn key_up(this: &Object, _: Sel, event: id){
-    let state: &mut WindowState = unsafe {
-        WindowState::from_field(this)
-    };
-
-    if let Some(key_event) = state.process_native_key_event(event){
-        state.trigger_event(Event::Keyboard(key_event));
-    }
-}
-
-
-extern "C" fn flags_changed(this: &Object, _: Sel, event: id){
-    let state: &mut WindowState = unsafe {
-        WindowState::from_field(this)
-    };
-
-    if let Some(key_event) = state.process_native_key_event(event){
-        state.trigger_event(Event::Keyboard(key_event));
-    }
+    state.trigger_event(
+        Event::Mouse(MouseEvent::CursorMoved { position })
+    );
 }

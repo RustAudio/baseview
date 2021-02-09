@@ -17,7 +17,8 @@ use objc::{msg_send, runtime::Object, sel, sel_impl};
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    Event, WindowHandler, WindowOpenOptions, WindowScalePolicy, WindowInfo,
+    Event, EventStatus, WindowHandler, WindowOpenOptions, WindowScalePolicy,
+    WindowInfo,
 };
 
 use super::view::{create_view, BASEVIEW_STATE_IVAR};
@@ -217,9 +218,9 @@ impl WindowState {
         &mut *(state_ptr as *mut Self)
     }
 
-    pub(super) fn trigger_event(&mut self, event: Event) {
+    pub(super) fn trigger_event(&mut self, event: Event) -> EventStatus {
         self.window_handler
-            .on_event(&mut crate::Window::new(&mut self.window), event);
+            .on_event(&mut crate::Window::new(&mut self.window), event)
     }
 
     pub(super) fn trigger_frame(&mut self) {

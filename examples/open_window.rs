@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use rtrb::{RingBuffer, Consumer};
 
-use baseview::{Event, Window, WindowHandler, WindowScalePolicy};
+use baseview::{Event, EventStatus, Window, WindowHandler, WindowScalePolicy};
 
 #[derive(Debug, Clone)]
 enum Message {
@@ -20,12 +20,14 @@ impl WindowHandler for OpenWindowExample {
         }
     }
 
-    fn on_event(&mut self, _window: &mut Window, event: Event) {
+    fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
         match event {
             Event::Mouse(e) => println!("Mouse event: {:?}", e),
             Event::Keyboard(e) => println!("Keyboard event: {:?}", e),
             Event::Window(e) => println!("Window event: {:?}", e),
         }
+
+        EventStatus::Captured
     }
 }
 

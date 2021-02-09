@@ -68,7 +68,7 @@ pub enum MouseEvent {
     CursorLeft,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum WindowEvent {
     Resized(WindowInfo),
     Focused,
@@ -76,9 +76,31 @@ pub enum WindowEvent {
     WillClose,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Event {
     Mouse(MouseEvent),
     Keyboard(KeyboardEvent),
     Window(WindowEvent),
+}
+
+
+/// Return value for [WindowHandler::on_event](`crate::WindowHandler::on_event()`),
+/// indicating whether the event was handled by your window or should be passed
+/// back to the platform.
+///
+/// For most event types, this value won't have any effect. This is the case
+/// when there is no clear meaning of passing back the event to the platform,
+/// or it isn't obviously useful. Currently, only [`Event::Keyboard`] variants
+/// are supported.
+#[derive(Debug)]
+pub enum EventStatus {
+    /// Event was handled by your window and will not be sent back to the
+    /// platform for further processing.
+    Captured,
+    /// Event was **not** handled by your window, so pass it back to the
+    /// platform. For parented windows, this usually means that the parent
+    /// window will receive the event. This is useful for cases such as using
+    /// DAW functionality for playing piano keys with the keyboard while a
+    /// plugin window is in focus.
+    Ignored,
 }
