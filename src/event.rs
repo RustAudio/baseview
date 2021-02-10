@@ -92,7 +92,7 @@ pub enum Event {
 /// when there is no clear meaning of passing back the event to the platform,
 /// or it isn't obviously useful. Currently, only [`Event::Keyboard`] variants
 /// are supported.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EventStatus {
     /// Event was handled by your window and will not be sent back to the
     /// platform for further processing.
