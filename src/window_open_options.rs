@@ -1,7 +1,7 @@
 use crate::Size;
 
 /// The dpi scaling policy of the window
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WindowScalePolicy {
     /// Use the system's dpi scale factor
     SystemScaleFactor,
