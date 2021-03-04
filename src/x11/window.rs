@@ -283,6 +283,10 @@ impl Window {
 
             let mut fds = [PollFd::new(xcb_fd, PollFlags::POLLIN)];
 
+            // Check for any events in the internal buffers
+            // before going to sleep:
+            self.drain_xcb_events(handler);
+
             // FIXME: handle errors
             poll(&mut fds, until_next_frame.subsec_millis() as i32).unwrap();
 

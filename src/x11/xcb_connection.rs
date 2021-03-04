@@ -46,6 +46,8 @@ impl XcbConnection {
     pub fn new() -> Result<Self, xcb::base::ConnError> {
         let (conn, xlib_display) = xcb::Connection::connect_with_xlib_display()?;
 
+        conn.set_event_queue_owner(xcb::base::EventQueueOwner::Xcb);
+
         let (wm_protocols, wm_delete_window, wm_normal_hints) = intern_atoms!(&conn, WM_PROTOCOLS, WM_DELETE_WINDOW, WM_NORMAL_HINTS);
 
         Ok(Self {
