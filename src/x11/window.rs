@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use std::os::raw::{c_ulong, c_void};
 use std::sync::mpsc;
 use std::time::*;
@@ -103,29 +104,24 @@ impl Window {
           B: Send + 'static,
     {
         // Connect to the X server
-        // FIXME: baseview error type instead of unwrap()
-        let xcb_connection = XcbConnection::new().unwrap();
+        let xcb_connection = XcbConnection::new();
 
-        // Get screen information (?)
-        let setup = xcb_connection.conn.get_setup();
-        let screen = setup
-            .roots()
-            .nth(xcb_connection.xlib_display as usize)
-            .unwrap();
-
-        let foreground = xcb_connection.conn.generate_id();
-
-        let parent_id = parent.unwrap_or_else(|| screen.root());
-
-        xcb::create_gc(
-            &xcb_connection.conn,
-            foreground,
-            parent_id,
-            &[
-                (xcb::GC_FOREGROUND, screen.black_pixel()),
-                (xcb::GC_GRAPHICS_EXPOSURES, 0),
-            ],
-        );
+        let foreground = unsafe { xcb_sys::xcb_generate_id(xcb_connection.conn) };
+        let parent_id = parent.unwrap_or_else(|| unsafe { (*xcb_connection.screen).root });
+        let value_mask = xcb_sys::XCB_GC_FOREGROUND | xcb_sys::XCB_GC_GRAPHICS_EXPOSURES;
+        let value_list = &[
+            unsafe { (*xcb_connection.screen).black_pixel },
+            0,
+        ];
+        unsafe {
+            xcb_sys::xcb_create_gc(
+                xcb_connection.conn,
+                foreground,
+                parent_id,
+                value_mask,
+                value_list.as_ptr() as *const c_void,
+            );
+        }
 
         let scaling = match options.scale {
             WindowScalePolicy::SystemScaleFactor => xcb_connection.get_scaling().unwrap_or(1.0),
@@ -134,57 +130,68 @@ impl Window {
 
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
-        let window_id = xcb_connection.conn.generate_id();
-        xcb::create_window(
-            &xcb_connection.conn,
-            xcb::COPY_FROM_PARENT as u8,
-            window_id,
-            parent_id,
-            0,                     // x coordinate of the new window
-            0,                     // y coordinate of the new window
-            window_info.physical_size().width as u16,        // window width
-            window_info.physical_size().height as u16,       // window height
-            0,                     // window border
-            xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
-            screen.root_visual(),
-            &[(
-                xcb::CW_EVENT_MASK,
-                xcb::EVENT_MASK_EXPOSURE
-                    | xcb::EVENT_MASK_POINTER_MOTION
-                    | xcb::EVENT_MASK_BUTTON_PRESS
-                    | xcb::EVENT_MASK_BUTTON_RELEASE
-                    | xcb::EVENT_MASK_KEY_PRESS
-                    | xcb::EVENT_MASK_KEY_RELEASE
-                    | xcb::EVENT_MASK_STRUCTURE_NOTIFY,
-            )],
-        );
+        let window_id = unsafe { xcb_sys::xcb_generate_id(xcb_connection.conn) };
+        let value_mask = xcb_sys::XCB_CW_EVENT_MASK;
+        let value_list = &[
+            xcb_sys::XCB_EVENT_MASK_EXPOSURE
+                | xcb_sys::XCB_EVENT_MASK_POINTER_MOTION
+                | xcb_sys::XCB_EVENT_MASK_BUTTON_PRESS
+                | xcb_sys::XCB_EVENT_MASK_BUTTON_RELEASE
+                | xcb_sys::XCB_EVENT_MASK_KEY_PRESS
+                | xcb_sys::XCB_EVENT_MASK_KEY_RELEASE
+                | xcb_sys::XCB_EVENT_MASK_STRUCTURE_NOTIFY,
+        ];
+        unsafe {
+            xcb_sys::xcb_create_window(
+                xcb_connection.conn,
+                xcb_sys::XCB_COPY_FROM_PARENT as u8,
+                window_id,
+                parent_id,
+                0,                     // x coordinate of the new window
+                0,                     // y coordinate of the new window
+                window_info.physical_size().width as u16,        // window width
+                window_info.physical_size().height as u16,       // window height
+                0,                     // window border
+                xcb_sys::XCB_WINDOW_CLASS_INPUT_OUTPUT as u16,
+                (*xcb_connection.screen).root_visual,
+                value_mask,
+                value_list.as_ptr() as *const c_void,
+            );
+        }
 
-        xcb::map_window(&xcb_connection.conn, window_id);
+        unsafe {
+            xcb_sys::xcb_map_window(xcb_connection.conn, window_id);
+        }
 
         // Change window title
-        let title = options.title;
-        xcb::change_property(
-            &xcb_connection.conn,
-            xcb::PROP_MODE_REPLACE as u8,
-            window_id,
-            xcb::ATOM_WM_NAME,
-            xcb::ATOM_STRING,
-            8, // view data as 8-bit
-            title.as_bytes(),
-        );
+        let title = CString::new(options.title).unwrap();
+        unsafe {
+            xcb_sys::xcb_change_property(
+                xcb_connection.conn,
+                xcb_sys::XCB_PROP_MODE_REPLACE as u8,
+                window_id,
+                xcb_sys::XCB_ATOM_WM_NAME,
+                xcb_sys::XCB_ATOM_STRING,
+                8, // view data as 8-bit
+                title.as_bytes().len() as u32,
+                title.as_ptr() as *const c_void,
+            );
+        }
 
-        xcb_connection.atoms.wm_protocols
-            .zip(xcb_connection.atoms.wm_delete_window)
-            .map(|(wm_protocols, wm_delete_window)| {
-                xcb_util::icccm::set_wm_protocols(
-                    &xcb_connection.conn,
-                    window_id,
-                    wm_protocols,
-                    &[wm_delete_window],
-                );
-            });
+        let atoms = &[xcb_connection.atoms.wm_delete_window];
+        unsafe {
+            xcb_sys::xcb_icccm_set_wm_protocols(
+                xcb_connection.conn,
+                window_id,
+                xcb_connection.atoms.wm_protocols,
+                atoms.len() as u32,
+                atoms.as_ptr() as *mut xcb_sys::xcb_atom_t,
+            );
+        }
 
-        xcb_connection.conn.flush();
+        unsafe {
+            xcb_sys::xcb_flush(xcb_connection.conn);
+        }
 
         let mut window = Self {
             xcb_connection,
@@ -217,13 +224,18 @@ impl Window {
         let xid = self.xcb_connection.get_cursor_xid(mouse_cursor);
 
         if xid != 0 {
-            xcb::change_window_attributes(
-                &self.xcb_connection.conn,
-                self.window_id,
-                &[(xcb::CW_CURSOR, xid)]
-            );
+            let value_mask = xcb_sys::XCB_CW_CURSOR;
+            let value_list = &[xid];
+            unsafe {
+                xcb_sys::xcb_change_window_attributes(
+                    self.xcb_connection.conn,
+                    self.window_id,
+                    value_mask,
+                    value_list.as_ptr() as *const c_void,
+                );
 
-            self.xcb_connection.conn.flush();
+                xcb_sys::xcb_flush(self.xcb_connection.conn);
+            }
         }
 
         self.mouse_cursor = mouse_cursor;
@@ -236,8 +248,15 @@ impl Window {
         // when they've all been coalesced.
         self.new_physical_size = None;
 
-        while let Some(event) = self.xcb_connection.conn.poll_for_event() {
-            self.handle_xcb_event(handler, event);
+        loop {
+            unsafe {
+                let event = xcb_sys::xcb_poll_for_event(self.xcb_connection.conn);
+                if event.is_null() {
+                    break;
+                }
+                self.handle_xcb_event(handler, event);
+                libc::free(event as *mut c_void);
+            }
         }
 
         if let Some(size) = self.new_physical_size.take() {
@@ -263,8 +282,7 @@ impl Window {
         use nix::poll::*;
 
         let xcb_fd = unsafe {
-            let raw_conn = self.xcb_connection.conn.get_raw_conn();
-            xcb::ffi::xcb_get_file_descriptor(raw_conn)
+            xcb_sys::xcb_get_file_descriptor(self.xcb_connection.conn)
         };
 
         let mut next_frame = Instant::now() + self.frame_interval;
@@ -302,8 +320,8 @@ impl Window {
         }
     }
 
-    fn handle_xcb_event(&mut self, handler: &mut dyn WindowHandler, event: xcb::GenericEvent) {
-        let event_type = event.response_type() & !0x80;
+    fn handle_xcb_event(&mut self, handler: &mut dyn WindowHandler, event: *mut xcb_sys::xcb_generic_event_t) {
+        let event_type = (unsafe { (*event).response_type } & !0x80) as u32;
 
         // For all of the keyboard and mouse events, you can fetch
         // `x`, `y`, `detail`, and `state`.
@@ -329,17 +347,10 @@ impl Window {
             ////
             // window
             ////
-            xcb::CLIENT_MESSAGE => {
-                let event = unsafe { xcb::cast_event::<xcb::ClientMessageEvent>(&event) };
+            xcb_sys::XCB_CLIENT_MESSAGE => {
+                let event = unsafe { &*(event as *mut xcb_sys::xcb_client_message_event_t) };
 
-                // what an absolute tragedy this all is
-                let data = event.data().data;
-                let (_, data32, _) = unsafe { data.align_to::<u32>() };
-
-                let wm_delete_window = self.xcb_connection.atoms.wm_delete_window
-                    .unwrap_or(xcb::NONE);
-
-                if wm_delete_window == data32[0] {
+                if unsafe { event.data.data32[0] } == self.xcb_connection.atoms.wm_delete_window {
                     handler.on_event(
                         &mut crate::Window::new(self),
                         Event::Window(WindowEvent::WillClose)
@@ -350,10 +361,10 @@ impl Window {
                 }
             }
 
-            xcb::CONFIGURE_NOTIFY => {
-                let event = unsafe { xcb::cast_event::<xcb::ConfigureNotifyEvent>(&event) };
+            xcb_sys::XCB_CONFIGURE_NOTIFY => {
+                let event = unsafe { &*(event as *mut xcb_sys::xcb_configure_notify_event_t) };
 
-                let new_physical_size = PhySize::new(event.width() as u32, event.height() as u32);
+                let new_physical_size = PhySize::new(event.width as u32, event.height as u32);
 
                 if self.new_physical_size.is_some() || new_physical_size != self.window_info.physical_size() {
                     self.new_physical_size = Some(new_physical_size);
@@ -363,12 +374,11 @@ impl Window {
             ////
             // mouse
             ////
-            xcb::MOTION_NOTIFY => {
-                let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
-                let detail = event.detail();
+            xcb_sys::XCB_MOTION_NOTIFY => {
+                let event = unsafe { &*(event as *mut xcb_sys::xcb_motion_notify_event_t) };
 
-                if detail != 4 && detail != 5 {
-                    let physical_pos = PhyPoint::new(event.event_x() as i32, event.event_y() as i32);
+                if event.detail != 4 && event.detail != 5 {
+                    let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
                     let logical_pos = physical_pos.to_logical(&self.window_info);
 
                     handler.on_event(
@@ -380,11 +390,10 @@ impl Window {
                 }
             }
 
-            xcb::BUTTON_PRESS => {
-                let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
-                let detail = event.detail();
+            xcb_sys::XCB_BUTTON_PRESS => {
+                let event = unsafe { &*(event as *mut xcb_sys::xcb_button_press_event_t) };
 
-                match detail {
+                match event.detail {
                     4 => {
                         handler.on_event(
                             &mut crate::Window::new(self),
@@ -413,12 +422,11 @@ impl Window {
                 }
             }
 
-            xcb::BUTTON_RELEASE => {
-                let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
-                let detail = event.detail();
+            xcb_sys::XCB_BUTTON_RELEASE => {
+                let event = unsafe { &*(event as *mut xcb_sys::xcb_button_press_event_t) };
 
-                if detail != 4 && detail != 5 {
-                    let button_id = mouse_id(detail);
+                if event.detail != 4 && event.detail != 5 {
+                    let button_id = mouse_id(event.detail);
                     handler.on_event(
                         &mut crate::Window::new(self),
                         Event::Mouse(MouseEvent::ButtonReleased(button_id))
@@ -429,21 +437,21 @@ impl Window {
             ////
             // keys
             ////
-            xcb::KEY_PRESS => {
-                let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
+            xcb_sys::XCB_KEY_PRESS => {
+                let event = unsafe { &*(event as *mut xcb_sys::xcb_key_press_event_t) };
 
                 handler.on_event(
                     &mut crate::Window::new(self),
-                    Event::Keyboard(convert_key_press_event(&event))
+                    Event::Keyboard(convert_key_press_event(event))
                 );
             }
 
-            xcb::KEY_RELEASE => {
-                let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
+            xcb_sys::XCB_KEY_RELEASE => {
+                let event = unsafe { &*(event as *mut xcb_sys::xcb_key_release_event_t) };
 
                 handler.on_event(
                     &mut crate::Window::new(self),
-                    Event::Keyboard(convert_key_release_event(&event))
+                    Event::Keyboard(convert_key_release_event(event))
                 );
             }
 
@@ -456,7 +464,7 @@ unsafe impl HasRawWindowHandle for Window {
     fn raw_window_handle(&self) -> RawWindowHandle {
         RawWindowHandle::Xlib(XlibHandle {
             window: self.window_id as c_ulong,
-            display: self.xcb_connection.conn.get_raw_dpy() as *mut c_void,
+            display: self.xcb_connection.display as *mut c_void,
             ..raw_window_handle::unix::XlibHandle::empty()
         })
     }
