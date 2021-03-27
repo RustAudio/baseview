@@ -269,7 +269,10 @@ extern "C" fn view_did_change_backing_properties(this: &Object, _:Sel, _:id) {
     unsafe {
         let ns_window: *mut Object = msg_send![this, window];
 
-        let scale_factor: f64 = NSWindow::backingScaleFactor(ns_window) as _;
+        let scale_factor: f64 = match ns_window.is_null() {
+            true => { 1.0 }
+            false => { NSWindow::backingScaleFactor(ns_window) as f64 }
+        };
 
         let state: &mut WindowState = WindowState::from_field(this);
 
