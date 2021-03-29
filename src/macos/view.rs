@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use cocoa::appkit::{NSEvent, NSView};
+use cocoa::appkit::{NSEvent, NSView, NSWindow};
 use cocoa::base::{id, nil, BOOL, YES, NO};
 use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize};
 
@@ -13,7 +13,7 @@ use objc::{
 };
 use uuid::Uuid;
 
-use crate::{Event, EventStatus, MouseButton, MouseEvent, Point, WindowOpenOptions};
+use crate::{Event, EventStatus, MouseButton, MouseEvent, Point, Size, WindowEvent, WindowInfo, WindowOpenOptions};
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 
 use super::window::WindowState;
@@ -145,6 +145,13 @@ unsafe fn create_view_class() -> &'static Class {
         mouse_moved as extern "C" fn(&Object, Sel, id),
     );
 
+    class.add_method(
+        sel!(viewDidChangeBackingProperties:),
+        view_did_change_backing_properties as extern "C" fn(&Object, Sel, id),
+    );
+
+    
+
     add_simple_mouse_class_method!(
         class,
         mouseDown,
@@ -255,6 +262,31 @@ extern "C" fn release(this: &mut Object, _sel: Sel) {
             let class = msg_send![this, class];
             ::objc::runtime::objc_disposeClassPair(class);
         }
+    }
+}
+
+extern "C" fn view_did_change_backing_properties(this: &Object, _:Sel, _:id) {
+    unsafe {
+        let ns_window: *mut Object = msg_send![this, window];
+
+        let scale_factor: f64 = if ns_window.is_null() {
+            1.0
+        } else {
+            NSWindow::backingScaleFactor(ns_window) as f64 
+        };
+
+        let state: &mut WindowState = WindowState::from_field(this);
+
+        let bounds: NSRect = msg_send![this, bounds];
+
+        let window_info = WindowInfo::from_logical_size(
+            Size::new(bounds.size.width, bounds.size.height), 
+            scale_factor
+        );
+        
+        state.trigger_event(
+            Event::Window(WindowEvent::Resized(window_info))
+        );
     }
 }
 
