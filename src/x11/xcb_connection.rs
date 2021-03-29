@@ -1,67 +1,92 @@
-/// A very light abstraction around the XCB connection.
-///
-/// Keeps track of the xcb connection itself and the xlib display ID that was used to connect.
-
-use std::ffi::{CStr, CString};
 use std::collections::HashMap;
+use std::ffi::{CStr, CString, c_void};
+use std::os::raw::c_char;
+
+use x11::xlib::{Display, XDefaultScreen, XOpenDisplay};
+use x11::xlib_xcb::XGetXCBConnection;
+use xcb_sys::{
+    xcb_atom_t, xcb_connection_t, xcb_get_setup, xcb_intern_atom, xcb_intern_atom_cookie_t,
+    xcb_intern_atom_reply, xcb_screen_next, xcb_screen_t, xcb_setup_roots_iterator,
+};
 
 use crate::MouseCursor;
 
 use super::cursor;
 
-
-pub(crate) struct Atoms {
-    pub wm_protocols: Option<u32>,
-    pub wm_delete_window: Option<u32>,
-    pub wm_normal_hints: Option<u32>,
+pub struct Atoms {
+    pub wm_protocols: xcb_atom_t,
+    pub wm_delete_window: xcb_atom_t,
+    pub wm_normal_hints: xcb_atom_t,
 }
 
+/// A very light abstraction around the XCB connection.
+///
+/// Keeps track of the xcb connection itself and the xlib display ID that was used to connect.
 pub struct XcbConnection {
-    pub conn: xcb::Connection,
-    pub xlib_display: i32,
+    pub conn: *mut xcb_connection_t,
+    pub display: *mut Display,
+    pub screen: *mut xcb_screen_t,
 
-    pub(crate) atoms: Atoms,
+    pub atoms: Atoms,
 
-    pub(super) cursor_cache: HashMap<MouseCursor, u32>,
+    pub cursor_cache: HashMap<MouseCursor, u32>,
 }
 
-macro_rules! intern_atoms {
-    ($conn:expr, $( $name:ident ),+ ) => {{
-        $(
-            #[allow(non_snake_case)]
-            let $name = xcb::intern_atom($conn, true, stringify!($name));
-        )+
+unsafe fn get_screen(conn: *mut xcb_connection_t, display: *mut Display) -> *mut xcb_screen_t {
+    let screen_number = XDefaultScreen(display);
+    let setup = xcb_get_setup(conn);
+    let mut roots_iter = xcb_setup_roots_iterator(setup);
+    for _ in 0..screen_number {
+        xcb_screen_next(&mut roots_iter);
+    }
+    roots_iter.data
+}
 
-        // splitting request and reply to improve throughput
+unsafe fn intern_atom(conn: *mut xcb_connection_t, name: &[u8]) -> xcb_intern_atom_cookie_t {
+    xcb_intern_atom(conn, 1, name.len() as u16, name.as_ptr() as *const c_char)
+}
 
-        (
-            $( $name.get_reply()
-                .map(|r| r.atom())
-                .ok()),+
-        )
-    }};
+unsafe fn intern_atom_reply(
+    conn: *mut xcb_connection_t, cookie: xcb_intern_atom_cookie_t,
+) -> xcb_atom_t {
+    let reply = xcb_intern_atom_reply(conn, cookie, std::ptr::null_mut());
+    if reply.is_null() {
+        return xcb_sys::XCB_NONE;
+    }
+    let atom = (*reply).atom;
+    libc::free(reply as *mut c_void);
+    atom
 }
 
 impl XcbConnection {
-    pub fn new() -> Result<Self, xcb::base::ConnError> {
-        let (conn, xlib_display) = xcb::Connection::connect_with_xlib_display()?;
+    pub fn new() -> Self {
+        unsafe {
+            let display = XOpenDisplay(std::ptr::null());
+            let conn = XGetXCBConnection(display) as *mut xcb_connection_t;
+            let screen = get_screen(conn, display);
 
-        conn.set_event_queue_owner(xcb::base::EventQueueOwner::Xcb);
+            let wm_protocols_cookie = intern_atom(conn, b"WM_PROTOCOLS");
+            let wm_delete_window_cookie = intern_atom(conn, b"WM_DELETE_WINDOW");
+            let wm_normal_hints_cookie = intern_atom(conn, b"WM_NORMAL_HINTS");
 
-        let (wm_protocols, wm_delete_window, wm_normal_hints) = intern_atoms!(&conn, WM_PROTOCOLS, WM_DELETE_WINDOW, WM_NORMAL_HINTS);
+            let wm_protocols = intern_atom_reply(conn, wm_protocols_cookie);
+            let wm_delete_window = intern_atom_reply(conn, wm_delete_window_cookie);
+            let wm_normal_hints = intern_atom_reply(conn, wm_normal_hints_cookie);
 
-        Ok(Self {
-            conn,
-            xlib_display,
+            Self {
+                conn,
+                display,
+                screen,
 
-            atoms: Atoms {
-                wm_protocols,
-                wm_delete_window,
-                wm_normal_hints,
-            },
+                atoms: Atoms {
+                    wm_protocols,
+                    wm_delete_window,
+                    wm_normal_hints,
+                },
 
-            cursor_cache: HashMap::new()
-        })
+                cursor_cache: HashMap::new(),
+            }
+        }
     }
 
     // Try to get the scaling with this function first.
@@ -73,9 +98,8 @@ impl XcbConnection {
             XrmValue,
         };
 
-        let display = self.conn.get_raw_dpy();
         unsafe {
-            let rms = XResourceManagerString(display);
+            let rms = XResourceManagerString(self.display);
             if !rms.is_null() {
                 let db = XrmGetStringDatabase(rms);
                 if !db.is_null() {
@@ -119,20 +143,19 @@ impl XcbConnection {
     // Only use this function as a fallback.
     // If neither work, I guess just assume 96.0 and don't do any scaling.
     fn get_scaling_screen_dimensions(&self) -> Option<f64> {
-        // Figure out screen information
-        let setup = self.conn.get_setup();
-        let screen = setup.roots().nth(self.xlib_display as usize).unwrap();
-
         // Get the DPI from the screen struct
         //
         // there are 2.54 centimeters to an inch; so there are 25.4 millimeters.
         // dpi = N pixels / (M millimeters / (25.4 millimeters / 1 inch))
         //     = N pixels / (M inch / 25.4)
         //     = N * 25.4 pixels / M inch
-        let width_px = screen.width_in_pixels() as f64;
-        let width_mm = screen.width_in_millimeters() as f64;
-        let height_px = screen.height_in_pixels() as f64;
-        let height_mm = screen.height_in_millimeters() as f64;
+
+        let screen = unsafe { &*self.screen };
+
+        let width_px = screen.width_in_pixels as f64;
+        let width_mm = screen.width_in_millimeters as f64;
+        let height_px = screen.height_in_pixels as f64;
+        let height_mm = screen.height_in_millimeters as f64;
         let _xres = width_px * 25.4 / width_mm;
         let yres = height_px * 25.4 / height_mm;
 
@@ -150,10 +173,10 @@ impl XcbConnection {
 
     #[inline]
     pub fn get_cursor_xid(&mut self, cursor: MouseCursor) -> u32 {
-        let dpy = self.conn.get_raw_dpy();
-
-        *self.cursor_cache
+        let display = self.display;
+        *self
+            .cursor_cache
             .entry(cursor)
-            .or_insert_with(|| cursor::get_xcursor(dpy, cursor))
+            .or_insert_with(|| cursor::get_xcursor(display, cursor))
     }
 }

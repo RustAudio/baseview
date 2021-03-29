@@ -18,7 +18,7 @@
 
 //! X11 keyboard handling
 
-use xcb::xproto;
+use xcb_sys::{xcb_key_press_event_t, xcb_key_release_event_t};
 
 use keyboard_types::*;
 
@@ -363,19 +363,19 @@ fn hardware_keycode_to_code(hw_keycode: u16) -> Code {
 }
 
 // Extracts the keyboard modifiers from, e.g., the `state` field of
-// `xcb::xproto::ButtonPressEvent`
+// `xcb_sys::xcb_key_press_event_t`
 fn key_mods(mods: u16) -> Modifiers {
     let mut ret = Modifiers::default();
     let mut key_masks = [
-        (xproto::MOD_MASK_SHIFT, Modifiers::SHIFT),
-        (xproto::MOD_MASK_CONTROL, Modifiers::CONTROL),
+        (xcb_sys::XCB_MOD_MASK_SHIFT, Modifiers::SHIFT),
+        (xcb_sys::XCB_MOD_MASK_CONTROL, Modifiers::CONTROL),
         // X11's mod keys are configurable, but this seems
         // like a reasonable default for US keyboards, at least,
         // where the "windows" key seems to be MOD_MASK_4.
-        (xproto::MOD_MASK_1, Modifiers::ALT),
-        (xproto::MOD_MASK_2, Modifiers::NUM_LOCK),
-        (xproto::MOD_MASK_4, Modifiers::META),
-        (xproto::MOD_MASK_LOCK, Modifiers::CAPS_LOCK),
+        (xcb_sys::XCB_MOD_MASK_1, Modifiers::ALT),
+        (xcb_sys::XCB_MOD_MASK_2, Modifiers::NUM_LOCK),
+        (xcb_sys::XCB_MOD_MASK_4, Modifiers::META),
+        (xcb_sys::XCB_MOD_MASK_LOCK, Modifiers::CAPS_LOCK),
     ];
     for (mask, modifiers) in &mut key_masks {
         if mods & (*mask as u16) != 0 {
@@ -387,11 +387,11 @@ fn key_mods(mods: u16) -> Modifiers {
 
 
 pub(super) fn convert_key_press_event(
-    key_press: &xcb::KeyPressEvent,
+    key_press: &xcb_key_press_event_t,
 ) -> KeyboardEvent {
-    let hw_keycode = key_press.detail();
+    let hw_keycode = key_press.detail;
     let code = hardware_keycode_to_code(hw_keycode.into());
-    let modifiers = key_mods(key_press.state());
+    let modifiers = key_mods(key_press.state);
     let key = code_to_key(code, modifiers);
     let location = code_to_location(code);
     let state = KeyState::Down;
@@ -409,11 +409,11 @@ pub(super) fn convert_key_press_event(
 
 
 pub(super) fn convert_key_release_event(
-    key_release: &xcb::KeyReleaseEvent
+    key_release: &xcb_key_release_event_t,
 ) -> KeyboardEvent {
-    let hw_keycode = key_release.detail();
+    let hw_keycode = key_release.detail;
     let code = hardware_keycode_to_code(hw_keycode.into());
-    let modifiers = key_mods(key_release.state());
+    let modifiers = key_mods(key_release.state);
     let key = code_to_key(code, modifiers);
     let location = code_to_location(code);
     let state = KeyState::Up;
