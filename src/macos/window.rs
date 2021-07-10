@@ -212,6 +212,7 @@ impl WindowState {
     /// Don't use this to create two simulataneous references to a single
     /// WindowState. Apparently, macOS blocks for the duration of an event,
     /// callback, meaning that this shouldn't be a problem in practice.
+    #[allow(clippy::mut_from_ref)]
     pub(super) unsafe fn from_field(obj: &Object) -> &mut Self {
         let state_ptr: *mut c_void = *obj.get_ivar(BASEVIEW_STATE_IVAR);
 
