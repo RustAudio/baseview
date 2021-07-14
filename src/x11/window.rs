@@ -200,7 +200,7 @@ impl Window {
 
         let mut handler = build(&mut crate::Window::new(&mut window));
 
-        // Send an initial window resized event so the use is alerted of
+        // Send an initial window resized event so the user is alerted of
         // the correct dpi scaling.
         handler.on_event(
             &mut crate::Window::new(&mut window),
