@@ -84,6 +84,7 @@ impl Point {
 
     /// Convert to actual physical coordinates
     #[inline]
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_physical(&self, window_info: &WindowInfo) -> PhyPoint {
         PhyPoint {
             x: (self.x * window_info.scale()).round() as i32,
@@ -107,6 +108,7 @@ impl PhyPoint {
 
     /// Convert to logical coordinates
     #[inline]
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_logical(&self, window_info: &WindowInfo) -> Point {
         Point {
             x: f64::from(self.x) * window_info.scale_recip(),
@@ -130,6 +132,7 @@ impl Size {
 
     /// Convert to actual physical size
     #[inline]
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_physical(&self, window_info: &WindowInfo) -> PhySize {
         PhySize {
             width: (self.width * window_info.scale()).round() as u32,
@@ -153,6 +156,7 @@ impl PhySize {
 
     /// Convert to logical size
     #[inline]
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_logical(&self, window_info: &WindowInfo) -> Size {
         Size {
             width: f64::from(self.width) * window_info.scale_recip(),

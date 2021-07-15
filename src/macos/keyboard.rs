@@ -19,13 +19,12 @@
 //! Conversion of platform keyboard event into cross-platform event.
 
 use cocoa::appkit::{NSEvent, NSEventModifierFlags, NSEventType};
-use cocoa::foundation::NSString;
 use cocoa::base::id;
-use keyboard_types::{Code, KeyState, Key, KeyboardEvent, Modifiers};
+use cocoa::foundation::NSString;
+use keyboard_types::{Code, Key, KeyState, KeyboardEvent, Modifiers};
 use objc::{msg_send, sel, sel_impl};
 
 use crate::keyboard::code_to_location;
-
 
 pub(crate) fn from_nsstring(s: id) -> String {
     unsafe {
@@ -245,14 +244,12 @@ fn code_to_key(code: Code) -> Option<Key> {
     })
 }
 
-
 fn is_valid_key(s: &str) -> bool {
     match s.chars().next() {
         None => false,
         Some(c) => c >= ' ' && c != '\x7f' && !('\u{e000}'..'\u{f900}').contains(&c),
     }
 }
-
 
 fn is_modifier_code(code: Code) -> bool {
     matches!(
@@ -269,7 +266,6 @@ fn is_modifier_code(code: Code) -> bool {
             | Code::Help
     )
 }
-
 
 impl KeyboardState {
     pub(crate) fn new() -> KeyboardState {
@@ -330,19 +326,18 @@ impl KeyboardState {
                 }
             };
             let event = KeyboardEvent {
-                code,
+                state,
                 key,
+                code,
                 location,
                 modifiers,
-                state,
-                is_composing,
                 repeat,
+                is_composing,
             };
             Some(event)
         }
     }
 }
-
 
 const MODIFIER_MAP: &[(NSEventModifierFlags, Modifiers)] = &[
     (NSEventModifierFlags::NSShiftKeyMask, Modifiers::SHIFT),
@@ -354,7 +349,6 @@ const MODIFIER_MAP: &[(NSEventModifierFlags, Modifiers)] = &[
         Modifiers::CAPS_LOCK,
     ),
 ];
-
 
 pub(crate) fn make_modifiers(raw: NSEventModifierFlags) -> Modifiers {
     let mut modifiers = Modifiers::empty();
