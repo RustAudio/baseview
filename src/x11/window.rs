@@ -200,6 +200,13 @@ impl Window {
 
         let mut handler = build(&mut crate::Window::new(&mut window));
 
+        // Send an initial window resized event so the user is alerted of
+        // the correct dpi scaling.
+        handler.on_event(
+            &mut crate::Window::new(&mut window),
+            Event::Window(WindowEvent::Resized(window_info))
+        );
+
         let _ = tx.send(Ok(SendableRwh(window.raw_window_handle())));
 
         window.run_event_loop(&mut handler);
