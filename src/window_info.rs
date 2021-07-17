@@ -9,7 +9,11 @@ pub struct WindowInfo {
 
 impl WindowInfo {
     pub fn from_logical_size(logical_size: Size, scale: f64) -> Self {
-        let scale_recip = if scale == 1.0 { 1.0 } else { 1.0 / scale };
+        let scale_recip = if (scale - 1.0).abs() < f64::EPSILON {
+            1.0
+        } else {
+            1.0 / scale
+        };
 
         let physical_size = PhySize {
             width: (logical_size.width * scale).round() as u32,
@@ -25,7 +29,11 @@ impl WindowInfo {
     }
 
     pub fn from_physical_size(physical_size: PhySize, scale: f64) -> Self {
-        let scale_recip = if scale == 1.0 { 1.0 } else { 1.0 / scale };
+        let scale_recip = if (scale - 1.0).abs() < f64::EPSILON {
+            1.0
+        } else {
+            1.0 / scale
+        };
 
         let logical_size = Size {
             width: f64::from(physical_size.width) * scale_recip,
@@ -65,7 +73,7 @@ impl WindowInfo {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Point {
     pub x: f64,
-    pub y: f64
+    pub y: f64,
 }
 
 impl Point {
@@ -76,6 +84,7 @@ impl Point {
 
     /// Convert to actual physical coordinates
     #[inline]
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_physical(&self, window_info: &WindowInfo) -> PhyPoint {
         PhyPoint {
             x: (self.x * window_info.scale()).round() as i32,
@@ -88,7 +97,7 @@ impl Point {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PhyPoint {
     pub x: i32,
-    pub y: i32
+    pub y: i32,
 }
 
 impl PhyPoint {
@@ -99,6 +108,7 @@ impl PhyPoint {
 
     /// Convert to logical coordinates
     #[inline]
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_logical(&self, window_info: &WindowInfo) -> Point {
         Point {
             x: f64::from(self.x) * window_info.scale_recip(),
@@ -122,6 +132,7 @@ impl Size {
 
     /// Convert to actual physical size
     #[inline]
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_physical(&self, window_info: &WindowInfo) -> PhySize {
         PhySize {
             width: (self.width * window_info.scale()).round() as u32,
@@ -145,6 +156,7 @@ impl PhySize {
 
     /// Convert to logical size
     #[inline]
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_logical(&self, window_info: &WindowInfo) -> Size {
         Size {
             width: f64::from(self.width) * window_info.scale_recip(),
