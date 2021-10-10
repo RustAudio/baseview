@@ -9,8 +9,8 @@ use winapi::um::winuser::{
     DestroyWindow, SetProcessDpiAwarenessContext, SetWindowPos,
     GetDpiForWindow,
     CS_OWNDC, GWLP_USERDATA, IDC_ARROW,
-    MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_SHOWWINDOW, WM_TIMER, WM_NCDESTROY,
-    WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
+    MSG, WM_CLOSE, WM_CREATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WHEEL_DELTA, WM_SHOWWINDOW, WM_TIMER, 
+    WM_NCDESTROY, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
     WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, WM_DPICHANGED, WM_CHAR, WM_SYSCHAR, WM_KEYDOWN,
     WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP, WM_INPUTLANGCHANGE, WM_SIZE,
     GET_XBUTTON_WPARAM, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
@@ -30,7 +30,7 @@ use raw_window_handle::{
 };
 
 use crate::{
-    Event, MouseButton, MouseEvent, WindowEvent,
+    Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, PhyPoint, PhySize
 };
 
@@ -86,6 +86,22 @@ unsafe extern "system" fn wnd_proc(
                     Event::Mouse(MouseEvent::CursorMoved {
                         position: logical_pos,
                     }),
+                );
+                return 0;
+            }
+            WM_MOUSEWHEEL => {    
+                let value = (wparam >> 16) as i16;
+                let value = value as i32;
+                let value = value as f32 / WHEEL_DELTA as f32;
+
+                let mut window_state = (&*window_state_ptr).borrow_mut();
+    
+                window_state.handler.on_event(
+                    &mut window,
+                    Event::Mouse(MouseEvent::WheelScrolled(ScrollDelta::Lines {
+                        x: 0.0,
+                        y: value,
+                    })),
                 );
                 return 0;
             }
