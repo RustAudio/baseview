@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::os::raw::{c_ulong, c_void};
 use std::sync::mpsc;
 use std::time::*;
@@ -26,8 +28,10 @@ pub struct Window {
 
     frame_interval: Duration,
     event_loop_running: bool,
+    close_requested: bool,
 
     new_physical_size: Option<PhySize>,
+    host_handle: Option<HostHandle>,
 }
 
 // Hack to allow sending a RawWindowHandle between threads. Do not make public
@@ -37,8 +41,57 @@ unsafe impl Send for SendableRwh {}
 
 type WindowOpenResult = Result<SendableRwh, ()>;
 
+pub struct HostWindowHandle {
+    handle_dropped: Arc<AtomicBool>,
+    window_dropped: Arc<AtomicBool>,
+}
+
+impl HostWindowHandle {
+    pub fn window_was_dropped(&self) -> bool {
+        self.window_dropped.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for HostWindowHandle {
+    fn drop(&mut self) {
+        self.handle_dropped.store(true, Ordering::Relaxed);
+    }
+}
+
+pub struct HostHandle {
+    handle_dropped: Arc<AtomicBool>,
+    window_dropped: Arc<AtomicBool>,
+}
+
+impl HostHandle {
+    pub fn new() -> (Self, HostWindowHandle) {
+        let handle_dropped = Arc::new(AtomicBool::new(false));
+        let window_dropped = Arc::new(AtomicBool::new(false));
+
+        let handle = HostWindowHandle {
+            handle_dropped: Arc::clone(&handle_dropped),
+            window_dropped: Arc::clone(&window_dropped),
+        };
+
+        (
+            Self { handle_dropped, window_dropped },
+            handle
+        )
+    }
+
+    pub fn handle_was_dropped(&self) -> bool {
+        self.handle_dropped.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for HostHandle {
+    fn drop(&mut self) {
+        self.window_dropped.store(true, Ordering::Relaxed);
+    }
+}
+
 impl Window {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B)
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> HostWindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -54,14 +107,18 @@ impl Window {
 
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
+        let (host_handle, host_window_handle) = HostHandle::new();
+
         let thread = thread::spawn(move || {
-            Self::window_thread(Some(parent_id), options, build, tx.clone());
+            Self::window_thread(Some(parent_id), options, build, tx.clone(), Some(host_handle));
         });
 
         let _ = rx.recv().unwrap().unwrap();
+
+        host_window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> RawWindowHandle
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> (RawWindowHandle, HostWindowHandle)
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -69,11 +126,16 @@ impl Window {
     {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
+        let (host_handle, host_window_handle) = HostHandle::new();
+
         let thread = thread::spawn(move || {
-            Self::window_thread(None, options, build, tx.clone());
+            Self::window_thread(None, options, build, tx.clone(), Some(host_handle));
         });
 
-        rx.recv().unwrap().unwrap().0
+        (
+            rx.recv().unwrap().unwrap().0,
+            host_window_handle
+        )
     }
 
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
@@ -85,7 +147,7 @@ impl Window {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
         let thread = thread::spawn(move || {
-            Self::window_thread(None, options, build, tx.clone());
+            Self::window_thread(None, options, build, tx.clone(), None);
         });
 
         let _ = rx.recv().unwrap().unwrap();
@@ -97,6 +159,7 @@ impl Window {
         parent: Option<u32>,
         options: WindowOpenOptions, build: B,
         tx: mpsc::SyncSender<WindowOpenResult>,
+        host_handle: Option<HostHandle>,
     )
     where H: WindowHandler + 'static,
           B: FnOnce(&mut crate::Window) -> H,
@@ -194,8 +257,10 @@ impl Window {
 
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
+            close_requested: false,
 
             new_physical_size: None,
+            host_handle,
         };
 
         let mut handler = build(&mut crate::Window::new(&mut window));
@@ -210,10 +275,6 @@ impl Window {
         let _ = tx.send(Ok(SendableRwh(window.raw_window_handle())));
 
         window.run_event_loop(&mut handler);
-    }
-
-    pub fn window_info(&self) -> &WindowInfo {
-        &self.window_info
     }
 
     pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
@@ -234,6 +295,10 @@ impl Window {
         }
 
         self.mouse_cursor = mouse_cursor;
+    }
+
+    pub fn request_close(&mut self) {
+        self.close_requested = true;
     }
 
     #[inline]
@@ -306,7 +371,41 @@ impl Window {
                     self.drain_xcb_events(handler);
                 }
             }
+
+            // Check if the host's handle was dropped (such as when the host
+            // requested the window to close)
+            if let Some(host_handle) = &self.host_handle {
+                if host_handle.handle_was_dropped() {
+                    self.handle_must_close(handler);
+                    self.close_requested = false;
+                }
+            }
+
+            // Check if the user has requested the window to close
+            if self.close_requested {
+                self.handle_close_requested(handler);
+                self.close_requested = false;
+            }
         }
+    }
+
+    fn handle_close_requested(&mut self, handler: &mut dyn WindowHandler) {
+        handler.on_event(
+            &mut crate::Window::new(self),
+            Event::Window(WindowEvent::WillClose)
+        );
+
+        // FIXME: handler should decide whether window stays open or not
+        self.event_loop_running = false;
+    }
+
+    fn handle_must_close(&mut self, handler: &mut dyn WindowHandler) {
+        handler.on_event(
+            &mut crate::Window::new(self),
+            Event::Window(WindowEvent::WillClose)
+        );
+
+        self.event_loop_running = false;
     }
 
     fn handle_xcb_event(&mut self, handler: &mut dyn WindowHandler, event: xcb::GenericEvent) {
@@ -347,13 +446,7 @@ impl Window {
                     .unwrap_or(xcb::NONE);
 
                 if wm_delete_window == data32[0] {
-                    handler.on_event(
-                        &mut crate::Window::new(self),
-                        Event::Window(WindowEvent::WillClose)
-                    );
-
-                    // FIXME: handler should decide whether window stays open or not
-                    self.event_loop_running = false;
+                    self.handle_close_requested(handler);
                 }
             }
 

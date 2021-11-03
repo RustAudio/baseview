@@ -1,14 +1,17 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::ffi::c_void;
 
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular,
-    NSBackingStoreBuffered, NSWindow, NSWindowStyleMask,
+    NSBackingStoreBuffered, NSWindow, NSWindowStyleMask, NSView,
+    NSRunningApplication, NSApplicationActivateIgnoringOtherApps
 };
 use cocoa::base::{id, nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use core_foundation::runloop::{
     CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer,
-    kCFRunLoopDefaultMode,
+    kCFRunLoopDefaultMode, 
 };
 use keyboard_types::KeyboardEvent;
 
@@ -18,30 +21,84 @@ use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle}
 
 use crate::{
     Event, EventStatus, WindowHandler, WindowOpenOptions, WindowScalePolicy,
-    WindowInfo,
+    WindowInfo, WindowEvent,
 };
 
 use super::view::{create_view, BASEVIEW_STATE_IVAR};
 use super::keyboard::KeyboardState;
 
+pub struct HostWindowHandle {
+    handle_dropped: Arc<AtomicBool>,
+    window_dropped: Arc<AtomicBool>,
+}
+
+impl HostWindowHandle {
+    pub fn window_was_dropped(&self) -> bool {
+        self.window_dropped.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for HostWindowHandle {
+    fn drop(&mut self) {
+        self.handle_dropped.store(true, Ordering::Relaxed);
+    }
+}
+
+pub struct HostHandle {
+    handle_dropped: Arc<AtomicBool>,
+    window_dropped: Arc<AtomicBool>,
+}
+
+impl HostHandle {
+    pub fn new() -> (Self, HostWindowHandle) {
+        let handle_dropped = Arc::new(AtomicBool::new(false));
+        let window_dropped = Arc::new(AtomicBool::new(false));
+
+        let handle = HostWindowHandle {
+            handle_dropped: Arc::clone(&handle_dropped),
+            window_dropped: Arc::clone(&window_dropped),
+        };
+
+        (
+            Self { handle_dropped, window_dropped },
+            handle
+        )
+    }
+
+    pub fn handle_was_dropped(&self) -> bool {
+        self.handle_dropped.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for HostHandle {
+    fn drop(&mut self) {
+        self.window_dropped.store(true, Ordering::Relaxed);
+    }
+}
 
 pub struct Window {
     /// Only set if we created the parent window, i.e. we are running in
     /// parentless mode
+    ns_app: Option<id>,
+    /// Only set if we created the parent window, i.e. we are running in
+    /// parentless mode
     ns_window: Option<id>,
+    /// Only set if we did not create the parent window
+    host_handle: Option<HostHandle>,
     /// Our subclassed NSView
     ns_view: id,
+    close_requested: bool,
 }
 
 impl Window {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B)
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> HostWindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let _pool = unsafe { NSAutoreleasePool::new(nil) };
+        let pool = unsafe { NSAutoreleasePool::new(nil) };
 
         let handle = if let RawWindowHandle::MacOS(handle) = parent.raw_window_handle() {
             handle
@@ -51,9 +108,14 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
+        let (host_handle, host_window_handle) = HostHandle::new();
+
         let window = Window {
+            ns_app: None,
             ns_window: None,
+            host_handle: Some(host_handle),
             ns_view,
+            close_requested: false,
         };
 
         Self::init(window, build);
@@ -61,28 +123,45 @@ impl Window {
         unsafe {
             let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
         }
+
+        // Must drain pool before returning so retain counts are correct
+        unsafe {
+            let _: () = msg_send![pool, drain];
+        }
+
+        host_window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> RawWindowHandle
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> (RawWindowHandle, HostWindowHandle)
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let _pool = unsafe { NSAutoreleasePool::new(nil) };
+        let pool = unsafe { NSAutoreleasePool::new(nil) };
 
         let ns_view = unsafe { create_view(&options) };
 
+        let (host_handle, host_window_handle) = HostHandle::new();
+
         let window = Window {
+            ns_app: None,
             ns_window: None,
+            host_handle: Some(host_handle),
             ns_view,
+            close_requested: false,
         };
 
         let raw_window_handle = window.raw_window_handle();
 
         Self::init(window, build);
 
-        raw_window_handle
+        // Must drain pool before returning so retain counts are correct
+        unsafe {
+            let _: () = msg_send![pool, drain];
+        }
+
+        (raw_window_handle, host_window_handle)
     }
 
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
@@ -91,7 +170,7 @@ impl Window {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let _pool = unsafe { NSAutoreleasePool::new(nil) };
+        let pool = unsafe { NSAutoreleasePool::new(nil) };
 
         // It seems prudent to run NSApp() here before doing other
         // work. It runs [NSApplication sharedApplication], which is
@@ -128,12 +207,17 @@ impl Window {
             let ns_window = NSWindow::alloc(nil)
                 .initWithContentRect_styleMask_backing_defer_(
                     rect,
-                    NSWindowStyleMask::NSTitledWindowMask,
+                    NSWindowStyleMask::NSTitledWindowMask |
+                    NSWindowStyleMask::NSClosableWindowMask |
+                    NSWindowStyleMask::NSMiniaturizableWindowMask,
                     NSBackingStoreBuffered,
                     NO,
                 )
                 .autorelease();
             ns_window.center();
+
+            // We are already releasing the window with our autorelease pool
+            let _: () = msg_send![ns_window, setReleasedWhenClosed: NO];
 
             let title = NSString::alloc(nil)
                 .init_str(&options.title)
@@ -148,17 +232,25 @@ impl Window {
         let ns_view = unsafe { create_view(&options) };
 
         let window = Window {
+            ns_app: Some(app),
             ns_window: Some(ns_window),
+            host_handle: None,
             ns_view,
+            close_requested: false,
         };
 
         Self::init(window, build);
 
         unsafe {
             ns_window.setContentView_(ns_view);
-        }
 
-        unsafe {
+            // Make sure app gets focus
+            let current_app = NSRunningApplication::currentApplication(nil);
+            current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
+
+            // Must drain pool before running app so retain counts are correct
+            let _: () = msg_send![pool, drain];
+
             app.run();
         }
     }
@@ -194,6 +286,10 @@ impl Window {
             WindowState::setup_timer(window_state_ptr);
         }
     }
+
+    pub fn request_close(&mut self) {
+        self.close_requested = true;
+    }
 }
 
 
@@ -226,6 +322,30 @@ impl WindowState {
     pub(super) fn trigger_frame(&mut self) {
         self.window_handler
             .on_frame(&mut crate::Window::new(&mut self.window));
+
+        // Check if the host handle was dropped
+        if let Some(host_handle) = &self.window.host_handle {
+            if host_handle.handle_was_dropped() {
+                self.window.close_requested = false;
+
+                unsafe {
+                    self.window.ns_view.removeFromSuperview();
+                }
+            }
+        }
+        
+        // Check if the user requested the window to close
+        if self.window.close_requested {
+            self.window.close_requested = false;
+
+            unsafe {
+                self.window.ns_view.removeFromSuperview();
+
+                if let Some(ns_window) = self.window.ns_window.take() {
+                    ns_window.close();
+                }
+            }
+        }
     }
 
     pub(super) fn process_native_key_event(
@@ -276,10 +396,16 @@ impl WindowState {
     }
 
     /// Call when freeing view
-    pub(super) unsafe fn remove_timer(&mut self) {
+    pub(super) unsafe fn stop(&mut self) {
         if let Some(frame_timer) = self.frame_timer.take() {
-            CFRunLoop::get_current()
-                .remove_timer(&frame_timer, kCFRunLoopDefaultMode);
+            CFRunLoop::get_current().remove_timer(&frame_timer, kCFRunLoopDefaultMode);
+        }
+
+        self.trigger_event(Event::Window(WindowEvent::WillClose));
+
+        // If in non-parented mode, we want to also quit the app altogether
+        if let Some(app) = self.window.ns_app.take() {
+            app.stop_(app);
         }
     }
 }

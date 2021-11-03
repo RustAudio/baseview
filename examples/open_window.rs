@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use rtrb::{RingBuffer, Consumer};
-
 use baseview::{Event, EventStatus, Window, WindowHandler, WindowScalePolicy};
 
 #[derive(Debug, Clone)]
@@ -38,7 +37,7 @@ fn main() {
         scale: WindowScalePolicy::SystemScaleFactor,
     };
 
-    let (mut tx, rx) = RingBuffer::new(128).split();
+    let (mut tx, rx) = RingBuffer::new(128);
 
     ::std::thread::spawn(move || {
         loop {
