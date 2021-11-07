@@ -41,7 +41,7 @@ impl Window {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let _pool = unsafe { NSAutoreleasePool::new(nil) };
+        let pool = unsafe { NSAutoreleasePool::new(nil) };
 
         let handle = if let RawWindowHandle::MacOS(handle) = parent.raw_window_handle() {
             handle
@@ -60,6 +60,8 @@ impl Window {
 
         unsafe {
             let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
+
+            let () = msg_send![pool, drain];
         }
     }
 
@@ -69,7 +71,7 @@ impl Window {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let _pool = unsafe { NSAutoreleasePool::new(nil) };
+        let pool = unsafe { NSAutoreleasePool::new(nil) };
 
         let ns_view = unsafe { create_view(&options) };
 
@@ -82,6 +84,10 @@ impl Window {
 
         Self::init(window, build);
 
+        unsafe {
+            let () = msg_send![pool, drain];
+        }
+
         raw_window_handle
     }
 
@@ -91,7 +97,7 @@ impl Window {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let _pool = unsafe { NSAutoreleasePool::new(nil) };
+        let pool = unsafe { NSAutoreleasePool::new(nil) };
 
         // It seems prudent to run NSApp() here before doing other
         // work. It runs [NSApplication sharedApplication], which is
@@ -156,9 +162,9 @@ impl Window {
 
         unsafe {
             ns_window.setContentView_(ns_view);
-        }
 
-        unsafe {
+            let () = msg_send![pool, drain];
+
             app.run();
         }
     }
