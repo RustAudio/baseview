@@ -60,6 +60,7 @@ impl Window {
 
         unsafe {
             let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
+            let () = msg_send![ns_view as id, release];
 
             let () = msg_send![pool, drain];
         }
@@ -137,8 +138,7 @@ impl Window {
                     NSWindowStyleMask::NSTitledWindowMask,
                     NSBackingStoreBuffered,
                     NO,
-                )
-                .autorelease();
+                );
             ns_window.center();
 
             let title = NSString::alloc(nil)
@@ -162,6 +162,7 @@ impl Window {
 
         unsafe {
             ns_window.setContentView_(ns_view);
+            let () = msg_send![ns_view as id, release];
 
             let () = msg_send![pool, drain];
 
