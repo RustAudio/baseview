@@ -120,6 +120,10 @@ unsafe fn create_view_class() -> &'static Class {
         release as extern "C" fn(&mut Object, Sel)
     );
     class.add_method(
+        sel!(dealloc),
+        dealloc as extern "C" fn(&mut Object, Sel)
+    );
+    class.add_method(
         sel!(viewWillMoveToWindow:),
         view_will_move_to_window as extern "C" fn(&Object, Sel, id)
     );
@@ -229,11 +233,17 @@ extern "C" fn accepts_first_mouse(
 
 
 extern "C" fn release(this: &mut Object, _sel: Sel) {
-    unsafe {
-        let superclass = msg_send![this, superclass];
-
-        let () = msg_send![super(this, superclass), release];
-    }
+    // Hack for breaking circular references. We store the value of retainCount
+    // after build(), and then when retainCount drops back to that value, we
+    // drop the WindowState, hoping that any circular references it holds back
+    // to the NSView (e.g. wgpu surfaces) get released.
+    //
+    // This is definitely broken, since it can be thwarted by e.g. creating a
+    // wgpu surface at some point after build() (which will mean the NSView
+    // never gets dealloced) or dropping a wgpu surface at some point before
+    // drop() (which will mean the WindowState gets dropped early).
+    //
+    // TODO: Find a better solution for circular references.
 
     unsafe {
         let retain_count: usize = msg_send![this, retainCount];
@@ -257,11 +267,23 @@ extern "C" fn release(this: &mut Object, _sel: Sel) {
             }
         }
 
-        if retain_count == 1 {
-            // Delete class
-            let class = msg_send![this, class];
-            ::objc::runtime::objc_disposeClassPair(class);
-        }
+    }
+
+    unsafe {
+        let superclass = msg_send![this, superclass];
+        let () = msg_send![super(this, superclass), release];
+    }
+}
+
+extern "C" fn dealloc(this: &mut Object, _sel: Sel) {
+    unsafe {
+        let class = msg_send![this, class];
+
+        let superclass = msg_send![this, superclass];
+        let () = msg_send![super(this, superclass), dealloc];
+
+        // Delete class
+        ::objc::runtime::objc_disposeClassPair(class);
     }
 }
 
