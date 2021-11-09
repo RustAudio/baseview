@@ -60,19 +60,19 @@ unsafe fn generate_guid() -> String {
 
 const WIN_FRAME_TIMER: usize = 4242;
 
-pub struct HostWindowHandle {
+pub struct ChildWindowHandle {
     hwnd: Option<HWND>,
     destroy_msg_id: u32,
-    window_dropped: Arc<AtomicBool>,
+    child_window_dropped: Arc<AtomicBool>,
 }
 
-impl HostWindowHandle {
+impl ChildWindowHandle {
     pub fn window_was_dropped(&self) -> bool {
-        self.window_dropped.load(Ordering::Relaxed)
+        self.child_window_dropped.load(Ordering::Relaxed)
     }
 }
 
-impl Drop for HostWindowHandle {
+impl Drop for ChildWindowHandle {
     fn drop(&mut self) {
         if let Some(hwnd) = self.hwnd {
             unsafe {
@@ -82,30 +82,30 @@ impl Drop for HostWindowHandle {
     }
 }
 
-pub struct HostHandle {
-    window_dropped: Arc<AtomicBool>,
+struct ParentHandle {
+    child_window_dropped: Arc<AtomicBool>,
 }
 
-impl HostHandle {
-    pub fn new() -> (Self, HostWindowHandle) {
-        let window_dropped = Arc::new(AtomicBool::new(false));
+impl ParentHandle {
+    pub fn new() -> (Self, ChildWindowHandle) {
+        let child_window_dropped = Arc::new(AtomicBool::new(false));
 
-        let handle = HostWindowHandle {
+        let handle = ChildWindowHandle {
             hwnd: None,
             destroy_msg_id: 0,
-            window_dropped: Arc::clone(&window_dropped),
+            child_window_dropped: Arc::clone(&child_window_dropped),
         };
 
         (
-            Self { window_dropped },
+            Self { child_window_dropped },
             handle
         )
     }
 }
 
-impl Drop for HostHandle {
+impl Drop for ParentHandle {
     fn drop(&mut self) {
-        self.window_dropped.store(true, Ordering::Relaxed);
+        self.child_window_dropped.store(true, Ordering::Relaxed);
     }
 }
 
@@ -355,7 +355,7 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 struct WindowState {
     window_class: ATOM,
     window_info: WindowInfo,
-    host_handle: Option<HostHandle>,
+    parent_handle: Option<ParentHandle>,
     keyboard_state: KeyboardState,
     mouse_button_counter: usize,
     handler: Box<dyn WindowHandler>,
@@ -370,7 +370,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> HostWindowHandle
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> ChildWindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -382,29 +382,29 @@ impl Window {
             h => panic!("unsupported parent handle {:?}", h),
         };
 
-        let (host_handle, mut host_window_handle) = HostHandle::new();
+        let (parent_handle, mut child_window_handle) = ParentHandle::new();
 
-        Self::open(true, parent, options, build, Some(host_handle), Some(&mut host_window_handle));
+        Self::open(true, parent, options, build, Some(parent_handle), Some(&mut child_window_handle));
 
-        host_window_handle
+        child_window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> (RawWindowHandle, HostWindowHandle)
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> (RawWindowHandle, ChildWindowHandle)
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let (host_handle, mut host_window_handle) = HostHandle::new();
+        let (parent_handle, mut child_window_handle) = ParentHandle::new();
 
-        let hwnd = Self::open(true, null_mut(), options, build, Some(host_handle), Some(&mut host_window_handle));
+        let hwnd = Self::open(true, null_mut(), options, build, Some(parent_handle), Some(&mut child_window_handle));
 
         (
             RawWindowHandle::Windows(WindowsHandle {
                 hwnd: hwnd as *mut std::ffi::c_void,
                 ..WindowsHandle::empty()
             }),
-            host_window_handle
+            child_window_handle
         )
     }
 
@@ -437,8 +437,8 @@ impl Window {
         parent: HWND,
         options: WindowOpenOptions,
         build: B,
-        host_handle: Option<HostHandle>,
-        host_window_handle: Option<&mut HostWindowHandle>,
+        parent_handle: Option<ParentHandle>,
+        child_window_handle: Option<&mut ChildWindowHandle>,
     ) -> HWND
     where H: WindowHandler + 'static,
           B: FnOnce(&mut crate::Window) -> H,
@@ -507,7 +507,7 @@ impl Window {
             let mut window_state = Box::new(RefCell::new(WindowState {
                 window_class,
                 window_info,
-                host_handle,
+                parent_handle,
                 keyboard_state: KeyboardState::new(),
                 mouse_button_counter: 0,
                 handler,
@@ -569,9 +569,9 @@ impl Window {
                 );
             }
 
-            if let Some(host_window_handle) = host_window_handle {
-                host_window_handle.hwnd = Some(hwnd);
-                host_window_handle.destroy_msg_id = destroy_msg_id;
+            if let Some(child_window_handle) = child_window_handle {
+                child_window_handle.hwnd = Some(hwnd);
+                child_window_handle.destroy_msg_id = destroy_msg_id;
             }
 
             hwnd

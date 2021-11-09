@@ -12,7 +12,7 @@ use crate::win as platform;
 #[cfg(target_os = "linux")]
 use crate::x11 as platform;
 
-pub use platform::HostWindowHandle;
+pub use platform::ChildWindowHandle;
 
 pub trait WindowHandler {
     fn on_frame(&mut self, window: &mut Window);
@@ -33,7 +33,7 @@ impl<'a> Window<'a> {
         }
     }
 
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> HostWindowHandle
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> ChildWindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -43,7 +43,7 @@ impl<'a> Window<'a> {
         platform::Window::open_parented::<P, H, B>(parent, options, build)
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> (RawWindowHandle, HostWindowHandle)
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> (RawWindowHandle, ChildWindowHandle)
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut Window) -> H,

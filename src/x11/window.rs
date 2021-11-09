@@ -31,7 +31,7 @@ pub struct Window {
     close_requested: bool,
 
     new_physical_size: Option<PhySize>,
-    host_handle: Option<HostHandle>,
+    parent_handle: Option<ParentHandle>,
 }
 
 // Hack to allow sending a RawWindowHandle between threads. Do not make public
@@ -41,57 +41,57 @@ unsafe impl Send for SendableRwh {}
 
 type WindowOpenResult = Result<SendableRwh, ()>;
 
-pub struct HostWindowHandle {
-    handle_dropped: Arc<AtomicBool>,
-    window_dropped: Arc<AtomicBool>,
+pub struct ChildWindowHandle {
+    parent_dropped: Arc<AtomicBool>,
+    child_window_dropped: Arc<AtomicBool>,
 }
 
-impl HostWindowHandle {
+impl ChildWindowHandle {
     pub fn window_was_dropped(&self) -> bool {
-        self.window_dropped.load(Ordering::Relaxed)
+        self.child_window_dropped.load(Ordering::Relaxed)
     }
 }
 
-impl Drop for HostWindowHandle {
+impl Drop for ChildWindowHandle {
     fn drop(&mut self) {
-        self.handle_dropped.store(true, Ordering::Relaxed);
+        self.parent_dropped.store(true, Ordering::Relaxed);
     }
 }
 
-pub struct HostHandle {
-    handle_dropped: Arc<AtomicBool>,
-    window_dropped: Arc<AtomicBool>,
+struct ParentHandle {
+    parent_dropped: Arc<AtomicBool>,
+    child_window_dropped: Arc<AtomicBool>,
 }
 
-impl HostHandle {
-    pub fn new() -> (Self, HostWindowHandle) {
-        let handle_dropped = Arc::new(AtomicBool::new(false));
-        let window_dropped = Arc::new(AtomicBool::new(false));
+impl ParentHandle {
+    pub fn new() -> (Self, ChildWindowHandle) {
+        let parent_dropped = Arc::new(AtomicBool::new(false));
+        let child_window_dropped = Arc::new(AtomicBool::new(false));
 
-        let handle = HostWindowHandle {
-            handle_dropped: Arc::clone(&handle_dropped),
-            window_dropped: Arc::clone(&window_dropped),
+        let handle = ChildWindowHandle {
+            parent_dropped: Arc::clone(&parent_dropped),
+            child_window_dropped: Arc::clone(&child_window_dropped),
         };
 
         (
-            Self { handle_dropped, window_dropped },
+            Self { parent_dropped, child_window_dropped },
             handle
         )
     }
 
-    pub fn handle_was_dropped(&self) -> bool {
-        self.handle_dropped.load(Ordering::Relaxed)
+    pub fn parent_did_drop(&self) -> bool {
+        self.parent_dropped.load(Ordering::Relaxed)
     }
 }
 
-impl Drop for HostHandle {
+impl Drop for ParentHandle {
     fn drop(&mut self) {
-        self.window_dropped.store(true, Ordering::Relaxed);
+        self.child_window_dropped.store(true, Ordering::Relaxed);
     }
 }
 
 impl Window {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> HostWindowHandle
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> ChildWindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -107,18 +107,18 @@ impl Window {
 
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
-        let (host_handle, host_window_handle) = HostHandle::new();
+        let (parent_handle, child_window_handle) = ParentHandle::new();
 
         let thread = thread::spawn(move || {
-            Self::window_thread(Some(parent_id), options, build, tx.clone(), Some(host_handle));
+            Self::window_thread(Some(parent_id), options, build, tx.clone(), Some(parent_handle));
         });
 
         let _ = rx.recv().unwrap().unwrap();
 
-        host_window_handle
+        child_window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> (RawWindowHandle, HostWindowHandle)
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> (RawWindowHandle, ChildWindowHandle)
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -126,15 +126,15 @@ impl Window {
     {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
-        let (host_handle, host_window_handle) = HostHandle::new();
+        let (parent_handle, child_window_handle) = ParentHandle::new();
 
         let thread = thread::spawn(move || {
-            Self::window_thread(None, options, build, tx.clone(), Some(host_handle));
+            Self::window_thread(None, options, build, tx.clone(), Some(parent_handle));
         });
 
         (
             rx.recv().unwrap().unwrap().0,
-            host_window_handle
+            child_window_handle
         )
     }
 
@@ -159,7 +159,7 @@ impl Window {
         parent: Option<u32>,
         options: WindowOpenOptions, build: B,
         tx: mpsc::SyncSender<WindowOpenResult>,
-        host_handle: Option<HostHandle>,
+        parent_handle: Option<ParentHandle>,
     )
     where H: WindowHandler + 'static,
           B: FnOnce(&mut crate::Window) -> H,
@@ -260,7 +260,7 @@ impl Window {
             close_requested: false,
 
             new_physical_size: None,
-            host_handle,
+            parent_handle,
         };
 
         let mut handler = build(&mut crate::Window::new(&mut window));
@@ -372,10 +372,10 @@ impl Window {
                 }
             }
 
-            // Check if the host's handle was dropped (such as when the host
+            // Check if the parents's handle was dropped (such as when the host
             // requested the window to close)
-            if let Some(host_handle) = &self.host_handle {
-                if host_handle.handle_was_dropped() {
+            if let Some(parent_handle) = &self.parent_handle {
+                if parent_handle.parent_did_drop() {
                     self.handle_must_close(handler);
                     self.close_requested = false;
                 }
