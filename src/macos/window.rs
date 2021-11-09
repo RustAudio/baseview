@@ -122,9 +122,11 @@ impl Window {
 
         unsafe {
             let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
+            let () = msg_send![ns_view as id, release];
+
+            let () = msg_send![pool, drain];
         }
 
-        // Must drain pool before returning so retain counts are correct
         unsafe {
             let _: () = msg_send![pool, drain];
         }
@@ -212,8 +214,7 @@ impl Window {
                     NSWindowStyleMask::NSMiniaturizableWindowMask,
                     NSBackingStoreBuffered,
                     NO,
-                )
-                .autorelease();
+                );
             ns_window.center();
 
             // We are already releasing the window with our autorelease pool
@@ -244,12 +245,9 @@ impl Window {
         unsafe {
             ns_window.setContentView_(ns_view);
 
-            // Make sure app gets focus
-            let current_app = NSRunningApplication::currentApplication(nil);
-            current_app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps);
+            let () = msg_send![ns_view as id, release];
 
-            // Must drain pool before running app so retain counts are correct
-            let _: () = msg_send![pool, drain];
+            let () = msg_send![pool, drain];
 
             app.run();
         }
