@@ -65,7 +65,7 @@ impl WindowInfo {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Point {
     pub x: f64,
-    pub y: f64
+    pub y: f64,
 }
 
 impl Point {
@@ -88,7 +88,7 @@ impl Point {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PhyPoint {
     pub x: i32,
-    pub y: i32
+    pub y: i32,
 }
 
 impl PhyPoint {

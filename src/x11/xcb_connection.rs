@@ -1,14 +1,12 @@
+use std::collections::HashMap;
 /// A very light abstraction around the XCB connection.
 ///
 /// Keeps track of the xcb connection itself and the xlib display ID that was used to connect.
-
 use std::ffi::{CStr, CString};
-use std::collections::HashMap;
 
 use crate::MouseCursor;
 
 use super::cursor;
-
 
 pub(crate) struct Atoms {
     pub wm_protocols: Option<u32>,
@@ -48,7 +46,8 @@ impl XcbConnection {
 
         conn.set_event_queue_owner(xcb::base::EventQueueOwner::Xcb);
 
-        let (wm_protocols, wm_delete_window, wm_normal_hints) = intern_atoms!(&conn, WM_PROTOCOLS, WM_DELETE_WINDOW, WM_NORMAL_HINTS);
+        let (wm_protocols, wm_delete_window, wm_normal_hints) =
+            intern_atoms!(&conn, WM_PROTOCOLS, WM_DELETE_WINDOW, WM_NORMAL_HINTS);
 
         Ok(Self {
             conn,
@@ -60,7 +59,7 @@ impl XcbConnection {
                 wm_normal_hints,
             },
 
-            cursor_cache: HashMap::new()
+            cursor_cache: HashMap::new(),
         })
     }
 
@@ -152,7 +151,8 @@ impl XcbConnection {
     pub fn get_cursor_xid(&mut self, cursor: MouseCursor) -> u32 {
         let dpy = self.conn.get_raw_dpy();
 
-        *self.cursor_cache
+        *self
+            .cursor_cache
             .entry(cursor)
             .or_insert_with(|| cursor::get_xcursor(dpy, cursor))
     }

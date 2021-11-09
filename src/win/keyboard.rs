@@ -23,7 +23,7 @@ use std::convert::TryInto;
 use std::mem;
 use std::ops::RangeInclusive;
 
-use keyboard_types::{Code, Key, KeyboardEvent, KeyState, Location, Modifiers};
+use keyboard_types::{Code, Key, KeyState, KeyboardEvent, Location, Modifiers};
 
 use winapi::shared::minwindef::{HKL, INT, LPARAM, UINT, WPARAM};
 use winapi::shared::ntdef::SHORT;
@@ -548,11 +548,7 @@ impl KeyboardState {
     /// a valid `HKL` reference in the `WM_INPUTLANGCHANGE` message. Actual danger
     /// is likely low, though.
     pub(crate) unsafe fn process_message(
-        &mut self,
-        hwnd: HWND,
-        msg: UINT,
-        wparam: WPARAM,
-        lparam: LPARAM,
+        &mut self, hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM,
     ) -> Option<KeyboardEvent> {
         match msg {
             WM_KEYDOWN | WM_SYSKEYDOWN => {
