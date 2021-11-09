@@ -229,8 +229,8 @@ impl Window {
 
         unsafe {
             ns_window.setContentView_(ns_view);
-            let () = msg_send![ns_view as id, release];
 
+            let () = msg_send![ns_view as id, release];
             let () = msg_send![pool, drain];
 
             app.run();
