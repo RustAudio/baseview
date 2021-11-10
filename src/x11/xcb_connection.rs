@@ -53,11 +53,7 @@ impl XcbConnection {
             conn,
             xlib_display,
 
-            atoms: Atoms {
-                wm_protocols,
-                wm_delete_window,
-                wm_normal_hints,
-            },
+            atoms: Atoms { wm_protocols, wm_delete_window, wm_normal_hints },
 
             cursor_cache: HashMap::new(),
         })
@@ -78,10 +74,7 @@ impl XcbConnection {
             if !rms.is_null() {
                 let db = XrmGetStringDatabase(rms);
                 if !db.is_null() {
-                    let mut value = XrmValue {
-                        size: 0,
-                        addr: std::ptr::null_mut(),
-                    };
+                    let mut value = XrmValue { size: 0, addr: std::ptr::null_mut() };
 
                     let mut value_type: *mut std::os::raw::c_char = std::ptr::null_mut();
                     let name_c_str = CString::new("Xft.dpi").unwrap();
@@ -143,17 +136,13 @@ impl XcbConnection {
 
     #[inline]
     pub fn get_scaling(&self) -> Option<f64> {
-        self.get_scaling_xft()
-            .or(self.get_scaling_screen_dimensions())
+        self.get_scaling_xft().or(self.get_scaling_screen_dimensions())
     }
 
     #[inline]
     pub fn get_cursor_xid(&mut self, cursor: MouseCursor) -> u32 {
         let dpy = self.conn.get_raw_dpy();
 
-        *self
-            .cursor_cache
-            .entry(cursor)
-            .or_insert_with(|| cursor::get_xcursor(dpy, cursor))
+        *self.cursor_cache.entry(cursor).or_insert_with(|| cursor::get_xcursor(dpy, cursor))
     }
 }

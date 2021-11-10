@@ -102,10 +102,7 @@ impl Window {
 
         // Get screen information (?)
         let setup = xcb_connection.conn.get_setup();
-        let screen = setup
-            .roots()
-            .nth(xcb_connection.xlib_display as usize)
-            .unwrap();
+        let screen = setup.roots().nth(xcb_connection.xlib_display as usize).unwrap();
 
         let foreground = xcb_connection.conn.generate_id();
 
@@ -115,10 +112,7 @@ impl Window {
             &xcb_connection.conn,
             foreground,
             parent_id,
-            &[
-                (xcb::GC_FOREGROUND, screen.black_pixel()),
-                (xcb::GC_GRAPHICS_EXPOSURES, 0),
-            ],
+            &[(xcb::GC_FOREGROUND, screen.black_pixel()), (xcb::GC_GRAPHICS_EXPOSURES, 0)],
         );
 
         let scaling = match options.scale {
@@ -167,18 +161,16 @@ impl Window {
             title.as_bytes(),
         );
 
-        xcb_connection
-            .atoms
-            .wm_protocols
-            .zip(xcb_connection.atoms.wm_delete_window)
-            .map(|(wm_protocols, wm_delete_window)| {
+        xcb_connection.atoms.wm_protocols.zip(xcb_connection.atoms.wm_delete_window).map(
+            |(wm_protocols, wm_delete_window)| {
                 xcb_util::icccm::set_wm_protocols(
                     &xcb_connection.conn,
                     window_id,
                     wm_protocols,
                     &[wm_delete_window],
                 );
-            });
+            },
+        );
 
         xcb_connection.conn.flush();
 
@@ -336,11 +328,8 @@ impl Window {
                 let data = event.data().data;
                 let (_, data32, _) = unsafe { data.align_to::<u32>() };
 
-                let wm_delete_window = self
-                    .xcb_connection
-                    .atoms
-                    .wm_delete_window
-                    .unwrap_or(xcb::NONE);
+                let wm_delete_window =
+                    self.xcb_connection.atoms.wm_delete_window.unwrap_or(xcb::NONE);
 
                 if wm_delete_window == data32[0] {
                     handler.on_event(
@@ -379,9 +368,7 @@ impl Window {
 
                     handler.on_event(
                         &mut crate::Window::new(self),
-                        Event::Mouse(MouseEvent::CursorMoved {
-                            position: logical_pos,
-                        }),
+                        Event::Mouse(MouseEvent::CursorMoved { position: logical_pos }),
                     );
                 }
             }

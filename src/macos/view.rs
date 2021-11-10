@@ -77,10 +77,7 @@ pub(super) unsafe fn create_view(window_options: &WindowOpenOptions) -> id {
 
     let size = window_options.size;
 
-    view.initWithFrame_(NSRect::new(
-        NSPoint::new(0., 0.),
-        NSSize::new(size.width, size.height),
-    ));
+    view.initWithFrame_(NSRect::new(NSPoint::new(0., 0.), NSSize::new(size.width, size.height)));
 
     view
 }
@@ -98,10 +95,7 @@ unsafe fn create_view_class() -> &'static Class {
         sel!(acceptsFirstResponder),
         property_yes as extern "C" fn(&Object, Sel) -> BOOL,
     );
-    class.add_method(
-        sel!(isFlipped),
-        property_yes as extern "C" fn(&Object, Sel) -> BOOL,
-    );
+    class.add_method(sel!(isFlipped), property_yes as extern "C" fn(&Object, Sel) -> BOOL);
     class.add_method(
         sel!(preservesContentInLiveResize),
         property_no as extern "C" fn(&Object, Sel) -> BOOL,
@@ -122,22 +116,10 @@ unsafe fn create_view_class() -> &'static Class {
         update_tracking_areas as extern "C" fn(&Object, Sel, id),
     );
 
-    class.add_method(
-        sel!(mouseMoved:),
-        mouse_moved as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(
-        sel!(mouseDragged:),
-        mouse_moved as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(
-        sel!(rightMouseDragged:),
-        mouse_moved as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(
-        sel!(otherMouseDragged:),
-        mouse_moved as extern "C" fn(&Object, Sel, id),
-    );
+    class.add_method(sel!(mouseMoved:), mouse_moved as extern "C" fn(&Object, Sel, id));
+    class.add_method(sel!(mouseDragged:), mouse_moved as extern "C" fn(&Object, Sel, id));
+    class.add_method(sel!(rightMouseDragged:), mouse_moved as extern "C" fn(&Object, Sel, id));
+    class.add_method(sel!(otherMouseDragged:), mouse_moved as extern "C" fn(&Object, Sel, id));
 
     class.add_method(
         sel!(viewDidChangeBackingProperties:),
@@ -228,11 +210,8 @@ extern "C" fn view_did_change_backing_properties(this: &Object, _: Sel, _: id) {
     unsafe {
         let ns_window: *mut Object = msg_send![this, window];
 
-        let scale_factor: f64 = if ns_window.is_null() {
-            1.0
-        } else {
-            NSWindow::backingScaleFactor(ns_window) as f64
-        };
+        let scale_factor: f64 =
+            if ns_window.is_null() { 1.0 } else { NSWindow::backingScaleFactor(ns_window) as f64 };
 
         let state: &mut WindowState = WindowState::from_field(this);
 
@@ -335,10 +314,7 @@ extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: id) {
         msg_send![this, convertPoint:point fromView:nil]
     };
 
-    let position = Point {
-        x: point.x,
-        y: point.y,
-    };
+    let position = Point { x: point.x, y: point.y };
 
     state.trigger_event(Event::Mouse(MouseEvent::CursorMoved { position }));
 }

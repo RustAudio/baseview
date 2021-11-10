@@ -77,9 +77,7 @@ unsafe extern "system" fn wnd_proc(
 
                 window_state.handler.on_event(
                     &mut window,
-                    Event::Mouse(MouseEvent::CursorMoved {
-                        position: logical_pos,
-                    }),
+                    Event::Mouse(MouseEvent::CursorMoved { position: logical_pos }),
                 );
                 return 0;
             }
@@ -148,10 +146,7 @@ unsafe extern "system" fn wnd_proc(
             WM_TIMER => {
                 match wparam {
                     WIN_FRAME_TIMER => {
-                        (&*window_state_ptr)
-                            .borrow_mut()
-                            .handler
-                            .on_frame(&mut window);
+                        (&*window_state_ptr).borrow_mut().handler.on_frame(&mut window);
                     }
                     _ => (),
                 }
@@ -197,10 +192,9 @@ unsafe extern "system" fn wnd_proc(
 
                 let window_info = window_state.window_info;
 
-                window_state.handler.on_event(
-                    &mut window,
-                    Event::Window(WindowEvent::Resized(window_info)),
-                );
+                window_state
+                    .handler
+                    .on_event(&mut window, Event::Window(WindowEvent::Resized(window_info)));
             }
             WM_DPICHANGED => {
                 // To avoid weirdness with the realtime borrow checker.
@@ -458,11 +452,7 @@ impl Window {
                 None
             };
 
-            SetWindowLongPtrW(
-                hwnd,
-                GWLP_USERDATA,
-                Box::into_raw(window_state) as *const _ as _,
-            );
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
             SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
 
             if let Some(mut new_rect) = new_rect {

@@ -502,14 +502,8 @@ impl KeyboardState {
             let stash_vk = None;
             let stash_utf16 = Vec::new();
             let has_altgr = false;
-            let mut result = KeyboardState {
-                hkl,
-                key_vals,
-                dead_keys,
-                has_altgr,
-                stash_vk,
-                stash_utf16,
-            };
+            let mut result =
+                KeyboardState { hkl, key_vals, dead_keys, has_altgr, stash_vk, stash_utf16 };
             result.load_keyboard_layout();
             result
         }

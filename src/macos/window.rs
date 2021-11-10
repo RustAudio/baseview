@@ -46,10 +46,7 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window {
-            ns_window: None,
-            ns_view,
-        };
+        let window = Window { ns_window: None, ns_view };
 
         Self::init(window, build);
 
@@ -71,10 +68,7 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window {
-            ns_window: None,
-            ns_view,
-        };
+        let window = Window { ns_window: None, ns_view };
 
         let raw_window_handle = window.raw_window_handle();
 
@@ -140,10 +134,7 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window {
-            ns_window: Some(ns_window),
-            ns_view,
-        };
+        let window = Window { ns_window: Some(ns_window), ns_view };
 
         Self::init(window, build);
 
@@ -205,13 +196,11 @@ impl WindowState {
     }
 
     pub(super) fn trigger_event(&mut self, event: Event) -> EventStatus {
-        self.window_handler
-            .on_event(&mut crate::Window::new(&mut self.window), event)
+        self.window_handler.on_event(&mut crate::Window::new(&mut self.window), event)
     }
 
     pub(super) fn trigger_frame(&mut self) {
-        self.window_handler
-            .on_frame(&mut crate::Window::new(&mut self.window));
+        self.window_handler.on_frame(&mut crate::Window::new(&mut self.window));
     }
 
     pub(super) fn process_native_key_event(&mut self, event: *mut Object) -> Option<KeyboardEvent> {
