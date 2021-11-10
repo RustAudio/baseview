@@ -2,20 +2,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::os::raw::{c_ulong, c_void};
 use std::sync::mpsc;
-use std::time::*;
 use std::thread;
+use std::time::*;
 
-use raw_window_handle::{
-    unix::XlibHandle,
-    HasRawWindowHandle,
-    RawWindowHandle
-};
+use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
 use super::XcbConnection;
 use crate::{
-    Event, MouseButton, MouseCursor, MouseEvent, ScrollDelta,
-    WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
-    WindowScalePolicy, PhyPoint, PhySize,
+    Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, WindowEvent,
+    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
 use super::keyboard::{convert_key_press_event, convert_key_release_event};
@@ -156,8 +151,7 @@ impl Window {
     }
 
     fn window_thread<H, B>(
-        parent: Option<u32>,
-        options: WindowOpenOptions, build: B,
+        parent: Option<u32>, options: WindowOpenOptions, build: B,
         tx: mpsc::SyncSender<WindowOpenResult>,
         parent_handle: Option<ParentHandle>,
     )
@@ -171,10 +165,7 @@ impl Window {
 
         // Get screen information (?)
         let setup = xcb_connection.conn.get_setup();
-        let screen = setup
-            .roots()
-            .nth(xcb_connection.xlib_display as usize)
-            .unwrap();
+        let screen = setup.roots().nth(xcb_connection.xlib_display as usize).unwrap();
 
         let foreground = xcb_connection.conn.generate_id();
 
@@ -184,15 +175,12 @@ impl Window {
             &xcb_connection.conn,
             foreground,
             parent_id,
-            &[
-                (xcb::GC_FOREGROUND, screen.black_pixel()),
-                (xcb::GC_GRAPHICS_EXPOSURES, 0),
-            ],
+            &[(xcb::GC_FOREGROUND, screen.black_pixel()), (xcb::GC_GRAPHICS_EXPOSURES, 0)],
         );
 
         let scaling = match options.scale {
             WindowScalePolicy::SystemScaleFactor => xcb_connection.get_scaling().unwrap_or(1.0),
-            WindowScalePolicy::ScaleFactor(scale) => scale
+            WindowScalePolicy::ScaleFactor(scale) => scale,
         };
 
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
@@ -203,11 +191,11 @@ impl Window {
             xcb::COPY_FROM_PARENT as u8,
             window_id,
             parent_id,
-            0,                     // x coordinate of the new window
-            0,                     // y coordinate of the new window
-            window_info.physical_size().width as u16,        // window width
-            window_info.physical_size().height as u16,       // window height
-            0,                     // window border
+            0,                                         // x coordinate of the new window
+            0,                                         // y coordinate of the new window
+            window_info.physical_size().width as u16,  // window width
+            window_info.physical_size().height as u16, // window height
+            0,                                         // window border
             xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
             screen.root_visual(),
             &[(
@@ -236,16 +224,16 @@ impl Window {
             title.as_bytes(),
         );
 
-        xcb_connection.atoms.wm_protocols
-            .zip(xcb_connection.atoms.wm_delete_window)
-            .map(|(wm_protocols, wm_delete_window)| {
+        xcb_connection.atoms.wm_protocols.zip(xcb_connection.atoms.wm_delete_window).map(
+            |(wm_protocols, wm_delete_window)| {
                 xcb_util::icccm::set_wm_protocols(
                     &xcb_connection.conn,
                     window_id,
                     wm_protocols,
                     &[wm_delete_window],
                 );
-            });
+            },
+        );
 
         xcb_connection.conn.flush();
 
@@ -269,7 +257,7 @@ impl Window {
         // the correct dpi scaling.
         handler.on_event(
             &mut crate::Window::new(&mut window),
-            Event::Window(WindowEvent::Resized(window_info))
+            Event::Window(WindowEvent::Resized(window_info)),
         );
 
         let _ = tx.send(Ok(SendableRwh(window.raw_window_handle())));
@@ -279,7 +267,7 @@ impl Window {
 
     pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
         if self.mouse_cursor == mouse_cursor {
-            return
+            return;
         }
 
         let xid = self.xcb_connection.get_cursor_xid(mouse_cursor);
@@ -288,7 +276,7 @@ impl Window {
             xcb::change_window_attributes(
                 &self.xcb_connection.conn,
                 self.window_id,
-                &[(xcb::CW_CURSOR, xid)]
+                &[(xcb::CW_CURSOR, xid)],
             );
 
             self.xcb_connection.conn.flush();
@@ -313,16 +301,13 @@ impl Window {
         }
 
         if let Some(size) = self.new_physical_size.take() {
-            self.window_info = WindowInfo::from_physical_size(
-                size,
-                self.window_info.scale()
-            );
+            self.window_info = WindowInfo::from_physical_size(size, self.window_info.scale());
 
             let window_info = self.window_info;
 
             handler.on_event(
                 &mut crate::Window::new(self),
-                Event::Window(WindowEvent::Resized(window_info))
+                Event::Window(WindowEvent::Resized(window_info)),
             );
         }
     }
@@ -442,8 +427,8 @@ impl Window {
                 let data = event.data().data;
                 let (_, data32, _) = unsafe { data.align_to::<u32>() };
 
-                let wm_delete_window = self.xcb_connection.atoms.wm_delete_window
-                    .unwrap_or(xcb::NONE);
+                let wm_delete_window =
+                    self.xcb_connection.atoms.wm_delete_window.unwrap_or(xcb::NONE);
 
                 if wm_delete_window == data32[0] {
                     self.handle_close_requested(handler);
@@ -455,7 +440,9 @@ impl Window {
 
                 let new_physical_size = PhySize::new(event.width() as u32, event.height() as u32);
 
-                if self.new_physical_size.is_some() || new_physical_size != self.window_info.physical_size() {
+                if self.new_physical_size.is_some()
+                    || new_physical_size != self.window_info.physical_size()
+                {
                     self.new_physical_size = Some(new_physical_size);
                 }
             }
@@ -468,14 +455,13 @@ impl Window {
                 let detail = event.detail();
 
                 if detail != 4 && detail != 5 {
-                    let physical_pos = PhyPoint::new(event.event_x() as i32, event.event_y() as i32);
+                    let physical_pos =
+                        PhyPoint::new(event.event_x() as i32, event.event_y() as i32);
                     let logical_pos = physical_pos.to_logical(&self.window_info);
 
                     handler.on_event(
                         &mut crate::Window::new(self),
-                        Event::Mouse(MouseEvent::CursorMoved {
-                            position: logical_pos,
-                        }),
+                        Event::Mouse(MouseEvent::CursorMoved { position: logical_pos }),
                     );
                 }
             }
@@ -507,7 +493,7 @@ impl Window {
                         let button_id = mouse_id(detail);
                         handler.on_event(
                             &mut crate::Window::new(self),
-                            Event::Mouse(MouseEvent::ButtonPressed(button_id))
+                            Event::Mouse(MouseEvent::ButtonPressed(button_id)),
                         );
                     }
                 }
@@ -521,7 +507,7 @@ impl Window {
                     let button_id = mouse_id(detail);
                     handler.on_event(
                         &mut crate::Window::new(self),
-                        Event::Mouse(MouseEvent::ButtonReleased(button_id))
+                        Event::Mouse(MouseEvent::ButtonReleased(button_id)),
                     );
                 }
             }
@@ -534,7 +520,7 @@ impl Window {
 
                 handler.on_event(
                     &mut crate::Window::new(self),
-                    Event::Keyboard(convert_key_press_event(&event))
+                    Event::Keyboard(convert_key_press_event(&event)),
                 );
             }
 
@@ -543,7 +529,7 @@ impl Window {
 
                 handler.on_event(
                     &mut crate::Window::new(self),
-                    Event::Keyboard(convert_key_release_event(&event))
+                    Event::Keyboard(convert_key_release_event(&event)),
                 );
             }
 

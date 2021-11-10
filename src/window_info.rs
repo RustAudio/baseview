@@ -16,12 +16,7 @@ impl WindowInfo {
             height: (logical_size.height * scale).round() as u32,
         };
 
-        Self {
-            logical_size,
-            physical_size,
-            scale,
-            scale_recip,
-        }
+        Self { logical_size, physical_size, scale, scale_recip }
     }
 
     pub fn from_physical_size(physical_size: PhySize, scale: f64) -> Self {
@@ -32,12 +27,7 @@ impl WindowInfo {
             height: f64::from(physical_size.height) * scale_recip,
         };
 
-        Self {
-            logical_size,
-            physical_size,
-            scale,
-            scale_recip,
-        }
+        Self { logical_size, physical_size, scale, scale_recip }
     }
 
     /// The logical size of the window
@@ -65,7 +55,7 @@ impl WindowInfo {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Point {
     pub x: f64,
-    pub y: f64
+    pub y: f64,
 }
 
 impl Point {
@@ -88,7 +78,7 @@ impl Point {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PhyPoint {
     pub x: i32,
-    pub y: i32
+    pub y: i32,
 }
 
 impl PhyPoint {

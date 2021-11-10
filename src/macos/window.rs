@@ -2,12 +2,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::ffi::c_void;
 
-use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSWindow, NSWindowStyleMask};
+use cocoa::appkit::{
+    NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSWindow,
+    NSWindowStyleMask,
+};
 use cocoa::base::{id, nil, NO};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use core_foundation::runloop::{
-    CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer,
-    kCFRunLoopDefaultMode,
+    CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer, kCFRunLoopDefaultMode,
 };
 use keyboard_types::KeyboardEvent;
 
@@ -15,12 +17,8 @@ use objc::{msg_send, runtime::Object, sel, sel_impl};
 
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
-use crate::{
-    Event, EventStatus, WindowHandler, WindowOpenOptions, WindowScalePolicy,
-    WindowInfo, WindowEvent,
-};
+use crate::{Event, EventStatus, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy};
 
-use super::view::{create_view, BASEVIEW_STATE_IVAR};
 use super::keyboard::KeyboardState;
 
 pub struct ChildWindowHandle {
@@ -171,26 +169,21 @@ impl Window {
         let app = unsafe { NSApp() };
 
         unsafe {
-            app.setActivationPolicy_(
-                NSApplicationActivationPolicyRegular
-            );
+            app.setActivationPolicy_(NSApplicationActivationPolicyRegular);
         }
 
         let scaling = match options.scale {
             WindowScalePolicy::ScaleFactor(scale) => scale,
             WindowScalePolicy::SystemScaleFactor => 1.0,
         };
-        
-        let window_info = WindowInfo::from_logical_size(
-            options.size,
-            scaling
-        );
+
+        let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
         let rect = NSRect::new(
             NSPoint::new(0.0, 0.0),
             NSSize::new(
                 window_info.logical_size().width as f64,
-                window_info.logical_size().height as f64
+                window_info.logical_size().height as f64,
             ),
         );
 
@@ -206,9 +199,7 @@ impl Window {
                 );
             ns_window.center();
 
-            let title = NSString::alloc(nil)
-                .init_str(&options.title)
-                .autorelease();
+            let title = NSString::alloc(nil).init_str(&options.title).autorelease();
             ns_window.setTitle_(title);
 
             ns_window.makeKeyAndOrderFront_(nil);
@@ -248,9 +239,7 @@ impl Window {
     {
         let window_handler = Box::new(build(&mut crate::Window::new(&mut window)));
 
-        let retain_count_after_build: usize = unsafe {
-            msg_send![window.ns_view, retainCount]
-        };
+        let retain_count_after_build: usize = unsafe { msg_send![window.ns_view, retainCount] };
 
         let window_state_ptr = Box::into_raw(Box::new(WindowState {
             window,
@@ -262,10 +251,8 @@ impl Window {
         }));
 
         unsafe {
-            (*(*window_state_ptr).window.ns_view).set_ivar(
-                BASEVIEW_STATE_IVAR,
-                window_state_ptr as *mut c_void
-            );
+            (*(*window_state_ptr).window.ns_view)
+                .set_ivar(BASEVIEW_STATE_IVAR, window_state_ptr as *mut c_void);
 
             WindowState::setup_timer(window_state_ptr);
         }
@@ -276,7 +263,6 @@ impl Window {
     }
 }
 
-
 pub(super) struct WindowState {
     window: Window,
     window_handler: Box<dyn WindowHandler>,
@@ -285,7 +271,6 @@ pub(super) struct WindowState {
     _parent_handle: Option<ParentHandle>,
     pub retain_count_after_build: usize,
 }
-
 
 impl WindowState {
     /// Returns a mutable reference to a WindowState from an Objective-C field
@@ -300,8 +285,7 @@ impl WindowState {
     }
 
     pub(super) fn trigger_event(&mut self, event: Event) -> EventStatus {
-        self.window_handler
-            .on_event(&mut crate::Window::new(&mut self.window), event)
+        self.window_handler.on_event(&mut crate::Window::new(&mut self.window), event)
     }
 
     pub(super) fn trigger_frame(&mut self) {
@@ -339,23 +323,15 @@ impl WindowState {
         }
     }
 
-    pub(super) fn process_native_key_event(
-        &mut self,
-        event: *mut Object
-    ) -> Option<KeyboardEvent> {
+    pub(super) fn process_native_key_event(&mut self, event: *mut Object) -> Option<KeyboardEvent> {
         self.keyboard_state.process_native_event(event)
     }
 
     /// Don't call until WindowState pointer is stored in view
     unsafe fn setup_timer(window_state_ptr: *mut WindowState) {
-        extern "C" fn timer_callback(
-            _: *mut __CFRunLoopTimer,
-            window_state_ptr: *mut c_void,
-        ) {
+        extern "C" fn timer_callback(_: *mut __CFRunLoopTimer, window_state_ptr: *mut c_void) {
             unsafe {
-                let window_state = &mut *(
-                    window_state_ptr as *mut WindowState
-                );
+                let window_state = &mut *(window_state_ptr as *mut WindowState);
 
                 window_state.trigger_frame();
             }
@@ -369,18 +345,10 @@ impl WindowState {
             copyDescription: None,
         };
 
-        let timer = CFRunLoopTimer::new(
-            0.0,
-            0.015,
-            0,
-            0,
-            timer_callback,
-            &mut timer_context,
-        );
+        let timer = CFRunLoopTimer::new(0.0, 0.015, 0, 0, timer_callback, &mut timer_context);
 
-        CFRunLoop::get_current()
-            .add_timer(&timer, kCFRunLoopDefaultMode);
-        
+        CFRunLoop::get_current().add_timer(&timer, kCFRunLoopDefaultMode);
+
         let window_state = &mut *(window_state_ptr);
 
         window_state.frame_timer = Some(timer);
@@ -389,8 +357,7 @@ impl WindowState {
     /// Call when freeing view
     pub(super) unsafe fn stop(&mut self) {
         if let Some(frame_timer) = self.frame_timer.take() {
-            CFRunLoop::get_current()
-                .remove_timer(&frame_timer, kCFRunLoopDefaultMode);
+            CFRunLoop::get_current().remove_timer(&frame_timer, kCFRunLoopDefaultMode);
         }
 
         self.trigger_event(Event::Window(WindowEvent::WillClose));
@@ -402,12 +369,9 @@ impl WindowState {
     }
 }
 
-
 unsafe impl HasRawWindowHandle for Window {
     fn raw_window_handle(&self) -> RawWindowHandle {
-        let ns_window = self.ns_window.unwrap_or(
-            ::std::ptr::null_mut()
-        ) as *mut c_void;
+        let ns_window = self.ns_window.unwrap_or(::std::ptr::null_mut()) as *mut c_void;
 
         RawWindowHandle::MacOS(MacOSHandle {
             ns_window,

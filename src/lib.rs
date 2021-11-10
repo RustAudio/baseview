@@ -1,9 +1,9 @@
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(target_os = "windows")]
 mod win;
 #[cfg(target_os = "linux")]
 mod x11;
-#[cfg(target_os = "macos")]
-mod macos;
 
 mod event;
 mod keyboard;
