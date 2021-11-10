@@ -19,7 +19,6 @@
 
 use keyboard_types::{Code, Location};
 
-
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 /// Map key code to location.
 ///

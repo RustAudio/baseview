@@ -1,14 +1,12 @@
+use std::collections::HashMap;
 /// A very light abstraction around the XCB connection.
 ///
 /// Keeps track of the xcb connection itself and the xlib display ID that was used to connect.
-
 use std::ffi::{CStr, CString};
-use std::collections::HashMap;
 
 use crate::MouseCursor;
 
 use super::cursor;
-
 
 pub(crate) struct Atoms {
     pub wm_protocols: Option<u32>,
@@ -48,19 +46,16 @@ impl XcbConnection {
 
         conn.set_event_queue_owner(xcb::base::EventQueueOwner::Xcb);
 
-        let (wm_protocols, wm_delete_window, wm_normal_hints) = intern_atoms!(&conn, WM_PROTOCOLS, WM_DELETE_WINDOW, WM_NORMAL_HINTS);
+        let (wm_protocols, wm_delete_window, wm_normal_hints) =
+            intern_atoms!(&conn, WM_PROTOCOLS, WM_DELETE_WINDOW, WM_NORMAL_HINTS);
 
         Ok(Self {
             conn,
             xlib_display,
 
-            atoms: Atoms {
-                wm_protocols,
-                wm_delete_window,
-                wm_normal_hints,
-            },
+            atoms: Atoms { wm_protocols, wm_delete_window, wm_normal_hints },
 
-            cursor_cache: HashMap::new()
+            cursor_cache: HashMap::new(),
         })
     }
 
@@ -79,10 +74,7 @@ impl XcbConnection {
             if !rms.is_null() {
                 let db = XrmGetStringDatabase(rms);
                 if !db.is_null() {
-                    let mut value = XrmValue {
-                        size: 0,
-                        addr: std::ptr::null_mut(),
-                    };
+                    let mut value = XrmValue { size: 0, addr: std::ptr::null_mut() };
 
                     let mut value_type: *mut std::os::raw::c_char = std::ptr::null_mut();
                     let name_c_str = CString::new("Xft.dpi").unwrap();
@@ -144,16 +136,13 @@ impl XcbConnection {
 
     #[inline]
     pub fn get_scaling(&self) -> Option<f64> {
-        self.get_scaling_xft()
-            .or(self.get_scaling_screen_dimensions())
+        self.get_scaling_xft().or(self.get_scaling_screen_dimensions())
     }
 
     #[inline]
     pub fn get_cursor_xid(&mut self, cursor: MouseCursor) -> u32 {
         let dpy = self.conn.get_raw_dpy();
 
-        *self.cursor_cache
-            .entry(cursor)
-            .or_insert_with(|| cursor::get_xcursor(dpy, cursor))
+        *self.cursor_cache.entry(cursor).or_insert_with(|| cursor::get_xcursor(dpy, cursor))
     }
 }

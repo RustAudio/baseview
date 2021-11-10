@@ -25,10 +25,7 @@ pub struct Window<'a> {
 
 impl<'a> Window<'a> {
     pub(crate) fn new(window: &mut platform::Window) -> Window {
-        Window {
-            window,
-            phantom: PhantomData,
-        }
+        Window { window, phantom: PhantomData }
     }
 
     pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B)

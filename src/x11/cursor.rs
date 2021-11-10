@@ -35,9 +35,8 @@ fn create_empty_cursor(display: *mut x11::xlib::Display) -> Option<u32> {
 }
 
 fn load_cursor(display: *mut x11::xlib::Display, name: &[u8]) -> Option<u32> {
-    let xcursor = unsafe {
-        x11::xcursor::XcursorLibraryLoadCursor(display, name.as_ptr() as *const c_char)
-    };
+    let xcursor =
+        unsafe { x11::xcursor::XcursorLibraryLoadCursor(display, name.as_ptr() as *const c_char) };
 
     if xcursor == 0 {
         None
@@ -47,7 +46,8 @@ fn load_cursor(display: *mut x11::xlib::Display, name: &[u8]) -> Option<u32> {
 }
 
 fn load_first_existing_cursor(display: *mut x11::xlib::Display, names: &[&[u8]]) -> Option<u32> {
-    names.iter()
+    names
+        .iter()
         .map(|name| load_cursor(display, name))
         .find(|xcursor| xcursor.is_some())
         .unwrap_or(None)
@@ -101,7 +101,5 @@ pub(super) fn get_xcursor(display: *mut x11::xlib::Display, cursor: MouseCursor)
         MouseCursor::RowResize => loadn(&[b"split_v\0", b"v_double_arrow\0"]),
     };
 
-    cursor
-        .or(load(b"left_ptr\0"))
-        .unwrap_or(0)
+    cursor.or(load(b"left_ptr\0")).unwrap_or(0)
 }
