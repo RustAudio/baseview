@@ -17,12 +17,12 @@ use winapi::um::winuser::{
     XBUTTON1, XBUTTON2,
 };
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::cell::RefCell;
 use std::ffi::{c_void, OsStr};
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use raw_window_handle::{windows::WindowsHandle, HasRawWindowHandle, RawWindowHandle};
 
@@ -90,10 +90,7 @@ impl ParentHandle {
             child_window_dropped: Arc::clone(&child_window_dropped),
         };
 
-        (
-            Self { child_window_dropped },
-            handle
-        )
+        (Self { child_window_dropped }, handle)
     }
 }
 
@@ -359,7 +356,9 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> ChildWindowHandle
+    pub fn open_parented<P, H, B>(
+        parent: &P, options: WindowOpenOptions, build: B,
+    ) -> ChildWindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -373,12 +372,21 @@ impl Window {
 
         let (parent_handle, mut child_window_handle) = ParentHandle::new();
 
-        Self::open(true, parent, options, build, Some(parent_handle), Some(&mut child_window_handle));
+        Self::open(
+            true,
+            parent,
+            options,
+            build,
+            Some(parent_handle),
+            Some(&mut child_window_handle),
+        );
 
         child_window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> (RawWindowHandle, ChildWindowHandle)
+    pub fn open_as_if_parented<H, B>(
+        options: WindowOpenOptions, build: B,
+    ) -> (RawWindowHandle, ChildWindowHandle)
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -386,14 +394,21 @@ impl Window {
     {
         let (parent_handle, mut child_window_handle) = ParentHandle::new();
 
-        let hwnd = Self::open(true, null_mut(), options, build, Some(parent_handle), Some(&mut child_window_handle));
+        let hwnd = Self::open(
+            true,
+            null_mut(),
+            options,
+            build,
+            Some(parent_handle),
+            Some(&mut child_window_handle),
+        );
 
         (
             RawWindowHandle::Windows(WindowsHandle {
                 hwnd: hwnd as *mut std::ffi::c_void,
                 ..WindowsHandle::empty()
             }),
-            child_window_handle
+            child_window_handle,
         )
     }
 
@@ -422,16 +437,13 @@ impl Window {
     }
 
     fn open<H, B>(
-        parented: bool,
-        parent: HWND,
-        options: WindowOpenOptions,
-        build: B,
-        parent_handle: Option<ParentHandle>,
-        child_window_handle: Option<&mut ChildWindowHandle>,
+        parented: bool, parent: HWND, options: WindowOpenOptions, build: B,
+        parent_handle: Option<ParentHandle>, child_window_handle: Option<&mut ChildWindowHandle>,
     ) -> HWND
-    where H: WindowHandler + 'static,
-          B: FnOnce(&mut crate::Window) -> H,
-          B: Send + 'static,
+    where
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut crate::Window) -> H,
+        B: Send + 'static,
     {
         unsafe {
             let mut title: Vec<u16> = OsStr::new(&options.title[..]).encode_wide().collect();
@@ -486,10 +498,12 @@ impl Window {
                 null_mut(),
             );
             // todo: manage error ^
-            
-            let destroy_msg_id = RegisterWindowMessageA("Baseview::DestroyMsg\0".as_ptr() as LPCSTR);
 
-            let handler = Box::new(build(&mut crate::Window::new(&mut Window { hwnd, destroy_msg_id })));
+            let destroy_msg_id =
+                RegisterWindowMessageA("Baseview::DestroyMsg\0".as_ptr() as LPCSTR);
+
+            let handler =
+                Box::new(build(&mut crate::Window::new(&mut Window { hwnd, destroy_msg_id })));
 
             let mut window_state = Box::new(RefCell::new(WindowState {
                 window_class,

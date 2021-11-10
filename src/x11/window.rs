@@ -1,7 +1,7 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::os::raw::{c_ulong, c_void};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread;
 use std::time::*;
 
@@ -68,10 +68,7 @@ impl ParentHandle {
             child_window_dropped: Arc::clone(&child_window_dropped),
         };
 
-        (
-            Self { parent_dropped, child_window_dropped },
-            handle
-        )
+        (Self { parent_dropped, child_window_dropped }, handle)
     }
 
     pub fn parent_did_drop(&self) -> bool {
@@ -86,7 +83,9 @@ impl Drop for ParentHandle {
 }
 
 impl Window {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> ChildWindowHandle
+    pub fn open_parented<P, H, B>(
+        parent: &P, options: WindowOpenOptions, build: B,
+    ) -> ChildWindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -113,7 +112,9 @@ impl Window {
         child_window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> (RawWindowHandle, ChildWindowHandle)
+    pub fn open_as_if_parented<H, B>(
+        options: WindowOpenOptions, build: B,
+    ) -> (RawWindowHandle, ChildWindowHandle)
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -127,10 +128,7 @@ impl Window {
             Self::window_thread(None, options, build, tx.clone(), Some(parent_handle));
         });
 
-        (
-            rx.recv().unwrap().unwrap().0,
-            child_window_handle
-        )
+        (rx.recv().unwrap().unwrap().0, child_window_handle)
     }
 
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
@@ -152,12 +150,11 @@ impl Window {
 
     fn window_thread<H, B>(
         parent: Option<u32>, options: WindowOpenOptions, build: B,
-        tx: mpsc::SyncSender<WindowOpenResult>,
-        parent_handle: Option<ParentHandle>,
-    )
-    where H: WindowHandler + 'static,
-          B: FnOnce(&mut crate::Window) -> H,
-          B: Send + 'static,
+        tx: mpsc::SyncSender<WindowOpenResult>, parent_handle: Option<ParentHandle>,
+    ) where
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut crate::Window) -> H,
+        B: Send + 'static,
     {
         // Connect to the X server
         // FIXME: baseview error type instead of unwrap()
@@ -375,20 +372,14 @@ impl Window {
     }
 
     fn handle_close_requested(&mut self, handler: &mut dyn WindowHandler) {
-        handler.on_event(
-            &mut crate::Window::new(self),
-            Event::Window(WindowEvent::WillClose)
-        );
+        handler.on_event(&mut crate::Window::new(self), Event::Window(WindowEvent::WillClose));
 
         // FIXME: handler should decide whether window stays open or not
         self.event_loop_running = false;
     }
 
     fn handle_must_close(&mut self, handler: &mut dyn WindowHandler) {
-        handler.on_event(
-            &mut crate::Window::new(self),
-            Event::Window(WindowEvent::WillClose)
-        );
+        handler.on_event(&mut crate::Window::new(self), Event::Window(WindowEvent::WillClose));
 
         self.event_loop_running = false;
     }

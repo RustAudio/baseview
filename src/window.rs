@@ -30,7 +30,9 @@ impl<'a> Window<'a> {
         Window { window, phantom: PhantomData }
     }
 
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> ChildWindowHandle
+    pub fn open_parented<P, H, B>(
+        parent: &P, options: WindowOpenOptions, build: B,
+    ) -> ChildWindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -40,7 +42,9 @@ impl<'a> Window<'a> {
         platform::Window::open_parented::<P, H, B>(parent, options, build)
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> (RawWindowHandle, ChildWindowHandle)
+    pub fn open_as_if_parented<H, B>(
+        options: WindowOpenOptions, build: B,
+    ) -> (RawWindowHandle, ChildWindowHandle)
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut Window) -> H,

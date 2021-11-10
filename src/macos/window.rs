@@ -1,6 +1,6 @@
+use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::ffi::c_void;
 
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSWindow,
@@ -53,10 +53,7 @@ impl ParentHandle {
             child_window_dropped: Arc::clone(&child_window_dropped),
         };
 
-        (
-            Self { _parent_dropped: parent_dropped, child_window_dropped },
-            handle
-        )
+        (Self { _parent_dropped: parent_dropped, child_window_dropped }, handle)
     }
 
     /*
@@ -85,7 +82,9 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> ChildWindowHandle
+    pub fn open_parented<P, H, B>(
+        parent: &P, options: WindowOpenOptions, build: B,
+    ) -> ChildWindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -104,12 +103,7 @@ impl Window {
 
         let (parent_handle, child_window_handle) = ParentHandle::new();
 
-        let window = Window {
-            ns_app: None,
-            ns_window: None,
-            ns_view,
-            close_requested: false,
-        };
+        let window = Window { ns_app: None, ns_window: None, ns_view, close_requested: false };
 
         Self::init(window, build, Some(parent_handle));
 
@@ -123,7 +117,9 @@ impl Window {
         child_window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> (RawWindowHandle, ChildWindowHandle)
+    pub fn open_as_if_parented<H, B>(
+        options: WindowOpenOptions, build: B,
+    ) -> (RawWindowHandle, ChildWindowHandle)
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -133,12 +129,7 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window {
-            ns_app: None,
-            ns_window: None,
-            ns_view,
-            close_requested: false,
-        };
+        let window = Window { ns_app: None, ns_window: None, ns_view, close_requested: false };
 
         let raw_window_handle = window.raw_window_handle();
 
@@ -188,15 +179,14 @@ impl Window {
         );
 
         let ns_window = unsafe {
-            let ns_window = NSWindow::alloc(nil)
-                .initWithContentRect_styleMask_backing_defer_(
-                    rect,
-                    NSWindowStyleMask::NSTitledWindowMask |
-                    NSWindowStyleMask::NSClosableWindowMask |
-                    NSWindowStyleMask::NSMiniaturizableWindowMask,
-                    NSBackingStoreBuffered,
-                    NO,
-                );
+            let ns_window = NSWindow::alloc(nil).initWithContentRect_styleMask_backing_defer_(
+                rect,
+                NSWindowStyleMask::NSTitledWindowMask
+                    | NSWindowStyleMask::NSClosableWindowMask
+                    | NSWindowStyleMask::NSMiniaturizableWindowMask,
+                NSBackingStoreBuffered,
+                NO,
+            );
             ns_window.center();
 
             let title = NSString::alloc(nil).init_str(&options.title).autorelease();
@@ -228,14 +218,11 @@ impl Window {
         }
     }
 
-    fn init<H, B>(
-        mut window: Window,
-        build: B,
-        parent_handle: Option<ParentHandle>,
-    )
-    where H: WindowHandler + 'static,
-          B: FnOnce(&mut crate::Window) -> H,
-          B: Send + 'static,
+    fn init<H, B>(mut window: Window, build: B, parent_handle: Option<ParentHandle>)
+    where
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut crate::Window) -> H,
+        B: Send + 'static,
     {
         let window_handler = Box::new(build(&mut crate::Window::new(&mut window)));
 
@@ -289,9 +276,8 @@ impl WindowState {
     }
 
     pub(super) fn trigger_frame(&mut self) {
-        self.window_handler
-            .on_frame(&mut crate::Window::new(&mut self.window));
-        
+        self.window_handler.on_frame(&mut crate::Window::new(&mut self.window));
+
         let mut do_close = false;
 
         /* FIXME: Is it even necessary to check if the parent dropped the handle
@@ -304,7 +290,7 @@ impl WindowState {
             }
         }
         */
-        
+
         // Check if the user requested the window to close
         if self.window.close_requested {
             do_close = true;
