@@ -17,9 +17,13 @@ use objc::{msg_send, runtime::Object, sel, sel_impl};
 
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
-use crate::{Event, EventStatus, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy};
+use crate::{
+    Event, EventStatus, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    WindowScalePolicy,
+};
 
 use super::keyboard::KeyboardState;
+use super::view::{create_view, BASEVIEW_STATE_IVAR};
 
 pub struct ChildWindowHandle {
     parent_dropped: Arc<AtomicBool>,
