@@ -2,29 +2,30 @@ use winapi::shared::guiddef::GUID;
 use winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM};
 use winapi::shared::windef::{HWND, RECT};
 use winapi::um::combaseapi::CoCreateGuid;
-use winapi::um::winnt::LPCSTR;
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    GetCapture, GetDpiForWindow, GetMessageW, GetWindowLongPtrW, IsWindow, LoadCursorW,
-    PostMessageW, RegisterClassW, RegisterWindowMessageA, ReleaseCapture, SetCapture,
-    SetProcessDpiAwarenessContext, SetTimer, SetWindowLongPtrW, SetWindowPos, TranslateMessage,
-    UnregisterClassW, CS_OWNDC, GET_XBUTTON_WPARAM, GWLP_USERDATA, IDC_ARROW, MSG, SWP_NOMOVE,
-    SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED, WM_INPUTLANGCHANGE,
-    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_NCDESTROY, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR,
-    WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION,
-    WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX,
-    WS_VISIBLE, XBUTTON1, XBUTTON2,
+    GetDpiForWindow, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW,
+    ReleaseCapture, SetCapture, SetProcessDpiAwarenessContext, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, TranslateMessage, UnregisterClassW, CS_OWNDC, GET_XBUTTON_WPARAM, GWLP_USERDATA,
+    IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE,
+    WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_RBUTTONDOWN,
+    WM_RBUTTONUP, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER,
+    WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, XBUTTON1, XBUTTON2,
 };
 
 use std::cell::RefCell;
-use std::ffi::{c_void, OsStr};
+use std::ffi::OsStr;
+use std::marker::PhantomData;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use raw_window_handle::{windows::WindowsHandle, HasRawWindowHandle, RawWindowHandle};
+
+const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 
 use crate::{
     Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, WindowEvent, WindowHandler,
@@ -54,49 +55,62 @@ unsafe fn generate_guid() -> String {
 
 const WIN_FRAME_TIMER: usize = 4242;
 
-pub struct ChildWindowHandle {
+pub struct WindowHandle {
     hwnd: Option<HWND>,
-    destroy_msg_id: u32,
-    child_window_dropped: Arc<AtomicBool>,
+    window_dropped: Arc<AtomicBool>,
+
+    // Ensure handle is !Send
+    _phantom: PhantomData<*mut ()>,
 }
 
-impl ChildWindowHandle {
+impl WindowHandle {
+    pub fn close(&mut self) {
+        if let Some(hwnd) = self.hwnd.take() {
+            unsafe {
+                PostMessageW(hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
+            }
+        }
+    }
+
     pub fn window_was_dropped(&self) -> bool {
-        self.child_window_dropped.load(Ordering::Relaxed)
+        self.window_dropped.load(Ordering::Relaxed)
     }
 }
 
-impl Drop for ChildWindowHandle {
-    fn drop(&mut self) {
+unsafe impl HasRawWindowHandle for WindowHandle {
+    fn raw_window_handle(&self) -> RawWindowHandle {
         if let Some(hwnd) = self.hwnd {
-            unsafe {
-                PostMessageW(hwnd, self.destroy_msg_id, 0, 0);
-            }
+            RawWindowHandle::Windows(WindowsHandle {
+                hwnd: hwnd as *mut std::ffi::c_void,
+                ..WindowsHandle::empty()
+            })
+        } else {
+            RawWindowHandle::Windows(WindowsHandle { ..WindowsHandle::empty() })
         }
     }
 }
 
 struct ParentHandle {
-    child_window_dropped: Arc<AtomicBool>,
+    window_dropped: Arc<AtomicBool>,
 }
 
 impl ParentHandle {
-    pub fn new() -> (Self, ChildWindowHandle) {
-        let child_window_dropped = Arc::new(AtomicBool::new(false));
+    pub fn new(hwnd: HWND) -> (Self, WindowHandle) {
+        let window_dropped = Arc::new(AtomicBool::new(false));
 
-        let handle = ChildWindowHandle {
-            hwnd: None,
-            destroy_msg_id: 0,
-            child_window_dropped: Arc::clone(&child_window_dropped),
+        let handle = WindowHandle {
+            hwnd: Some(hwnd),
+            window_dropped: Arc::clone(&window_dropped),
+            _phantom: PhantomData::default(),
         };
 
-        (Self { child_window_dropped }, handle)
+        (Self { window_dropped }, handle)
     }
 }
 
 impl Drop for ParentHandle {
     fn drop(&mut self) {
-        self.child_window_dropped.store(true, Ordering::Relaxed);
+        self.window_dropped.store(true, Ordering::Relaxed);
     }
 }
 
@@ -110,8 +124,7 @@ unsafe extern "system" fn wnd_proc(
 
     let window_state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RefCell<WindowState>;
     if !window_state_ptr.is_null() {
-        let destroy_msg_id = (&*window_state_ptr).borrow().destroy_msg_id;
-        let mut window = Window { hwnd, destroy_msg_id };
+        let mut window = Window { hwnd };
         let mut window = crate::Window::new(&mut window);
 
         match msg {
@@ -298,10 +311,7 @@ unsafe extern "system" fn wnd_proc(
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             }
             _ => {
-                if msg == destroy_msg_id {
-                    // FIXME: handler should decide whether window stays open or not
-                    // (except if the message came from the host handle being dropped,
-                    // in which case the window should always be closed)
+                if msg == BV_WINDOW_MUST_CLOSE {
                     DestroyWindow(hwnd);
                     return 0;
                 }
@@ -341,24 +351,20 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 struct WindowState {
     window_class: ATOM,
     window_info: WindowInfo,
-    parent_handle: Option<ParentHandle>,
+    _parent_handle: Option<ParentHandle>,
     keyboard_state: KeyboardState,
     mouse_button_counter: usize,
     handler: Box<dyn WindowHandler>,
     scale_policy: WindowScalePolicy,
     dw_style: u32,
-    destroy_msg_id: u32,
 }
 
 pub struct Window {
     hwnd: HWND,
-    destroy_msg_id: u32,
 }
 
 impl Window {
-    pub fn open_parented<P, H, B>(
-        parent: &P, options: WindowOpenOptions, build: B,
-    ) -> ChildWindowHandle
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -370,46 +376,20 @@ impl Window {
             h => panic!("unsupported parent handle {:?}", h),
         };
 
-        let (parent_handle, mut child_window_handle) = ParentHandle::new();
+        let (window_handle, _) = Self::open(true, parent, options, build);
 
-        Self::open(
-            true,
-            parent,
-            options,
-            build,
-            Some(parent_handle),
-            Some(&mut child_window_handle),
-        );
-
-        child_window_handle
+        window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(
-        options: WindowOpenOptions, build: B,
-    ) -> (RawWindowHandle, ChildWindowHandle)
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let (parent_handle, mut child_window_handle) = ParentHandle::new();
+        let (window_handle, _) = Self::open(true, null_mut(), options, build);
 
-        let hwnd = Self::open(
-            true,
-            null_mut(),
-            options,
-            build,
-            Some(parent_handle),
-            Some(&mut child_window_handle),
-        );
-
-        (
-            RawWindowHandle::Windows(WindowsHandle {
-                hwnd: hwnd as *mut std::ffi::c_void,
-                ..WindowsHandle::empty()
-            }),
-            child_window_handle,
-        )
+        window_handle
     }
 
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
@@ -418,7 +398,7 @@ impl Window {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let hwnd = Self::open(false, null_mut(), options, build, None, None);
+        let (_, hwnd) = Self::open(false, null_mut(), options, build);
 
         unsafe {
             let mut msg: MSG = std::mem::zeroed();
@@ -438,8 +418,7 @@ impl Window {
 
     fn open<H, B>(
         parented: bool, parent: HWND, options: WindowOpenOptions, build: B,
-        parent_handle: Option<ParentHandle>, child_window_handle: Option<&mut ChildWindowHandle>,
-    ) -> HWND
+    ) -> (WindowHandle, HWND)
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -499,22 +478,20 @@ impl Window {
             );
             // todo: manage error ^
 
-            let destroy_msg_id =
-                RegisterWindowMessageA("Baseview::DestroyMsg\0".as_ptr() as LPCSTR);
+            let handler = Box::new(build(&mut crate::Window::new(&mut Window { hwnd })));
 
-            let handler =
-                Box::new(build(&mut crate::Window::new(&mut Window { hwnd, destroy_msg_id })));
+            let (parent_handle, window_handle) = ParentHandle::new(hwnd);
+            let parent_handle = if parented { Some(parent_handle) } else { None };
 
             let mut window_state = Box::new(RefCell::new(WindowState {
                 window_class,
                 window_info,
-                parent_handle,
+                _parent_handle: parent_handle,
                 keyboard_state: KeyboardState::new(),
                 mouse_button_counter: 0,
                 handler,
                 scale_policy: options.scale,
                 dw_style: flags,
-                destroy_msg_id,
             }));
 
             // Only works on Windows 10 unfortunately.
@@ -570,18 +547,13 @@ impl Window {
                 );
             }
 
-            if let Some(child_window_handle) = child_window_handle {
-                child_window_handle.hwnd = Some(hwnd);
-                child_window_handle.destroy_msg_id = destroy_msg_id;
-            }
-
-            hwnd
+            (window_handle, hwnd)
         }
     }
 
-    pub fn request_close(&mut self) {
+    pub fn close(&mut self) {
         unsafe {
-            PostMessageW(self.hwnd, self.destroy_msg_id, 0, 0);
+            PostMessageW(self.hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
         }
     }
 }

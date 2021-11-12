@@ -1,4 +1,5 @@
 use std::ffi::c_void;
+use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -25,51 +26,69 @@ use crate::{
 use super::keyboard::KeyboardState;
 use super::view::{create_view, BASEVIEW_STATE_IVAR};
 
-pub struct ChildWindowHandle {
-    parent_dropped: Arc<AtomicBool>,
-    child_window_dropped: Arc<AtomicBool>,
+pub struct WindowHandle {
+    raw_window_handle: Option<RawWindowHandle>,
+    close_requested: Arc<AtomicBool>,
+    window_dropped: Arc<AtomicBool>,
+
+    // Ensure handle is !Send
+    _phantom: PhantomData<*mut ()>,
 }
 
-impl ChildWindowHandle {
+impl WindowHandle {
+    pub fn close(&mut self) {
+        if let Some(_) = self.raw_window_handle.take() {
+            self.close_requested.store(true, Ordering::Relaxed);
+        }
+    }
+
     pub fn window_was_dropped(&self) -> bool {
-        self.child_window_dropped.load(Ordering::Relaxed)
+        self.window_dropped.load(Ordering::Relaxed)
     }
 }
 
-impl Drop for ChildWindowHandle {
-    fn drop(&mut self) {
-        self.parent_dropped.store(true, Ordering::Relaxed);
+unsafe impl HasRawWindowHandle for WindowHandle {
+    fn raw_window_handle(&self) -> RawWindowHandle {
+        if let Some(raw_window_handle) = self.raw_window_handle {
+            if !self.window_dropped.load(Ordering::Relaxed) {
+                return raw_window_handle;
+            }
+        }
+
+        RawWindowHandle::MacOS(MacOSHandle { ..MacOSHandle::empty() })
     }
 }
 
 struct ParentHandle {
-    _parent_dropped: Arc<AtomicBool>,
-    child_window_dropped: Arc<AtomicBool>,
+    _close_requested: Arc<AtomicBool>,
+    window_dropped: Arc<AtomicBool>,
 }
 
 impl ParentHandle {
-    pub fn new() -> (Self, ChildWindowHandle) {
-        let parent_dropped = Arc::new(AtomicBool::new(false));
-        let child_window_dropped = Arc::new(AtomicBool::new(false));
+    pub fn new(raw_window_handle: RawWindowHandle) -> (Self, WindowHandle) {
+        let close_requested = Arc::new(AtomicBool::new(false));
+        let window_dropped = Arc::new(AtomicBool::new(false));
 
-        let handle = ChildWindowHandle {
-            parent_dropped: Arc::clone(&parent_dropped),
-            child_window_dropped: Arc::clone(&child_window_dropped),
+        let handle = WindowHandle {
+            raw_window_handle: Some(raw_window_handle),
+            close_requested: Arc::clone(&close_requested),
+            window_dropped: Arc::clone(&window_dropped),
+            _phantom: PhantomData::default(),
         };
 
-        (Self { _parent_dropped: parent_dropped, child_window_dropped }, handle)
+        (Self { _close_requested: close_requested, window_dropped }, handle)
     }
 
     /*
     pub fn parent_did_drop(&self) -> bool {
-        self.parent_dropped.load(Ordering::Relaxed)
+        self.close_requested.load(Ordering::Relaxed)
     }
     */
 }
 
 impl Drop for ParentHandle {
     fn drop(&mut self) {
-        self.child_window_dropped.store(true, Ordering::Relaxed);
+        self.window_dropped.store(true, Ordering::Relaxed);
     }
 }
 
@@ -86,9 +105,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open_parented<P, H, B>(
-        parent: &P, options: WindowOpenOptions, build: B,
-    ) -> ChildWindowHandle
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -105,11 +122,9 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let (parent_handle, child_window_handle) = ParentHandle::new();
-
         let window = Window { ns_app: None, ns_window: None, ns_view, close_requested: false };
 
-        Self::init(window, build, Some(parent_handle));
+        let window_handle = Self::init(true, window, build);
 
         unsafe {
             let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
@@ -118,12 +133,10 @@ impl Window {
             let () = msg_send![pool, drain];
         }
 
-        child_window_handle
+        window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(
-        options: WindowOpenOptions, build: B,
-    ) -> (RawWindowHandle, ChildWindowHandle)
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -135,17 +148,13 @@ impl Window {
 
         let window = Window { ns_app: None, ns_window: None, ns_view, close_requested: false };
 
-        let raw_window_handle = window.raw_window_handle();
-
-        let (parent_handle, child_window_handle) = ParentHandle::new();
-
-        Self::init(window, build, Some(parent_handle));
+        let window_handle = Self::init(true, window, build);
 
         unsafe {
             let () = msg_send![pool, drain];
         }
 
-        (raw_window_handle, child_window_handle)
+        window_handle
     }
 
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
@@ -210,7 +219,7 @@ impl Window {
             close_requested: false,
         };
 
-        Self::init(window, build, None);
+        let _ = Self::init(false, window, build);
 
         unsafe {
             ns_window.setContentView_(ns_view);
@@ -222,13 +231,16 @@ impl Window {
         }
     }
 
-    fn init<H, B>(mut window: Window, build: B, parent_handle: Option<ParentHandle>)
+    fn init<H, B>(parented: bool, mut window: Window, build: B) -> WindowHandle
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
         let window_handler = Box::new(build(&mut crate::Window::new(&mut window)));
+
+        let (parent_handle, window_handle) = ParentHandle::new(window.raw_window_handle());
+        let parent_handle = if parented { Some(parent_handle) } else { None };
 
         let retain_count_after_build: usize = unsafe { msg_send![window.ns_view, retainCount] };
 
@@ -247,9 +259,11 @@ impl Window {
 
             WindowState::setup_timer(window_state_ptr);
         }
+
+        window_handle
     }
 
-    pub fn request_close(&mut self) {
+    pub fn close(&mut self) {
         self.close_requested = true;
     }
 }
