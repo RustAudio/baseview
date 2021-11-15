@@ -35,15 +35,15 @@ impl WindowHandle {
     }
 }
 
-pub trait WindowHandler {
-    fn on_frame(&mut self, window: &mut Window);
-    fn on_event(&mut self, window: &mut Window, event: Event) -> EventStatus;
-}
-
 unsafe impl HasRawWindowHandle for WindowHandle {
     fn raw_window_handle(&self) -> RawWindowHandle {
         self.window_handle.raw_window_handle()
     }
+}
+
+pub trait WindowHandler {
+    fn on_frame(&mut self, window: &mut Window);
+    fn on_event(&mut self, window: &mut Window, event: Event) -> EventStatus;
 }
 
 pub struct Window<'a> {
