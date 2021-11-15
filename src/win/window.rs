@@ -57,7 +57,7 @@ const WIN_FRAME_TIMER: usize = 4242;
 
 pub struct WindowHandle {
     hwnd: Option<HWND>,
-    window_dropped: Arc<AtomicBool>,
+    is_open: Arc<AtomicBool>,
 
     // Ensure handle is !Send
     _phantom: PhantomData<*mut ()>,
@@ -72,8 +72,8 @@ impl WindowHandle {
         }
     }
 
-    pub fn window_was_dropped(&self) -> bool {
-        self.window_dropped.load(Ordering::Relaxed)
+    pub fn is_open(&self) -> bool {
+        self.is_open.load(Ordering::Relaxed)
     }
 }
 
@@ -91,26 +91,26 @@ unsafe impl HasRawWindowHandle for WindowHandle {
 }
 
 struct ParentHandle {
-    window_dropped: Arc<AtomicBool>,
+    is_open: Arc<AtomicBool>,
 }
 
 impl ParentHandle {
     pub fn new(hwnd: HWND) -> (Self, WindowHandle) {
-        let window_dropped = Arc::new(AtomicBool::new(false));
+        let is_open = Arc::new(AtomicBool::new(true));
 
         let handle = WindowHandle {
             hwnd: Some(hwnd),
-            window_dropped: Arc::clone(&window_dropped),
+            is_open: Arc::clone(&is_open),
             _phantom: PhantomData::default(),
         };
 
-        (Self { window_dropped }, handle)
+        (Self { is_open }, handle)
     }
 }
 
 impl Drop for ParentHandle {
     fn drop(&mut self) {
-        self.window_dropped.store(true, Ordering::Relaxed);
+        self.is_open.store(false, Ordering::Relaxed);
     }
 }
 

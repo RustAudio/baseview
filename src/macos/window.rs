@@ -29,7 +29,7 @@ use super::view::{create_view, BASEVIEW_STATE_IVAR};
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
     close_requested: Arc<AtomicBool>,
-    window_dropped: Arc<AtomicBool>,
+    is_open: Arc<AtomicBool>,
 
     // Ensure handle is !Send
     _phantom: PhantomData<*mut ()>,
@@ -42,15 +42,15 @@ impl WindowHandle {
         }
     }
 
-    pub fn window_was_dropped(&self) -> bool {
-        self.window_dropped.load(Ordering::Relaxed)
+    pub fn is_open(&self) -> bool {
+        self.is_open.load(Ordering::Relaxed)
     }
 }
 
 unsafe impl HasRawWindowHandle for WindowHandle {
     fn raw_window_handle(&self) -> RawWindowHandle {
         if let Some(raw_window_handle) = self.raw_window_handle {
-            if !self.window_dropped.load(Ordering::Relaxed) {
+            if self.is_open.load(Ordering::Relaxed) {
                 return raw_window_handle;
             }
         }
@@ -61,22 +61,22 @@ unsafe impl HasRawWindowHandle for WindowHandle {
 
 struct ParentHandle {
     _close_requested: Arc<AtomicBool>,
-    window_dropped: Arc<AtomicBool>,
+    is_open: Arc<AtomicBool>,
 }
 
 impl ParentHandle {
     pub fn new(raw_window_handle: RawWindowHandle) -> (Self, WindowHandle) {
         let close_requested = Arc::new(AtomicBool::new(false));
-        let window_dropped = Arc::new(AtomicBool::new(false));
+        let is_open = Arc::new(AtomicBool::new(true));
 
         let handle = WindowHandle {
             raw_window_handle: Some(raw_window_handle),
             close_requested: Arc::clone(&close_requested),
-            window_dropped: Arc::clone(&window_dropped),
+            is_open: Arc::clone(&is_open),
             _phantom: PhantomData::default(),
         };
 
-        (Self { _close_requested: close_requested, window_dropped }, handle)
+        (Self { _close_requested: close_requested, is_open }, handle)
     }
 
     /*
@@ -88,7 +88,7 @@ impl ParentHandle {
 
 impl Drop for ParentHandle {
     fn drop(&mut self) {
-        self.window_dropped.store(true, Ordering::Relaxed);
+        self.is_open.store(false, Ordering::Relaxed);
     }
 }
 

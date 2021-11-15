@@ -19,7 +19,7 @@ use super::keyboard::{convert_key_press_event, convert_key_release_event};
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
     close_requested: Arc<AtomicBool>,
-    window_dropped: Arc<AtomicBool>,
+    is_open: Arc<AtomicBool>,
 
     // Ensure handle is !Send
     _phantom: PhantomData<*mut ()>,
@@ -28,19 +28,23 @@ pub struct WindowHandle {
 impl WindowHandle {
     pub fn close(&mut self) {
         if let Some(_) = self.raw_window_handle.take() {
+            // FIXME: This will need to be changed from just setting an atomic to somehow
+            // synchronizing with the window being closed (using a synchronous channel, or
+            // by joining on the event loop thread).
+
             self.close_requested.store(true, Ordering::Relaxed);
         }
     }
 
-    pub fn window_was_dropped(&self) -> bool {
-        self.window_dropped.load(Ordering::Relaxed)
+    pub fn is_open(&self) -> bool {
+        self.is_open.load(Ordering::Relaxed)
     }
 }
 
 unsafe impl HasRawWindowHandle for WindowHandle {
     fn raw_window_handle(&self) -> RawWindowHandle {
         if let Some(raw_window_handle) = self.raw_window_handle {
-            if !self.window_dropped.load(Ordering::Relaxed) {
+            if self.is_open.load(Ordering::Relaxed) {
                 return raw_window_handle;
             }
         }
@@ -51,22 +55,22 @@ unsafe impl HasRawWindowHandle for WindowHandle {
 
 struct ParentHandle {
     close_requested: Arc<AtomicBool>,
-    window_dropped: Arc<AtomicBool>,
+    is_open: Arc<AtomicBool>,
 }
 
 impl ParentHandle {
     pub fn new() -> (Self, WindowHandle) {
         let close_requested = Arc::new(AtomicBool::new(false));
-        let window_dropped = Arc::new(AtomicBool::new(false));
+        let is_open = Arc::new(AtomicBool::new(true));
 
         let handle = WindowHandle {
             raw_window_handle: None,
             close_requested: Arc::clone(&close_requested),
-            window_dropped: Arc::clone(&window_dropped),
+            is_open: Arc::clone(&is_open),
             _phantom: PhantomData::default(),
         };
 
-        (Self { close_requested, window_dropped }, handle)
+        (Self { close_requested, is_open }, handle)
     }
 
     pub fn parent_did_drop(&self) -> bool {
@@ -76,7 +80,7 @@ impl ParentHandle {
 
 impl Drop for ParentHandle {
     fn drop(&mut self) {
-        self.window_dropped.store(true, Ordering::Relaxed);
+        self.is_open.store(false, Ordering::Relaxed);
     }
 }
 
@@ -375,6 +379,10 @@ impl Window {
 
             // Check if the parents's handle was dropped (such as when the host
             // requested the window to close)
+            //
+            // FIXME: This will need to be changed from just setting an atomic to somehow
+            // synchronizing with the window being closed (using a synchronous channel, or
+            // by joining on the event loop thread).
             if let Some(parent_handle) = &self.parent_handle {
                 if parent_handle.parent_did_drop() {
                     self.handle_must_close(handler);
