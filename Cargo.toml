@@ -33,4 +33,4 @@ objc = "0.2.7"
 uuid = { version = "0.8", features = ["v4"] }
 
 [dev-dependencies]
-rtrb = "0.1.1"
+rtrb = "0.2"

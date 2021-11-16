@@ -178,7 +178,7 @@ extern "C" fn release(this: &mut Object, _sel: Sel) {
             let retain_count_after_build = WindowState::from_field(this).retain_count_after_build;
 
             if retain_count <= retain_count_after_build {
-                WindowState::from_field(this).remove_timer();
+                WindowState::from_field(this).stop();
 
                 this.set_ivar(BASEVIEW_STATE_IVAR, ::std::ptr::null() as *const c_void);
 

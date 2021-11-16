@@ -38,7 +38,7 @@ fn main() {
         scale: WindowScalePolicy::SystemScaleFactor,
     };
 
-    let (mut tx, rx) = RingBuffer::new(128).split();
+    let (mut tx, rx) = RingBuffer::new(128);
 
     ::std::thread::spawn(move || loop {
         ::std::thread::sleep(Duration::from_secs(5));

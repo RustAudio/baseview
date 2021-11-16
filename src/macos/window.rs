@@ -1,4 +1,7 @@
 use std::ffi::c_void;
+use std::marker::PhantomData;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSWindow,
@@ -15,21 +18,94 @@ use objc::{msg_send, runtime::Object, sel, sel_impl};
 
 use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
 
-use crate::{Event, EventStatus, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy};
+use crate::{
+    Event, EventStatus, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    WindowScalePolicy,
+};
 
 use super::keyboard::KeyboardState;
 use super::view::{create_view, BASEVIEW_STATE_IVAR};
 
+pub struct WindowHandle {
+    raw_window_handle: Option<RawWindowHandle>,
+    close_requested: Arc<AtomicBool>,
+    is_open: Arc<AtomicBool>,
+
+    // Ensure handle is !Send
+    _phantom: PhantomData<*mut ()>,
+}
+
+impl WindowHandle {
+    pub fn close(&mut self) {
+        if let Some(_) = self.raw_window_handle.take() {
+            self.close_requested.store(true, Ordering::Relaxed);
+        }
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.is_open.load(Ordering::Relaxed)
+    }
+}
+
+unsafe impl HasRawWindowHandle for WindowHandle {
+    fn raw_window_handle(&self) -> RawWindowHandle {
+        if let Some(raw_window_handle) = self.raw_window_handle {
+            if self.is_open.load(Ordering::Relaxed) {
+                return raw_window_handle;
+            }
+        }
+
+        RawWindowHandle::MacOS(MacOSHandle { ..MacOSHandle::empty() })
+    }
+}
+
+struct ParentHandle {
+    _close_requested: Arc<AtomicBool>,
+    is_open: Arc<AtomicBool>,
+}
+
+impl ParentHandle {
+    pub fn new(raw_window_handle: RawWindowHandle) -> (Self, WindowHandle) {
+        let close_requested = Arc::new(AtomicBool::new(false));
+        let is_open = Arc::new(AtomicBool::new(true));
+
+        let handle = WindowHandle {
+            raw_window_handle: Some(raw_window_handle),
+            close_requested: Arc::clone(&close_requested),
+            is_open: Arc::clone(&is_open),
+            _phantom: PhantomData::default(),
+        };
+
+        (Self { _close_requested: close_requested, is_open }, handle)
+    }
+
+    /*
+    pub fn parent_did_drop(&self) -> bool {
+        self.close_requested.load(Ordering::Relaxed)
+    }
+    */
+}
+
+impl Drop for ParentHandle {
+    fn drop(&mut self) {
+        self.is_open.store(false, Ordering::Relaxed);
+    }
+}
+
 pub struct Window {
+    /// Only set if we created the parent window, i.e. we are running in
+    /// parentless mode
+    ns_app: Option<id>,
     /// Only set if we created the parent window, i.e. we are running in
     /// parentless mode
     ns_window: Option<id>,
     /// Our subclassed NSView
     ns_view: id,
+    close_requested: bool,
 }
 
 impl Window {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B)
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -46,9 +122,9 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window { ns_window: None, ns_view };
+        let window = Window { ns_app: None, ns_window: None, ns_view, close_requested: false };
 
-        Self::init(window, build);
+        let window_handle = Self::init(true, window, build);
 
         unsafe {
             let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
@@ -56,9 +132,11 @@ impl Window {
 
             let () = msg_send![pool, drain];
         }
+
+        window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> RawWindowHandle
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -68,17 +146,15 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window { ns_window: None, ns_view };
+        let window = Window { ns_app: None, ns_window: None, ns_view, close_requested: false };
 
-        let raw_window_handle = window.raw_window_handle();
-
-        Self::init(window, build);
+        let window_handle = Self::init(true, window, build);
 
         unsafe {
             let () = msg_send![pool, drain];
         }
 
-        raw_window_handle
+        window_handle
     }
 
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
@@ -118,7 +194,9 @@ impl Window {
         let ns_window = unsafe {
             let ns_window = NSWindow::alloc(nil).initWithContentRect_styleMask_backing_defer_(
                 rect,
-                NSWindowStyleMask::NSTitledWindowMask,
+                NSWindowStyleMask::NSTitledWindowMask
+                    | NSWindowStyleMask::NSClosableWindowMask
+                    | NSWindowStyleMask::NSMiniaturizableWindowMask,
                 NSBackingStoreBuffered,
                 NO,
             );
@@ -134,27 +212,35 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window { ns_window: Some(ns_window), ns_view };
+        let window = Window {
+            ns_app: Some(app),
+            ns_window: Some(ns_window),
+            ns_view,
+            close_requested: false,
+        };
 
-        Self::init(window, build);
+        let _ = Self::init(false, window, build);
 
         unsafe {
             ns_window.setContentView_(ns_view);
-            let () = msg_send![ns_view as id, release];
 
+            let () = msg_send![ns_view as id, release];
             let () = msg_send![pool, drain];
 
             app.run();
         }
     }
 
-    fn init<H, B>(mut window: Window, build: B)
+    fn init<H, B>(parented: bool, mut window: Window, build: B) -> WindowHandle
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
         let window_handler = Box::new(build(&mut crate::Window::new(&mut window)));
+
+        let (parent_handle, window_handle) = ParentHandle::new(window.raw_window_handle());
+        let parent_handle = if parented { Some(parent_handle) } else { None };
 
         let retain_count_after_build: usize = unsafe { msg_send![window.ns_view, retainCount] };
 
@@ -164,6 +250,7 @@ impl Window {
             keyboard_state: KeyboardState::new(),
             frame_timer: None,
             retain_count_after_build,
+            _parent_handle: parent_handle,
         }));
 
         unsafe {
@@ -172,6 +259,12 @@ impl Window {
 
             WindowState::setup_timer(window_state_ptr);
         }
+
+        window_handle
+    }
+
+    pub fn close(&mut self) {
+        self.close_requested = true;
     }
 }
 
@@ -180,6 +273,7 @@ pub(super) struct WindowState {
     window_handler: Box<dyn WindowHandler>,
     keyboard_state: KeyboardState,
     frame_timer: Option<CFRunLoopTimer>,
+    _parent_handle: Option<ParentHandle>,
     pub retain_count_after_build: usize,
 }
 
@@ -201,6 +295,36 @@ impl WindowState {
 
     pub(super) fn trigger_frame(&mut self) {
         self.window_handler.on_frame(&mut crate::Window::new(&mut self.window));
+
+        let mut do_close = false;
+
+        /* FIXME: Is it even necessary to check if the parent dropped the handle
+        // in MacOS?
+        // Check if the parent handle was dropped
+        if let Some(parent_handle) = &self.parent_handle {
+            if parent_handle.parent_did_drop() {
+                do_close = true;
+                self.window.close_requested = false;
+            }
+        }
+        */
+
+        // Check if the user requested the window to close
+        if self.window.close_requested {
+            do_close = true;
+            self.window.close_requested = false;
+        }
+
+        if do_close {
+            unsafe {
+                if let Some(ns_window) = self.window.ns_window.take() {
+                    ns_window.close();
+                } else {
+                    // FIXME: How do we close a non-parented window? Is this even
+                    // possible in a DAW host usecase?
+                }
+            }
+        }
     }
 
     pub(super) fn process_native_key_event(&mut self, event: *mut Object) -> Option<KeyboardEvent> {
@@ -235,9 +359,16 @@ impl WindowState {
     }
 
     /// Call when freeing view
-    pub(super) unsafe fn remove_timer(&mut self) {
+    pub(super) unsafe fn stop(&mut self) {
         if let Some(frame_timer) = self.frame_timer.take() {
             CFRunLoop::get_current().remove_timer(&frame_timer, kCFRunLoopDefaultMode);
+        }
+
+        self.trigger_event(Event::Window(WindowEvent::WillClose));
+
+        // If in non-parented mode, we want to also quit the app altogether
+        if let Some(app) = self.window.ns_app.take() {
+            app.stop_(app);
         }
     }
 }

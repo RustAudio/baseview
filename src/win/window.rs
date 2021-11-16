@@ -4,24 +4,28 @@ use winapi::shared::windef::{HWND, RECT};
 use winapi::um::combaseapi::CoCreateGuid;
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    GetCapture, GetDpiForWindow, GetMessageW, GetWindowLongPtrW, IsWindow, LoadCursorW,
-    PostMessageW, RegisterClassW, ReleaseCapture, SetCapture, SetProcessDpiAwarenessContext,
-    SetTimer, SetWindowLongPtrW, SetWindowPos, TranslateMessage, UnregisterClassW, CS_OWNDC,
-    GET_XBUTTON_WPARAM, GWLP_USERDATA, IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA,
-    WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_NCDESTROY, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN,
-    WM_SYSKEYUP, WM_TIMER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD,
-    WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
-    XBUTTON1, XBUTTON2,
+    GetDpiForWindow, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW,
+    ReleaseCapture, SetCapture, SetProcessDpiAwarenessContext, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, TranslateMessage, UnregisterClassW, CS_OWNDC, GET_XBUTTON_WPARAM, GWLP_USERDATA,
+    IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE,
+    WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_RBUTTONDOWN,
+    WM_RBUTTONUP, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER,
+    WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, XBUTTON1, XBUTTON2,
 };
 
 use std::cell::RefCell;
-use std::ffi::{c_void, OsStr};
+use std::ffi::OsStr;
+use std::marker::PhantomData;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use raw_window_handle::{windows::WindowsHandle, HasRawWindowHandle, RawWindowHandle};
+
+const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 
 use crate::{
     Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, WindowEvent, WindowHandler,
@@ -50,6 +54,65 @@ unsafe fn generate_guid() -> String {
 }
 
 const WIN_FRAME_TIMER: usize = 4242;
+
+pub struct WindowHandle {
+    hwnd: Option<HWND>,
+    is_open: Arc<AtomicBool>,
+
+    // Ensure handle is !Send
+    _phantom: PhantomData<*mut ()>,
+}
+
+impl WindowHandle {
+    pub fn close(&mut self) {
+        if let Some(hwnd) = self.hwnd.take() {
+            unsafe {
+                PostMessageW(hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
+            }
+        }
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.is_open.load(Ordering::Relaxed)
+    }
+}
+
+unsafe impl HasRawWindowHandle for WindowHandle {
+    fn raw_window_handle(&self) -> RawWindowHandle {
+        if let Some(hwnd) = self.hwnd {
+            RawWindowHandle::Windows(WindowsHandle {
+                hwnd: hwnd as *mut std::ffi::c_void,
+                ..WindowsHandle::empty()
+            })
+        } else {
+            RawWindowHandle::Windows(WindowsHandle { ..WindowsHandle::empty() })
+        }
+    }
+}
+
+struct ParentHandle {
+    is_open: Arc<AtomicBool>,
+}
+
+impl ParentHandle {
+    pub fn new(hwnd: HWND) -> (Self, WindowHandle) {
+        let is_open = Arc::new(AtomicBool::new(true));
+
+        let handle = WindowHandle {
+            hwnd: Some(hwnd),
+            is_open: Arc::clone(&is_open),
+            _phantom: PhantomData::default(),
+        };
+
+        (Self { is_open }, handle)
+    }
+}
+
+impl Drop for ParentHandle {
+    fn drop(&mut self) {
+        self.is_open.store(false, Ordering::Relaxed);
+    }
+}
 
 unsafe extern "system" fn wnd_proc(
     hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM,
@@ -247,7 +310,12 @@ unsafe extern "system" fn wnd_proc(
                 unregister_wnd_class(window_state.borrow().window_class);
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             }
-            _ => {}
+            _ => {
+                if msg == BV_WINDOW_MUST_CLOSE {
+                    DestroyWindow(hwnd);
+                    return 0;
+                }
+            }
         }
     }
 
@@ -283,6 +351,7 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 struct WindowState {
     window_class: ATOM,
     window_info: WindowInfo,
+    _parent_handle: Option<ParentHandle>,
     keyboard_state: KeyboardState,
     mouse_button_counter: usize,
     handler: Box<dyn WindowHandler>,
@@ -295,7 +364,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B)
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -307,21 +376,20 @@ impl Window {
             h => panic!("unsupported parent handle {:?}", h),
         };
 
-        Self::open(true, parent, options, build);
+        let (window_handle, _) = Self::open(true, parent, options, build);
+
+        window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> RawWindowHandle
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let hwnd = Self::open(true, null_mut(), options, build);
+        let (window_handle, _) = Self::open(true, null_mut(), options, build);
 
-        RawWindowHandle::Windows(WindowsHandle {
-            hwnd: hwnd as *mut std::ffi::c_void,
-            ..WindowsHandle::empty()
-        })
+        window_handle
     }
 
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
@@ -330,7 +398,7 @@ impl Window {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let hwnd = Self::open(false, null_mut(), options, build);
+        let (_, hwnd) = Self::open(false, null_mut(), options, build);
 
         unsafe {
             let mut msg: MSG = std::mem::zeroed();
@@ -348,7 +416,9 @@ impl Window {
         }
     }
 
-    fn open<H, B>(parented: bool, parent: HWND, options: WindowOpenOptions, build: B) -> HWND
+    fn open<H, B>(
+        parented: bool, parent: HWND, options: WindowOpenOptions, build: B,
+    ) -> (WindowHandle, HWND)
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -410,9 +480,13 @@ impl Window {
 
             let handler = Box::new(build(&mut crate::Window::new(&mut Window { hwnd })));
 
+            let (parent_handle, window_handle) = ParentHandle::new(hwnd);
+            let parent_handle = if parented { Some(parent_handle) } else { None };
+
             let mut window_state = Box::new(RefCell::new(WindowState {
                 window_class,
                 window_info,
+                _parent_handle: parent_handle,
                 keyboard_state: KeyboardState::new(),
                 mouse_button_counter: 0,
                 handler,
@@ -473,7 +547,13 @@ impl Window {
                 );
             }
 
-            hwnd
+            (window_handle, hwnd)
+        }
+    }
+
+    pub fn close(&mut self) {
+        unsafe {
+            PostMessageW(self.hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
         }
     }
 }
