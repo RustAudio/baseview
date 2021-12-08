@@ -359,15 +359,26 @@ impl WindowState {
     }
 
     /// Call when freeing view
-    pub(super) unsafe fn stop(&mut self) {
-        if let Some(frame_timer) = self.frame_timer.take() {
+    pub(super) unsafe fn stop_and_free(ns_view_obj: &mut Object) {
+        let state_ptr: *mut c_void = *ns_view_obj.get_ivar(BASEVIEW_STATE_IVAR);
+
+        // Take back ownership of Box<WindowState> so that it gets dropped
+        // when it goes out of scope
+        let mut window_state = Box::from_raw(state_ptr as *mut WindowState);
+
+        if let Some(frame_timer) = window_state.frame_timer.take() {
             CFRunLoop::get_current().remove_timer(&frame_timer, kCFRunLoopDefaultMode);
         }
 
-        self.trigger_event(Event::Window(WindowEvent::WillClose));
+        // Clear ivar before triggering WindowEvent::WillClose. Otherwise, if the
+        // handler of the event causes another call to release, this function could be
+        // called again, leading to a double free.
+        ns_view_obj.set_ivar(BASEVIEW_STATE_IVAR, ::std::ptr::null() as *const c_void);
+
+        window_state.trigger_event(Event::Window(WindowEvent::WillClose));
 
         // If in non-parented mode, we want to also quit the app altogether
-        if let Some(app) = self.window.ns_app.take() {
+        if let Some(app) = window_state.window.ns_app.take() {
             app.stop_(app);
         }
     }
