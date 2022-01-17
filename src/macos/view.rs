@@ -14,10 +14,7 @@ use objc::{
 use uuid::Uuid;
 
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
-use crate::{
-    Event, EventStatus, MouseButton, MouseEvent, Point, Size, WindowEvent, WindowInfo,
-    WindowOpenOptions,
-};
+use crate::{Event, EventStatus, MouseButton, MouseEvent, Point, ScrollDelta, Size, WindowEvent, WindowInfo, WindowOpenOptions};
 
 use super::window::WindowState;
 
@@ -316,13 +313,22 @@ extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: id) {
     state.trigger_event(Event::Mouse(MouseEvent::CursorMoved { position }));
 }
 
-extern "C" fn scroll_wheel(this: &Object, _: Sel, event: id){
+extern "C" fn scroll_wheel(this: &Object, _: Sel, event: id) {
     let state: &mut WindowState = unsafe { WindowState::from_field(this) };
 
-    let delta_pixels = ScrollDelta::Pixels {
-        x: unsafe { NSEvent::scrollingDeltaX(event) as f32 },
-        y: unsafe { NSEvent::scrollingDeltaY(event) as f32 },
+    let delta = unsafe {
+        if NSEvent::hasPreciseScrollingDeltas(event) != NO {
+            ScrollDelta::Pixels {
+                x: NSEvent::scrollingDeltaX(event) as f32,
+                y: NSEvent::scrollingDeltaY(event) as f32,
+            }
+        } else {
+            ScrollDelta::Lines {
+                x: NSEvent::deltaX(event) as f32,
+                y: NSEvent::deltaY(event) as f32,
+            }
+        }
     };
 
-    state.trigger_event(Event::Mouse(MouseEvent::WheelScrolled(delta_pixels)));
+    state.trigger_event(Event::Mouse(MouseEvent::WheelScrolled(delta)));
 }
