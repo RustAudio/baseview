@@ -121,6 +121,8 @@ unsafe fn create_view_class() -> &'static Class {
     class.add_method(sel!(rightMouseDragged:), mouse_moved as extern "C" fn(&Object, Sel, id));
     class.add_method(sel!(otherMouseDragged:), mouse_moved as extern "C" fn(&Object, Sel, id));
 
+    class.add_method(sel!(scrollWheel:), scroll_wheel as extern "C" fn(&Object, Sel, id));
+
     class.add_method(
         sel!(viewDidChangeBackingProperties:),
         view_did_change_backing_properties as extern "C" fn(&Object, Sel, id),
@@ -312,4 +314,15 @@ extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: id) {
     let position = Point { x: point.x, y: point.y };
 
     state.trigger_event(Event::Mouse(MouseEvent::CursorMoved { position }));
+}
+
+extern "C" fn scroll_wheel(this: &Object, _: Sel, event: id){
+    let state: &mut WindowState = unsafe { WindowState::from_field(this) };
+
+    let delta_pixels = ScrollDelta::Pixels {
+        x: unsafe { NSEvent::scrollingDeltaX(event) as f32 },
+        y: unsafe { NSEvent::scrollingDeltaY(event) as f32 },
+    };
+
+    state.trigger_event(Event::Mouse(MouseEvent::WheelScrolled(delta_pixels)));
 }
