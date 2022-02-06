@@ -206,7 +206,7 @@ impl Window {
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
         let window_id = xcb_connection.conn.generate_id();
-        xcb::create_window(
+        xcb::create_window_checked(
             &xcb_connection.conn,
             xcb::COPY_FROM_PARENT as u8,
             window_id,
@@ -217,7 +217,7 @@ impl Window {
             window_info.physical_size().height as u16, // window height
             0,                                         // window border
             xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
-            screen.root_visual(),
+            if parent.is_some() { xcb::COPY_FROM_PARENT as u32 } else { screen.root_visual() },
             &[(
                 xcb::CW_EVENT_MASK,
                 xcb::EVENT_MASK_EXPOSURE
@@ -228,7 +228,7 @@ impl Window {
                     | xcb::EVENT_MASK_KEY_RELEASE
                     | xcb::EVENT_MASK_STRUCTURE_NOTIFY,
             )],
-        );
+        ).request_check().unwrap();
 
         xcb::map_window(&xcb_connection.conn, window_id);
 
