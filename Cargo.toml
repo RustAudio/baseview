@@ -16,7 +16,7 @@ license = "MIT OR Apache-2.0"
 
 [features]
 default = []
-opengl = ["uuid"]
+opengl = ["uuid", "x11/glx"]
 
 [dependencies]
 keyboard-types = { version = "0.6.1", default-features = false }
