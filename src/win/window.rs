@@ -16,7 +16,7 @@ use winapi::um::winuser::{
 };
 
 use std::cell::RefCell;
-use std::ffi::OsStr;
+use std::ffi::{c_void, OsStr};
 use std::marker::PhantomData;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
@@ -35,7 +35,7 @@ use crate::{
 use super::keyboard::KeyboardState;
 
 #[cfg(feature = "opengl")]
-use crate::gl::GlContext;
+use crate::{gl::GlContext, window::RawWindowHandleWrapper};
 
 unsafe fn generate_guid() -> String {
     let mut guid: GUID = std::mem::zeroed();
@@ -84,7 +84,7 @@ unsafe impl HasRawWindowHandle for WindowHandle {
     fn raw_window_handle(&self) -> RawWindowHandle {
         if let Some(hwnd) = self.hwnd {
             let mut handle = Win32Handle::empty();
-            handle.hwnd = hwnd as *mut std::ffi::c_void;
+            handle.hwnd = hwnd as *mut c_void;
 
             RawWindowHandle::Win32(handle)
         } else {
@@ -483,8 +483,13 @@ impl Window {
             // todo: manage error ^
 
             #[cfg(feature = "opengl")]
-            let gl_context: Arc<Option<GlContext>> =
-                Arc::new(todo!("Create the Windows OpenGL context"));
+            let gl_context: Arc<Option<GlContext>> = Arc::new(options.gl_config.map(|gl_config| {
+                let mut handle = Win32Handle::empty();
+                handle.hwnd = hwnd as *mut c_void;
+                let handle = RawWindowHandleWrapper { handle: RawWindowHandle::Win32(handle) };
+
+                GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
+            }));
 
             #[cfg(not(feature = "opengl"))]
             let handler = Box::new(build(&mut crate::Window::new(&mut Window { hwnd })));
@@ -583,7 +588,7 @@ impl Window {
 unsafe impl HasRawWindowHandle for Window {
     fn raw_window_handle(&self) -> RawWindowHandle {
         let mut handle = Win32Handle::empty();
-        handle.hwnd = self.hwnd as *mut std::ffi::c_void;
+        handle.hwnd = self.hwnd as *mut c_void;
 
         RawWindowHandle::Win32(handle)
     }

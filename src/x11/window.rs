@@ -11,7 +11,6 @@ use xcb::ffi::xcb_screen_t;
 use xcb::StructPtr;
 
 use super::XcbConnection;
-use crate::window::RawWindowHandleWrapper;
 use crate::{
     Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
@@ -20,7 +19,10 @@ use crate::{
 use super::keyboard::{convert_key_press_event, convert_key_release_event};
 
 #[cfg(feature = "opengl")]
-use crate::gl::{platform, GlContext};
+use crate::{
+    gl::{platform, GlContext},
+    window::RawWindowHandleWrapper,
+};
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
