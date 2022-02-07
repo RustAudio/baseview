@@ -72,7 +72,7 @@ pub struct GlContext {
 }
 
 impl GlContext {
-    pub unsafe fn create(
+    pub(crate) unsafe fn create(
         parent: &impl HasRawWindowHandle, config: GlConfig,
     ) -> Result<GlContext, GlError> {
         platform::GlContext::create(parent, config)
