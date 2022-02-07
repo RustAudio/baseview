@@ -23,7 +23,7 @@ use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use raw_window_handle::{windows::WindowsHandle, HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
 
 const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 
@@ -80,12 +80,12 @@ impl WindowHandle {
 unsafe impl HasRawWindowHandle for WindowHandle {
     fn raw_window_handle(&self) -> RawWindowHandle {
         if let Some(hwnd) = self.hwnd {
-            RawWindowHandle::Windows(WindowsHandle {
-                hwnd: hwnd as *mut std::ffi::c_void,
-                ..WindowsHandle::empty()
-            })
+            let mut handle = Win32Handle::empty();
+            handle.hwnd = hwnd as *mut std::ffi::c_void;
+
+            RawWindowHandle::Win32(handle)
         } else {
-            RawWindowHandle::Windows(WindowsHandle { ..WindowsHandle::empty() })
+            RawWindowHandle::Win32(Win32Handle::empty())
         }
     }
 }
@@ -372,7 +372,7 @@ impl Window {
         B: Send + 'static,
     {
         let parent = match parent.raw_window_handle() {
-            RawWindowHandle::Windows(h) => h.hwnd as HWND,
+            RawWindowHandle::Win32(h) => h.hwnd as HWND,
             h => panic!("unsupported parent handle {:?}", h),
         };
 
@@ -560,9 +560,9 @@ impl Window {
 
 unsafe impl HasRawWindowHandle for Window {
     fn raw_window_handle(&self) -> RawWindowHandle {
-        RawWindowHandle::Windows(WindowsHandle {
-            hwnd: self.hwnd as *mut std::ffi::c_void,
-            ..WindowsHandle::empty()
-        })
+        let mut handle = Win32Handle::empty();
+        handle.hwnd = self.hwnd as *mut std::ffi::c_void;
+
+        RawWindowHandle::Win32(handle)
     }
 }

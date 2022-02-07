@@ -16,7 +16,7 @@ use keyboard_types::KeyboardEvent;
 
 use objc::{msg_send, runtime::Object, sel, sel_impl};
 
-use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::{AppKitHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
     Event, EventStatus, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
@@ -55,7 +55,7 @@ unsafe impl HasRawWindowHandle for WindowHandle {
             }
         }
 
-        RawWindowHandle::MacOS(MacOSHandle { ..MacOSHandle::empty() })
+        RawWindowHandle::AppKit(AppKitHandle::empty())
     }
 }
 
@@ -114,7 +114,7 @@ impl Window {
     {
         let pool = unsafe { NSAutoreleasePool::new(nil) };
 
-        let handle = if let RawWindowHandle::MacOS(handle) = parent.raw_window_handle() {
+        let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
             handle
         } else {
             panic!("Not a macOS window");
@@ -388,10 +388,10 @@ unsafe impl HasRawWindowHandle for Window {
     fn raw_window_handle(&self) -> RawWindowHandle {
         let ns_window = self.ns_window.unwrap_or(::std::ptr::null_mut()) as *mut c_void;
 
-        RawWindowHandle::MacOS(MacOSHandle {
-            ns_window,
-            ns_view: self.ns_view as *mut c_void,
-            ..MacOSHandle::empty()
-        })
+        let mut handle = AppKitHandle::empty();
+        handle.ns_window = ns_window;
+        handle.ns_view = self.ns_view as *mut c_void;
+
+        RawWindowHandle::AppKit(handle)
     }
 }
