@@ -34,6 +34,9 @@ use crate::{
 
 use super::keyboard::KeyboardState;
 
+#[cfg(feature = "opengl")]
+use crate::gl::GlContext;
+
 unsafe fn generate_guid() -> String {
     let mut guid: GUID = std::mem::zeroed();
     CoCreateGuid(&mut guid);
@@ -124,7 +127,9 @@ unsafe extern "system" fn wnd_proc(
 
     let window_state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RefCell<WindowState>;
     if !window_state_ptr.is_null() {
-        let mut window = Window { hwnd };
+        let mut window_state = (*window_state_ptr).borrow_mut();
+
+        let mut window = window_state.create_window(hwnd);
         let mut window = crate::Window::new(&mut window);
 
         match msg {
@@ -133,8 +138,6 @@ unsafe extern "system" fn wnd_proc(
                 let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
                 let physical_pos = PhyPoint { x, y };
-
-                let mut window_state = (&*window_state_ptr).borrow_mut();
 
                 let logical_pos = physical_pos.to_logical(&window_state.window_info);
 
@@ -149,8 +152,6 @@ unsafe extern "system" fn wnd_proc(
                 let value = value as i32;
                 let value = value as f32 / WHEEL_DELTA as f32;
 
-                let mut window_state = (&*window_state_ptr).borrow_mut();
-
                 window_state.handler.on_event(
                     &mut window,
                     Event::Mouse(MouseEvent::WheelScrolled(ScrollDelta::Lines {
@@ -162,7 +163,7 @@ unsafe extern "system" fn wnd_proc(
             }
             WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
             | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
-                let mut mouse_button_counter = (&*window_state_ptr).borrow().mouse_button_counter;
+                let mut mouse_button_counter = (*window_state_ptr).borrow().mouse_button_counter;
 
                 let button = match msg {
                     WM_LBUTTONDOWN | WM_LBUTTONUP => Some(MouseButton::Left),
@@ -198,44 +199,33 @@ unsafe extern "system" fn wnd_proc(
                         }
                     };
 
-                    (&*window_state_ptr).borrow_mut().mouse_button_counter = mouse_button_counter;
+                    window_state.mouse_button_counter = mouse_button_counter;
 
-                    (&*window_state_ptr)
-                        .borrow_mut()
-                        .handler
-                        .on_event(&mut window, Event::Mouse(event));
+                    window_state.handler.on_event(&mut window, Event::Mouse(event));
                 }
             }
             WM_TIMER => {
                 match wparam {
                     WIN_FRAME_TIMER => {
-                        (&*window_state_ptr).borrow_mut().handler.on_frame(&mut window);
+                        window_state.handler.on_frame(&mut window);
                     }
                     _ => (),
                 }
                 return 0;
             }
             WM_CLOSE => {
-                (&*window_state_ptr)
-                    .borrow_mut()
-                    .handler
-                    .on_event(&mut window, Event::Window(WindowEvent::WillClose));
+                window_state.handler.on_event(&mut window, Event::Window(WindowEvent::WillClose));
                 // DestroyWindow(hwnd);
                 // return 0;
                 return DefWindowProcW(hwnd, msg, wparam, lparam);
             }
             WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP
             | WM_INPUTLANGCHANGE => {
-                let opt_event = (&*window_state_ptr)
-                    .borrow_mut()
-                    .keyboard_state
-                    .process_message(hwnd, msg, wparam, lparam);
+                let opt_event =
+                    window_state.keyboard_state.process_message(hwnd, msg, wparam, lparam);
 
                 if let Some(event) = opt_event {
-                    (&*window_state_ptr)
-                        .borrow_mut()
-                        .handler
-                        .on_event(&mut window, Event::Keyboard(event));
+                    window_state.handler.on_event(&mut window, Event::Keyboard(event));
                 }
 
                 if msg != WM_SYSKEYDOWN {
@@ -245,8 +235,6 @@ unsafe extern "system" fn wnd_proc(
             WM_SIZE => {
                 let width = (lparam & 0xFFFF) as u16 as u32;
                 let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
-
-                let mut window_state = (&*window_state_ptr).borrow_mut();
 
                 window_state.window_info = WindowInfo::from_physical_size(
                     PhySize { width, height },
@@ -262,8 +250,6 @@ unsafe extern "system" fn wnd_proc(
             WM_DPICHANGED => {
                 // To avoid weirdness with the realtime borrow checker.
                 let new_rect = {
-                    let mut window_state = (&*window_state_ptr).borrow_mut();
-
                     if let WindowScalePolicy::SystemScaleFactor = window_state.scale_policy {
                         let dpi = (wparam & 0xFFFF) as u16 as u32;
                         let scale_factor = dpi as f64 / 96.0;
@@ -319,7 +305,7 @@ unsafe extern "system" fn wnd_proc(
         }
     }
 
-    return DefWindowProcW(hwnd, msg, wparam, lparam);
+    DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
 unsafe fn register_wnd_class() -> ATOM {
@@ -357,10 +343,28 @@ struct WindowState {
     handler: Box<dyn WindowHandler>,
     scale_policy: WindowScalePolicy,
     dw_style: u32,
+
+    #[cfg(feature = "opengl")]
+    gl_context: Arc<Option<GlContext>>,
+}
+
+impl WindowState {
+    #[cfg(not(feature = "opengl"))]
+    fn create_window(&self, hwnd: HWND) -> Window {
+        Window { hwnd }
+    }
+
+    #[cfg(feature = "opengl")]
+    fn create_window(&self, hwnd: HWND) -> Window {
+        Window { hwnd, gl_context: self.gl_context.clone() }
+    }
 }
 
 pub struct Window {
     hwnd: HWND,
+
+    #[cfg(feature = "opengl")]
+    gl_context: Arc<Option<GlContext>>,
 }
 
 impl Window {
@@ -478,7 +482,17 @@ impl Window {
             );
             // todo: manage error ^
 
+            #[cfg(feature = "opengl")]
+            let gl_context: Arc<Option<GlContext>> =
+                Arc::new(todo!("Create the Windows OpenGL context"));
+
+            #[cfg(not(feature = "opengl"))]
             let handler = Box::new(build(&mut crate::Window::new(&mut Window { hwnd })));
+            #[cfg(feature = "opengl")]
+            let handler = Box::new(build(&mut crate::Window::new(&mut Window {
+                hwnd,
+                gl_context: gl_context.clone(),
+            })));
 
             let (parent_handle, window_handle) = ParentHandle::new(hwnd);
             let parent_handle = if parented { Some(parent_handle) } else { None };
@@ -492,6 +506,9 @@ impl Window {
                 handler,
                 scale_policy: options.scale,
                 dw_style: flags,
+
+                #[cfg(feature = "opengl")]
+                gl_context,
             }));
 
             // Only works on Windows 10 unfortunately.
@@ -555,6 +572,11 @@ impl Window {
         unsafe {
             PostMessageW(self.hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
         }
+    }
+
+    #[cfg(feature = "opengl")]
+    pub fn gl_context(&self) -> Option<&GlContext> {
+        self.gl_context.as_ref().as_ref()
     }
 }
 

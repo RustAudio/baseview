@@ -26,6 +26,9 @@ use crate::{
 use super::keyboard::KeyboardState;
 use super::view::{create_view, BASEVIEW_STATE_IVAR};
 
+#[cfg(feature = "opengl")]
+use crate::gl::{GlConfig, GlContext};
+
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
     close_requested: Arc<AtomicBool>,
@@ -102,6 +105,9 @@ pub struct Window {
     /// Our subclassed NSView
     ns_view: id,
     close_requested: bool,
+
+    #[cfg(feature = "opengl")]
+    gl_context: Option<GlContext>,
 }
 
 impl Window {
@@ -122,7 +128,15 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window { ns_app: None, ns_window: None, ns_view, close_requested: false };
+        let window = Window {
+            ns_app: None,
+            ns_window: None,
+            ns_view,
+            close_requested: false,
+
+            #[cfg(feature = "opengl")]
+            gl_context: options.gl_config.map(Self::create_gl_context),
+        };
 
         let window_handle = Self::init(true, window, build);
 
@@ -146,7 +160,15 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window { ns_app: None, ns_window: None, ns_view, close_requested: false };
+        let window = Window {
+            ns_app: None,
+            ns_window: None,
+            ns_view,
+            close_requested: false,
+
+            #[cfg(feature = "opengl")]
+            gl_context: options.gl_config.map(Self::create_gl_context),
+        };
 
         let window_handle = Self::init(true, window, build);
 
@@ -217,6 +239,9 @@ impl Window {
             ns_window: Some(ns_window),
             ns_view,
             close_requested: false,
+
+            #[cfg(feature = "opengl")]
+            gl_context: options.gl_config.map(Self::create_gl_context),
         };
 
         let _ = Self::init(false, window, build);
@@ -265,6 +290,16 @@ impl Window {
 
     pub fn close(&mut self) {
         self.close_requested = true;
+    }
+
+    #[cfg(feature = "opengl")]
+    pub fn gl_context(&self) -> Option<&GlContext> {
+        self.gl_context.as_ref()
+    }
+
+    #[cfg(feature = "opengl")]
+    fn create_gl_context(config: GlConfig) -> GlContext {
+        todo!("Create the macOS OpenGL context");
     }
 }
 

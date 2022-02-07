@@ -16,6 +16,9 @@ use crate::{
 
 use super::keyboard::{convert_key_press_event, convert_key_release_event};
 
+#[cfg(feature = "opengl")]
+use crate::gl::GlContext;
+
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
     close_requested: Arc<AtomicBool>,
@@ -96,6 +99,9 @@ pub struct Window {
 
     new_physical_size: Option<PhySize>,
     parent_handle: Option<ParentHandle>,
+
+    #[cfg(feature = "opengl")]
+    gl_context: Option<GlContext>,
 }
 
 // Hack to allow sending a RawWindowHandle between threads. Do not make public
@@ -306,6 +312,9 @@ impl Window {
 
             new_physical_size: None,
             parent_handle,
+
+            #[cfg(feature = "opengl")]
+            gl_context: todo!("Create the X11 OpenGL context"),
         };
 
         let mut handler = build(&mut crate::Window::new(&mut window));
@@ -344,6 +353,11 @@ impl Window {
 
     pub fn close(&mut self) {
         self.close_requested = true;
+    }
+
+    #[cfg(feature = "opengl")]
+    pub fn gl_context(&self) -> Option<&crate::gl::GlContext> {
+        self.gl_context.as_ref()
     }
 
     #[inline]
