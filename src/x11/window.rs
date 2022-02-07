@@ -205,10 +205,39 @@ impl Window {
 
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
+        // The window need to have a depth of 32 so so we can create graphics contexts with alpha
+        // buffers
+        let mut depth = xcb::COPY_FROM_PARENT as u8;
+        let mut visual = xcb::COPY_FROM_PARENT as u32;
+        'match_visual: for candidate_depth in screen.allowed_depths() {
+            if candidate_depth.depth() != 32 {
+                continue;
+            }
+
+            for candidate_visual in candidate_depth.visuals() {
+                if candidate_visual.class() == xcb::VISUAL_CLASS_TRUE_COLOR as u8 {
+                    depth = candidate_depth.depth();
+                    visual = candidate_visual.visual_id();
+                    break 'match_visual;
+                }
+            }
+        }
+
+        // For this 32-bith depth to work, you also need to define a color map and set a border
+        // pixel: https://cgit.freedesktop.org/xorg/xserver/tree/dix/window.c#n818
+        let colormap = xcb_connection.conn.generate_id();
+        xcb::create_colormap(
+            &xcb_connection.conn,
+            xcb::COLORMAP_ALLOC_NONE as u8,
+            colormap,
+            screen.root(),
+            visual,
+        );
+
         let window_id = xcb_connection.conn.generate_id();
         xcb::create_window_checked(
             &xcb_connection.conn,
-            xcb::COPY_FROM_PARENT as u8,
+            depth,
             window_id,
             parent_id,
             0,                                         // x coordinate of the new window
@@ -217,18 +246,26 @@ impl Window {
             window_info.physical_size().height as u16, // window height
             0,                                         // window border
             xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
-            if parent.is_some() { xcb::COPY_FROM_PARENT as u32 } else { screen.root_visual() },
-            &[(
-                xcb::CW_EVENT_MASK,
-                xcb::EVENT_MASK_EXPOSURE
-                    | xcb::EVENT_MASK_POINTER_MOTION
-                    | xcb::EVENT_MASK_BUTTON_PRESS
-                    | xcb::EVENT_MASK_BUTTON_RELEASE
-                    | xcb::EVENT_MASK_KEY_PRESS
-                    | xcb::EVENT_MASK_KEY_RELEASE
-                    | xcb::EVENT_MASK_STRUCTURE_NOTIFY,
-            )],
-        ).request_check().unwrap();
+            visual,
+            &[
+                (
+                    xcb::CW_EVENT_MASK,
+                    xcb::EVENT_MASK_EXPOSURE
+                        | xcb::EVENT_MASK_POINTER_MOTION
+                        | xcb::EVENT_MASK_BUTTON_PRESS
+                        | xcb::EVENT_MASK_BUTTON_RELEASE
+                        | xcb::EVENT_MASK_KEY_PRESS
+                        | xcb::EVENT_MASK_KEY_RELEASE
+                        | xcb::EVENT_MASK_STRUCTURE_NOTIFY,
+                ),
+                // As mentioend above, these two values are needed to be able to create a window
+                // with a dpeth of 32-bits when the parent window has a different depth
+                (xcb::CW_COLORMAP, colormap),
+                (xcb::CW_BORDER_PIXEL, 0),
+            ],
+        )
+        .request_check()
+        .unwrap();
 
         xcb::map_window(&xcb_connection.conn, window_id);
 
