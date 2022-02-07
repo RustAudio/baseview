@@ -205,11 +205,8 @@ unsafe extern "system" fn wnd_proc(
                 }
             }
             WM_TIMER => {
-                match wparam {
-                    WIN_FRAME_TIMER => {
-                        window_state.handler.on_frame(&mut window);
-                    }
-                    _ => (),
+                if wparam == WIN_FRAME_TIMER {
+                    window_state.handler.on_frame(&mut window);
                 }
                 return 0;
             }
@@ -414,8 +411,8 @@ impl Window {
                     break;
                 }
 
-                TranslateMessage(&mut msg);
-                DispatchMessageW(&mut msg);
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
             }
         }
     }

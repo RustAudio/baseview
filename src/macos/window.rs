@@ -44,7 +44,7 @@ pub struct WindowHandle {
 
 impl WindowHandle {
     pub fn close(&mut self) {
-        if let Some(_) = self.raw_window_handle.take() {
+        if self.raw_window_handle.take().is_some() {
             self.close_requested.store(true, Ordering::Relaxed);
         }
     }

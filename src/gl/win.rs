@@ -255,7 +255,7 @@ impl GlContext {
 
         let hglrc =
             wglCreateContextAttribsARB.unwrap()(hdc, std::ptr::null_mut(), ctx_attribs.as_ptr());
-        if hglrc == std::ptr::null_mut() {
+        if hglrc.is_null() {
             return Err(GlError::CreationFailed(()));
         }
 

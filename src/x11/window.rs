@@ -35,7 +35,7 @@ pub struct WindowHandle {
 
 impl WindowHandle {
     pub fn close(&mut self) {
-        if let Some(_) = self.raw_window_handle.take() {
+        if self.raw_window_handle.take().is_some() {
             // FIXME: This will need to be changed from just setting an atomic to somehow
             // synchronizing with the window being closed (using a synchronous channel, or
             // by joining on the event loop thread).
@@ -96,6 +96,7 @@ pub struct Window {
     xcb_connection: XcbConnection,
     window_id: u32,
     window_info: WindowInfo,
+    // FIXME: There's all this mouse cursor logic but it's never actually used, is this correct?
     mouse_cursor: MouseCursor,
 
     frame_interval: Duration,
@@ -135,7 +136,7 @@ impl Window {
 
         let (parent_handle, mut window_handle) = ParentHandle::new();
 
-        let thread = thread::spawn(move || {
+        thread::spawn(move || {
             Self::window_thread(Some(parent_id), options, build, tx.clone(), Some(parent_handle));
         });
 
@@ -155,7 +156,7 @@ impl Window {
 
         let (parent_handle, mut window_handle) = ParentHandle::new();
 
-        let thread = thread::spawn(move || {
+        thread::spawn(move || {
             Self::window_thread(None, options, build, tx.clone(), Some(parent_handle));
         });
 
@@ -174,12 +175,14 @@ impl Window {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
         let thread = thread::spawn(move || {
-            Self::window_thread(None, options, build, tx.clone(), None);
+            Self::window_thread(None, options, build, tx, None);
         });
 
         let _ = rx.recv().unwrap().unwrap();
 
-        thread.join();
+        thread.join().unwrap_or_else(|err| {
+            eprintln!("Window thread panicked: {:#?}", err);
+        });
     }
 
     fn window_thread<H, B>(
@@ -302,16 +305,16 @@ impl Window {
             title.as_bytes(),
         );
 
-        xcb_connection.atoms.wm_protocols.zip(xcb_connection.atoms.wm_delete_window).map(
-            |(wm_protocols, wm_delete_window)| {
-                xcb_util::icccm::set_wm_protocols(
-                    &xcb_connection.conn,
-                    window_id,
-                    wm_protocols,
-                    &[wm_delete_window],
-                );
-            },
-        );
+        if let Some((wm_protocols, wm_delete_window)) =
+            xcb_connection.atoms.wm_protocols.zip(xcb_connection.atoms.wm_delete_window)
+        {
+            xcb_util::icccm::set_wm_protocols(
+                &xcb_connection.conn,
+                window_id,
+                wm_protocols,
+                &[wm_delete_window],
+            );
+        }
 
         xcb_connection.conn.flush();
 
@@ -636,7 +639,7 @@ impl Window {
 
                 handler.on_event(
                     &mut crate::Window::new(self),
-                    Event::Keyboard(convert_key_press_event(&event)),
+                    Event::Keyboard(convert_key_press_event(event)),
                 );
             }
 
@@ -645,7 +648,7 @@ impl Window {
 
                 handler.on_event(
                     &mut crate::Window::new(self),
-                    Event::Keyboard(convert_key_release_event(&event)),
+                    Event::Keyboard(convert_key_release_event(event)),
                 );
             }
 

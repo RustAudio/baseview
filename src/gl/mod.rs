@@ -1,7 +1,9 @@
-use raw_window_handle::HasRawWindowHandle;
-
 use std::ffi::c_void;
 use std::marker::PhantomData;
+
+// On X11 creating the context is a two step process
+#[cfg(not(target_os = "linux"))]
+use raw_window_handle::HasRawWindowHandle;
 
 #[cfg(target_os = "windows")]
 mod win;

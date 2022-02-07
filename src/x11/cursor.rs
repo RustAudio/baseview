@@ -101,5 +101,5 @@ pub(super) fn get_xcursor(display: *mut x11::xlib::Display, cursor: MouseCursor)
         MouseCursor::RowResize => loadn(&[b"split_v\0", b"v_double_arrow\0"]),
     };
 
-    cursor.or(load(b"left_ptr\0")).unwrap_or(0)
+    cursor.or_else(|| load(b"left_ptr\0")).unwrap_or(0)
 }
