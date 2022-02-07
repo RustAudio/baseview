@@ -10,13 +10,14 @@ Interested in learning more about the project? Join us on [discord](https://disc
 
 Below is a proposed list of milestones (roughly in-order) and their status. Subject to change at any time.
 
-| Feature                                         | Windows            | Mac OS             | Linux              |
-| ----------------------------------------------- | ------------------ | ------------------ | ------------------ |
-| Spawns a window, no parent                      | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
-| Cross-platform API for window spawning          | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
-| Can find DPI scale factor                       |                    | :heavy_check_mark: | :heavy_check_mark: |
-| Basic event handling (mouse, keyboard)          | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
-| Parent window support                           | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| Feature                                               | Windows            | Mac OS             | Linux              |
+| ----------------------------------------------------- | ------------------ | ------------------ | ------------------ |
+| Spawns a window, no parent                            | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| Cross-platform API for window spawning                | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| Can find DPI scale factor                             |                    | :heavy_check_mark: | :heavy_check_mark: |
+| Basic event handling (mouse, keyboard)                | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| Parent window support                                 | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| OpenGL context creation (behind the `opengl` feature) | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 
 ## Prerequisites
 
