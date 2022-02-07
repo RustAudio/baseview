@@ -18,7 +18,7 @@ use core_foundation::string::CFString;
 
 use objc::{msg_send, sel, sel_impl};
 
-use crate::{GlConfig, GlError, Profile};
+use super::{GlConfig, GlError, Profile};
 
 pub type CreationFailedError = ();
 pub struct GlContext {
@@ -28,10 +28,9 @@ pub struct GlContext {
 
 impl GlContext {
     pub unsafe fn create(
-        parent: &impl HasRawWindowHandle,
-        config: GlConfig,
+        parent: &impl HasRawWindowHandle, config: GlConfig,
     ) -> Result<GlContext, GlError> {
-        let handle = if let RawWindowHandle::MacOS(handle) = parent.raw_window_handle() {
+        let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
             handle
         } else {
             return Err(GlError::InvalidWindowHandle);

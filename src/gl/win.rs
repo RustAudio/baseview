@@ -18,7 +18,7 @@ use winapi::um::winuser::{
     UnregisterClassW, CS_OWNDC, CW_USEDEFAULT, WNDCLASSW,
 };
 
-use crate::{GlConfig, GlError, Profile};
+use super::{GlConfig, GlError, Profile};
 
 // See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_create_context.txt
 
@@ -78,10 +78,9 @@ extern "C" {
 
 impl GlContext {
     pub unsafe fn create(
-        parent: &impl HasRawWindowHandle,
-        config: GlConfig,
+        parent: &impl HasRawWindowHandle, config: GlConfig,
     ) -> Result<GlContext, GlError> {
-        let handle = if let RawWindowHandle::Windows(handle) = parent.raw_window_handle() {
+        let handle = if let RawWindowHandle::Win32(handle) = parent.raw_window_handle() {
             handle
         } else {
             return Err(GlError::InvalidWindowHandle);
@@ -267,12 +266,7 @@ impl GlContext {
         wglSwapIntervalEXT.unwrap()(config.vsync as i32);
         wglMakeCurrent(hdc, std::ptr::null_mut());
 
-        Ok(GlContext {
-            hwnd,
-            hdc,
-            hglrc,
-            gl_library,
-        })
+        Ok(GlContext { hwnd, hdc, hglrc, gl_library })
     }
 
     pub unsafe fn make_current(&self) {

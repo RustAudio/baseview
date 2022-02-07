@@ -6,7 +6,7 @@ use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use x11::glx;
 use x11::xlib;
 
-use crate::{GlConfig, GlError, Profile};
+use super::{GlConfig, GlError, Profile};
 
 mod errors;
 
@@ -57,8 +57,7 @@ pub struct GlContext {
 
 impl GlContext {
     pub unsafe fn create(
-        parent: &impl HasRawWindowHandle,
-        config: GlConfig,
+        parent: &impl HasRawWindowHandle, config: GlConfig,
     ) -> Result<GlContext, GlError> {
         let handle = if let RawWindowHandle::Xlib(handle) = parent.raw_window_handle() {
             handle
@@ -102,18 +101,14 @@ impl GlContext {
             error_handler.check()?;
 
             if n_configs <= 0 {
-                return Err(GlError::CreationFailed(
-                    CreationFailedError::InvalidFBConfig,
-                ));
+                return Err(GlError::CreationFailed(CreationFailedError::InvalidFBConfig));
             }
 
             #[allow(non_snake_case)]
             let glXCreateContextAttribsARB: GlXCreateContextAttribsARB = unsafe {
                 let addr = get_proc_address("glXCreateContextAttribsARB");
                 if addr.is_null() {
-                    return Err(GlError::CreationFailed(
-                        CreationFailedError::GetProcAddressFailed,
-                    ));
+                    return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
                 } else {
                     std::mem::transmute(addr)
                 }
@@ -123,9 +118,7 @@ impl GlContext {
             let glXSwapIntervalEXT: GlXSwapIntervalEXT = unsafe {
                 let addr = get_proc_address("glXSwapIntervalEXT");
                 if addr.is_null() {
-                    return Err(GlError::CreationFailed(
-                        CreationFailedError::GetProcAddressFailed,
-                    ));
+                    return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
                 } else {
                     std::mem::transmute(addr)
                 }
@@ -159,18 +152,14 @@ impl GlContext {
             error_handler.check()?;
 
             if context.is_null() {
-                return Err(GlError::CreationFailed(
-                    CreationFailedError::ContextCreationFailed,
-                ));
+                return Err(GlError::CreationFailed(CreationFailedError::ContextCreationFailed));
             }
 
             unsafe {
                 let res = glx::glXMakeCurrent(display, handle.window, context);
                 error_handler.check()?;
                 if res == 0 {
-                    return Err(GlError::CreationFailed(
-                        CreationFailedError::MakeCurrentFailed,
-                    ));
+                    return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
                 }
 
                 glXSwapIntervalEXT(display, handle.window, config.vsync as i32);
@@ -178,17 +167,11 @@ impl GlContext {
 
                 if glx::glXMakeCurrent(display, 0, std::ptr::null_mut()) == 0 {
                     error_handler.check()?;
-                    return Err(GlError::CreationFailed(
-                        CreationFailedError::MakeCurrentFailed,
-                    ));
+                    return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
                 }
             }
 
-            Ok(GlContext {
-                window: handle.window,
-                display,
-                context,
-            })
+            Ok(GlContext { window: handle.window, display, context })
         })
     }
 

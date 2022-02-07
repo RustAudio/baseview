@@ -11,7 +11,7 @@ use win as platform;
 #[cfg(target_os = "linux")]
 mod x11;
 #[cfg(target_os = "linux")]
-use crate::x11 as platform;
+use self::x11 as platform;
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -73,13 +73,10 @@ pub struct GlContext {
 
 impl GlContext {
     pub unsafe fn create(
-        parent: &impl HasRawWindowHandle,
-        config: GlConfig,
+        parent: &impl HasRawWindowHandle, config: GlConfig,
     ) -> Result<GlContext, GlError> {
-        platform::GlContext::create(parent, config).map(|context| GlContext {
-            context,
-            phantom: PhantomData,
-        })
+        platform::GlContext::create(parent, config)
+            .map(|context| GlContext { context, phantom: PhantomData })
     }
 
     pub unsafe fn make_current(&self) {
