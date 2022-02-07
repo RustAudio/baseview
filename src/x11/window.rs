@@ -11,6 +11,7 @@ use xcb::ffi::xcb_screen_t;
 use xcb::StructPtr;
 
 use super::XcbConnection;
+use crate::window::RawWindowHandleWrapper;
 use crate::{
     Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
@@ -108,12 +109,6 @@ pub struct Window {
 
 // Hack to allow sending a RawWindowHandle between threads. Do not make public
 struct SendableRwh(RawWindowHandle);
-
-/// Quick wrapper to satisfy [HasRawWindowHandle], because of course a raw window handle wouldn't
-/// have a raw window handle, that would be silly.
-struct RawWindowHandleWrapper {
-    handle: RawWindowHandle,
-}
 
 unsafe impl Send for SendableRwh {}
 
@@ -664,12 +659,6 @@ unsafe impl HasRawWindowHandle for Window {
         handle.display = self.xcb_connection.conn.get_raw_dpy() as *mut c_void;
 
         RawWindowHandle::Xlib(handle)
-    }
-}
-
-unsafe impl HasRawWindowHandle for RawWindowHandleWrapper {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        self.handle
     }
 }
 

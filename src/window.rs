@@ -18,6 +18,12 @@ pub struct WindowHandle {
     phantom: PhantomData<*mut ()>,
 }
 
+/// Quick wrapper to satisfy [HasRawWindowHandle], because of course a raw window handle wouldn't
+/// have a raw window handle, that would be silly.
+pub(crate) struct RawWindowHandleWrapper {
+    pub handle: RawWindowHandle,
+}
+
 impl WindowHandle {
     fn new(window_handle: platform::WindowHandle) -> Self {
         Self { window_handle, phantom: PhantomData::default() }
@@ -103,5 +109,11 @@ impl<'a> Window<'a> {
 unsafe impl<'a> HasRawWindowHandle for Window<'a> {
     fn raw_window_handle(&self) -> RawWindowHandle {
         self.window.raw_window_handle()
+    }
+}
+
+unsafe impl HasRawWindowHandle for RawWindowHandleWrapper {
+    fn raw_window_handle(&self) -> RawWindowHandle {
+        self.handle
     }
 }
