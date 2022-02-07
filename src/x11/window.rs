@@ -7,6 +7,8 @@ use std::thread;
 use std::time::*;
 
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, XlibHandle};
+use xcb::ffi::xcb_screen_t;
+use xcb::StructPtr;
 
 use super::XcbConnection;
 use crate::{
@@ -17,7 +19,7 @@ use crate::{
 use super::keyboard::{convert_key_press_event, convert_key_release_event};
 
 #[cfg(feature = "opengl")]
-use crate::gl::GlContext;
+use crate::gl::{platform, GlContext};
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
@@ -106,6 +108,12 @@ pub struct Window {
 
 // Hack to allow sending a RawWindowHandle between threads. Do not make public
 struct SendableRwh(RawWindowHandle);
+
+/// Quick wrapper to satisfy [HasRawWindowHandle], because of course a raw window handle wouldn't
+/// have a raw window handle, that would be silly.
+struct RawWindowHandleWrapper {
+    handle: RawWindowHandle,
+}
 
 unsafe impl Send for SendableRwh {}
 
@@ -211,23 +219,33 @@ impl Window {
 
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
-        // The window need to have a depth of 32 so so we can create graphics contexts with alpha
-        // buffers
-        let mut depth = xcb::COPY_FROM_PARENT as u8;
-        let mut visual = xcb::COPY_FROM_PARENT as u32;
-        'match_visual: for candidate_depth in screen.allowed_depths() {
-            if candidate_depth.depth() != 32 {
-                continue;
-            }
-
-            for candidate_visual in candidate_depth.visuals() {
-                if candidate_visual.class() == xcb::VISUAL_CLASS_TRUE_COLOR as u8 {
-                    depth = candidate_depth.depth();
-                    visual = candidate_visual.visual_id();
-                    break 'match_visual;
-                }
-            }
-        }
+        // Now it starts becoming fun. If we're creating an OpenGL context, then we need to create
+        // the window with a visual that matches the framebuffer used for the OpenGL context. So the
+        // idea is that we first retrieve a framebuffer config that matches our wanted OpenGL
+        // configuration, find the visual that matches that framebuffer config, create the window
+        // with that visual, and then finally create an OpenGL context for the window. If we don't
+        // use OpenGL, then we'll just take a random visual with a 32-bit depth.
+        let create_default_config = || {
+            Self::find_visual_for_depth(&screen, 32)
+                .map(|visual| (32, visual))
+                .unwrap_or((xcb::COPY_FROM_PARENT as u8, xcb::COPY_FROM_PARENT as u32))
+        };
+        #[cfg(feature = "opengl")]
+        let (fb_config, (depth, visual)) = match options.gl_config {
+            Some(gl_config) => unsafe {
+                platform::GlContext::get_fb_config_and_visual(
+                    xcb_connection.conn.get_raw_dpy(),
+                    gl_config,
+                )
+                .map(|(fb_config, window_config)| {
+                    (Some(fb_config), (window_config.depth, window_config.visual))
+                })
+                .expect("Could not fetch framebuffer config")
+            },
+            None => (None, create_default_config()),
+        };
+        #[cfg(not(feature = "opengl"))]
+        let (depth, visual) = create_default_config();
 
         // For this 32-bith depth to work, you also need to define a color map and set a border
         // pixel: https://cgit.freedesktop.org/xorg/xserver/tree/dix/window.c#n818
@@ -300,6 +318,22 @@ impl Window {
 
         xcb_connection.conn.flush();
 
+        // TODO: These APIs could use a couple tweaks now that everything is internal and there is
+        //       no error handling anymore at this point. Everything is more or less unchanged
+        //       compared to when raw-gl-context was a separate crate.
+        #[cfg(feature = "opengl")]
+        let gl_context = fb_config.map(|fb_config| {
+            let mut handle = XlibHandle::empty();
+            handle.window = window_id as c_ulong;
+            handle.display = xcb_connection.conn.get_raw_dpy() as *mut c_void;
+            let handle = RawWindowHandleWrapper { handle: RawWindowHandle::Xlib(handle) };
+
+            // Because of the visual negotation we had to take some extra steps to create this context
+            let context = unsafe { platform::GlContext::create(&handle, fb_config) }
+                .expect("Could not create OpenGL context");
+            GlContext::new(context)
+        });
+
         let mut window = Self {
             xcb_connection,
             window_id,
@@ -314,7 +348,7 @@ impl Window {
             parent_handle,
 
             #[cfg(feature = "opengl")]
-            gl_context: todo!("Create the X11 OpenGL context"),
+            gl_context,
         };
 
         let mut handler = build(&mut crate::Window::new(&mut window));
@@ -358,6 +392,22 @@ impl Window {
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<&crate::gl::GlContext> {
         self.gl_context.as_ref()
+    }
+
+    fn find_visual_for_depth(screen: &StructPtr<xcb_screen_t>, depth: u8) -> Option<u32> {
+        for candidate_depth in screen.allowed_depths() {
+            if candidate_depth.depth() != depth {
+                continue;
+            }
+
+            for candidate_visual in candidate_depth.visuals() {
+                if candidate_visual.class() == xcb::VISUAL_CLASS_TRUE_COLOR as u8 {
+                    return Some(candidate_visual.visual_id());
+                }
+            }
+        }
+
+        None
     }
 
     #[inline]
@@ -614,6 +664,12 @@ unsafe impl HasRawWindowHandle for Window {
         handle.display = self.xcb_connection.conn.get_raw_dpy() as *mut c_void;
 
         RawWindowHandle::Xlib(handle)
+    }
+}
+
+unsafe impl HasRawWindowHandle for RawWindowHandleWrapper {
+    fn raw_window_handle(&self) -> RawWindowHandle {
+        self.handle
     }
 }
 

@@ -13,6 +13,7 @@ mod errors;
 #[derive(Debug)]
 pub enum CreationFailedError {
     InvalidFBConfig,
+    NoVisual,
     GetProcAddressFailed,
     MakeCurrentFailed,
     ContextCreationFailed,
@@ -55,9 +56,31 @@ pub struct GlContext {
     context: glx::GLXContext,
 }
 
+/// The frame buffer configuration along with the general OpenGL configuration to somewhat minimize
+/// misuse.
+pub struct FbConfig {
+    gl_config: GlConfig,
+    fb_config: *mut glx::__GLXFBConfigRec,
+}
+
+/// The configuration a window should be created with after calling
+/// [GlContext::get_fb_config_and_visual].
+pub struct WindowConfig {
+    pub depth: u8,
+    pub visual: u32,
+}
+
 impl GlContext {
+    /// Creating an OpenGL context under X11 works slightly different. Different OpenGL
+    /// configurations require different framebuffer configurations, and to be able to use that
+    /// context with a window the window needs to be created with a matching visual. This means that
+    /// you need to decide on the framebuffer config before creating the window, ask the X11 server
+    /// for a matching visual for that framebuffer config, crate the window with that visual, and
+    /// only then create the OpenGL context.
+    ///
+    /// Use [Self::get_fb_config_and_visual] to create both of these things.
     pub unsafe fn create(
-        parent: &impl HasRawWindowHandle, config: GlConfig,
+        parent: &impl HasRawWindowHandle, config: FbConfig,
     ) -> Result<GlContext, GlError> {
         let handle = if let RawWindowHandle::Xlib(handle) = parent.raw_window_handle() {
             handle
@@ -71,6 +94,84 @@ impl GlContext {
 
         let display = handle.display as *mut xlib::_XDisplay;
 
+        errors::XErrorHandler::handle(display, |error_handler| {
+            #[allow(non_snake_case)]
+            let glXCreateContextAttribsARB: GlXCreateContextAttribsARB = unsafe {
+                let addr = get_proc_address("glXCreateContextAttribsARB");
+                if addr.is_null() {
+                    return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
+                } else {
+                    std::mem::transmute(addr)
+                }
+            };
+
+            #[allow(non_snake_case)]
+            let glXSwapIntervalEXT: GlXSwapIntervalEXT = unsafe {
+                let addr = get_proc_address("glXSwapIntervalEXT");
+                if addr.is_null() {
+                    return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
+                } else {
+                    std::mem::transmute(addr)
+                }
+            };
+
+            error_handler.check()?;
+
+            let profile_mask = match config.gl_config.profile {
+                Profile::Core => glx::arb::GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
+                Profile::Compatibility => glx::arb::GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
+            };
+
+            #[rustfmt::skip]
+                let ctx_attribs = [
+                glx::arb::GLX_CONTEXT_MAJOR_VERSION_ARB, config.gl_config.version.0 as i32,
+                glx::arb::GLX_CONTEXT_MINOR_VERSION_ARB, config.gl_config.version.1 as i32,
+                glx::arb::GLX_CONTEXT_PROFILE_MASK_ARB, profile_mask,
+                0,
+            ];
+
+            let context = unsafe {
+                glXCreateContextAttribsARB(
+                    display,
+                    config.fb_config,
+                    std::ptr::null_mut(),
+                    1,
+                    ctx_attribs.as_ptr(),
+                )
+            };
+
+            error_handler.check()?;
+
+            if context.is_null() {
+                return Err(GlError::CreationFailed(CreationFailedError::ContextCreationFailed));
+            }
+
+            unsafe {
+                let res = glx::glXMakeCurrent(display, handle.window, context);
+                error_handler.check()?;
+                if res == 0 {
+                    return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
+                }
+
+                glXSwapIntervalEXT(display, handle.window, config.gl_config.vsync as i32);
+                error_handler.check()?;
+
+                if glx::glXMakeCurrent(display, 0, std::ptr::null_mut()) == 0 {
+                    error_handler.check()?;
+                    return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
+                }
+            }
+
+            Ok(GlContext { window: handle.window, display, context })
+        })
+    }
+
+    /// Find a matching framebuffer config and window visual for the given OpenGL configuration.
+    /// This needs to be passed to [Self::create] along with a handle to a window that was created
+    /// using the visual also returned from this function.
+    pub unsafe fn get_fb_config_and_visual(
+        display: *mut xlib::_XDisplay, config: GlConfig,
+    ) -> Result<(FbConfig, WindowConfig), GlError> {
         errors::XErrorHandler::handle(display, |error_handler| {
             let screen = unsafe { xlib::XDefaultScreen(display) };
 
@@ -99,79 +200,22 @@ impl GlContext {
             };
 
             error_handler.check()?;
-
-            if n_configs <= 0 {
+            if n_configs <= 0 || fb_config.is_null() {
                 return Err(GlError::CreationFailed(CreationFailedError::InvalidFBConfig));
             }
 
-            #[allow(non_snake_case)]
-            let glXCreateContextAttribsARB: GlXCreateContextAttribsARB = unsafe {
-                let addr = get_proc_address("glXCreateContextAttribsARB");
-                if addr.is_null() {
-                    return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
-                } else {
-                    std::mem::transmute(addr)
-                }
-            };
-
-            #[allow(non_snake_case)]
-            let glXSwapIntervalEXT: GlXSwapIntervalEXT = unsafe {
-                let addr = get_proc_address("glXSwapIntervalEXT");
-                if addr.is_null() {
-                    return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
-                } else {
-                    std::mem::transmute(addr)
-                }
-            };
-
-            error_handler.check()?;
-
-            let profile_mask = match config.profile {
-                Profile::Core => glx::arb::GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
-                Profile::Compatibility => glx::arb::GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
-            };
-
-            #[rustfmt::skip]
-                let ctx_attribs = [
-                glx::arb::GLX_CONTEXT_MAJOR_VERSION_ARB, config.version.0 as i32,
-                glx::arb::GLX_CONTEXT_MINOR_VERSION_ARB, config.version.1 as i32,
-                glx::arb::GLX_CONTEXT_PROFILE_MASK_ARB, profile_mask,
-                0,
-            ];
-
-            let context = unsafe {
-                glXCreateContextAttribsARB(
-                    display,
-                    *fb_config,
-                    std::ptr::null_mut(),
-                    1,
-                    ctx_attribs.as_ptr(),
-                )
-            };
-
-            error_handler.check()?;
-
-            if context.is_null() {
-                return Err(GlError::CreationFailed(CreationFailedError::ContextCreationFailed));
+            // Now that we have a matching framebuffer config, we need to know which visual matches
+            // thsi config so the window is compatible with the OpenGL context we're about to create
+            let fb_config = *fb_config;
+            let visual = glx::glXGetVisualFromFBConfig(display, fb_config);
+            if visual.is_null() {
+                return Err(GlError::CreationFailed(CreationFailedError::NoVisual));
             }
 
-            unsafe {
-                let res = glx::glXMakeCurrent(display, handle.window, context);
-                error_handler.check()?;
-                if res == 0 {
-                    return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
-                }
-
-                glXSwapIntervalEXT(display, handle.window, config.vsync as i32);
-                error_handler.check()?;
-
-                if glx::glXMakeCurrent(display, 0, std::ptr::null_mut()) == 0 {
-                    error_handler.check()?;
-                    return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
-                }
-            }
-
-            Ok(GlContext { window: handle.window, display, context })
+            Ok((
+                FbConfig { fb_config, gl_config: config },
+                WindowConfig { depth: (*visual).depth as u8, visual: (*visual).visualid as u32 },
+            ))
         })
     }
 
