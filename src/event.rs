@@ -32,14 +32,6 @@ pub enum ScrollDelta {
     },
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct MouseClick {
-    pub button: MouseButton,
-    pub click_count: usize,
-    /// The logical coordinates of the mouse position
-    pub position: Point,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MouseEvent {
     /// The mouse cursor was moved
@@ -53,9 +45,6 @@ pub enum MouseEvent {
 
     /// A mouse button was released.
     ButtonReleased(MouseButton),
-
-    /// A mouse button was clicked.
-    Click(MouseClick),
 
     /// The mouse wheel was scrolled.
     WheelScrolled(ScrollDelta),
