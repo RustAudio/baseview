@@ -29,14 +29,14 @@ use winapi::shared::ntdef::SHORT;
 use winapi::shared::windef::HWND;
 use winapi::um::winuser::{
     GetKeyState, GetKeyboardLayout, MapVirtualKeyExW, PeekMessageW, ToUnicodeEx, MAPVK_VK_TO_CHAR,
-    MAPVK_VSC_TO_VK_EX, PM_NOREMOVE, VK_ACCEPT, VK_ADD, VK_APPS, VK_ATTN, VK_BACK, VK_BROWSER_BACK,
-    VK_BROWSER_FAVORITES, VK_BROWSER_FORWARD, VK_BROWSER_HOME, VK_BROWSER_REFRESH,
-    VK_BROWSER_SEARCH, VK_BROWSER_STOP, VK_CANCEL, VK_CAPITAL, VK_CLEAR, VK_CONTROL, VK_CONVERT,
-    VK_CRSEL, VK_DECIMAL, VK_DELETE, VK_DIVIDE, VK_DOWN, VK_END, VK_EREOF, VK_ESCAPE, VK_EXECUTE,
-    VK_EXSEL, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8,
-    VK_F9, VK_FINAL, VK_HELP, VK_HOME, VK_INSERT, VK_JUNJA, VK_KANA, VK_KANJI, VK_LAUNCH_APP1,
-    VK_LAUNCH_APP2, VK_LAUNCH_MAIL, VK_LAUNCH_MEDIA_SELECT, VK_LCONTROL, VK_LEFT, VK_LMENU,
-    VK_LSHIFT, VK_LWIN, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
+    MAPVK_VSC_TO_VK_EX, MK_CONTROL, MK_SHIFT, PM_NOREMOVE, VK_ACCEPT, VK_ADD, VK_APPS, VK_ATTN,
+    VK_BACK, VK_BROWSER_BACK, VK_BROWSER_FAVORITES, VK_BROWSER_FORWARD, VK_BROWSER_HOME,
+    VK_BROWSER_REFRESH, VK_BROWSER_SEARCH, VK_BROWSER_STOP, VK_CANCEL, VK_CAPITAL, VK_CLEAR,
+    VK_CONTROL, VK_CONVERT, VK_CRSEL, VK_DECIMAL, VK_DELETE, VK_DIVIDE, VK_DOWN, VK_END, VK_EREOF,
+    VK_ESCAPE, VK_EXECUTE, VK_EXSEL, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3, VK_F4, VK_F5,
+    VK_F6, VK_F7, VK_F8, VK_F9, VK_FINAL, VK_HELP, VK_HOME, VK_INSERT, VK_JUNJA, VK_KANA, VK_KANJI,
+    VK_LAUNCH_APP1, VK_LAUNCH_APP2, VK_LAUNCH_MAIL, VK_LAUNCH_MEDIA_SELECT, VK_LCONTROL, VK_LEFT,
+    VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
     VK_MEDIA_STOP, VK_MENU, VK_MODECHANGE, VK_MULTIPLY, VK_NEXT, VK_NONCONVERT, VK_NUMLOCK,
     VK_NUMPAD0, VK_NUMPAD1, VK_NUMPAD2, VK_NUMPAD3, VK_NUMPAD4, VK_NUMPAD5, VK_NUMPAD6, VK_NUMPAD7,
     VK_NUMPAD8, VK_NUMPAD9, VK_OEM_ATTN, VK_OEM_CLEAR, VK_PAUSE, VK_PLAY, VK_PRINT, VK_PRIOR,
@@ -551,6 +551,30 @@ impl KeyboardState {
             let mut modifiers = Modifiers::empty();
             for &(vk, modifier, mask) in MODIFIER_MAP {
                 if GetKeyState(vk) & mask != 0 {
+                    modifiers |= modifier;
+                }
+            }
+            if self.has_altgr && GetKeyState(VK_RMENU) & 0x80 != 0 {
+                modifiers |= Modifiers::ALT_GRAPH;
+                modifiers &= !(Modifiers::CONTROL | Modifiers::ALT);
+            }
+            modifiers
+        }
+    }
+
+    /// The same as [Self::get_modifiers()], but it reads the Ctrl and Shift state from a mouse
+    /// event's wParam parameter. Saves two calls to [GetKeyState()].
+    pub(crate) fn get_modifiers_from_mouse_wparam(&self, wparam: WPARAM) -> Modifiers {
+        unsafe {
+            let mut modifiers = Modifiers::empty();
+            for &(vk, modifier, mask) in MODIFIER_MAP {
+                let modifier_active = match modifier {
+                    Modifiers::CONTROL => wparam & MK_CONTROL != 0,
+                    Modifiers::SHIFT => wparam & MK_SHIFT != 0,
+                    _ => GetKeyState(vk) & mask != 0,
+                };
+
+                if modifier_active {
                     modifiers |= modifier;
                 }
             }

@@ -1,4 +1,4 @@
-use keyboard_types::KeyboardEvent;
+use keyboard_types::{KeyboardEvent, Modifiers};
 
 use crate::{Point, WindowInfo};
 
@@ -38,21 +38,42 @@ pub enum MouseEvent {
     CursorMoved {
         /// The logical coordinates of the mouse position
         position: Point,
+        /// The modifiers that were held down just before the event.
+        modifiers: Modifiers,
     },
 
     /// A mouse button was pressed.
-    ButtonPressed(MouseButton),
+    ButtonPressed {
+        /// The button that was pressed.
+        button: MouseButton,
+        /// The modifiers that were held down just before the event.
+        modifiers: Modifiers,
+    },
 
     /// A mouse button was released.
-    ButtonReleased(MouseButton),
+    ButtonReleased {
+        /// The button that was released.
+        button: MouseButton,
+        /// The modifiers that were held down just before the event.
+        modifiers: Modifiers,
+    },
 
     /// The mouse wheel was scrolled.
-    WheelScrolled(ScrollDelta),
+    WheelScrolled {
+        /// How much was scrolled, in factional lines.
+        delta: ScrollDelta,
+        /// The modifiers that were held down just before the event.
+        modifiers: Modifiers,
+    },
 
     /// The mouse cursor entered the window.
+    ///
+    /// May not be available on all platforms.
     CursorEntered,
 
     /// The mouse cursor left the window.
+    ///
+    /// May not be available on all platforms.
     CursorLeft,
 }
 

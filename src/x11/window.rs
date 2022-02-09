@@ -16,7 +16,7 @@ use crate::{
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
-use super::keyboard::{convert_key_press_event, convert_key_release_event};
+use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
 
 #[cfg(feature = "opengl")]
 use crate::{
@@ -580,7 +580,10 @@ impl Window {
 
                     handler.on_event(
                         &mut crate::Window::new(self),
-                        Event::Mouse(MouseEvent::CursorMoved { position: logical_pos }),
+                        Event::Mouse(MouseEvent::CursorMoved {
+                            position: logical_pos,
+                            modifiers: key_mods(event.state()),
+                        }),
                     );
                 }
             }
@@ -593,26 +596,29 @@ impl Window {
                     4 => {
                         handler.on_event(
                             &mut crate::Window::new(self),
-                            Event::Mouse(MouseEvent::WheelScrolled(ScrollDelta::Lines {
-                                x: 0.0,
-                                y: 1.0,
-                            })),
+                            Event::Mouse(MouseEvent::WheelScrolled {
+                                delta: ScrollDelta::Lines { x: 0.0, y: 1.0 },
+                                modifiers: key_mods(event.state()),
+                            }),
                         );
                     }
                     5 => {
                         handler.on_event(
                             &mut crate::Window::new(self),
-                            Event::Mouse(MouseEvent::WheelScrolled(ScrollDelta::Lines {
-                                x: 0.0,
-                                y: -1.0,
-                            })),
+                            Event::Mouse(MouseEvent::WheelScrolled {
+                                delta: ScrollDelta::Lines { x: 0.0, y: -1.0 },
+                                modifiers: key_mods(event.state()),
+                            }),
                         );
                     }
                     detail => {
                         let button_id = mouse_id(detail);
                         handler.on_event(
                             &mut crate::Window::new(self),
-                            Event::Mouse(MouseEvent::ButtonPressed(button_id)),
+                            Event::Mouse(MouseEvent::ButtonPressed {
+                                button: button_id,
+                                modifiers: key_mods(event.state()),
+                            }),
                         );
                     }
                 }
@@ -626,7 +632,10 @@ impl Window {
                     let button_id = mouse_id(detail);
                     handler.on_event(
                         &mut crate::Window::new(self),
-                        Event::Mouse(MouseEvent::ButtonReleased(button_id)),
+                        Event::Mouse(MouseEvent::ButtonReleased {
+                            button: button_id,
+                            modifiers: key_mods(event.state()),
+                        }),
                     );
                 }
             }

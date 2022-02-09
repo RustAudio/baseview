@@ -362,7 +362,7 @@ fn hardware_keycode_to_code(hw_keycode: u16) -> Code {
 
 // Extracts the keyboard modifiers from, e.g., the `state` field of
 // `xcb::xproto::ButtonPressEvent`
-fn key_mods(mods: u16) -> Modifiers {
+pub(super) fn key_mods(mods: u16) -> Modifiers {
     let mut ret = Modifiers::default();
     let mut key_masks = [
         (xproto::MOD_MASK_SHIFT, Modifiers::SHIFT),

@@ -137,13 +137,14 @@ unsafe extern "system" fn wnd_proc(
                 let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
                 let physical_pos = PhyPoint { x, y };
-
                 let logical_pos = physical_pos.to_logical(&window_state.window_info);
+                let event = Event::Mouse(MouseEvent::CursorMoved {
+                    position: logical_pos,
+                    modifiers: window_state.keyboard_state.get_modifiers_from_mouse_wparam(wparam),
+                });
 
-                window_state.handler.on_event(
-                    &mut window,
-                    Event::Mouse(MouseEvent::CursorMoved { position: logical_pos }),
-                );
+                window_state.handler.on_event(&mut window, event);
+
                 return 0;
             }
             WM_MOUSEWHEEL => {
@@ -155,13 +156,13 @@ unsafe extern "system" fn wnd_proc(
                 let value = value as i32;
                 let value = value as f32 / WHEEL_DELTA as f32;
 
-                window_state.handler.on_event(
-                    &mut window,
-                    Event::Mouse(MouseEvent::WheelScrolled(ScrollDelta::Lines {
-                        x: 0.0,
-                        y: value,
-                    })),
-                );
+                let event = Event::Mouse(MouseEvent::WheelScrolled {
+                    delta: ScrollDelta::Lines { x: 0.0, y: value },
+                    modifiers: window_state.keyboard_state.get_modifiers_from_mouse_wparam(wparam),
+                });
+
+                window_state.handler.on_event(&mut window, event);
+
                 return 0;
             }
             WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
@@ -190,7 +191,12 @@ unsafe extern "system" fn wnd_proc(
                             // Capture the mouse cursor on button down
                             mouse_button_counter = mouse_button_counter.saturating_add(1);
                             SetCapture(hwnd);
-                            MouseEvent::ButtonPressed(button)
+                            MouseEvent::ButtonPressed {
+                                button,
+                                modifiers: window_state
+                                    .keyboard_state
+                                    .get_modifiers_from_mouse_wparam(wparam),
+                            }
                         }
                         WM_LBUTTONUP | WM_MBUTTONUP | WM_RBUTTONUP | WM_XBUTTONUP => {
                             // Release the mouse cursor capture when all buttons are released
@@ -199,7 +205,12 @@ unsafe extern "system" fn wnd_proc(
                                 ReleaseCapture();
                             }
 
-                            MouseEvent::ButtonReleased(button)
+                            MouseEvent::ButtonReleased {
+                                button,
+                                modifiers: window_state
+                                    .keyboard_state
+                                    .get_modifiers_from_mouse_wparam(wparam),
+                            }
                         }
                         _ => {
                             unreachable!()
