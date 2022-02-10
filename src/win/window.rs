@@ -127,13 +127,12 @@ unsafe extern "system" fn wnd_proc(
 
     let window_state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RefCell<WindowState>;
     if !window_state_ptr.is_null() {
-        let mut window_state = (*window_state_ptr).borrow_mut();
-
-        let mut window = window_state.create_window(hwnd);
-        let mut window = crate::Window::new(&mut window);
-
         match msg {
             WM_MOUSEMOVE => {
+                let mut window_state = (*window_state_ptr).borrow_mut();
+                let mut window = window_state.create_window(hwnd);
+                let mut window = crate::Window::new(&mut window);
+
                 let x = (lparam & 0xFFFF) as i16 as i32;
                 let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
@@ -148,6 +147,10 @@ unsafe extern "system" fn wnd_proc(
                 return 0;
             }
             WM_MOUSEWHEEL => {
+                let mut window_state = (*window_state_ptr).borrow_mut();
+                let mut window = window_state.create_window(hwnd);
+                let mut window = crate::Window::new(&mut window);
+
                 let value = (wparam >> 16) as i16;
                 let value = value as i32;
                 let value = value as f32 / WHEEL_DELTA as f32;
@@ -163,7 +166,11 @@ unsafe extern "system" fn wnd_proc(
             }
             WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
             | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
-                let mut mouse_button_counter = (*window_state_ptr).borrow().mouse_button_counter;
+                let mut window_state = (*window_state_ptr).borrow_mut();
+                let mut window = window_state.create_window(hwnd);
+                let mut window = crate::Window::new(&mut window);
+
+                let mut mouse_button_counter = window_state.mouse_button_counter;
 
                 let button = match msg {
                     WM_LBUTTONDOWN | WM_LBUTTONUP => Some(MouseButton::Left),
@@ -205,19 +212,37 @@ unsafe extern "system" fn wnd_proc(
                 }
             }
             WM_TIMER => {
+                let mut window_state = (*window_state_ptr).borrow_mut();
+                let mut window = window_state.create_window(hwnd);
+                let mut window = crate::Window::new(&mut window);
+
                 if wparam == WIN_FRAME_TIMER {
                     window_state.handler.on_frame(&mut window);
                 }
                 return 0;
             }
             WM_CLOSE => {
-                window_state.handler.on_event(&mut window, Event::Window(WindowEvent::WillClose));
+                // Make sure to release the borrow before the DefWindowProc call
+                {
+                    let mut window_state = (*window_state_ptr).borrow_mut();
+                    let mut window = window_state.create_window(hwnd);
+                    let mut window = crate::Window::new(&mut window);
+
+                    window_state
+                        .handler
+                        .on_event(&mut window, Event::Window(WindowEvent::WillClose));
+                }
+
                 // DestroyWindow(hwnd);
                 // return 0;
                 return DefWindowProcW(hwnd, msg, wparam, lparam);
             }
             WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP
             | WM_INPUTLANGCHANGE => {
+                let mut window_state = (*window_state_ptr).borrow_mut();
+                let mut window = window_state.create_window(hwnd);
+                let mut window = crate::Window::new(&mut window);
+
                 let opt_event =
                     window_state.keyboard_state.process_message(hwnd, msg, wparam, lparam);
 
@@ -230,6 +255,10 @@ unsafe extern "system" fn wnd_proc(
                 }
             }
             WM_SIZE => {
+                let mut window_state = (*window_state_ptr).borrow_mut();
+                let mut window = window_state.create_window(hwnd);
+                let mut window = crate::Window::new(&mut window);
+
                 let width = (lparam & 0xFFFF) as u16 as u32;
                 let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
 
@@ -245,6 +274,8 @@ unsafe extern "system" fn wnd_proc(
                     .on_event(&mut window, Event::Window(WindowEvent::Resized(window_info)));
             }
             WM_DPICHANGED => {
+                let mut window_state = (*window_state_ptr).borrow_mut();
+
                 // To avoid weirdness with the realtime borrow checker.
                 let new_rect = {
                     if let WindowScalePolicy::SystemScaleFactor = window_state.scale_policy {
