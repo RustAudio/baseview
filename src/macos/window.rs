@@ -280,7 +280,7 @@ pub(super) struct WindowState {
 impl WindowState {
     /// Returns a mutable reference to a WindowState from an Objective-C field
     ///
-    /// Don't use this to create two simulataneous references to a single
+    /// Don't use this to create two simultaneous references to a single
     /// WindowState. Apparently, macOS blocks for the duration of an event,
     /// callback, meaning that this shouldn't be a problem in practice.
     pub(super) unsafe fn from_field(obj: &Object) -> &mut Self {
