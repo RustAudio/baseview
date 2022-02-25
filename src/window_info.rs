@@ -20,12 +20,7 @@ impl WindowInfo {
             height: (logical_size.height * scale).round() as u32,
         };
 
-        Self {
-            logical_size,
-            physical_size,
-            scale,
-            scale_recip,
-        }
+        Self { logical_size, physical_size, scale, scale_recip }
     }
 
     pub fn from_physical_size(physical_size: PhySize, scale: f64) -> Self {
@@ -40,12 +35,7 @@ impl WindowInfo {
             height: f64::from(physical_size.height) * scale_recip,
         };
 
-        Self {
-            logical_size,
-            physical_size,
-            scale,
-            scale_recip,
-        }
+        Self { logical_size, physical_size, scale, scale_recip }
     }
 
     /// The logical size of the window

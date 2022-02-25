@@ -1,22 +1,88 @@
+use std::marker::PhantomData;
 use std::os::raw::{c_ulong, c_void};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::time::*;
+use std::sync::Arc;
 use std::thread;
+use std::time::*;
 
-use raw_window_handle::{
-    unix::XlibHandle,
-    HasRawWindowHandle,
-    RawWindowHandle
-};
+use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
 
 use super::XcbConnection;
 use crate::{
-    Event, MouseButton, MouseCursor, MouseEvent, ScrollDelta,
-    WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
-    WindowScalePolicy, PhyPoint, PhySize,
+    Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, WindowEvent,
+    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
 use super::keyboard::{convert_key_press_event, convert_key_release_event};
+
+pub struct WindowHandle {
+    raw_window_handle: Option<RawWindowHandle>,
+    close_requested: Arc<AtomicBool>,
+    is_open: Arc<AtomicBool>,
+
+    // Ensure handle is !Send
+    _phantom: PhantomData<*mut ()>,
+}
+
+impl WindowHandle {
+    pub fn close(&mut self) {
+        if let Some(_) = self.raw_window_handle.take() {
+            // FIXME: This will need to be changed from just setting an atomic to somehow
+            // synchronizing with the window being closed (using a synchronous channel, or
+            // by joining on the event loop thread).
+
+            self.close_requested.store(true, Ordering::Relaxed);
+        }
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.is_open.load(Ordering::Relaxed)
+    }
+}
+
+unsafe impl HasRawWindowHandle for WindowHandle {
+    fn raw_window_handle(&self) -> RawWindowHandle {
+        if let Some(raw_window_handle) = self.raw_window_handle {
+            if self.is_open.load(Ordering::Relaxed) {
+                return raw_window_handle;
+            }
+        }
+
+        RawWindowHandle::Xlib(XlibHandle { ..raw_window_handle::unix::XlibHandle::empty() })
+    }
+}
+
+struct ParentHandle {
+    close_requested: Arc<AtomicBool>,
+    is_open: Arc<AtomicBool>,
+}
+
+impl ParentHandle {
+    pub fn new() -> (Self, WindowHandle) {
+        let close_requested = Arc::new(AtomicBool::new(false));
+        let is_open = Arc::new(AtomicBool::new(true));
+
+        let handle = WindowHandle {
+            raw_window_handle: None,
+            close_requested: Arc::clone(&close_requested),
+            is_open: Arc::clone(&is_open),
+            _phantom: PhantomData::default(),
+        };
+
+        (Self { close_requested, is_open }, handle)
+    }
+
+    pub fn parent_did_drop(&self) -> bool {
+        self.close_requested.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for ParentHandle {
+    fn drop(&mut self) {
+        self.is_open.store(false, Ordering::Relaxed);
+    }
+}
 
 pub struct Window {
     xcb_connection: XcbConnection,
@@ -26,8 +92,10 @@ pub struct Window {
 
     frame_interval: Duration,
     event_loop_running: bool,
+    close_requested: bool,
 
     new_physical_size: Option<PhySize>,
+    parent_handle: Option<ParentHandle>,
 }
 
 // Hack to allow sending a RawWindowHandle between threads. Do not make public
@@ -38,7 +106,7 @@ unsafe impl Send for SendableRwh {}
 type WindowOpenResult = Result<SendableRwh, ()>;
 
 impl Window {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B)
+    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
         P: HasRawWindowHandle,
         H: WindowHandler + 'static,
@@ -54,14 +122,19 @@ impl Window {
 
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
+        let (parent_handle, mut window_handle) = ParentHandle::new();
+
         let thread = thread::spawn(move || {
-            Self::window_thread(Some(parent_id), options, build, tx.clone());
+            Self::window_thread(Some(parent_id), options, build, tx.clone(), Some(parent_handle));
         });
 
-        let _ = rx.recv().unwrap().unwrap();
+        let raw_window_handle = rx.recv().unwrap().unwrap();
+        window_handle.raw_window_handle = Some(raw_window_handle.0);
+
+        window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> RawWindowHandle
+    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -69,11 +142,16 @@ impl Window {
     {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
+        let (parent_handle, mut window_handle) = ParentHandle::new();
+
         let thread = thread::spawn(move || {
-            Self::window_thread(None, options, build, tx.clone());
+            Self::window_thread(None, options, build, tx.clone(), Some(parent_handle));
         });
 
-        rx.recv().unwrap().unwrap().0
+        let raw_window_handle = rx.recv().unwrap().unwrap();
+        window_handle.raw_window_handle = Some(raw_window_handle.0);
+
+        window_handle
     }
 
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
@@ -85,7 +163,7 @@ impl Window {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
         let thread = thread::spawn(move || {
-            Self::window_thread(None, options, build, tx.clone());
+            Self::window_thread(None, options, build, tx.clone(), None);
         });
 
         let _ = rx.recv().unwrap().unwrap();
@@ -94,13 +172,12 @@ impl Window {
     }
 
     fn window_thread<H, B>(
-        parent: Option<u32>,
-        options: WindowOpenOptions, build: B,
-        tx: mpsc::SyncSender<WindowOpenResult>,
-    )
-    where H: WindowHandler + 'static,
-          B: FnOnce(&mut crate::Window) -> H,
-          B: Send + 'static,
+        parent: Option<u32>, options: WindowOpenOptions, build: B,
+        tx: mpsc::SyncSender<WindowOpenResult>, parent_handle: Option<ParentHandle>,
+    ) where
+        H: WindowHandler + 'static,
+        B: FnOnce(&mut crate::Window) -> H,
+        B: Send + 'static,
     {
         // Connect to the X server
         // FIXME: baseview error type instead of unwrap()
@@ -108,10 +185,7 @@ impl Window {
 
         // Get screen information (?)
         let setup = xcb_connection.conn.get_setup();
-        let screen = setup
-            .roots()
-            .nth(xcb_connection.xlib_display as usize)
-            .unwrap();
+        let screen = setup.roots().nth(xcb_connection.xlib_display as usize).unwrap();
 
         let foreground = xcb_connection.conn.generate_id();
 
@@ -121,32 +195,29 @@ impl Window {
             &xcb_connection.conn,
             foreground,
             parent_id,
-            &[
-                (xcb::GC_FOREGROUND, screen.black_pixel()),
-                (xcb::GC_GRAPHICS_EXPOSURES, 0),
-            ],
+            &[(xcb::GC_FOREGROUND, screen.black_pixel()), (xcb::GC_GRAPHICS_EXPOSURES, 0)],
         );
 
         let scaling = match options.scale {
             WindowScalePolicy::SystemScaleFactor => xcb_connection.get_scaling().unwrap_or(1.0),
-            WindowScalePolicy::ScaleFactor(scale) => scale
+            WindowScalePolicy::ScaleFactor(scale) => scale,
         };
 
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
         let window_id = xcb_connection.conn.generate_id();
-        xcb::create_window(
+        xcb::create_window_checked(
             &xcb_connection.conn,
             xcb::COPY_FROM_PARENT as u8,
             window_id,
             parent_id,
-            0,                     // x coordinate of the new window
-            0,                     // y coordinate of the new window
-            window_info.physical_size().width as u16,        // window width
-            window_info.physical_size().height as u16,       // window height
-            0,                     // window border
+            0,                                         // x coordinate of the new window
+            0,                                         // y coordinate of the new window
+            window_info.physical_size().width as u16,  // window width
+            window_info.physical_size().height as u16, // window height
+            0,                                         // window border
             xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
-            screen.root_visual(),
+            if parent.is_some() { xcb::COPY_FROM_PARENT as u32 } else { screen.root_visual() },
             &[(
                 xcb::CW_EVENT_MASK,
                 xcb::EVENT_MASK_EXPOSURE
@@ -157,7 +228,7 @@ impl Window {
                     | xcb::EVENT_MASK_KEY_RELEASE
                     | xcb::EVENT_MASK_STRUCTURE_NOTIFY,
             )],
-        );
+        ).request_check().unwrap();
 
         xcb::map_window(&xcb_connection.conn, window_id);
 
@@ -173,16 +244,16 @@ impl Window {
             title.as_bytes(),
         );
 
-        xcb_connection.atoms.wm_protocols
-            .zip(xcb_connection.atoms.wm_delete_window)
-            .map(|(wm_protocols, wm_delete_window)| {
+        xcb_connection.atoms.wm_protocols.zip(xcb_connection.atoms.wm_delete_window).map(
+            |(wm_protocols, wm_delete_window)| {
                 xcb_util::icccm::set_wm_protocols(
                     &xcb_connection.conn,
                     window_id,
                     wm_protocols,
                     &[wm_delete_window],
                 );
-            });
+            },
+        );
 
         xcb_connection.conn.flush();
 
@@ -194,8 +265,10 @@ impl Window {
 
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
+            close_requested: false,
 
             new_physical_size: None,
+            parent_handle,
         };
 
         let mut handler = build(&mut crate::Window::new(&mut window));
@@ -204,7 +277,7 @@ impl Window {
         // the correct dpi scaling.
         handler.on_event(
             &mut crate::Window::new(&mut window),
-            Event::Window(WindowEvent::Resized(window_info))
+            Event::Window(WindowEvent::Resized(window_info)),
         );
 
         let _ = tx.send(Ok(SendableRwh(window.raw_window_handle())));
@@ -212,13 +285,9 @@ impl Window {
         window.run_event_loop(&mut handler);
     }
 
-    pub fn window_info(&self) -> &WindowInfo {
-        &self.window_info
-    }
-
     pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
         if self.mouse_cursor == mouse_cursor {
-            return
+            return;
         }
 
         let xid = self.xcb_connection.get_cursor_xid(mouse_cursor);
@@ -227,13 +296,17 @@ impl Window {
             xcb::change_window_attributes(
                 &self.xcb_connection.conn,
                 self.window_id,
-                &[(xcb::CW_CURSOR, xid)]
+                &[(xcb::CW_CURSOR, xid)],
             );
 
             self.xcb_connection.conn.flush();
         }
 
         self.mouse_cursor = mouse_cursor;
+    }
+
+    pub fn close(&mut self) {
+        self.close_requested = true;
     }
 
     #[inline]
@@ -248,16 +321,13 @@ impl Window {
         }
 
         if let Some(size) = self.new_physical_size.take() {
-            self.window_info = WindowInfo::from_physical_size(
-                size,
-                self.window_info.scale()
-            );
+            self.window_info = WindowInfo::from_physical_size(size, self.window_info.scale());
 
             let window_info = self.window_info;
 
             handler.on_event(
                 &mut crate::Window::new(self),
-                Event::Window(WindowEvent::Resized(window_info))
+                Event::Window(WindowEvent::Resized(window_info)),
             );
         }
     }
@@ -306,7 +376,39 @@ impl Window {
                     self.drain_xcb_events(handler);
                 }
             }
+
+            // Check if the parents's handle was dropped (such as when the host
+            // requested the window to close)
+            //
+            // FIXME: This will need to be changed from just setting an atomic to somehow
+            // synchronizing with the window being closed (using a synchronous channel, or
+            // by joining on the event loop thread).
+            if let Some(parent_handle) = &self.parent_handle {
+                if parent_handle.parent_did_drop() {
+                    self.handle_must_close(handler);
+                    self.close_requested = false;
+                }
+            }
+
+            // Check if the user has requested the window to close
+            if self.close_requested {
+                self.handle_must_close(handler);
+                self.close_requested = false;
+            }
         }
+    }
+
+    fn handle_close_requested(&mut self, handler: &mut dyn WindowHandler) {
+        handler.on_event(&mut crate::Window::new(self), Event::Window(WindowEvent::WillClose));
+
+        // FIXME: handler should decide whether window stays open or not
+        self.event_loop_running = false;
+    }
+
+    fn handle_must_close(&mut self, handler: &mut dyn WindowHandler) {
+        handler.on_event(&mut crate::Window::new(self), Event::Window(WindowEvent::WillClose));
+
+        self.event_loop_running = false;
     }
 
     fn handle_xcb_event(&mut self, handler: &mut dyn WindowHandler, event: xcb::GenericEvent) {
@@ -343,17 +445,11 @@ impl Window {
                 let data = event.data().data;
                 let (_, data32, _) = unsafe { data.align_to::<u32>() };
 
-                let wm_delete_window = self.xcb_connection.atoms.wm_delete_window
-                    .unwrap_or(xcb::NONE);
+                let wm_delete_window =
+                    self.xcb_connection.atoms.wm_delete_window.unwrap_or(xcb::NONE);
 
                 if wm_delete_window == data32[0] {
-                    handler.on_event(
-                        &mut crate::Window::new(self),
-                        Event::Window(WindowEvent::WillClose)
-                    );
-
-                    // FIXME: handler should decide whether window stays open or not
-                    self.event_loop_running = false;
+                    self.handle_close_requested(handler);
                 }
             }
 
@@ -362,7 +458,9 @@ impl Window {
 
                 let new_physical_size = PhySize::new(event.width() as u32, event.height() as u32);
 
-                if self.new_physical_size.is_some() || new_physical_size != self.window_info.physical_size() {
+                if self.new_physical_size.is_some()
+                    || new_physical_size != self.window_info.physical_size()
+                {
                     self.new_physical_size = Some(new_physical_size);
                 }
             }
@@ -375,14 +473,13 @@ impl Window {
                 let detail = event.detail();
 
                 if detail != 4 && detail != 5 {
-                    let physical_pos = PhyPoint::new(event.event_x() as i32, event.event_y() as i32);
+                    let physical_pos =
+                        PhyPoint::new(event.event_x() as i32, event.event_y() as i32);
                     let logical_pos = physical_pos.to_logical(&self.window_info);
 
                     handler.on_event(
                         &mut crate::Window::new(self),
-                        Event::Mouse(MouseEvent::CursorMoved {
-                            position: logical_pos,
-                        }),
+                        Event::Mouse(MouseEvent::CursorMoved { position: logical_pos }),
                     );
                 }
             }
@@ -414,7 +511,7 @@ impl Window {
                         let button_id = mouse_id(detail);
                         handler.on_event(
                             &mut crate::Window::new(self),
-                            Event::Mouse(MouseEvent::ButtonPressed(button_id))
+                            Event::Mouse(MouseEvent::ButtonPressed(button_id)),
                         );
                     }
                 }
@@ -428,7 +525,7 @@ impl Window {
                     let button_id = mouse_id(detail);
                     handler.on_event(
                         &mut crate::Window::new(self),
-                        Event::Mouse(MouseEvent::ButtonReleased(button_id))
+                        Event::Mouse(MouseEvent::ButtonReleased(button_id)),
                     );
                 }
             }
@@ -441,7 +538,7 @@ impl Window {
 
                 handler.on_event(
                     &mut crate::Window::new(self),
-                    Event::Keyboard(convert_key_press_event(&event))
+                    Event::Keyboard(convert_key_press_event(&event)),
                 );
             }
 
@@ -450,7 +547,7 @@ impl Window {
 
                 handler.on_event(
                     &mut crate::Window::new(self),
-                    Event::Keyboard(convert_key_release_event(&event))
+                    Event::Keyboard(convert_key_release_event(&event)),
                 );
             }
 

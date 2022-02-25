@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use rtrb::{RingBuffer, Consumer};
+use rtrb::{Consumer, RingBuffer};
 
 use baseview::{Event, EventStatus, Window, WindowHandler, WindowScalePolicy};
 
 #[derive(Debug, Clone)]
 enum Message {
-    Hello
+    Hello,
 }
 
 struct OpenWindowExample {
@@ -38,20 +38,15 @@ fn main() {
         scale: WindowScalePolicy::SystemScaleFactor,
     };
 
-    let (mut tx, rx) = RingBuffer::new(128).split();
+    let (mut tx, rx) = RingBuffer::new(128);
 
-    ::std::thread::spawn(move || {
-        loop {
-            ::std::thread::sleep(Duration::from_secs(5));
+    ::std::thread::spawn(move || loop {
+        ::std::thread::sleep(Duration::from_secs(5));
 
-            if let Err(_) = tx.push(Message::Hello) {
-                println!("Failed sending message");
-            }
+        if let Err(_) = tx.push(Message::Hello) {
+            println!("Failed sending message");
         }
     });
 
-    Window::open_blocking(
-        window_open_options,
-        |_| OpenWindowExample { rx }
-    );
+    Window::open_blocking(window_open_options, |_| OpenWindowExample { rx });
 }

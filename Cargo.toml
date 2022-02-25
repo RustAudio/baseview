@@ -14,14 +14,14 @@ edition = "2018"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-keyboard-types = { version = "0.5.0", default-features = false }
+keyboard-types = { version = "0.6.1", default-features = false }
 raw-window-handle = "0.3.3"
 
 [target.'cfg(target_os="linux")'.dependencies]
 xcb = { version = "0.9", features = ["thread", "xlib_xcb", "dri2"] }
 x11 = { version = "2.18", features = ["xlib", "xcursor"] }
 xcb-util = { version = "0.3", features = ["icccm"] }
-nix = "0.18"
+nix = "0.22.0"
 
 [target.'cfg(target_os="windows")'.dependencies]
 winapi = { version = "0.3.8", features = ["libloaderapi", "winuser", "windef", "minwindef", "guiddef", "combaseapi", "wingdi", "errhandlingapi"] }
@@ -33,4 +33,4 @@ objc = "0.2.7"
 uuid = { version = "0.8", features = ["v4"] }
 
 [dev-dependencies]
-rtrb = "0.1.1"
+rtrb = "0.2"

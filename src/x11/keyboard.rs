@@ -24,7 +24,6 @@ use keyboard_types::*;
 
 use crate::keyboard::code_to_location;
 
-
 /// Convert a hardware scan code to a key.
 ///
 /// Note: this is a hardcoded layout. We need to detect the user's
@@ -201,7 +200,6 @@ fn code_to_key(code: Code, m: Modifiers) -> Key {
         _ => Key::Unidentified,
     }
 }
-
 
 #[cfg(target_os = "linux")]
 /// Map hardware keycode to code.
@@ -385,10 +383,7 @@ fn key_mods(mods: u16) -> Modifiers {
     ret
 }
 
-
-pub(super) fn convert_key_press_event(
-    key_press: &xcb::KeyPressEvent,
-) -> KeyboardEvent {
+pub(super) fn convert_key_press_event(key_press: &xcb::KeyPressEvent) -> KeyboardEvent {
     let hw_keycode = key_press.detail();
     let code = hardware_keycode_to_code(hw_keycode.into());
     let modifiers = key_mods(key_press.state());
@@ -396,21 +391,10 @@ pub(super) fn convert_key_press_event(
     let location = code_to_location(code);
     let state = KeyState::Down;
 
-    KeyboardEvent {
-        code,
-        key,
-        modifiers,
-        location,
-        state,
-        repeat: false,
-        is_composing: false,
-    }
+    KeyboardEvent { code, key, modifiers, location, state, repeat: false, is_composing: false }
 }
 
-
-pub(super) fn convert_key_release_event(
-    key_release: &xcb::KeyReleaseEvent
-) -> KeyboardEvent {
+pub(super) fn convert_key_release_event(key_release: &xcb::KeyReleaseEvent) -> KeyboardEvent {
     let hw_keycode = key_release.detail();
     let code = hardware_keycode_to_code(hw_keycode.into());
     let modifiers = key_mods(key_release.state());
@@ -418,13 +402,5 @@ pub(super) fn convert_key_release_event(
     let location = code_to_location(code);
     let state = KeyState::Up;
 
-    KeyboardEvent {
-        code,
-        key,
-        modifiers,
-        location,
-        state,
-        repeat: false,
-        is_composing: false,
-    }
+    KeyboardEvent { code, key, modifiers, location, state, repeat: false, is_composing: false }
 }
