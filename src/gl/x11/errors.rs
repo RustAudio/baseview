@@ -45,10 +45,13 @@ impl<'a> XErrorHandler<'a> {
             let err = *err;
 
             CURRENT_X11_ERROR.with(|mutex| match mutex.lock() {
-                Ok(mut current_error) => {
+                // If multiple errors occur, keep the first one since that's likely going to be the
+                // cause of the other errors
+                Ok(mut current_error) if current_error.is_none() => {
                     *current_error = Some(err);
                     0
                 }
+                Ok(_) => 0,
                 Err(e) => {
                     eprintln!(
                         "[FATAL] raw-gl-context: Failed to lock for X11 Error Handler: {:?}",
