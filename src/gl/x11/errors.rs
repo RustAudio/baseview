@@ -2,20 +2,20 @@ use std::ffi::CStr;
 use std::fmt::{Debug, Formatter};
 use x11::xlib;
 
+use std::cell::RefCell;
 use std::panic::AssertUnwindSafe;
-use std::sync::Mutex;
 
 thread_local! {
     /// Used as part of [`XerrorHandler::handle()`]. When an X11 error occurs during this function,
-    /// the error gets copied to this mutex after which the program is allowed to resume. The error
-    /// can then be converted to a regular Rust Result value afterwards.
-    static CURRENT_X11_ERROR: Mutex<Option<xlib::XErrorEvent>> = Mutex::new(None);
+    /// the error gets copied to this RefCell after which the program is allowed to resume. The
+    /// error can then be converted to a regular Rust Result value afterwards.
+    static CURRENT_X11_ERROR: RefCell<Option<xlib::XErrorEvent>> = RefCell::new(None);
 }
 
 /// A helper struct for safe X11 error handling
 pub struct XErrorHandler<'a> {
     display: *mut xlib::Display,
-    mutex: &'a Mutex<Option<xlib::XErrorEvent>>,
+    error: &'a RefCell<Option<xlib::XErrorEvent>>,
 }
 
 impl<'a> XErrorHandler<'a> {
@@ -25,7 +25,7 @@ impl<'a> XErrorHandler<'a> {
         unsafe {
             xlib::XSync(self.display, 0);
         }
-        let error = self.mutex.lock().unwrap().take();
+        let error = self.error.borrow_mut().take();
 
         match error {
             None => Ok(()),
@@ -44,20 +44,16 @@ impl<'a> XErrorHandler<'a> {
             // SAFETY: the error pointer should be safe to copy
             let err = *err;
 
-            CURRENT_X11_ERROR.with(|mutex| match mutex.lock() {
-                // If multiple errors occur, keep the first one since that's likely going to be the
-                // cause of the other errors
-                Ok(mut current_error) if current_error.is_none() => {
-                    *current_error = Some(err);
-                    0
-                }
-                Ok(_) => 0,
-                Err(e) => {
-                    eprintln!(
-                        "[FATAL] raw-gl-context: Failed to lock for X11 Error Handler: {:?}",
-                        e
-                    );
-                    1
+            CURRENT_X11_ERROR.with(|error| {
+                let mut error = error.borrow_mut();
+                match error.as_mut() {
+                    // If multiple errors occur, keep the first one since that's likely going to be the
+                    // cause of the other errors
+                    Some(_) => 1,
+                    None => {
+                        *error = Some(err);
+                        0
+                    }
                 }
             })
         }
@@ -67,13 +63,13 @@ impl<'a> XErrorHandler<'a> {
             xlib::XSync(display, 0);
         }
 
-        CURRENT_X11_ERROR.with(|mutex| {
+        CURRENT_X11_ERROR.with(|error| {
             // Make sure to clear any errors from the last call to this function
-            *mutex.lock().unwrap() = None;
+            *error.borrow_mut() = None;
 
             let old_handler = unsafe { xlib::XSetErrorHandler(Some(error_handler)) };
             let panic_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                let mut h = XErrorHandler { display, mutex: &mutex };
+                let mut h = XErrorHandler { display, error };
                 handler(&mut h)
             }));
             // Whatever happened, restore old error handler
