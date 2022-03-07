@@ -3,11 +3,14 @@ use std::fmt::{Debug, Formatter};
 use x11::xlib;
 
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::Mutex;
 
-static CURRENT_ERROR_PTR: AtomicPtr<Mutex<Option<xlib::XErrorEvent>>> =
-    AtomicPtr::new(::std::ptr::null_mut());
+thread_local! {
+    /// Used as part of [`XerrorHandler::handle()`]. When an X11 error occurs during this function,
+    /// the error gets copied to this mutex after which the program is allowed to resume. The error
+    /// can then be converted to a regular Rust Result value afterwards.
+    static CURRENT_X11_ERROR: Mutex<Option<xlib::XErrorEvent>> = Mutex::new(None);
+}
 
 /// A helper struct for safe X11 error handling
 pub struct XErrorHandler<'a> {
@@ -33,24 +36,15 @@ impl<'a> XErrorHandler<'a> {
     /// Sets up a temporary X11 error handler for the duration of the given closure, and allows
     /// that closure to check on the latest X11 error at any time
     pub fn handle<T, F: FnOnce(&mut XErrorHandler) -> T>(
-        display: *mut xlib::Display,
-        handler: F,
+        display: *mut xlib::Display, handler: F,
     ) -> T {
         unsafe extern "C" fn error_handler(
-            _dpy: *mut xlib::Display,
-            err: *mut xlib::XErrorEvent,
+            _dpy: *mut xlib::Display, err: *mut xlib::XErrorEvent,
         ) -> i32 {
             // SAFETY: the error pointer should be safe to copy
             let err = *err;
-            // SAFETY: the ptr can only point to a valid instance or be null
-            let mutex = CURRENT_ERROR_PTR.load(Ordering::SeqCst).as_ref();
-            let mutex = if let Some(mutex) = mutex {
-                mutex
-            } else {
-                return 2;
-            };
 
-            match mutex.lock() {
+            CURRENT_X11_ERROR.with(|mutex| match mutex.lock() {
                 Ok(mut current_error) => {
                     *current_error = Some(err);
                     0
@@ -62,7 +56,7 @@ impl<'a> XErrorHandler<'a> {
                     );
                     1
                 }
-            }
+            })
         }
 
         // Flush all possible previous errors
@@ -70,25 +64,23 @@ impl<'a> XErrorHandler<'a> {
             xlib::XSync(display, 0);
         }
 
-        let mut mutex = Mutex::new(None);
-        CURRENT_ERROR_PTR.store(&mut mutex, Ordering::SeqCst);
+        CURRENT_X11_ERROR.with(|mutex| {
+            // Make sure to clear any errors from the last call to this function
+            *mutex.lock().unwrap() = None;
 
-        let old_handler = unsafe { xlib::XSetErrorHandler(Some(error_handler)) };
-        let panic_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            let mut h = XErrorHandler {
-                display,
-                mutex: &mutex,
-            };
-            handler(&mut h)
-        }));
-        // Whatever happened, restore old error handler
-        unsafe { xlib::XSetErrorHandler(old_handler) };
-        CURRENT_ERROR_PTR.store(::core::ptr::null_mut(), Ordering::SeqCst);
+            let old_handler = unsafe { xlib::XSetErrorHandler(Some(error_handler)) };
+            let panic_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                let mut h = XErrorHandler { display, mutex: &mutex };
+                handler(&mut h)
+            }));
+            // Whatever happened, restore old error handler
+            unsafe { xlib::XSetErrorHandler(old_handler) };
 
-        match panic_result {
-            Ok(v) => v,
-            Err(e) => std::panic::resume_unwind(e),
-        }
+            match panic_result {
+                Ok(v) => v,
+                Err(e) => std::panic::resume_unwind(e),
+            }
+        })
     }
 }
 
