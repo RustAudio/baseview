@@ -12,6 +12,9 @@ mod window;
 mod window_info;
 mod window_open_options;
 
+#[cfg(feature = "opengl")]
+pub mod gl;
+
 pub use event::*;
 pub use mouse_cursor::MouseCursor;
 pub use window::*;

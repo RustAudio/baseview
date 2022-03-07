@@ -21,4 +21,9 @@ pub struct WindowOpenOptions {
 
     /// The dpi scaling policy
     pub scale: WindowScalePolicy,
+
+    /// If provided, then an OpenGL context will be created for this window. You'll be able to
+    /// access this context through [crate::Window::gl_context].
+    #[cfg(feature = "opengl")]
+    pub gl_config: Option<crate::gl::GlConfig>,
 }

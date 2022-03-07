@@ -6,7 +6,9 @@ use std::sync::Arc;
 use std::thread;
 use std::time::*;
 
-use raw_window_handle::{unix::XlibHandle, HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, XlibHandle};
+use xcb::ffi::xcb_screen_t;
+use xcb::StructPtr;
 
 use super::XcbConnection;
 use crate::{
@@ -15,6 +17,12 @@ use crate::{
 };
 
 use super::keyboard::{convert_key_press_event, convert_key_release_event};
+
+#[cfg(feature = "opengl")]
+use crate::{
+    gl::{platform, GlContext},
+    window::RawWindowHandleWrapper,
+};
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
@@ -27,7 +35,7 @@ pub struct WindowHandle {
 
 impl WindowHandle {
     pub fn close(&mut self) {
-        if let Some(_) = self.raw_window_handle.take() {
+        if self.raw_window_handle.take().is_some() {
             // FIXME: This will need to be changed from just setting an atomic to somehow
             // synchronizing with the window being closed (using a synchronous channel, or
             // by joining on the event loop thread).
@@ -49,7 +57,7 @@ unsafe impl HasRawWindowHandle for WindowHandle {
             }
         }
 
-        RawWindowHandle::Xlib(XlibHandle { ..raw_window_handle::unix::XlibHandle::empty() })
+        RawWindowHandle::Xlib(XlibHandle::empty())
     }
 }
 
@@ -88,6 +96,7 @@ pub struct Window {
     xcb_connection: XcbConnection,
     window_id: u32,
     window_info: WindowInfo,
+    // FIXME: There's all this mouse cursor logic but it's never actually used, is this correct?
     mouse_cursor: MouseCursor,
 
     frame_interval: Duration,
@@ -96,6 +105,9 @@ pub struct Window {
 
     new_physical_size: Option<PhySize>,
     parent_handle: Option<ParentHandle>,
+
+    #[cfg(feature = "opengl")]
+    gl_context: Option<GlContext>,
 }
 
 // Hack to allow sending a RawWindowHandle between threads. Do not make public
@@ -124,7 +136,7 @@ impl Window {
 
         let (parent_handle, mut window_handle) = ParentHandle::new();
 
-        let thread = thread::spawn(move || {
+        thread::spawn(move || {
             Self::window_thread(Some(parent_id), options, build, tx.clone(), Some(parent_handle));
         });
 
@@ -144,7 +156,7 @@ impl Window {
 
         let (parent_handle, mut window_handle) = ParentHandle::new();
 
-        let thread = thread::spawn(move || {
+        thread::spawn(move || {
             Self::window_thread(None, options, build, tx.clone(), Some(parent_handle));
         });
 
@@ -163,12 +175,14 @@ impl Window {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
         let thread = thread::spawn(move || {
-            Self::window_thread(None, options, build, tx.clone(), None);
+            Self::window_thread(None, options, build, tx, None);
         });
 
         let _ = rx.recv().unwrap().unwrap();
 
-        thread.join();
+        thread.join().unwrap_or_else(|err| {
+            eprintln!("Window thread panicked: {:#?}", err);
+        });
     }
 
     fn window_thread<H, B>(
@@ -205,10 +219,49 @@ impl Window {
 
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
+        // Now it starts becoming fun. If we're creating an OpenGL context, then we need to create
+        // the window with a visual that matches the framebuffer used for the OpenGL context. So the
+        // idea is that we first retrieve a framebuffer config that matches our wanted OpenGL
+        // configuration, find the visual that matches that framebuffer config, create the window
+        // with that visual, and then finally create an OpenGL context for the window. If we don't
+        // use OpenGL, then we'll just take a random visual with a 32-bit depth.
+        let create_default_config = || {
+            Self::find_visual_for_depth(&screen, 32)
+                .map(|visual| (32, visual))
+                .unwrap_or((xcb::COPY_FROM_PARENT as u8, xcb::COPY_FROM_PARENT as u32))
+        };
+        #[cfg(feature = "opengl")]
+        let (fb_config, (depth, visual)) = match options.gl_config {
+            Some(gl_config) => unsafe {
+                platform::GlContext::get_fb_config_and_visual(
+                    xcb_connection.conn.get_raw_dpy(),
+                    gl_config,
+                )
+                .map(|(fb_config, window_config)| {
+                    (Some(fb_config), (window_config.depth, window_config.visual))
+                })
+                .expect("Could not fetch framebuffer config")
+            },
+            None => (None, create_default_config()),
+        };
+        #[cfg(not(feature = "opengl"))]
+        let (depth, visual) = create_default_config();
+
+        // For this 32-bith depth to work, you also need to define a color map and set a border
+        // pixel: https://cgit.freedesktop.org/xorg/xserver/tree/dix/window.c#n818
+        let colormap = xcb_connection.conn.generate_id();
+        xcb::create_colormap(
+            &xcb_connection.conn,
+            xcb::COLORMAP_ALLOC_NONE as u8,
+            colormap,
+            screen.root(),
+            visual,
+        );
+
         let window_id = xcb_connection.conn.generate_id();
         xcb::create_window_checked(
             &xcb_connection.conn,
-            xcb::COPY_FROM_PARENT as u8,
+            depth,
             window_id,
             parent_id,
             0,                                         // x coordinate of the new window
@@ -217,18 +270,26 @@ impl Window {
             window_info.physical_size().height as u16, // window height
             0,                                         // window border
             xcb::WINDOW_CLASS_INPUT_OUTPUT as u16,
-            if parent.is_some() { xcb::COPY_FROM_PARENT as u32 } else { screen.root_visual() },
-            &[(
-                xcb::CW_EVENT_MASK,
-                xcb::EVENT_MASK_EXPOSURE
-                    | xcb::EVENT_MASK_POINTER_MOTION
-                    | xcb::EVENT_MASK_BUTTON_PRESS
-                    | xcb::EVENT_MASK_BUTTON_RELEASE
-                    | xcb::EVENT_MASK_KEY_PRESS
-                    | xcb::EVENT_MASK_KEY_RELEASE
-                    | xcb::EVENT_MASK_STRUCTURE_NOTIFY,
-            )],
-        ).request_check().unwrap();
+            visual,
+            &[
+                (
+                    xcb::CW_EVENT_MASK,
+                    xcb::EVENT_MASK_EXPOSURE
+                        | xcb::EVENT_MASK_POINTER_MOTION
+                        | xcb::EVENT_MASK_BUTTON_PRESS
+                        | xcb::EVENT_MASK_BUTTON_RELEASE
+                        | xcb::EVENT_MASK_KEY_PRESS
+                        | xcb::EVENT_MASK_KEY_RELEASE
+                        | xcb::EVENT_MASK_STRUCTURE_NOTIFY,
+                ),
+                // As mentioend above, these two values are needed to be able to create a window
+                // with a dpeth of 32-bits when the parent window has a different depth
+                (xcb::CW_COLORMAP, colormap),
+                (xcb::CW_BORDER_PIXEL, 0),
+            ],
+        )
+        .request_check()
+        .unwrap();
 
         xcb::map_window(&xcb_connection.conn, window_id);
 
@@ -244,18 +305,34 @@ impl Window {
             title.as_bytes(),
         );
 
-        xcb_connection.atoms.wm_protocols.zip(xcb_connection.atoms.wm_delete_window).map(
-            |(wm_protocols, wm_delete_window)| {
-                xcb_util::icccm::set_wm_protocols(
-                    &xcb_connection.conn,
-                    window_id,
-                    wm_protocols,
-                    &[wm_delete_window],
-                );
-            },
-        );
+        if let Some((wm_protocols, wm_delete_window)) =
+            xcb_connection.atoms.wm_protocols.zip(xcb_connection.atoms.wm_delete_window)
+        {
+            xcb_util::icccm::set_wm_protocols(
+                &xcb_connection.conn,
+                window_id,
+                wm_protocols,
+                &[wm_delete_window],
+            );
+        }
 
         xcb_connection.conn.flush();
+
+        // TODO: These APIs could use a couple tweaks now that everything is internal and there is
+        //       no error handling anymore at this point. Everything is more or less unchanged
+        //       compared to when raw-gl-context was a separate crate.
+        #[cfg(feature = "opengl")]
+        let gl_context = fb_config.map(|fb_config| {
+            let mut handle = XlibHandle::empty();
+            handle.window = window_id as c_ulong;
+            handle.display = xcb_connection.conn.get_raw_dpy() as *mut c_void;
+            let handle = RawWindowHandleWrapper { handle: RawWindowHandle::Xlib(handle) };
+
+            // Because of the visual negotation we had to take some extra steps to create this context
+            let context = unsafe { platform::GlContext::create(&handle, fb_config) }
+                .expect("Could not create OpenGL context");
+            GlContext::new(context)
+        });
 
         let mut window = Self {
             xcb_connection,
@@ -269,6 +346,9 @@ impl Window {
 
             new_physical_size: None,
             parent_handle,
+
+            #[cfg(feature = "opengl")]
+            gl_context,
         };
 
         let mut handler = build(&mut crate::Window::new(&mut window));
@@ -307,6 +387,27 @@ impl Window {
 
     pub fn close(&mut self) {
         self.close_requested = true;
+    }
+
+    #[cfg(feature = "opengl")]
+    pub fn gl_context(&self) -> Option<&crate::gl::GlContext> {
+        self.gl_context.as_ref()
+    }
+
+    fn find_visual_for_depth(screen: &StructPtr<xcb_screen_t>, depth: u8) -> Option<u32> {
+        for candidate_depth in screen.allowed_depths() {
+            if candidate_depth.depth() != depth {
+                continue;
+            }
+
+            for candidate_visual in candidate_depth.visuals() {
+                if candidate_visual.class() == xcb::VISUAL_CLASS_TRUE_COLOR as u8 {
+                    return Some(candidate_visual.visual_id());
+                }
+            }
+        }
+
+        None
     }
 
     #[inline]
@@ -538,7 +639,7 @@ impl Window {
 
                 handler.on_event(
                     &mut crate::Window::new(self),
-                    Event::Keyboard(convert_key_press_event(&event)),
+                    Event::Keyboard(convert_key_press_event(event)),
                 );
             }
 
@@ -547,7 +648,7 @@ impl Window {
 
                 handler.on_event(
                     &mut crate::Window::new(self),
-                    Event::Keyboard(convert_key_release_event(&event)),
+                    Event::Keyboard(convert_key_release_event(event)),
                 );
             }
 
@@ -558,11 +659,11 @@ impl Window {
 
 unsafe impl HasRawWindowHandle for Window {
     fn raw_window_handle(&self) -> RawWindowHandle {
-        RawWindowHandle::Xlib(XlibHandle {
-            window: self.window_id as c_ulong,
-            display: self.xcb_connection.conn.get_raw_dpy() as *mut c_void,
-            ..raw_window_handle::unix::XlibHandle::empty()
-        })
+        let mut handle = XlibHandle::empty();
+        handle.window = self.window_id as c_ulong;
+        handle.display = self.xcb_connection.conn.get_raw_dpy() as *mut c_void;
+
+        RawWindowHandle::Xlib(handle)
     }
 }
 

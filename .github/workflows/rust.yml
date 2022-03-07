@@ -21,7 +21,9 @@ jobs:
       with:
         toolchain: stable
         override: true
-    - name: Build
+    - name: Build with default features
       run: cargo build --examples --workspace --verbose
+    - name: Build again with all features
+      run: cargo build --examples --workspace --all-features --verbose
     - name: Run tests
-      run: cargo test --examples --workspace --verbose
+      run: cargo test --examples --workspace --all-features --verbose

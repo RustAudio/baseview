@@ -11,7 +11,6 @@ use super::cursor;
 pub(crate) struct Atoms {
     pub wm_protocols: Option<u32>,
     pub wm_delete_window: Option<u32>,
-    pub wm_normal_hints: Option<u32>,
 }
 
 pub struct XcbConnection {
@@ -20,6 +19,7 @@ pub struct XcbConnection {
 
     pub(crate) atoms: Atoms,
 
+    // FIXME: Same here, there's a ton of unused cursor machinery in here
     pub(super) cursor_cache: HashMap<MouseCursor, u32>,
 }
 
@@ -46,14 +46,13 @@ impl XcbConnection {
 
         conn.set_event_queue_owner(xcb::base::EventQueueOwner::Xcb);
 
-        let (wm_protocols, wm_delete_window, wm_normal_hints) =
-            intern_atoms!(&conn, WM_PROTOCOLS, WM_DELETE_WINDOW, WM_NORMAL_HINTS);
+        let (wm_protocols, wm_delete_window) = intern_atoms!(&conn, WM_PROTOCOLS, WM_DELETE_WINDOW);
 
         Ok(Self {
             conn,
             xlib_display,
 
-            atoms: Atoms { wm_protocols, wm_delete_window, wm_normal_hints },
+            atoms: Atoms { wm_protocols, wm_delete_window },
 
             cursor_cache: HashMap::new(),
         })
@@ -136,7 +135,7 @@ impl XcbConnection {
 
     #[inline]
     pub fn get_scaling(&self) -> Option<f64> {
-        self.get_scaling_xft().or(self.get_scaling_screen_dimensions())
+        self.get_scaling_xft().or_else(|| self.get_scaling_screen_dimensions())
     }
 
     #[inline]

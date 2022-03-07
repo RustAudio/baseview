@@ -1,5 +1,6 @@
 use std::ffi::c_void;
 use std::marker::PhantomData;
+use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -16,7 +17,7 @@ use keyboard_types::KeyboardEvent;
 
 use objc::{msg_send, runtime::Object, sel, sel_impl};
 
-use raw_window_handle::{macos::MacOSHandle, HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::{AppKitHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
     Event, EventStatus, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
@@ -25,6 +26,12 @@ use crate::{
 
 use super::keyboard::KeyboardState;
 use super::view::{create_view, BASEVIEW_STATE_IVAR};
+
+#[cfg(feature = "opengl")]
+use crate::{
+    gl::{GlConfig, GlContext},
+    window::RawWindowHandleWrapper,
+};
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
@@ -37,7 +44,7 @@ pub struct WindowHandle {
 
 impl WindowHandle {
     pub fn close(&mut self) {
-        if let Some(_) = self.raw_window_handle.take() {
+        if self.raw_window_handle.take().is_some() {
             self.close_requested.store(true, Ordering::Relaxed);
         }
     }
@@ -55,7 +62,7 @@ unsafe impl HasRawWindowHandle for WindowHandle {
             }
         }
 
-        RawWindowHandle::MacOS(MacOSHandle { ..MacOSHandle::empty() })
+        RawWindowHandle::AppKit(AppKitHandle::empty())
     }
 }
 
@@ -102,6 +109,9 @@ pub struct Window {
     /// Our subclassed NSView
     ns_view: id,
     close_requested: bool,
+
+    #[cfg(feature = "opengl")]
+    gl_context: Option<GlContext>,
 }
 
 impl Window {
@@ -114,7 +124,7 @@ impl Window {
     {
         let pool = unsafe { NSAutoreleasePool::new(nil) };
 
-        let handle = if let RawWindowHandle::MacOS(handle) = parent.raw_window_handle() {
+        let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
             handle
         } else {
             panic!("Not a macOS window");
@@ -122,7 +132,17 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window { ns_app: None, ns_window: None, ns_view, close_requested: false };
+        let window = Window {
+            ns_app: None,
+            ns_window: None,
+            ns_view,
+            close_requested: false,
+
+            #[cfg(feature = "opengl")]
+            gl_context: options
+                .gl_config
+                .map(|gl_config| Self::create_gl_context(None, ns_view, gl_config)),
+        };
 
         let window_handle = Self::init(true, window, build);
 
@@ -146,7 +166,17 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window { ns_app: None, ns_window: None, ns_view, close_requested: false };
+        let window = Window {
+            ns_app: None,
+            ns_window: None,
+            ns_view,
+            close_requested: false,
+
+            #[cfg(feature = "opengl")]
+            gl_context: options
+                .gl_config
+                .map(|gl_config| Self::create_gl_context(None, ns_view, gl_config)),
+        };
 
         let window_handle = Self::init(true, window, build);
 
@@ -217,6 +247,11 @@ impl Window {
             ns_window: Some(ns_window),
             ns_view,
             close_requested: false,
+
+            #[cfg(feature = "opengl")]
+            gl_context: options
+                .gl_config
+                .map(|gl_config| Self::create_gl_context(Some(ns_window), ns_view, gl_config)),
         };
 
         let _ = Self::init(false, window, build);
@@ -265,6 +300,21 @@ impl Window {
 
     pub fn close(&mut self) {
         self.close_requested = true;
+    }
+
+    #[cfg(feature = "opengl")]
+    pub fn gl_context(&self) -> Option<&GlContext> {
+        self.gl_context.as_ref()
+    }
+
+    #[cfg(feature = "opengl")]
+    fn create_gl_context(ns_window: Option<id>, ns_view: id, config: GlConfig) -> GlContext {
+        let mut handle = AppKitHandle::empty();
+        handle.ns_window = ns_window.unwrap_or(ptr::null_mut()) as *mut c_void;
+        handle.ns_view = ns_view as *mut c_void;
+        let handle = RawWindowHandleWrapper { handle: RawWindowHandle::AppKit(handle) };
+
+        unsafe { GlContext::create(&handle, config).expect("Could not create OpenGL context") }
     }
 }
 
@@ -373,7 +423,7 @@ impl WindowState {
         // Clear ivar before triggering WindowEvent::WillClose. Otherwise, if the
         // handler of the event causes another call to release, this function could be
         // called again, leading to a double free.
-        ns_view_obj.set_ivar(BASEVIEW_STATE_IVAR, ::std::ptr::null() as *const c_void);
+        ns_view_obj.set_ivar(BASEVIEW_STATE_IVAR, ptr::null() as *const c_void);
 
         window_state.trigger_event(Event::Window(WindowEvent::WillClose));
 
@@ -386,12 +436,12 @@ impl WindowState {
 
 unsafe impl HasRawWindowHandle for Window {
     fn raw_window_handle(&self) -> RawWindowHandle {
-        let ns_window = self.ns_window.unwrap_or(::std::ptr::null_mut()) as *mut c_void;
+        let ns_window = self.ns_window.unwrap_or(ptr::null_mut()) as *mut c_void;
 
-        RawWindowHandle::MacOS(MacOSHandle {
-            ns_window,
-            ns_view: self.ns_view as *mut c_void,
-            ..MacOSHandle::empty()
-        })
+        let mut handle = AppKitHandle::empty();
+        handle.ns_window = ns_window;
+        handle.ns_view = self.ns_view as *mut c_void;
+
+        RawWindowHandle::AppKit(handle)
     }
 }
