@@ -303,8 +303,8 @@ impl Window {
     }
 
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<&GlContext> {
-        self.gl_context.as_ref()
+    pub fn gl_context(&mut self) -> Option<GlContext> {
+        self.gl_context.take()
     }
 
     #[cfg(feature = "opengl")]

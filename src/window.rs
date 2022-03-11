@@ -98,10 +98,11 @@ impl<'a> Window<'a> {
         self.window.close();
     }
 
-    /// If provided, then an OpenGL context will be created for this window. You'll be able to
-    /// access this context through [crate::Window::gl_context].
+    /// If the window has been created with [`WindowOpenOptions::gl_config`] set, then this will
+    /// contain the OpenGL context. Calling this function will take ownership of that OpenGL
+    /// context, so you can do this once after which you will need to store the context yourself.
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<&crate::gl::GlContext> {
+    pub fn gl_context(&mut self) -> Option<crate::gl::GlContext> {
         self.window.gl_context()
     }
 }

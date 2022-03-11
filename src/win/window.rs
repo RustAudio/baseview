@@ -35,7 +35,10 @@ use crate::{
 use super::keyboard::KeyboardState;
 
 #[cfg(feature = "opengl")]
-use crate::{gl::GlContext, window::RawWindowHandleWrapper};
+use {
+    crate::{gl::GlContext, window::RawWindowHandleWrapper},
+    std::sync::Mutex,
+};
 
 unsafe fn generate_guid() -> String {
     let mut guid: GUID = std::mem::zeroed();
@@ -373,7 +376,7 @@ struct WindowState {
     dw_style: u32,
 
     #[cfg(feature = "opengl")]
-    gl_context: Arc<Option<GlContext>>,
+    gl_context: Arc<Mutex<Option<GlContext>>>,
 }
 
 impl WindowState {
@@ -392,7 +395,7 @@ pub struct Window {
     hwnd: HWND,
 
     #[cfg(feature = "opengl")]
-    gl_context: Arc<Option<GlContext>>,
+    gl_context: Arc<Mutex<Option<GlContext>>>,
 }
 
 impl Window {
@@ -511,13 +514,14 @@ impl Window {
             // todo: manage error ^
 
             #[cfg(feature = "opengl")]
-            let gl_context: Arc<Option<GlContext>> = Arc::new(options.gl_config.map(|gl_config| {
-                let mut handle = Win32Handle::empty();
-                handle.hwnd = hwnd as *mut c_void;
-                let handle = RawWindowHandleWrapper { handle: RawWindowHandle::Win32(handle) };
+            let gl_context: Arc<Mutex<Option<GlContext>>> =
+                Arc::new(Mutex::new(options.gl_config.map(|gl_config| {
+                    let mut handle = Win32Handle::empty();
+                    handle.hwnd = hwnd as *mut c_void;
+                    let handle = RawWindowHandleWrapper { handle: RawWindowHandle::Win32(handle) };
 
-                GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
-            }));
+                    GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
+                })));
 
             #[cfg(not(feature = "opengl"))]
             let handler = Box::new(build(&mut crate::Window::new(&mut Window { hwnd })));
@@ -608,8 +612,8 @@ impl Window {
     }
 
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<&GlContext> {
-        self.gl_context.as_ref().as_ref()
+    pub fn gl_context(&self) -> Option<GlContext> {
+        self.gl_context.lock().unwrap().take()
     }
 }
 

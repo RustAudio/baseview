@@ -390,8 +390,8 @@ impl Window {
     }
 
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<&crate::gl::GlContext> {
-        self.gl_context.as_ref()
+    pub fn gl_context(&mut self) -> Option<GlContext> {
+        self.gl_context.take()
     }
 
     fn find_visual_for_depth(screen: &StructPtr<xcb_screen_t>, depth: u8) -> Option<u32> {
