@@ -12,7 +12,7 @@ use xcb::StructPtr;
 
 use super::XcbConnection;
 use crate::{
-    Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, WindowEvent,
+    Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
@@ -387,6 +387,18 @@ impl Window {
 
     pub fn close(&mut self) {
         self.close_requested = true;
+    }
+
+    pub fn resize(&mut self, size: Size) {
+        xcb::configure_window(
+            &self.xcb_connection.conn,
+            self.window_id,
+            &[
+                (xcb::CONFIG_WINDOW_WIDTH as u16, size.width.round() as u32),
+                (xcb::CONFIG_WINDOW_HEIGHT as u16, size.height.round() as u32),
+            ],
+        );
+        self.xcb_connection.conn.flush();
     }
 
     #[cfg(feature = "opengl")]
