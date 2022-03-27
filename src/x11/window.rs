@@ -390,12 +390,15 @@ impl Window {
     }
 
     pub fn resize(&mut self, size: Size) {
+        let scaling = self.window_info.scale();
+        self.window_info = WindowInfo::from_logical_size(size, scaling);
+
         xcb::configure_window(
             &self.xcb_connection.conn,
             self.window_id,
             &[
-                (xcb::CONFIG_WINDOW_WIDTH as u16, size.width.round() as u32),
-                (xcb::CONFIG_WINDOW_HEIGHT as u16, size.height.round() as u32),
+                (xcb::CONFIG_WINDOW_WIDTH as u16, self.window_info.physical_size().width),
+                (xcb::CONFIG_WINDOW_HEIGHT as u16, self.window_info.physical_size().height),
             ],
         );
         self.xcb_connection.conn.flush();
