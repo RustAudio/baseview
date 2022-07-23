@@ -5,7 +5,7 @@ use winapi::um::combaseapi::CoCreateGuid;
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
     GetDpiForWindow, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW,
-    ReleaseCapture, SetCapture, SetProcessDpiAwarenessContext, SetTimer, SetWindowLongPtrW,
+    ReleaseCapture, SetCapture, SetFocus, SetProcessDpiAwarenessContext, SetTimer, SetWindowLongPtrW,
     SetWindowPos, TranslateMessage, UnregisterClassW, CS_OWNDC, GET_XBUTTON_WPARAM, GWLP_USERDATA,
     IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE,
     WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
@@ -190,6 +190,7 @@ unsafe extern "system" fn wnd_proc(
                             // Capture the mouse cursor on button down
                             mouse_button_counter = mouse_button_counter.saturating_add(1);
                             SetCapture(hwnd);
+                            SetFocus(hwnd);
                             MouseEvent::ButtonPressed(button)
                         }
                         WM_LBUTTONUP | WM_MBUTTONUP | WM_RBUTTONUP | WM_XBUTTONUP => {
