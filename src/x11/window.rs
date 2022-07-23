@@ -385,6 +385,14 @@ impl Window {
         self.mouse_cursor = mouse_cursor;
     }
 
+    pub fn set_input_focus(&mut self) {
+        //TODO
+    }
+
+    pub fn release_input_focus(&mut self) {
+        //TODO
+    }
+
     pub fn close(&mut self) {
         self.close_requested = true;
     }

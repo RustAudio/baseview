@@ -190,7 +190,6 @@ unsafe extern "system" fn wnd_proc(
                             // Capture the mouse cursor on button down
                             mouse_button_counter = mouse_button_counter.saturating_add(1);
                             SetCapture(hwnd);
-                            SetFocus(hwnd);
                             MouseEvent::ButtonPressed(button)
                         }
                         WM_LBUTTONUP | WM_MBUTTONUP | WM_RBUTTONUP | WM_XBUTTONUP => {
@@ -385,12 +384,13 @@ impl WindowState {
 
     #[cfg(feature = "opengl")]
     fn create_window(&self, hwnd: HWND) -> Window {
-        Window { hwnd, gl_context: self.gl_context.clone() }
+        Window { hwnd, prev_input_focus: null_mut(), gl_context: self.gl_context.clone() }
     }
 }
 
 pub struct Window {
     hwnd: HWND,
+    prev_input_focus: HWND,
 
     #[cfg(feature = "opengl")]
     gl_context: Arc<Option<GlContext>>,
@@ -521,10 +521,11 @@ impl Window {
             }));
 
             #[cfg(not(feature = "opengl"))]
-            let handler = Box::new(build(&mut crate::Window::new(&mut Window { hwnd })));
+            let handler = Box::new(build(&mut crate::Window::new(&mut Window { hwnd, prev_input_focus: null_mut() })));
             #[cfg(feature = "opengl")]
             let handler = Box::new(build(&mut crate::Window::new(&mut Window {
                 hwnd,
+                prev_input_focus: null_mut(),
                 gl_context: gl_context.clone(),
             })));
 
@@ -599,6 +600,21 @@ impl Window {
             }
 
             (window_handle, hwnd)
+        }
+    }
+
+    pub fn set_input_focus(&mut self) {
+        unsafe {
+            self.prev_input_focus = SetFocus(self.hwnd);
+        }
+    }
+
+    pub fn release_input_focus(&mut self) {
+        unsafe {
+            if !self.prev_input_focus.is_null() {
+                SetFocus(self.prev_input_focus);
+                self.prev_input_focus = null_mut();
+            }
         }
     }
 
