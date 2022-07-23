@@ -19,7 +19,6 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
 use std::mem;
 use std::ops::RangeInclusive;
 
@@ -29,15 +28,15 @@ use winapi::shared::minwindef::{HKL, INT, LPARAM, UINT, WPARAM};
 use winapi::shared::ntdef::SHORT;
 use winapi::shared::windef::HWND;
 use winapi::um::winuser::{
-    GetKeyState, GetKeyboardLayout, MapVirtualKeyExW, PeekMessageW, ToUnicodeEx, VkKeyScanW,
-    MAPVK_VK_TO_CHAR, MAPVK_VSC_TO_VK_EX, PM_NOREMOVE, VK_ACCEPT, VK_ADD, VK_APPS, VK_ATTN,
-    VK_BACK, VK_BROWSER_BACK, VK_BROWSER_FAVORITES, VK_BROWSER_FORWARD, VK_BROWSER_HOME,
-    VK_BROWSER_REFRESH, VK_BROWSER_SEARCH, VK_BROWSER_STOP, VK_CANCEL, VK_CAPITAL, VK_CLEAR,
-    VK_CONTROL, VK_CONVERT, VK_CRSEL, VK_DECIMAL, VK_DELETE, VK_DIVIDE, VK_DOWN, VK_END, VK_EREOF,
-    VK_ESCAPE, VK_EXECUTE, VK_EXSEL, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3, VK_F4, VK_F5,
-    VK_F6, VK_F7, VK_F8, VK_F9, VK_FINAL, VK_HELP, VK_HOME, VK_INSERT, VK_JUNJA, VK_KANA, VK_KANJI,
-    VK_LAUNCH_APP1, VK_LAUNCH_APP2, VK_LAUNCH_MAIL, VK_LAUNCH_MEDIA_SELECT, VK_LCONTROL, VK_LEFT,
-    VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
+    GetKeyState, GetKeyboardLayout, MapVirtualKeyExW, PeekMessageW, ToUnicodeEx, MAPVK_VK_TO_CHAR,
+    MAPVK_VSC_TO_VK_EX, PM_NOREMOVE, VK_ACCEPT, VK_ADD, VK_APPS, VK_ATTN, VK_BACK, VK_BROWSER_BACK,
+    VK_BROWSER_FAVORITES, VK_BROWSER_FORWARD, VK_BROWSER_HOME, VK_BROWSER_REFRESH,
+    VK_BROWSER_SEARCH, VK_BROWSER_STOP, VK_CANCEL, VK_CAPITAL, VK_CLEAR, VK_CONTROL, VK_CONVERT,
+    VK_CRSEL, VK_DECIMAL, VK_DELETE, VK_DIVIDE, VK_DOWN, VK_END, VK_EREOF, VK_ESCAPE, VK_EXECUTE,
+    VK_EXSEL, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8,
+    VK_F9, VK_FINAL, VK_HELP, VK_HOME, VK_INSERT, VK_JUNJA, VK_KANA, VK_KANJI, VK_LAUNCH_APP1,
+    VK_LAUNCH_APP2, VK_LAUNCH_MAIL, VK_LAUNCH_MEDIA_SELECT, VK_LCONTROL, VK_LEFT, VK_LMENU,
+    VK_LSHIFT, VK_LWIN, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
     VK_MEDIA_STOP, VK_MENU, VK_MODECHANGE, VK_MULTIPLY, VK_NEXT, VK_NONCONVERT, VK_NUMLOCK,
     VK_NUMPAD0, VK_NUMPAD1, VK_NUMPAD2, VK_NUMPAD3, VK_NUMPAD4, VK_NUMPAD5, VK_NUMPAD6, VK_NUMPAD7,
     VK_NUMPAD8, VK_NUMPAD9, VK_OEM_ATTN, VK_OEM_CLEAR, VK_PAUSE, VK_PLAY, VK_PRINT, VK_PRIOR,
@@ -344,110 +343,6 @@ fn vk_to_key(vk: VkCode) -> Option<Key> {
     })
 }
 
-/// Convert a key to a virtual key code.
-///
-/// The virtual key code is needed in various winapi interfaces, including
-/// accelerators. This provides the virtual key code in the current keyboard
-/// map.
-///
-/// The virtual key code can have modifiers in the higher order byte when the
-/// argument is a `Character` variant. See:
-/// https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-vkkeyscanw
-pub(crate) fn key_to_vk(key: &Key) -> Option<i32> {
-    Some(match key {
-        Key::Character(s) => {
-            if let Some(code_point) = s.chars().next() {
-                if let Ok(wchar) = (code_point as u32).try_into() {
-                    unsafe { VkKeyScanW(wchar) as i32 }
-                } else {
-                    return None;
-                }
-            } else {
-                return None;
-            }
-        }
-        Key::Cancel => VK_CANCEL,
-        Key::Backspace => VK_BACK,
-        Key::Tab => VK_TAB,
-        Key::Clear => VK_CLEAR,
-        Key::Enter => VK_RETURN,
-        Key::Shift => VK_SHIFT,
-        Key::Control => VK_CONTROL,
-        Key::Alt => VK_MENU,
-        Key::Pause => VK_PAUSE,
-        Key::CapsLock => VK_CAPITAL,
-        // TODO: disambiguate kana and hangul? same vk
-        Key::KanaMode => VK_KANA,
-        Key::JunjaMode => VK_JUNJA,
-        Key::FinalMode => VK_FINAL,
-        Key::KanjiMode => VK_KANJI,
-        Key::Escape => VK_ESCAPE,
-        Key::NonConvert => VK_NONCONVERT,
-        Key::Accept => VK_ACCEPT,
-        Key::PageUp => VK_PRIOR,
-        Key::PageDown => VK_NEXT,
-        Key::End => VK_END,
-        Key::Home => VK_HOME,
-        Key::ArrowLeft => VK_LEFT,
-        Key::ArrowUp => VK_UP,
-        Key::ArrowRight => VK_RIGHT,
-        Key::ArrowDown => VK_DOWN,
-        Key::Select => VK_SELECT,
-        Key::Print => VK_PRINT,
-        Key::Execute => VK_EXECUTE,
-        Key::PrintScreen => VK_SNAPSHOT,
-        Key::Insert => VK_INSERT,
-        Key::Delete => VK_DELETE,
-        Key::Help => VK_HELP,
-        Key::Meta => VK_LWIN,
-        Key::ContextMenu => VK_APPS,
-        Key::Standby => VK_SLEEP,
-        Key::F1 => VK_F1,
-        Key::F2 => VK_F2,
-        Key::F3 => VK_F3,
-        Key::F4 => VK_F4,
-        Key::F5 => VK_F5,
-        Key::F6 => VK_F6,
-        Key::F7 => VK_F7,
-        Key::F8 => VK_F8,
-        Key::F9 => VK_F9,
-        Key::F10 => VK_F10,
-        Key::F11 => VK_F11,
-        Key::F12 => VK_F12,
-        Key::NumLock => VK_NUMLOCK,
-        Key::ScrollLock => VK_SCROLL,
-        Key::BrowserBack => VK_BROWSER_BACK,
-        Key::BrowserForward => VK_BROWSER_FORWARD,
-        Key::BrowserRefresh => VK_BROWSER_REFRESH,
-        Key::BrowserStop => VK_BROWSER_STOP,
-        Key::BrowserSearch => VK_BROWSER_SEARCH,
-        Key::BrowserFavorites => VK_BROWSER_FAVORITES,
-        Key::BrowserHome => VK_BROWSER_HOME,
-        Key::AudioVolumeMute => VK_VOLUME_MUTE,
-        Key::AudioVolumeDown => VK_VOLUME_DOWN,
-        Key::AudioVolumeUp => VK_VOLUME_UP,
-        Key::MediaTrackNext => VK_MEDIA_NEXT_TRACK,
-        Key::MediaTrackPrevious => VK_MEDIA_PREV_TRACK,
-        Key::MediaStop => VK_MEDIA_STOP,
-        Key::MediaPlayPause => VK_MEDIA_PLAY_PAUSE,
-        Key::LaunchMail => VK_LAUNCH_MAIL,
-        Key::LaunchMediaPlayer => VK_LAUNCH_MEDIA_SELECT,
-        Key::LaunchApplication1 => VK_LAUNCH_APP1,
-        Key::LaunchApplication2 => VK_LAUNCH_APP2,
-        Key::Alphanumeric => VK_OEM_ATTN,
-        Key::Convert => VK_CONVERT,
-        Key::ModeChange => VK_MODECHANGE,
-        Key::Process => VK_PROCESSKEY,
-        Key::Attn => VK_ATTN,
-        Key::CrSel => VK_CRSEL,
-        Key::ExSel => VK_EXSEL,
-        Key::EraseEof => VK_EREOF,
-        Key::Play => VK_PLAY,
-        Key::ZoomToggle => VK_ZOOM,
-        _ => return None,
-    })
-}
-
 fn code_unit_to_key(code_unit: u32) -> Key {
     match code_unit {
         0x8 | 0x7F => Key::Backspace,
@@ -692,6 +587,7 @@ impl KeyboardState {
                 key_state[VK_LCONTROL as usize] = if has_altgr { 0x80 } else { 0 };
                 key_state[VK_MENU as usize] = if has_altgr { 0x80 } else { 0 };
                 key_state[VK_RMENU as usize] = if has_altgr { 0x80 } else { 0 };
+                #[allow(clippy::iter_overeager_cloned)]
                 for vk in PRINTABLE_VKS.iter().cloned().flatten() {
                     let ret = ToUnicodeEx(
                         vk as UINT,
