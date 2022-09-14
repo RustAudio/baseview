@@ -4,6 +4,7 @@ use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 
 use crate::event::{Event, EventStatus};
 use crate::window_open_options::WindowOpenOptions;
+use crate::MouseCursor;
 
 #[cfg(target_os = "macos")]
 use crate::macos as platform;
@@ -96,6 +97,11 @@ impl<'a> Window<'a> {
     /// Close the window
     pub fn close(&mut self) {
         self.window.close();
+    }
+
+    /// Set the cursor to the given cursor type
+    pub fn set_mouse_cursor(&self, cursor: MouseCursor) {
+        self.window.set_mouse_cursor(cursor);
     }
 
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
