@@ -760,6 +760,10 @@ impl Window<'_> {
         }
     }
 
+    pub fn set_mouse_cursor(&self, cursor: MouseCursor) {
+        //@TODO: Implement
+    }
+
     pub fn close(&mut self) {
         unsafe {
             PostMessageW(self.state.hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
