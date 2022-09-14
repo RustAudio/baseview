@@ -760,7 +760,7 @@ impl Window<'_> {
         }
     }
 
-    pub fn set_mouse_cursor(&self, cursor: MouseCursor) {
+    pub fn set_mouse_cursor(&mut self, cursor: MouseCursor) {
         //@TODO: Implement
     }
 
