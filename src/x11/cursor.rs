@@ -62,6 +62,7 @@ pub(super) fn get_xcursor(display: *mut x11::xlib::Display, cursor: MouseCursor)
 
         MouseCursor::Hand => loadn(&[b"hand2\0", b"hand1\0"]),
         MouseCursor::HandGrabbing => loadn(&[b"closedhand\0", b"grabbing\0"]),
+        MouseCursor::Pointer => loadn(&[b"hand2\0"]),
         MouseCursor::Help => load(b"question_arrow\0"),
 
         MouseCursor::Hidden => create_empty_cursor(display),
