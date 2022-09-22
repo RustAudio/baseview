@@ -19,6 +19,7 @@ use crate::{
     WindowOpenOptions,
 };
 
+use super::keyboard::make_modifiers;
 use super::window::WindowState;
 
 /// Name of the field used to store the `WindowState` pointer.
@@ -33,6 +34,31 @@ macro_rules! add_simple_mouse_class_method {
             };
 
             state.trigger_event(Event::Mouse($event));
+        }
+
+        $class.add_method(
+            sel!($sel:),
+            $sel as extern "C" fn(&Object, Sel, id),
+        );
+    };
+}
+
+/// Similar to [add_simple_mouse_class_method!], but this creates its own event object for the
+/// press/release event and adds the active modifier keys to that event.
+macro_rules! add_mouse_button_class_method {
+    ($class:ident, $sel:ident, $event_ty:ident, $button:expr) => {
+        #[allow(non_snake_case)]
+        extern "C" fn $sel(this: &Object, _: Sel, event: id){
+            let state: &mut WindowState = unsafe {
+                WindowState::from_field(this)
+            };
+
+            let modifiers = unsafe { NSEvent::modifierFlags(event) };
+
+            state.trigger_event(Event::Mouse($event_ty {
+                button: $button,
+                modifiers: make_modifiers(modifiers),
+            }));
         }
 
         $class.add_method(
@@ -126,12 +152,12 @@ unsafe fn create_view_class() -> &'static Class {
         view_did_change_backing_properties as extern "C" fn(&Object, Sel, id),
     );
 
-    add_simple_mouse_class_method!(class, mouseDown, ButtonPressed(MouseButton::Left));
-    add_simple_mouse_class_method!(class, mouseUp, ButtonReleased(MouseButton::Left));
-    add_simple_mouse_class_method!(class, rightMouseDown, ButtonPressed(MouseButton::Right));
-    add_simple_mouse_class_method!(class, rightMouseUp, ButtonReleased(MouseButton::Right));
-    add_simple_mouse_class_method!(class, otherMouseDown, ButtonPressed(MouseButton::Middle));
-    add_simple_mouse_class_method!(class, otherMouseUp, ButtonReleased(MouseButton::Middle));
+    add_mouse_button_class_method!(class, mouseDown, ButtonPressed, MouseButton::Left);
+    add_mouse_button_class_method!(class, mouseUp, ButtonReleased, MouseButton::Left);
+    add_mouse_button_class_method!(class, rightMouseDown, ButtonPressed, MouseButton::Right);
+    add_mouse_button_class_method!(class, rightMouseUp, ButtonReleased, MouseButton::Right);
+    add_mouse_button_class_method!(class, otherMouseDown, ButtonPressed, MouseButton::Middle);
+    add_mouse_button_class_method!(class, otherMouseUp, ButtonReleased, MouseButton::Middle);
     add_simple_mouse_class_method!(class, mouseEntered, MouseEvent::CursorEntered);
     add_simple_mouse_class_method!(class, mouseExited, MouseEvent::CursorLeft);
 
@@ -308,8 +334,12 @@ extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: id) {
 
         msg_send![this, convertPoint:point fromView:nil]
     };
+    let modifiers = unsafe { NSEvent::modifierFlags(event) };
 
     let position = Point { x: point.x, y: point.y };
 
-    state.trigger_event(Event::Mouse(MouseEvent::CursorMoved { position }));
+    state.trigger_event(Event::Mouse(MouseEvent::CursorMoved {
+        position,
+        modifiers: make_modifiers(modifiers),
+    }));
 }
