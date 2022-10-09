@@ -129,23 +129,26 @@ unsafe extern "system" fn wnd_proc(
     if !window_state_ptr.is_null() {
         match msg {
             WM_MOUSEMOVE => {
-                let mut window_state = (*window_state_ptr).borrow_mut();
-                let mut window = window_state.create_window(hwnd);
-                let mut window = crate::Window::new(&mut window);
+                if let Ok(mut window_state) = (*window_state_ptr).try_borrow_mut() {
+                    let mut window = window_state.create_window(hwnd);
+                    let mut window = crate::Window::new(&mut window);
 
-                let x = (lparam & 0xFFFF) as i16 as i32;
-                let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
+                    let x = (lparam & 0xFFFF) as i16 as i32;
+                    let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
-                let physical_pos = PhyPoint { x, y };
-                let logical_pos = physical_pos.to_logical(&window_state.window_info);
-                let event = Event::Mouse(MouseEvent::CursorMoved {
-                    position: logical_pos,
-                    modifiers: window_state.keyboard_state.get_modifiers_from_mouse_wparam(wparam),
-                });
+                    let physical_pos = PhyPoint { x, y };
+                    let logical_pos = physical_pos.to_logical(&window_state.window_info);
+                    let event = Event::Mouse(MouseEvent::CursorMoved {
+                        position: logical_pos,
+                        modifiers: window_state
+                            .keyboard_state
+                            .get_modifiers_from_mouse_wparam(wparam),
+                    });
 
-                window_state.handler.on_event(&mut window, event);
+                    window_state.handler.on_event(&mut window, event);
 
-                return 0;
+                    return 0;
+                };
             }
             WM_MOUSEWHEEL => {
                 let mut window_state = (*window_state_ptr).borrow_mut();
@@ -223,14 +226,15 @@ unsafe extern "system" fn wnd_proc(
                 }
             }
             WM_TIMER => {
-                let mut window_state = (*window_state_ptr).borrow_mut();
-                let mut window = window_state.create_window(hwnd);
-                let mut window = crate::Window::new(&mut window);
+                if let Ok(mut window_state) = (*window_state_ptr).try_borrow_mut() {
+                    let mut window = window_state.create_window(hwnd);
+                    let mut window = crate::Window::new(&mut window);
 
-                if wparam == WIN_FRAME_TIMER {
-                    window_state.handler.on_frame(&mut window);
+                    if wparam == WIN_FRAME_TIMER {
+                        window_state.handler.on_frame(&mut window);
+                    }
+                    return 0;
                 }
-                return 0;
             }
             WM_CLOSE => {
                 // Make sure to release the borrow before the DefWindowProc call
