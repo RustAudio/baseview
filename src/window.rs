@@ -11,6 +11,8 @@ use crate::macos as platform;
 use crate::win as platform;
 #[cfg(target_os = "linux")]
 use crate::x11 as platform;
+#[cfg(target_os = "freebsd")]
+use crate::x11 as platform;
 
 pub struct WindowHandle {
     window_handle: platform::WindowHandle,
