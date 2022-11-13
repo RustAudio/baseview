@@ -360,5 +360,10 @@ extern "C" fn scroll_wheel(this: &Object, _: Sel, event: id) {
         }
     };
 
-    state.trigger_event(Event::Mouse(MouseEvent::WheelScrolled(delta)));
+    let modifiers = unsafe { NSEvent::modifierFlags(event) };
+
+    state.trigger_event(Event::Mouse(MouseEvent::WheelScrolled {
+        delta,
+        modifiers: make_modifiers(modifiers)
+    }));
 }
