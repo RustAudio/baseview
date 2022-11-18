@@ -445,19 +445,21 @@ impl Window {
             xcb::ffi::xcb_get_file_descriptor(raw_conn)
         };
 
-        let mut next_frame = Instant::now() + self.frame_interval;
+        let mut last_frame = Instant::now();
         self.event_loop_running = true;
 
         while self.event_loop_running {
-            let now = Instant::now();
-            let until_next_frame = if now > next_frame {
+            // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
+            // the expected frame time, this will throttle down to prevent multiple frames from
+            // being queued up. The conditional here is needed because event handling and frame
+            // drawing is interleaved. The `poll()` function below will wait until the next frame
+            // can be drawn, or until the window receives an event. We thus need to manually check
+            // if it's already time to draw a new frame.
+            let next_frame = last_frame + self.frame_interval;
+            if Instant::now() >= next_frame {
                 handler.on_frame(&mut crate::Window::new(self));
-
-                next_frame = Instant::now() + self.frame_interval;
-                self.frame_interval
-            } else {
-                next_frame - now
-            };
+                last_frame = Instant::max(next_frame, Instant::now() - self.frame_interval);
+            }
 
             let mut fds = [PollFd::new(xcb_fd, PollFlags::POLLIN)];
 
@@ -466,7 +468,8 @@ impl Window {
             self.drain_xcb_events(handler);
 
             // FIXME: handle errors
-            poll(&mut fds, until_next_frame.subsec_millis() as i32).unwrap();
+            poll(&mut fds, next_frame.duration_since(Instant::now()).subsec_millis() as i32)
+                .unwrap();
 
             if let Some(revents) = fds[0].revents() {
                 if revents.contains(PollFlags::POLLERR) {
