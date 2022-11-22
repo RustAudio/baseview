@@ -9,10 +9,11 @@ use winapi::um::winuser::{
     SetWindowPos, TranslateMessage, UnregisterClassW, CS_OWNDC, GET_XBUTTON_WPARAM, GWLP_USERDATA,
     IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE,
     WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_RBUTTONDOWN,
-    WM_RBUTTONUP, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER,
-    WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, XBUTTON1, XBUTTON2,
+    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD,
+    WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+    XBUTTON1, XBUTTON2,
 };
 
 use std::cell::RefCell;
@@ -147,7 +148,7 @@ unsafe extern "system" fn wnd_proc(
 
                 return 0;
             }
-            WM_MOUSEWHEEL => {
+            WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
                 let mut window_state = (*window_state_ptr).borrow_mut();
                 let mut window = window_state.create_window(hwnd);
                 let mut window = crate::Window::new(&mut window);
@@ -157,7 +158,11 @@ unsafe extern "system" fn wnd_proc(
                 let value = value as f32 / WHEEL_DELTA as f32;
 
                 let event = Event::Mouse(MouseEvent::WheelScrolled {
-                    delta: ScrollDelta::Lines { x: 0.0, y: value },
+                    delta: if msg == WM_MOUSEWHEEL {
+                        ScrollDelta::Lines { x: 0.0, y: value }
+                    } else {
+                        ScrollDelta::Lines { x: value, y: 0.0 }
+                    },
                     modifiers: window_state.keyboard_state.get_modifiers_from_mouse_wparam(wparam),
                 });
 

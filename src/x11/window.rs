@@ -596,20 +596,17 @@ impl Window {
                 let detail = event.detail();
 
                 match detail {
-                    4 => {
+                    4..=7 => {
                         handler.on_event(
                             &mut crate::Window::new(self),
                             Event::Mouse(MouseEvent::WheelScrolled {
-                                delta: ScrollDelta::Lines { x: 0.0, y: 1.0 },
-                                modifiers: key_mods(event.state()),
-                            }),
-                        );
-                    }
-                    5 => {
-                        handler.on_event(
-                            &mut crate::Window::new(self),
-                            Event::Mouse(MouseEvent::WheelScrolled {
-                                delta: ScrollDelta::Lines { x: 0.0, y: -1.0 },
+                                delta: match detail {
+                                    4 => ScrollDelta::Lines { x: 0.0, y: 1.0 },
+                                    5 => ScrollDelta::Lines { x: 0.0, y: -1.0 },
+                                    6 => ScrollDelta::Lines { x: -1.0, y: 0.0 },
+                                    7 => ScrollDelta::Lines { x: 1.0, y: 0.0 },
+                                    _ => unreachable!(),
+                                },
                                 modifiers: key_mods(event.state()),
                             }),
                         );
@@ -631,7 +628,7 @@ impl Window {
                 let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
                 let detail = event.detail();
 
-                if detail != 4 && detail != 5 {
+                if !(4..=7).contains(&detail) {
                     let button_id = mouse_id(detail);
                     handler.on_event(
                         &mut crate::Window::new(self),
@@ -684,8 +681,8 @@ fn mouse_id(id: u8) -> MouseButton {
         1 => MouseButton::Left,
         2 => MouseButton::Middle,
         3 => MouseButton::Right,
-        6 => MouseButton::Back,
-        7 => MouseButton::Forward,
+        8 => MouseButton::Back,
+        9 => MouseButton::Forward,
         id => MouseButton::Other(id),
     }
 }
