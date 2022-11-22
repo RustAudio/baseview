@@ -684,8 +684,8 @@ fn mouse_id(id: u8) -> MouseButton {
         1 => MouseButton::Left,
         2 => MouseButton::Middle,
         3 => MouseButton::Right,
-        6 => MouseButton::Back,
-        7 => MouseButton::Forward,
+        8 => MouseButton::Back,
+        9 => MouseButton::Forward,
         id => MouseButton::Other(id),
     }
 }
