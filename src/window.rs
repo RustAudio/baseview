@@ -50,12 +50,6 @@ unsafe impl HasRawWindowHandle for WindowHandle {
     }
 }
 
-unsafe impl HasRawDisplayHandle for WindowHandle {
-    fn raw_display_handle(&self) -> RawDisplayHandle {
-        self.window_handle.raw_display_handle()
-    }
-}
-
 pub trait WindowHandler {
     fn on_frame(&mut self, window: &mut Window);
     fn on_event(&mut self, window: &mut Window, event: Event) -> EventStatus;
@@ -134,6 +128,12 @@ impl<'a> Window<'a> {
 unsafe impl<'a> HasRawWindowHandle for Window<'a> {
     fn raw_window_handle(&self) -> RawWindowHandle {
         self.window.raw_window_handle()
+    }
+}
+
+unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
+    fn raw_display_handle(&self) -> RawDisplayHandle {
+        self.window.raw_display_handle()
     }
 }
 

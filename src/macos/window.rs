@@ -69,12 +69,6 @@ unsafe impl HasRawWindowHandle for WindowHandle {
     }
 }
 
-unsafe impl HasRawDisplayHandle for WindowHandle {
-    fn raw_display_handle(&self) -> RawDisplayHandle {
-        RawDisplayHandle::AppKit(AppKitDisplayHandle::empty())
-    }
-}
-
 struct ParentHandle {
     _close_requested: Arc<AtomicBool>,
     is_open: Arc<AtomicBool>,
@@ -354,7 +348,7 @@ impl Window {
 
     #[cfg(feature = "opengl")]
     fn create_gl_context(ns_window: Option<id>, ns_view: id, config: GlConfig) -> GlContext {
-        let mut handle = AppKitHandle::empty();
+        let mut handle = AppKitWindowHandle::empty();
         handle.ns_window = ns_window.unwrap_or(ptr::null_mut()) as *mut c_void;
         handle.ns_view = ns_view as *mut c_void;
         let handle = RawWindowHandleWrapper { handle: RawWindowHandle::AppKit(handle) };
@@ -490,6 +484,12 @@ unsafe impl HasRawWindowHandle for Window {
         handle.ns_view = self.ns_view as *mut c_void;
 
         RawWindowHandle::AppKit(handle)
+    }
+}
+
+unsafe impl HasRawDisplayHandle for Window {
+    fn raw_display_handle(&self) -> RawDisplayHandle {
+        RawDisplayHandle::AppKit(AppKitDisplayHandle::empty())
     }
 }
 

@@ -97,12 +97,6 @@ unsafe impl HasRawWindowHandle for WindowHandle {
     }
 }
 
-unsafe impl HasRawDisplayHandle for WindowHandle {
-    fn raw_display_handle(&self) -> RawDisplayHandle {
-        RawDisplayHandle::Windows(WindowsDisplayHandle::empty())
-    }
-}
-
 struct ParentHandle {
     is_open: Rc<Cell<bool>>,
 }
@@ -770,6 +764,12 @@ unsafe impl HasRawWindowHandle for Window<'_> {
         handle.hwnd = self.state.hwnd as *mut c_void;
 
         RawWindowHandle::Windows(handle)
+    }
+}
+
+unsafe impl HasRawDisplayHandle for Window<'_> {
+    fn raw_display_handle(&self) -> RawDisplayHandle {
+        RawDisplayHandle::Windows(WindowsDisplayHandle::empty())
     }
 }
 

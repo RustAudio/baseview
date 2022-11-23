@@ -64,12 +64,6 @@ unsafe impl HasRawWindowHandle for WindowHandle {
     }
 }
 
-unsafe impl HasRawDisplayHandle for WindowHandle {
-    fn raw_display_handle(&self) -> RawDisplayHandle {
-        RawDisplayHandle::Xlib(XlibDisplayHandle::empty())
-    }
-}
-
 struct ParentHandle {
     close_requested: Arc<AtomicBool>,
     is_open: Arc<AtomicBool>,
@@ -700,6 +694,12 @@ unsafe impl HasRawWindowHandle for Window {
         handle.display = self.xcb_connection.conn.get_raw_dpy() as *mut c_void;
 
         RawWindowHandle::Xlib(handle)
+    }
+}
+
+unsafe impl HasRawDisplayHandle for Window {
+    fn raw_display_handle(&self) -> RawDisplayHandle {
+        RawDisplayHandle::Xlib(XlibDisplayHandle::empty())
     }
 }
 
