@@ -22,10 +22,7 @@ use crate::{
 use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
 
 #[cfg(feature = "opengl")]
-use crate::{
-    gl::{platform, GlContext},
-    window::RawWindowHandleWrapper,
-};
+use crate::gl::{platform, GlContext};
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
@@ -326,13 +323,11 @@ impl Window {
         //       compared to when raw-gl-context was a separate crate.
         #[cfg(feature = "opengl")]
         let gl_context = fb_config.map(|fb_config| {
-            let mut handle = XlibWindowHandle::empty();
-            handle.window = window_id as c_ulong;
-            handle.display = xcb_connection.conn.get_raw_dpy() as *mut c_void;
-            let handle = RawWindowHandleWrapper { handle: RawWindowHandle::Xlib(handle) };
+            let window = window_id as c_ulong;
+            let display = xcb_connection.conn.get_raw_dpy() as *mut c_void;
 
             // Because of the visual negotation we had to take some extra steps to create this context
-            let context = unsafe { platform::GlContext::create(&handle, fb_config) }
+            let context = unsafe { platform::GlContext::create(window, display, fb_config) }
                 .expect("Could not create OpenGL context");
             GlContext::new(context)
         });
