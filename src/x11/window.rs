@@ -6,7 +6,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::*;
 
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, XlibHandle};
+use raw_window_handle::{
+    HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, XlibDisplayHandle,
+    XlibWindowHandle,
+};
 use xcb::ffi::xcb_screen_t;
 use xcb::StructPtr;
 
@@ -57,7 +60,13 @@ unsafe impl HasRawWindowHandle for WindowHandle {
             }
         }
 
-        RawWindowHandle::Xlib(XlibHandle::empty())
+        RawWindowHandle::Xlib(XlibWindowHandle::empty())
+    }
+}
+
+unsafe impl HasRawDisplayHandle for WindowHandle {
+    fn raw_display_handle(&self) -> RawDisplayHandle {
+        RawDisplayHandle::Xlib(XlibDisplayHandle::empty())
     }
 }
 
@@ -323,7 +332,7 @@ impl Window {
         //       compared to when raw-gl-context was a separate crate.
         #[cfg(feature = "opengl")]
         let gl_context = fb_config.map(|fb_config| {
-            let mut handle = XlibHandle::empty();
+            let mut handle = XlibWindowHandle::empty();
             handle.window = window_id as c_ulong;
             handle.display = xcb_connection.conn.get_raw_dpy() as *mut c_void;
             let handle = RawWindowHandleWrapper { handle: RawWindowHandle::Xlib(handle) };
@@ -686,7 +695,7 @@ impl Window {
 
 unsafe impl HasRawWindowHandle for Window {
     fn raw_window_handle(&self) -> RawWindowHandle {
-        let mut handle = XlibHandle::empty();
+        let mut handle = XlibWindowHandle::empty();
         handle.window = self.window_id as c_ulong;
         handle.display = self.xcb_connection.conn.get_raw_dpy() as *mut c_void;
 
