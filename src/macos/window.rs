@@ -15,7 +15,7 @@ use core_foundation::runloop::{
 };
 use keyboard_types::KeyboardEvent;
 
-use objc::{msg_send, runtime::Object, sel, sel_impl};
+use objc::{class, msg_send, runtime::Object, sel, sel_impl};
 
 use raw_window_handle::{AppKitHandle, HasRawWindowHandle, RawWindowHandle};
 
@@ -130,7 +130,29 @@ impl Window {
             panic!("Not a macOS window");
         };
 
+        let ns_window = if handle.ns_window.is_null() {
+            unsafe { msg_send![handle.ns_view as *mut Object, window] }
+        } else {
+            handle.ns_window
+        };
+
         let ns_view = unsafe { create_view(&options) };
+
+        if !ns_window.is_null() {
+            unsafe {
+                let notification_center: &Object =
+                    msg_send![class!(NSNotificationCenter), defaultCenter];
+                let notification_name =
+                    NSString::alloc(nil).init_str("NSWindowWillCloseNotification").autorelease();
+                let _: () = msg_send![
+                    notification_center,
+                    addObserver: ns_view
+                    selector: sel!(parentWindowClosing:)
+                    name: notification_name
+                    object: ns_window
+                ];
+            }
+        }
 
         let window = Window {
             ns_app: None,

@@ -138,6 +138,10 @@ unsafe fn create_view_class() -> &'static Class {
         view_will_move_to_window as extern "C" fn(&Object, Sel, id),
     );
     class.add_method(
+        sel!(parentWindowClosing:),
+        parent_window_closing as extern "C" fn(&mut Object, Sel, id),
+    );
+    class.add_method(
         sel!(updateTrackingAreas:),
         update_tracking_areas as extern "C" fn(&Object, Sel, id),
     );
@@ -214,6 +218,16 @@ extern "C" fn release(this: &mut Object, _sel: Sel) {
     unsafe {
         let superclass = msg_send![this, superclass];
         let () = msg_send![super(this, superclass), release];
+    }
+}
+
+extern "C" fn parent_window_closing(this: &mut Object, _sel: Sel, _: id) {
+    unsafe {
+        let state_ptr: *mut c_void = *this.get_ivar(BASEVIEW_STATE_IVAR);
+
+        if !state_ptr.is_null() {
+            WindowState::stop_and_free(this);
+        }
     }
 }
 
