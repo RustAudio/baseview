@@ -685,9 +685,7 @@ impl Window {
 unsafe impl HasRawWindowHandle for Window {
     fn raw_window_handle(&self) -> RawWindowHandle {
         let mut handle = XlibWindowHandle::empty();
-
         handle.window = self.window_id as c_ulong;
-        // FIXME: handle.visual_id?
 
         RawWindowHandle::Xlib(handle)
     }
@@ -695,10 +693,11 @@ unsafe impl HasRawWindowHandle for Window {
 
 unsafe impl HasRawDisplayHandle for Window {
     fn raw_display_handle(&self) -> RawDisplayHandle {
+        let display = self.xcb_connection.conn.get_raw_dpy();
         let mut handle = XlibDisplayHandle::empty();
 
-        handle.display = self.xcb_connection.conn.get_raw_dpy() as *mut c_void;
-        // FIXME: handle.screen?
+        handle.display = display as *mut c_void;
+        handle.screen = unsafe { x11::xlib::XDefaultScreen(display) };
 
         RawDisplayHandle::Xlib(handle)
     }
