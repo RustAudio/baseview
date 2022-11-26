@@ -96,6 +96,7 @@ pub struct Window {
     xcb_connection: XcbConnection,
     window_id: u32,
     window_info: WindowInfo,
+    visual_id: u32,
     // FIXME: There's all this mouse cursor logic but it's never actually used, is this correct?
     mouse_cursor: MouseCursor,
 
@@ -336,6 +337,7 @@ impl Window {
             xcb_connection,
             window_id,
             window_info,
+            visual_id: visual,
             mouse_cursor: MouseCursor::default(),
 
             frame_interval: Duration::from_millis(15),
@@ -685,7 +687,9 @@ impl Window {
 unsafe impl HasRawWindowHandle for Window {
     fn raw_window_handle(&self) -> RawWindowHandle {
         let mut handle = XlibWindowHandle::empty();
-        handle.window = self.window_id as c_ulong;
+
+        handle.window = self.window_id.into();
+        handle.visual_id = self.visual_id.into();
 
         RawWindowHandle::Xlib(handle)
     }
