@@ -78,13 +78,11 @@ impl GlContext {
     ///
     /// Use [Self::get_fb_config_and_visual] to create both of these things.
     pub unsafe fn create(
-        window: c_ulong, display: *mut c_void, config: FbConfig,
+        window: c_ulong, display: *mut xlib::_XDisplay, config: FbConfig,
     ) -> Result<GlContext, GlError> {
         if display.is_null() {
             return Err(GlError::InvalidWindowHandle);
         }
-
-        let display = display as *mut xlib::_XDisplay;
 
         errors::XErrorHandler::handle(display, |error_handler| {
             #[allow(non_snake_case)]

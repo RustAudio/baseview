@@ -324,7 +324,7 @@ impl Window {
         #[cfg(feature = "opengl")]
         let gl_context = fb_config.map(|fb_config| {
             let window = window_id as c_ulong;
-            let display = xcb_connection.conn.get_raw_dpy() as *mut c_void;
+            let display = xcb_connection.conn.get_raw_dpy();
 
             // Because of the visual negotation we had to take some extra steps to create this context
             let context = unsafe { platform::GlContext::create(window, display, fb_config) }
