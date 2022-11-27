@@ -5,7 +5,7 @@ use winapi::um::combaseapi::CoCreateGuid;
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
     GetDpiForWindow, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW,
-    ReleaseCapture, SetCapture, SetProcessDpiAwarenessContext, SetTimer, SetWindowLongPtrW,
+    ReleaseCapture, SetCapture, SetFocus, SetProcessDpiAwarenessContext, SetTimer, SetWindowLongPtrW,
     SetWindowPos, TranslateMessage, UnregisterClassW, CS_OWNDC, GET_XBUTTON_WPARAM, GWLP_USERDATA,
     IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE,
     WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
@@ -400,12 +400,13 @@ impl WindowState {
 
     #[cfg(feature = "opengl")]
     fn create_window(&self, hwnd: HWND) -> Window {
-        Window { hwnd, gl_context: self.gl_context.clone() }
+        Window { hwnd, prev_input_focus: null_mut(), gl_context: self.gl_context.clone() }
     }
 }
 
 pub struct Window {
     hwnd: HWND,
+    prev_input_focus: HWND,
 
     #[cfg(feature = "opengl")]
     gl_context: Arc<Option<GlContext>>,
@@ -536,10 +537,11 @@ impl Window {
             }));
 
             #[cfg(not(feature = "opengl"))]
-            let handler = Box::new(build(&mut crate::Window::new(&mut Window { hwnd })));
+            let handler = Box::new(build(&mut crate::Window::new(&mut Window { hwnd, prev_input_focus: null_mut() })));
             #[cfg(feature = "opengl")]
             let handler = Box::new(build(&mut crate::Window::new(&mut Window {
                 hwnd,
+                prev_input_focus: null_mut(),
                 gl_context: gl_context.clone(),
             })));
 
@@ -614,6 +616,21 @@ impl Window {
             }
 
             (window_handle, hwnd)
+        }
+    }
+
+    pub fn set_input_focus(&mut self) {
+        unsafe {
+            self.prev_input_focus = SetFocus(self.hwnd);
+        }
+    }
+
+    pub fn release_input_focus(&mut self) {
+        unsafe {
+            if !self.prev_input_focus.is_null() {
+                SetFocus(self.prev_input_focus);
+                self.prev_input_focus = null_mut();
+            }
         }
     }
 

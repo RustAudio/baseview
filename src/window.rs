@@ -28,7 +28,7 @@ impl WindowHandle {
     fn new(window_handle: platform::WindowHandle) -> Self {
         Self { window_handle, phantom: PhantomData::default() }
     }
-
+    
     /// Close the window
     pub fn close(&mut self) {
         self.window_handle.close();
@@ -91,6 +91,14 @@ impl<'a> Window<'a> {
         B: Send + 'static,
     {
         platform::Window::open_blocking::<H, B>(options, build)
+    }
+
+    pub fn set_input_focus(&mut self){
+        self.window.set_input_focus();
+    }
+
+    pub fn release_input_focus(&mut self){
+        self.window.release_input_focus();
     }
 
     /// Close the window
