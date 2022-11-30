@@ -16,7 +16,7 @@ use winapi::um::winuser::{
     XBUTTON1, XBUTTON2,
 };
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ffi::{c_void, OsStr};
 use std::marker::PhantomData;
 use std::os::windows::ffi::OsStrExt;
@@ -126,11 +126,12 @@ unsafe extern "system" fn wnd_proc(
         return 0;
     }
 
-    let window_state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RefCell<WindowState>;
+    let window_state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const WindowState;
     if !window_state_ptr.is_null() {
+        let window_state = &*window_state_ptr;
+
         match msg {
             WM_MOUSEMOVE => {
-                let mut window_state = (*window_state_ptr).borrow_mut();
                 let mut window = window_state.create_window(hwnd);
                 let mut window = crate::Window::new(&mut window);
 
@@ -138,18 +139,20 @@ unsafe extern "system" fn wnd_proc(
                 let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
                 let physical_pos = PhyPoint { x, y };
-                let logical_pos = physical_pos.to_logical(&window_state.window_info);
+                let logical_pos = physical_pos.to_logical(&window_state.window_info.borrow());
                 let event = Event::Mouse(MouseEvent::CursorMoved {
                     position: logical_pos,
-                    modifiers: window_state.keyboard_state.get_modifiers_from_mouse_wparam(wparam),
+                    modifiers: window_state
+                        .keyboard_state
+                        .borrow()
+                        .get_modifiers_from_mouse_wparam(wparam),
                 });
 
-                window_state.handler.on_event(&mut window, event);
+                window_state.handler.borrow_mut().on_event(&mut window, event);
 
                 return 0;
             }
             WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
-                let mut window_state = (*window_state_ptr).borrow_mut();
                 let mut window = window_state.create_window(hwnd);
                 let mut window = crate::Window::new(&mut window);
 
@@ -163,20 +166,22 @@ unsafe extern "system" fn wnd_proc(
                     } else {
                         ScrollDelta::Lines { x: value, y: 0.0 }
                     },
-                    modifiers: window_state.keyboard_state.get_modifiers_from_mouse_wparam(wparam),
+                    modifiers: window_state
+                        .keyboard_state
+                        .borrow()
+                        .get_modifiers_from_mouse_wparam(wparam),
                 });
 
-                window_state.handler.on_event(&mut window, event);
+                window_state.handler.borrow_mut().on_event(&mut window, event);
 
                 return 0;
             }
             WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
             | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
-                let mut window_state = (*window_state_ptr).borrow_mut();
                 let mut window = window_state.create_window(hwnd);
                 let mut window = crate::Window::new(&mut window);
 
-                let mut mouse_button_counter = window_state.mouse_button_counter;
+                let mut mouse_button_counter = window_state.mouse_button_counter.get();
 
                 let button = match msg {
                     WM_LBUTTONDOWN | WM_LBUTTONUP => Some(MouseButton::Left),
@@ -200,6 +205,7 @@ unsafe extern "system" fn wnd_proc(
                                 button,
                                 modifiers: window_state
                                     .keyboard_state
+                                    .borrow()
                                     .get_modifiers_from_mouse_wparam(wparam),
                             }
                         }
@@ -214,6 +220,7 @@ unsafe extern "system" fn wnd_proc(
                                 button,
                                 modifiers: window_state
                                     .keyboard_state
+                                    .borrow()
                                     .get_modifiers_from_mouse_wparam(wparam),
                             }
                         }
@@ -222,30 +229,29 @@ unsafe extern "system" fn wnd_proc(
                         }
                     };
 
-                    window_state.mouse_button_counter = mouse_button_counter;
+                    window_state.mouse_button_counter.set(mouse_button_counter);
 
-                    window_state.handler.on_event(&mut window, Event::Mouse(event));
+                    window_state.handler.borrow_mut().on_event(&mut window, Event::Mouse(event));
                 }
             }
             WM_TIMER => {
-                let mut window_state = (*window_state_ptr).borrow_mut();
                 let mut window = window_state.create_window(hwnd);
                 let mut window = crate::Window::new(&mut window);
 
                 if wparam == WIN_FRAME_TIMER {
-                    window_state.handler.on_frame(&mut window);
+                    window_state.handler.borrow_mut().on_frame(&mut window);
                 }
                 return 0;
             }
             WM_CLOSE => {
                 // Make sure to release the borrow before the DefWindowProc call
                 {
-                    let mut window_state = (*window_state_ptr).borrow_mut();
                     let mut window = window_state.create_window(hwnd);
                     let mut window = crate::Window::new(&mut window);
 
                     window_state
                         .handler
+                        .borrow_mut()
                         .on_event(&mut window, Event::Window(WindowEvent::WillClose));
                 }
 
@@ -255,15 +261,16 @@ unsafe extern "system" fn wnd_proc(
             }
             WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP
             | WM_INPUTLANGCHANGE => {
-                let mut window_state = (*window_state_ptr).borrow_mut();
                 let mut window = window_state.create_window(hwnd);
                 let mut window = crate::Window::new(&mut window);
 
-                let opt_event =
-                    window_state.keyboard_state.process_message(hwnd, msg, wparam, lparam);
+                let opt_event = window_state
+                    .keyboard_state
+                    .borrow_mut()
+                    .process_message(hwnd, msg, wparam, lparam);
 
                 if let Some(event) = opt_event {
-                    window_state.handler.on_event(&mut window, Event::Keyboard(event));
+                    window_state.handler.borrow_mut().on_event(&mut window, Event::Keyboard(event));
                 }
 
                 if msg != WM_SYSKEYDOWN {
@@ -271,45 +278,45 @@ unsafe extern "system" fn wnd_proc(
                 }
             }
             WM_SIZE => {
-                let mut window_state = (*window_state_ptr).borrow_mut();
                 let mut window = window_state.create_window(hwnd);
                 let mut window = crate::Window::new(&mut window);
 
                 let width = (lparam & 0xFFFF) as u16 as u32;
                 let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
 
-                window_state.window_info = WindowInfo::from_physical_size(
-                    PhySize { width, height },
-                    window_state.window_info.scale(),
-                );
+                let window_info = {
+                    let mut window_info = window_state.window_info.borrow_mut();
+                    *window_info = WindowInfo::from_physical_size(
+                        PhySize { width, height },
+                        window_info.scale(),
+                    );
 
-                let window_info = window_state.window_info;
+                    window_info.clone()
+                };
 
                 window_state
                     .handler
+                    .borrow_mut()
                     .on_event(&mut window, Event::Window(WindowEvent::Resized(window_info)));
             }
             WM_DPICHANGED => {
-                let mut window_state = (*window_state_ptr).borrow_mut();
-
                 // To avoid weirdness with the realtime borrow checker.
                 let new_rect = {
                     if let WindowScalePolicy::SystemScaleFactor = window_state.scale_policy {
                         let dpi = (wparam & 0xFFFF) as u16 as u32;
                         let scale_factor = dpi as f64 / 96.0;
 
-                        window_state.window_info = WindowInfo::from_logical_size(
-                            window_state.window_info.logical_size(),
-                            scale_factor,
-                        );
+                        let mut window_info = window_state.window_info.borrow_mut();
+                        *window_info =
+                            WindowInfo::from_logical_size(window_info.logical_size(), scale_factor);
 
                         Some((
                             RECT {
                                 left: 0,
                                 top: 0,
                                 // todo: check if usize fits into i32
-                                right: window_state.window_info.physical_size().width as i32,
-                                bottom: window_state.window_info.physical_size().height as i32,
+                                right: window_info.physical_size().width as i32,
+                                bottom: window_info.physical_size().height as i32,
                             },
                             window_state.dw_style,
                         ))
@@ -336,8 +343,7 @@ unsafe extern "system" fn wnd_proc(
                 }
             }
             WM_NCDESTROY => {
-                let window_state = Box::from_raw(window_state_ptr);
-                unregister_wnd_class(window_state.borrow().window_class);
+                unregister_wnd_class(window_state.window_class);
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             }
             _ => {
@@ -378,13 +384,18 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
     UnregisterClassW(wnd_class as _, null_mut());
 }
 
+/// All data associated with the window. This uses internal mutability so the outer struct doesn't
+/// need to be mutably borrowed. Mutably borrowing the entire `WindowState` can be problematic
+/// because of the Windows message loops' reentrant nature. Care still needs to be taken to prevent
+/// `handler` from indirectly triggering other events that would also need to be handled using
+/// `handler`.
 struct WindowState {
     window_class: ATOM,
-    window_info: WindowInfo,
+    window_info: RefCell<WindowInfo>,
     _parent_handle: Option<ParentHandle>,
-    keyboard_state: KeyboardState,
-    mouse_button_counter: usize,
-    handler: Box<dyn WindowHandler>,
+    keyboard_state: RefCell<KeyboardState>,
+    mouse_button_counter: Cell<usize>,
+    handler: RefCell<Box<dyn WindowHandler>>,
     scale_policy: WindowScalePolicy,
     dw_style: u32,
 
@@ -536,29 +547,30 @@ impl Window {
             }));
 
             #[cfg(not(feature = "opengl"))]
-            let handler = Box::new(build(&mut crate::Window::new(&mut Window { hwnd })));
+            let handler = build(&mut crate::Window::new(&mut Window { hwnd }));
             #[cfg(feature = "opengl")]
-            let handler = Box::new(build(&mut crate::Window::new(&mut Window {
+            let handler = build(&mut crate::Window::new(&mut Window {
                 hwnd,
                 gl_context: gl_context.clone(),
-            })));
+            }));
+            let handler = RefCell::new(Box::new(handler));
 
             let (parent_handle, window_handle) = ParentHandle::new(hwnd);
             let parent_handle = if parented { Some(parent_handle) } else { None };
 
-            let mut window_state = Box::new(RefCell::new(WindowState {
+            let window_state = Box::new(WindowState {
                 window_class,
-                window_info,
+                window_info: RefCell::new(window_info),
                 _parent_handle: parent_handle,
-                keyboard_state: KeyboardState::new(),
-                mouse_button_counter: 0,
+                keyboard_state: RefCell::new(KeyboardState::new()),
+                mouse_button_counter: Cell::new(0),
                 handler,
                 scale_policy: options.scale,
                 dw_style: flags,
 
                 #[cfg(feature = "opengl")]
                 gl_context,
-            }));
+            });
 
             // Only works on Windows 10 unfortunately.
             SetProcessDpiAwarenessContext(
@@ -571,19 +583,17 @@ impl Window {
                 let dpi = GetDpiForWindow(hwnd);
                 let scale_factor = dpi as f64 / 96.0;
 
-                let mut window_state = window_state.get_mut();
-                if window_state.window_info.scale() != scale_factor {
-                    window_state.window_info = WindowInfo::from_logical_size(
-                        window_state.window_info.logical_size(),
-                        scale_factor,
-                    );
+                let mut window_info = window_state.window_info.borrow_mut();
+                if window_info.scale() != scale_factor {
+                    *window_info =
+                        WindowInfo::from_logical_size(window_info.logical_size(), scale_factor);
 
                     Some(RECT {
                         left: 0,
                         top: 0,
                         // todo: check if usize fits into i32
-                        right: window_state.window_info.physical_size().width as i32,
-                        bottom: window_state.window_info.physical_size().height as i32,
+                        right: window_info.physical_size().width as i32,
+                        bottom: window_info.physical_size().height as i32,
                     })
                 } else {
                     None
