@@ -21,8 +21,8 @@ use std::ffi::{c_void, OsStr};
 use std::marker::PhantomData;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
 
@@ -61,7 +61,7 @@ const WIN_FRAME_TIMER: usize = 4242;
 
 pub struct WindowHandle {
     hwnd: Option<HWND>,
-    is_open: Arc<AtomicBool>,
+    is_open: Rc<AtomicBool>,
 
     // Ensure handle is !Send
     _phantom: PhantomData<*mut ()>,
@@ -95,16 +95,16 @@ unsafe impl HasRawWindowHandle for WindowHandle {
 }
 
 struct ParentHandle {
-    is_open: Arc<AtomicBool>,
+    is_open: Rc<AtomicBool>,
 }
 
 impl ParentHandle {
     pub fn new(hwnd: HWND) -> (Self, WindowHandle) {
-        let is_open = Arc::new(AtomicBool::new(true));
+        let is_open = Rc::new(AtomicBool::new(true));
 
         let handle = WindowHandle {
             hwnd: Some(hwnd),
-            is_open: Arc::clone(&is_open),
+            is_open: Rc::clone(&is_open),
             _phantom: PhantomData::default(),
         };
 
@@ -400,7 +400,7 @@ struct WindowState {
     dw_style: u32,
 
     #[cfg(feature = "opengl")]
-    gl_context: Arc<Option<GlContext>>,
+    gl_context: Rc<Option<GlContext>>,
 }
 
 impl WindowState {
@@ -419,7 +419,7 @@ pub struct Window {
     hwnd: HWND,
 
     #[cfg(feature = "opengl")]
-    gl_context: Arc<Option<GlContext>>,
+    gl_context: Rc<Option<GlContext>>,
 }
 
 impl Window {
@@ -538,7 +538,7 @@ impl Window {
             // todo: manage error ^
 
             #[cfg(feature = "opengl")]
-            let gl_context: Arc<Option<GlContext>> = Arc::new(options.gl_config.map(|gl_config| {
+            let gl_context: Rc<Option<GlContext>> = Rc::new(options.gl_config.map(|gl_config| {
                 let mut handle = Win32Handle::empty();
                 handle.hwnd = hwnd as *mut c_void;
                 let handle = RawWindowHandleWrapper { handle: RawWindowHandle::Win32(handle) };
