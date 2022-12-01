@@ -124,6 +124,13 @@ impl Window {
     {
         let pool = unsafe { NSAutoreleasePool::new(nil) };
 
+        let scaling = match options.scale {
+            WindowScalePolicy::ScaleFactor(scale) => scale,
+            WindowScalePolicy::SystemScaleFactor => 1.0,
+        };
+
+        let window_info = WindowInfo::from_logical_size(options.size, scaling);
+
         let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
             handle
         } else {
@@ -144,7 +151,7 @@ impl Window {
                 .map(|gl_config| Self::create_gl_context(None, ns_view, gl_config)),
         };
 
-        let window_handle = Self::init(true, window, build);
+        let window_handle = Self::init(true, window, window_info, build);
 
         unsafe {
             let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
@@ -164,6 +171,13 @@ impl Window {
     {
         let pool = unsafe { NSAutoreleasePool::new(nil) };
 
+        let scaling = match options.scale {
+            WindowScalePolicy::ScaleFactor(scale) => scale,
+            WindowScalePolicy::SystemScaleFactor => 1.0,
+        };
+
+        let window_info = WindowInfo::from_logical_size(options.size, scaling);
+
         let ns_view = unsafe { create_view(&options) };
 
         let window = Window {
@@ -178,7 +192,7 @@ impl Window {
                 .map(|gl_config| Self::create_gl_context(None, ns_view, gl_config)),
         };
 
-        let window_handle = Self::init(true, window, build);
+        let window_handle = Self::init(true, window, window_info, build);
 
         unsafe {
             let () = msg_send![pool, drain];
@@ -254,7 +268,7 @@ impl Window {
                 .map(|gl_config| Self::create_gl_context(Some(ns_window), ns_view, gl_config)),
         };
 
-        let _ = Self::init(false, window, build);
+        let _ = Self::init(false, window, window_info, build);
 
         unsafe {
             ns_window.setContentView_(ns_view);
@@ -266,7 +280,9 @@ impl Window {
         }
     }
 
-    fn init<H, B>(parented: bool, mut window: Window, build: B) -> WindowHandle
+    fn init<H, B>(
+        parented: bool, mut window: Window, window_info: WindowInfo, build: B,
+    ) -> WindowHandle
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -285,6 +301,7 @@ impl Window {
             keyboard_state: KeyboardState::new(),
             frame_timer: None,
             retain_count_after_build,
+            window_info,
             _parent_handle: parent_handle,
         }));
 
@@ -325,6 +342,8 @@ pub(super) struct WindowState {
     frame_timer: Option<CFRunLoopTimer>,
     _parent_handle: Option<ParentHandle>,
     pub retain_count_after_build: usize,
+    /// The last known window info for this window.
+    pub window_info: WindowInfo,
 }
 
 impl WindowState {
