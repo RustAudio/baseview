@@ -315,18 +315,25 @@ unsafe fn wnd_proc_inner(
             let width = (lparam & 0xFFFF) as u16 as u32;
             let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
 
-            let window_info = {
+            let new_window_info = {
                 let mut window_info = window_state.window_info.borrow_mut();
-                *window_info =
+                let new_window_info =
                     WindowInfo::from_physical_size(PhySize { width, height }, window_info.scale());
 
-                *window_info
+                // Only send the event if anything changed
+                if window_info.physical_size() == new_window_info.physical_size() {
+                    return None;
+                }
+
+                *window_info = new_window_info;
+
+                new_window_info
             };
 
             window_state
                 .handler
                 .borrow_mut()
-                .on_event(&mut window, Event::Window(WindowEvent::Resized(window_info)));
+                .on_event(&mut window, Event::Window(WindowEvent::Resized(new_window_info)));
         }
         WM_DPICHANGED => {
             // To avoid weirdness with the realtime borrow checker.
