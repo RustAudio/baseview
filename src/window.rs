@@ -101,7 +101,6 @@ impl<'a> Window<'a> {
 
     /// Resize the window to the given size. The size is always in logical pixels. DPI scaling will
     /// automatically be accounted for.
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub fn resize(&mut self, size: Size) {
         self.window.resize(size);
     }

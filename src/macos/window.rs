@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use cocoa::appkit::{
-    NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSWindow,
-    NSWindowStyleMask,
+    NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSView,
+    NSWindow, NSWindowStyleMask,
 };
-use cocoa::base::{id, nil, NO};
+use cocoa::base::{id, nil, NO, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use core_foundation::runloop::{
     CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer, kCFRunLoopDefaultMode,
@@ -20,7 +20,7 @@ use objc::{msg_send, runtime::Object, sel, sel_impl};
 use raw_window_handle::{AppKitHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    Event, EventStatus, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    Event, EventStatus, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
     WindowScalePolicy,
 };
 
@@ -317,6 +317,28 @@ impl Window {
 
     pub fn close(&mut self) {
         self.close_requested = true;
+    }
+
+    pub fn resize(&mut self, size: Size) {
+        let size = NSSize::new(size.width, size.height);
+
+        unsafe { NSView::setFrameSize(self.ns_view, size) };
+        unsafe {
+            let _: () = msg_send![self.ns_view, setNeedsDisplay: YES];
+        }
+
+        // When using OpenGL the `NSOpenGLView` needs to be resized separately? Why? Because macOS.
+        #[cfg(feature = "opengl")]
+        if let Some(gl_context) = &self.gl_context {
+            gl_context.resize(size);
+        }
+
+        // If this is a standalone window then we'll also need to resize the window itself
+        if let Some(ns_window) = self.ns_window {
+            let mut frame = unsafe { NSWindow::frame(ns_window) };
+            frame.size = size;
+            unsafe { NSWindow::setFrame_display_(ns_window, frame, YES) }
+        }
     }
 
     #[cfg(feature = "opengl")]
