@@ -391,17 +391,20 @@ impl Window {
 
     pub fn resize(&mut self, size: Size) {
         let scaling = self.window_info.scale();
-        self.window_info = WindowInfo::from_logical_size(size, scaling);
+        let new_window_info = WindowInfo::from_logical_size(size, scaling);
 
         xcb::configure_window(
             &self.xcb_connection.conn,
             self.window_id,
             &[
-                (xcb::CONFIG_WINDOW_WIDTH as u16, self.window_info.physical_size().width),
-                (xcb::CONFIG_WINDOW_HEIGHT as u16, self.window_info.physical_size().height),
+                (xcb::CONFIG_WINDOW_WIDTH as u16, new_window_info.physical_size().width),
+                (xcb::CONFIG_WINDOW_HEIGHT as u16, new_window_info.physical_size().height),
             ],
         );
         self.xcb_connection.conn.flush();
+
+        // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
+        // and notify the window handler about it
     }
 
     #[cfg(feature = "opengl")]
