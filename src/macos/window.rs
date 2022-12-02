@@ -336,7 +336,12 @@ impl Window {
         // If this is a standalone window then we'll also need to resize the window itself
         if let Some(ns_window) = self.ns_window {
             let mut frame = unsafe { NSWindow::frame(ns_window) };
+
+            // macOS wants you to manually add the size of the window decorations to the frame's
+            // size
             frame.size = size;
+            let frame = unsafe { NSWindow::frameRectForContentRect_(ns_window, frame) };
+
             unsafe { NSWindow::setFrame_display_(ns_window, frame, YES) }
         }
     }
