@@ -320,7 +320,9 @@ impl Window {
     }
 
     pub fn resize(&mut self, size: Size) {
-        let size = NSSize::new(size.width, size.height);
+        // NOTE: macOS gives you a personal rave if you pass in fractional pixels here. Even though
+        //       the size is in fractional pixels.
+        let size = NSSize::new(size.width.round(), size.height.round());
 
         unsafe { NSView::setFrameSize(self.ns_view, size) };
         unsafe {
