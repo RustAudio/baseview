@@ -106,4 +106,10 @@ impl GlContext {
     pub fn swap_buffers(&self) {
         self.context.swap_buffers();
     }
+
+    /// On macOS the `NSOpenGLView` needs to be resized separtely from our main view.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn resize(&self, size: cocoa::foundation::NSSize) {
+        self.context.resize(size);
+    }
 }
