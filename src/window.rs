@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::{HasRawDisplayHandle, RawDisplayHandle};
 
 use crate::event::{Event, EventStatus};
 use crate::window_open_options::WindowOpenOptions;
@@ -22,6 +23,10 @@ pub struct WindowHandle {
 /// have a raw window handle, that would be silly.
 pub(crate) struct RawWindowHandleWrapper {
     pub handle: RawWindowHandle,
+}
+
+pub(crate) struct RawDisplayHandleWrapper {
+    pub handle: RawDisplayHandle,
 }
 
 impl WindowHandle {
@@ -114,6 +119,18 @@ unsafe impl<'a> HasRawWindowHandle for Window<'a> {
 
 unsafe impl HasRawWindowHandle for RawWindowHandleWrapper {
     fn raw_window_handle(&self) -> RawWindowHandle {
+        self.handle
+    }
+}
+
+unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
+    fn raw_display_handle(&self) -> RawDisplayHandle {
+        self.window.raw_display_handle()
+    }
+}
+
+unsafe impl HasRawDisplayHandle for RawDisplayHandleWrapper {
+    fn raw_display_handle(&self) -> RawDisplayHandle {
         self.handle
     }
 }
