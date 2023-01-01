@@ -126,11 +126,9 @@ unsafe extern "system" fn wnd_proc(
         return 0;
     }
 
-    let window_state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const WindowState;
+    let window_state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut WindowState;
     if !window_state_ptr.is_null() {
-        let window_state = &*window_state_ptr;
-
-        let result = wnd_proc_inner(hwnd, msg, wparam, lparam, window_state);
+        let result = wnd_proc_inner(hwnd, msg, wparam, lparam, &*window_state_ptr);
 
         // If any of the above event handlers caused tasks to be pushed to the deferred tasks list,
         // then we'll try to handle them now
@@ -139,12 +137,19 @@ unsafe extern "system" fn wnd_proc(
             //       the borrow of `window_state.deferred_tasks` into the call of
             //       `window_state.handle_deferred_task()` since that may also generate additional
             //       messages.
-            let task = match window_state.deferred_tasks.borrow_mut().pop_front() {
+            let task = match (*window_state_ptr).deferred_tasks.borrow_mut().pop_front() {
                 Some(task) => task,
                 None => break,
             };
 
-            window_state.handle_deferred_task(task);
+            (*window_state_ptr).handle_deferred_task(task);
+        }
+
+        // NOTE: This is not handled in `wnd_proc_inner` because of the deferred task loop above
+        if msg == WM_NCDESTROY {
+            unregister_wnd_class((*window_state_ptr).window_class);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            drop(Box::from_raw(window_state_ptr));
         }
 
         // The actual custom window proc has been moved to another function so we can always handle
@@ -182,7 +187,7 @@ unsafe fn wnd_proc_inner(
 
             window_state.handler.borrow_mut().on_event(&mut window, event);
 
-            return Some(0);
+            Some(0)
         }
         WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
             let mut window = window_state.create_window(hwnd);
@@ -206,7 +211,7 @@ unsafe fn wnd_proc_inner(
 
             window_state.handler.borrow_mut().on_event(&mut window, event);
 
-            return Some(0);
+            Some(0)
         }
         WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
         | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
@@ -265,6 +270,8 @@ unsafe fn wnd_proc_inner(
 
                 window_state.handler.borrow_mut().on_event(&mut window, Event::Mouse(event));
             }
+
+            None
         }
         WM_TIMER => {
             let mut window = window_state.create_window(hwnd);
@@ -273,7 +280,8 @@ unsafe fn wnd_proc_inner(
             if wparam == WIN_FRAME_TIMER {
                 window_state.handler.borrow_mut().on_frame(&mut window);
             }
-            return Some(0);
+
+            Some(0)
         }
         WM_CLOSE => {
             // Make sure to release the borrow before the DefWindowProc call
@@ -288,8 +296,8 @@ unsafe fn wnd_proc_inner(
             }
 
             // DestroyWindow(hwnd);
-            // return Some(0);
-            return Some(DefWindowProcW(hwnd, msg, wparam, lparam));
+            // Some(0)
+            Some(DefWindowProcW(hwnd, msg, wparam, lparam))
         }
         WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP
         | WM_INPUTLANGCHANGE => {
@@ -304,7 +312,9 @@ unsafe fn wnd_proc_inner(
             }
 
             if msg != WM_SYSKEYDOWN {
-                return Some(0);
+                Some(0)
+            } else {
+                None
             }
         }
         WM_SIZE => {
@@ -333,6 +343,8 @@ unsafe fn wnd_proc_inner(
                 .handler
                 .borrow_mut()
                 .on_event(&mut window, Event::Window(WindowEvent::Resized(new_window_info)));
+
+            None
         }
         WM_DPICHANGED => {
             // To avoid weirdness with the realtime borrow checker.
@@ -376,20 +388,17 @@ unsafe fn wnd_proc_inner(
                     SWP_NOZORDER | SWP_NOMOVE,
                 );
             }
-        }
-        WM_NCDESTROY => {
-            unregister_wnd_class(window_state.window_class);
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-        }
-        _ => {
-            if msg == BV_WINDOW_MUST_CLOSE {
-                DestroyWindow(hwnd);
-                return Some(0);
-            }
-        }
-    }
 
-    None
+            None
+        }
+        // NOTE: `WM_NCDESTROY` is handled in the outer function because this deallocates the window
+        //        state
+        BV_WINDOW_MUST_CLOSE => {
+            DestroyWindow(hwnd);
+            Some(0)
+        }
+        _ => None,
+    }
 }
 
 unsafe fn register_wnd_class() -> ATOM {
