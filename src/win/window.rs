@@ -169,7 +169,7 @@ unsafe fn wnd_proc_inner(
 ) -> Option<LRESULT> {
     match msg {
         WM_MOUSEMOVE => {
-            let mut window = window_state.create_window(hwnd);
+            let mut window = window_state.create_window();
             let mut window = crate::Window::new(&mut window);
 
             let x = (lparam & 0xFFFF) as i16 as i32;
@@ -185,12 +185,12 @@ unsafe fn wnd_proc_inner(
                     .get_modifiers_from_mouse_wparam(wparam),
             });
 
-            window_state.handler.borrow_mut().on_event(&mut window, event);
+            window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
 
             Some(0)
         }
         WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
-            let mut window = window_state.create_window(hwnd);
+            let mut window = window_state.create_window();
             let mut window = crate::Window::new(&mut window);
 
             let value = (wparam >> 16) as i16;
@@ -209,13 +209,13 @@ unsafe fn wnd_proc_inner(
                     .get_modifiers_from_mouse_wparam(wparam),
             });
 
-            window_state.handler.borrow_mut().on_event(&mut window, event);
+            window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
 
             Some(0)
         }
         WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
         | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
-            let mut window = window_state.create_window(hwnd);
+            let mut window = window_state.create_window();
             let mut window = crate::Window::new(&mut window);
 
             let mut mouse_button_counter = window_state.mouse_button_counter.get();
@@ -268,17 +268,22 @@ unsafe fn wnd_proc_inner(
 
                 window_state.mouse_button_counter.set(mouse_button_counter);
 
-                window_state.handler.borrow_mut().on_event(&mut window, Event::Mouse(event));
+                window_state
+                    .handler
+                    .borrow_mut()
+                    .as_mut()
+                    .unwrap()
+                    .on_event(&mut window, Event::Mouse(event));
             }
 
             None
         }
         WM_TIMER => {
-            let mut window = window_state.create_window(hwnd);
+            let mut window = window_state.create_window();
             let mut window = crate::Window::new(&mut window);
 
             if wparam == WIN_FRAME_TIMER {
-                window_state.handler.borrow_mut().on_frame(&mut window);
+                window_state.handler.borrow_mut().as_mut().unwrap().on_frame(&mut window);
             }
 
             Some(0)
@@ -286,12 +291,14 @@ unsafe fn wnd_proc_inner(
         WM_CLOSE => {
             // Make sure to release the borrow before the DefWindowProc call
             {
-                let mut window = window_state.create_window(hwnd);
+                let mut window = window_state.create_window();
                 let mut window = crate::Window::new(&mut window);
 
                 window_state
                     .handler
                     .borrow_mut()
+                    .as_mut()
+                    .unwrap()
                     .on_event(&mut window, Event::Window(WindowEvent::WillClose));
             }
 
@@ -301,14 +308,19 @@ unsafe fn wnd_proc_inner(
         }
         WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP
         | WM_INPUTLANGCHANGE => {
-            let mut window = window_state.create_window(hwnd);
+            let mut window = window_state.create_window();
             let mut window = crate::Window::new(&mut window);
 
             let opt_event =
                 window_state.keyboard_state.borrow_mut().process_message(hwnd, msg, wparam, lparam);
 
             if let Some(event) = opt_event {
-                window_state.handler.borrow_mut().on_event(&mut window, Event::Keyboard(event));
+                window_state
+                    .handler
+                    .borrow_mut()
+                    .as_mut()
+                    .unwrap()
+                    .on_event(&mut window, Event::Keyboard(event));
             }
 
             if msg != WM_SYSKEYDOWN {
@@ -318,7 +330,7 @@ unsafe fn wnd_proc_inner(
             }
         }
         WM_SIZE => {
-            let mut window = window_state.create_window(hwnd);
+            let mut window = window_state.create_window();
             let mut window = crate::Window::new(&mut window);
 
             let width = (lparam & 0xFFFF) as u16 as u32;
@@ -342,6 +354,8 @@ unsafe fn wnd_proc_inner(
             window_state
                 .handler
                 .borrow_mut()
+                .as_mut()
+                .unwrap()
                 .on_event(&mut window, Event::Window(WindowEvent::Resized(new_window_info)));
 
             None
@@ -433,13 +447,17 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 /// `handler` from indirectly triggering other events that would also need to be handled using
 /// `handler`.
 struct WindowState {
-    hwnd: HWND,
+    /// The HWND belonging to this window. The window's actual state is stored in the `WindowState`
+    /// struct associated with this HWND through `unsafe { GetWindowLongPtrW(self.hwnd,
+    /// GWLP_USERDATA) } as *const WindowState`.
+    pub hwnd: HWND,
     window_class: ATOM,
     window_info: RefCell<WindowInfo>,
     _parent_handle: Option<ParentHandle>,
     keyboard_state: RefCell<KeyboardState>,
     mouse_button_counter: Cell<usize>,
-    handler: RefCell<Box<dyn WindowHandler>>,
+    // Initialized late so the `Window` can hold a reference to this `WindowState`
+    handler: RefCell<Option<Box<dyn WindowHandler>>>,
     scale_policy: WindowScalePolicy,
     dw_style: u32,
 
@@ -448,25 +466,15 @@ struct WindowState {
     /// handler requests a resize in response to a keyboard event, the window state will already be
     /// borrowed in `wnd_proc`. So the `resize()` function below cannot also mutably borrow that
     /// window state at the same time.
-    deferred_tasks: Rc<RefCell<VecDeque<WindowTask>>>,
+    pub deferred_tasks: RefCell<VecDeque<WindowTask>>,
 
     #[cfg(feature = "opengl")]
-    gl_context: Rc<Option<GlContext>>,
+    pub gl_context: Option<GlContext>,
 }
 
 impl WindowState {
-    #[cfg(not(feature = "opengl"))]
-    fn create_window(&self, hwnd: HWND) -> Window {
-        Window { hwnd, deferred_tasks: self.deferred_tasks.clone() }
-    }
-
-    #[cfg(feature = "opengl")]
-    fn create_window(&self, hwnd: HWND) -> Window {
-        Window {
-            hwnd,
-            deferred_tasks: self.deferred_tasks.clone(),
-            gl_context: self.gl_context.clone(),
-        }
+    fn create_window(&self) -> Window {
+        Window { state: self }
     }
 
     /// Handle a deferred task as described in [`Self::deferred_tasks
@@ -506,20 +514,11 @@ enum WindowTask {
     Resize(Size),
 }
 
-pub struct Window {
-    /// The HWND belonging to this window. The window's actual state is stored in the `WindowState`
-    /// struct associated with this HWND through `unsafe { GetWindowLongPtrW(self.hwnd,
-    /// GWLP_USERDATA) } as *const WindowState`.
-    hwnd: HWND,
-
-    /// See [`WindowState::deferred_tasks`].
-    deferred_tasks: Rc<RefCell<VecDeque<WindowTask>>>,
-
-    #[cfg(feature = "opengl")]
-    gl_context: Rc<Option<GlContext>>,
+pub struct Window<'a> {
+    state: &'a WindowState,
 }
 
-impl Window {
+impl Window<'_> {
     pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
         P: HasRawWindowHandle,
@@ -635,31 +634,13 @@ impl Window {
             // todo: manage error ^
 
             #[cfg(feature = "opengl")]
-            let gl_context: Rc<Option<GlContext>> = Rc::new(options.gl_config.map(|gl_config| {
+            let gl_context: Option<GlContext> = options.gl_config.map(|gl_config| {
                 let mut handle = Win32Handle::empty();
                 handle.hwnd = hwnd as *mut c_void;
                 let handle = RawWindowHandleWrapper { handle: RawWindowHandle::Win32(handle) };
 
                 GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
-            }));
-
-            // The build closure shouldn't be enqueueing deferred tasks yet, but we'll try handling
-            // them just in case to avoid losing them
-            let deferred_tasks: Rc<RefCell<VecDeque<WindowTask>>> =
-                Rc::new(RefCell::new(VecDeque::new()));
-
-            #[cfg(not(feature = "opengl"))]
-            let handler = build(&mut crate::Window::new(&mut Window {
-                hwnd,
-                deferred_tasks: deferred_tasks.clone(),
-            }));
-            #[cfg(feature = "opengl")]
-            let handler = build(&mut crate::Window::new(&mut Window {
-                hwnd,
-                deferred_tasks: deferred_tasks.clone(),
-                gl_context: gl_context.clone(),
-            }));
-            let handler = RefCell::new(Box::new(handler));
+            });
 
             let (parent_handle, window_handle) = ParentHandle::new(hwnd);
             let parent_handle = if parented { Some(parent_handle) } else { None };
@@ -671,21 +652,25 @@ impl Window {
                 _parent_handle: parent_handle,
                 keyboard_state: RefCell::new(KeyboardState::new()),
                 mouse_button_counter: Cell::new(0),
-                handler,
+                // The Window refers to this `WindowState`, so this `handler` needs to be
+                // initialized later
+                handler: RefCell::new(None),
                 scale_policy: options.scale,
                 dw_style: flags,
 
-                deferred_tasks: Rc::new(RefCell::new(VecDeque::with_capacity(4))),
+                deferred_tasks: RefCell::new(VecDeque::with_capacity(4)),
 
                 #[cfg(feature = "opengl")]
                 gl_context,
             });
 
-            // If the plugin did queue up tasks as part of the build handler, then we'll process
-            // them now
-            for task in deferred_tasks.borrow_mut().drain(..) {
-                window_state.handle_deferred_task(task);
-            }
+            let handler = {
+                let mut window = window_state.create_window();
+                let mut window = crate::Window::new(&mut window);
+
+                build(&mut window)
+            };
+            *window_state.handler.borrow_mut() = Some(Box::new(handler));
 
             // Only works on Windows 10 unfortunately.
             SetProcessDpiAwarenessContext(
@@ -744,7 +729,7 @@ impl Window {
 
     pub fn close(&mut self) {
         unsafe {
-            PostMessageW(self.hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
+            PostMessageW(self.state.hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
         }
     }
 
@@ -752,19 +737,19 @@ impl Window {
         // To avoid reentrant event handler calls we'll defer the actual resizing until after the
         // event has been handled
         let task = WindowTask::Resize(size);
-        self.deferred_tasks.borrow_mut().push_back(task);
+        self.state.deferred_tasks.borrow_mut().push_back(task);
     }
 
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<&GlContext> {
-        self.gl_context.as_ref().as_ref()
+        self.state.gl_context.as_ref()
     }
 }
 
-unsafe impl HasRawWindowHandle for Window {
+unsafe impl HasRawWindowHandle for Window<'_> {
     fn raw_window_handle(&self) -> RawWindowHandle {
         let mut handle = Win32Handle::empty();
-        handle.hwnd = self.hwnd as *mut c_void;
+        handle.hwnd = self.state.hwnd as *mut c_void;
 
         RawWindowHandle::Win32(handle)
     }

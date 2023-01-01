@@ -54,12 +54,22 @@ pub trait WindowHandler {
 }
 
 pub struct Window<'a> {
+    #[cfg(target_os = "windows")]
+    window: &'a mut platform::Window<'a>,
+    #[cfg(not(target_os = "windows"))]
     window: &'a mut platform::Window,
+
     // so that Window is !Send on all platforms
     phantom: PhantomData<*mut ()>,
 }
 
 impl<'a> Window<'a> {
+    #[cfg(target_os = "windows")]
+    pub(crate) fn new(window: &'a mut platform::Window<'a>) -> Window<'a> {
+        Window { window, phantom: PhantomData }
+    }
+
+    #[cfg(not(target_os = "windows"))]
     pub(crate) fn new(window: &mut platform::Window) -> Window {
         Window { window, phantom: PhantomData }
     }
