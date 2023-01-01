@@ -229,10 +229,7 @@ impl Window {
 
         let rect = NSRect::new(
             NSPoint::new(0.0, 0.0),
-            NSSize::new(
-                window_info.logical_size().width as f64,
-                window_info.logical_size().height as f64,
-            ),
+            NSSize::new(window_info.logical_size().width, window_info.logical_size().height),
         );
 
         let ns_window = unsafe {
