@@ -23,7 +23,6 @@ use std::marker::PhantomData;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
 
@@ -62,7 +61,7 @@ const WIN_FRAME_TIMER: usize = 4242;
 
 pub struct WindowHandle {
     hwnd: Option<HWND>,
-    is_open: Rc<AtomicBool>,
+    is_open: Rc<Cell<bool>>,
 
     // Ensure handle is !Send
     _phantom: PhantomData<*mut ()>,
@@ -78,7 +77,7 @@ impl WindowHandle {
     }
 
     pub fn is_open(&self) -> bool {
-        self.is_open.load(Ordering::Relaxed)
+        self.is_open.get()
     }
 }
 
@@ -96,12 +95,12 @@ unsafe impl HasRawWindowHandle for WindowHandle {
 }
 
 struct ParentHandle {
-    is_open: Rc<AtomicBool>,
+    is_open: Rc<Cell<bool>>,
 }
 
 impl ParentHandle {
     pub fn new(hwnd: HWND) -> (Self, WindowHandle) {
-        let is_open = Rc::new(AtomicBool::new(true));
+        let is_open = Rc::new(Cell::new(true));
 
         let handle = WindowHandle {
             hwnd: Some(hwnd),
@@ -115,7 +114,7 @@ impl ParentHandle {
 
 impl Drop for ParentHandle {
     fn drop(&mut self) {
-        self.is_open.store(false, Ordering::Relaxed);
+        self.is_open.set(false);
     }
 }
 
