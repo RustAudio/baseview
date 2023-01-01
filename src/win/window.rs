@@ -489,14 +489,23 @@ impl WindowState {
                     *window_info
                 };
 
+                // If the window is a standalone window then the size needs to include the window
+                // decorations
+                let mut rect = RECT {
+                    left: 0,
+                    top: 0,
+                    right: window_info.physical_size().width as i32,
+                    bottom: window_info.physical_size().height as i32,
+                };
                 unsafe {
+                    AdjustWindowRectEx(&mut rect, self.dw_style, 0, 0);
                     SetWindowPos(
                         self.hwnd,
                         self.hwnd,
                         0,
                         0,
-                        window_info.physical_size().width as i32,
-                        window_info.physical_size().height as i32,
+                        rect.right - rect.left,
+                        rect.bottom - rect.top,
                         SWP_NOZORDER | SWP_NOMOVE,
                     )
                 };
