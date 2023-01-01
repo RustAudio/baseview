@@ -369,8 +369,8 @@ unsafe fn wnd_proc_inner(
                 SetWindowPos(
                     hwnd,
                     hwnd,
-                    new_rect.left as i32,
-                    new_rect.top as i32,
+                    new_rect.left,
+                    new_rect.top,
                     new_rect.right - new_rect.left,
                     new_rect.bottom - new_rect.top,
                     SWP_NOZORDER | SWP_NOMOVE,
@@ -721,8 +721,8 @@ impl Window {
                 SetWindowPos(
                     hwnd,
                     hwnd,
-                    new_rect.left as i32,
-                    new_rect.top as i32,
+                    new_rect.left,
+                    new_rect.top,
                     new_rect.right - new_rect.left,
                     new_rect.bottom - new_rect.top,
                     SWP_NOZORDER | SWP_NOMOVE,
