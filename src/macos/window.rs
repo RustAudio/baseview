@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use cocoa::appkit::{
-    NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSWindow,
-    NSWindowStyleMask,
+    NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSView,
+    NSWindow, NSWindowStyleMask,
 };
-use cocoa::base::{id, nil, NO};
+use cocoa::base::{id, nil, NO, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use core_foundation::runloop::{
     CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer, kCFRunLoopDefaultMode,
@@ -20,7 +20,7 @@ use objc::{msg_send, runtime::Object, sel, sel_impl};
 use raw_window_handle::{AppKitHandle, HasRawWindowHandle, RawWindowHandle};
 
 use crate::{
-    Event, EventStatus, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    Event, EventStatus, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
     WindowScalePolicy,
 };
 
@@ -124,6 +124,13 @@ impl Window {
     {
         let pool = unsafe { NSAutoreleasePool::new(nil) };
 
+        let scaling = match options.scale {
+            WindowScalePolicy::ScaleFactor(scale) => scale,
+            WindowScalePolicy::SystemScaleFactor => 1.0,
+        };
+
+        let window_info = WindowInfo::from_logical_size(options.size, scaling);
+
         let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
             handle
         } else {
@@ -144,7 +151,7 @@ impl Window {
                 .map(|gl_config| Self::create_gl_context(None, ns_view, gl_config)),
         };
 
-        let window_handle = Self::init(true, window, build);
+        let window_handle = Self::init(true, window, window_info, build);
 
         unsafe {
             let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
@@ -164,6 +171,13 @@ impl Window {
     {
         let pool = unsafe { NSAutoreleasePool::new(nil) };
 
+        let scaling = match options.scale {
+            WindowScalePolicy::ScaleFactor(scale) => scale,
+            WindowScalePolicy::SystemScaleFactor => 1.0,
+        };
+
+        let window_info = WindowInfo::from_logical_size(options.size, scaling);
+
         let ns_view = unsafe { create_view(&options) };
 
         let window = Window {
@@ -178,7 +192,7 @@ impl Window {
                 .map(|gl_config| Self::create_gl_context(None, ns_view, gl_config)),
         };
 
-        let window_handle = Self::init(true, window, build);
+        let window_handle = Self::init(true, window, window_info, build);
 
         unsafe {
             let () = msg_send![pool, drain];
@@ -215,10 +229,7 @@ impl Window {
 
         let rect = NSRect::new(
             NSPoint::new(0.0, 0.0),
-            NSSize::new(
-                window_info.logical_size().width as f64,
-                window_info.logical_size().height as f64,
-            ),
+            NSSize::new(window_info.logical_size().width, window_info.logical_size().height),
         );
 
         let ns_window = unsafe {
@@ -254,7 +265,7 @@ impl Window {
                 .map(|gl_config| Self::create_gl_context(Some(ns_window), ns_view, gl_config)),
         };
 
-        let _ = Self::init(false, window, build);
+        let _ = Self::init(false, window, window_info, build);
 
         unsafe {
             ns_window.setContentView_(ns_view);
@@ -266,7 +277,9 @@ impl Window {
         }
     }
 
-    fn init<H, B>(parented: bool, mut window: Window, build: B) -> WindowHandle
+    fn init<H, B>(
+        parented: bool, mut window: Window, window_info: WindowInfo, build: B,
+    ) -> WindowHandle
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -285,6 +298,7 @@ impl Window {
             keyboard_state: KeyboardState::new(),
             frame_timer: None,
             retain_count_after_build,
+            window_info,
             _parent_handle: parent_handle,
         }));
 
@@ -300,6 +314,28 @@ impl Window {
 
     pub fn close(&mut self) {
         self.close_requested = true;
+    }
+
+    pub fn resize(&mut self, size: Size) {
+        // NOTE: macOS gives you a personal rave if you pass in fractional pixels here. Even though
+        //       the size is in fractional pixels.
+        let size = NSSize::new(size.width.round(), size.height.round());
+
+        unsafe { NSView::setFrameSize(self.ns_view, size) };
+        unsafe {
+            let _: () = msg_send![self.ns_view, setNeedsDisplay: YES];
+        }
+
+        // When using OpenGL the `NSOpenGLView` needs to be resized separately? Why? Because macOS.
+        #[cfg(feature = "opengl")]
+        if let Some(gl_context) = &self.gl_context {
+            gl_context.resize(size);
+        }
+
+        // If this is a standalone window then we'll also need to resize the window itself
+        if let Some(ns_window) = self.ns_window {
+            unsafe { NSWindow::setContentSize_(ns_window, size) };
+        }
     }
 
     #[cfg(feature = "opengl")]
@@ -325,6 +361,8 @@ pub(super) struct WindowState {
     frame_timer: Option<CFRunLoopTimer>,
     _parent_handle: Option<ParentHandle>,
     pub retain_count_after_build: usize,
+    /// The last known window info for this window.
+    pub window_info: WindowInfo,
 }
 
 impl WindowState {

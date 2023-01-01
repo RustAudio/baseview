@@ -234,18 +234,23 @@ extern "C" fn view_did_change_backing_properties(this: &Object, _: Sel, _: id) {
         let ns_window: *mut Object = msg_send![this, window];
 
         let scale_factor: f64 =
-            if ns_window.is_null() { 1.0 } else { NSWindow::backingScaleFactor(ns_window) as f64 };
+            if ns_window.is_null() { 1.0 } else { NSWindow::backingScaleFactor(ns_window) };
 
         let state: &mut WindowState = WindowState::from_field(this);
 
         let bounds: NSRect = msg_send![this, bounds];
 
-        let window_info = WindowInfo::from_logical_size(
+        let new_window_info = WindowInfo::from_logical_size(
             Size::new(bounds.size.width, bounds.size.height),
             scale_factor,
         );
 
-        state.trigger_event(Event::Window(WindowEvent::Resized(window_info)));
+        // Only send the event when the window's size has actually changed to be in line with the
+        // other platform implementations
+        if new_window_info.physical_size() != state.window_info.physical_size() {
+            state.window_info = new_window_info;
+            state.trigger_event(Event::Window(WindowEvent::Resized(new_window_info)));
+        }
     }
 }
 
@@ -364,6 +369,6 @@ extern "C" fn scroll_wheel(this: &Object, _: Sel, event: id) {
 
     state.trigger_event(Event::Mouse(MouseEvent::WheelScrolled {
         delta,
-        modifiers: make_modifiers(modifiers)
+        modifiers: make_modifiers(modifiers),
     }));
 }

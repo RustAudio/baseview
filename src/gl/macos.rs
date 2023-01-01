@@ -11,6 +11,7 @@ use cocoa::appkit::{
     NSOpenGLProfileVersionLegacy, NSOpenGLView, NSView,
 };
 use cocoa::base::{id, nil, YES};
+use cocoa::foundation::NSSize;
 
 use core_foundation::base::TCFType;
 use core_foundation::bundle::{CFBundleGetBundleWithIdentifier, CFBundleGetFunctionPointerForName};
@@ -132,6 +133,14 @@ impl GlContext {
         unsafe {
             self.context.flushBuffer();
             let () = msg_send![self.view, setNeedsDisplay: YES];
+        }
+    }
+
+    /// On macOS the `NSOpenGLView` needs to be resized separtely from our main view.
+    pub(crate) fn resize(&self, size: NSSize) {
+        unsafe { NSView::setFrameSize(self.view, size) };
+        unsafe {
+            let _: () = msg_send![self.view, setNeedsDisplay: YES];
         }
     }
 }

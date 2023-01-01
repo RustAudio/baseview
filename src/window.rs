@@ -4,6 +4,7 @@ use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 
 use crate::event::{Event, EventStatus};
 use crate::window_open_options::WindowOpenOptions;
+use crate::Size;
 
 #[cfg(target_os = "macos")]
 use crate::macos as platform;
@@ -53,12 +54,22 @@ pub trait WindowHandler {
 }
 
 pub struct Window<'a> {
+    #[cfg(target_os = "windows")]
+    window: &'a mut platform::Window<'a>,
+    #[cfg(not(target_os = "windows"))]
     window: &'a mut platform::Window,
+
     // so that Window is !Send on all platforms
     phantom: PhantomData<*mut ()>,
 }
 
 impl<'a> Window<'a> {
+    #[cfg(target_os = "windows")]
+    pub(crate) fn new(window: &'a mut platform::Window<'a>) -> Window<'a> {
+        Window { window, phantom: PhantomData }
+    }
+
+    #[cfg(not(target_os = "windows"))]
     pub(crate) fn new(window: &mut platform::Window) -> Window {
         Window { window, phantom: PhantomData }
     }
@@ -96,6 +107,12 @@ impl<'a> Window<'a> {
     /// Close the window
     pub fn close(&mut self) {
         self.window.close();
+    }
+
+    /// Resize the window to the given size. The size is always in logical pixels. DPI scaling will
+    /// automatically be accounted for.
+    pub fn resize(&mut self, size: Size) {
+        self.window.resize(size);
     }
 
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
