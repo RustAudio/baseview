@@ -9,7 +9,7 @@ use cocoa::appkit::{
     NSPasteboard, NSView, NSWindow, NSWindowStyleMask,
 };
 use cocoa::base::{id, nil, NO, YES};
-use cocoa::foundation::{NSAutoreleasePool, NSData, NSPoint, NSRect, NSSize, NSString};
+use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use core_foundation::runloop::{
     CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer, kCFRunLoopDefaultMode,
 };
@@ -484,21 +484,13 @@ unsafe impl HasRawWindowHandle for Window {
     }
 }
 
-pub enum ClipboardDataType {
-    String,
-}
-
-pub fn copy_to_clipboard(data: String, data_type: ClipboardDataType) {
+pub fn copy_to_clipboard(string: String) {
     unsafe {
         let pb = NSPasteboard::generalPasteboard(nil);
 
-        let data =
-            NSData::dataWithBytes_length_(nil, data.as_ptr() as *const c_void, data.len() as u64);
+        let ns_str = NSString::alloc(nil).init_str(&string);
 
-        let pb_type = match data_type {
-            ClipboardDataType::String => cocoa::appkit::NSPasteboardTypeString,
-        };
-
-        pb.setData_forType(data, pb_type);
+        pb.clearContents();
+        pb.setString_forType(ns_str, cocoa::appkit::NSPasteboardTypeString);
     }
 }
