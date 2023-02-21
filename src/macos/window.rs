@@ -488,14 +488,14 @@ pub enum ClipboardDataType {
     String,
 }
 
-pub fn copy_to_clipboard(data: String, dataType: ClipboardDataType) {
+pub fn copy_to_clipboard(data: String, data_type: ClipboardDataType) {
     unsafe {
         let pb = NSPasteboard::generalPasteboard(nil);
 
         let data =
             NSData::dataWithBytes_length_(nil, data.as_ptr() as *const c_void, data.len() as u64);
 
-        let pb_type = match dataType {
+        let pb_type = match data_type {
             ClipboardDataType::String => cocoa::appkit::NSPasteboardTypeString,
         };
 
