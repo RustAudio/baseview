@@ -5,11 +5,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use cocoa::appkit::{
-    NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSView,
-    NSWindow, NSWindowStyleMask,
+    NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
+    NSPasteboard, NSView, NSWindow, NSWindowStyleMask,
 };
 use cocoa::base::{id, nil, NO, YES};
-use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
+use cocoa::foundation::{NSAutoreleasePool, NSData, NSPoint, NSRect, NSSize, NSString};
 use core_foundation::runloop::{
     CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer, kCFRunLoopDefaultMode,
 };
@@ -481,5 +481,24 @@ unsafe impl HasRawWindowHandle for Window {
         handle.ns_view = self.ns_view as *mut c_void;
 
         RawWindowHandle::AppKit(handle)
+    }
+}
+
+pub enum ClipboardDataType {
+    String,
+}
+
+pub fn copy_to_clipboard(data: String, dataType: ClipboardDataType) {
+    unsafe {
+        let pb = NSPasteboard::generalPasteboard(nil);
+
+        let data =
+            NSData::dataWithBytes_length_(nil, data.as_ptr() as *const c_void, data.len() as u64);
+
+        let pb_type = match dataType {
+            ClipboardDataType::String => cocoa::appkit::NSPasteboardTypeString,
+        };
+
+        pb.setData_forType(data, pb_type);
     }
 }
