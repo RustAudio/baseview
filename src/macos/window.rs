@@ -484,11 +484,11 @@ unsafe impl HasRawWindowHandle for Window {
     }
 }
 
-pub fn copy_to_clipboard(string: String) {
+pub fn copy_to_clipboard(string: &str) {
     unsafe {
         let pb = NSPasteboard::generalPasteboard(nil);
 
-        let ns_str = NSString::alloc(nil).init_str(&string);
+        let ns_str = NSString::alloc(nil).init_str(string);
 
         pb.clearContents();
         pb.setString_forType(ns_str, cocoa::appkit::NSPasteboardTypeString);

@@ -30,7 +30,7 @@ impl WindowHandler for OpenWindowExample {
                 #[cfg(target_os = "macos")]
                 match e {
                     MouseEvent::ButtonPressed { button, modifiers } => {
-                        copy_to_clipboard("This is a test!".into())
+                        copy_to_clipboard(&"This is a test!")
                     }
                     _ => (),
                 }

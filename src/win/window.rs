@@ -764,6 +764,6 @@ unsafe impl HasRawWindowHandle for Window<'_> {
     }
 }
 
-pub fn copy_to_clipboard(data: String) {
+pub fn copy_to_clipboard(data: &str) {
     todo!()
 }

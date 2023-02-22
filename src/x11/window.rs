@@ -705,6 +705,6 @@ fn mouse_id(id: u8) -> MouseButton {
     }
 }
 
-pub fn copy_to_clipboard(data: String) {
+pub fn copy_to_clipboard(data: &str) {
     todo!()
 }
