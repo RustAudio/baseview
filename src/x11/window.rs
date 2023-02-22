@@ -704,3 +704,7 @@ fn mouse_id(id: u8) -> MouseButton {
         id => MouseButton::Other(id),
     }
 }
+
+pub fn copy_to_clipboard(data: String) {
+    todo!()
+}
