@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use rtrb::{Consumer, RingBuffer};
 
+#[cfg(target_os = "macos")]
 use baseview::copy_to_clipboard;
 use baseview::{Event, EventStatus, MouseEvent, Window, WindowHandler, WindowScalePolicy};
 
