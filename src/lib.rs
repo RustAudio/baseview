@@ -5,6 +5,7 @@ mod win;
 #[cfg(target_os = "linux")]
 mod x11;
 
+mod clipboard;
 mod event;
 mod keyboard;
 mod mouse_cursor;
@@ -15,6 +16,7 @@ mod window_open_options;
 #[cfg(feature = "opengl")]
 pub mod gl;
 
+pub use clipboard::*;
 pub use event::*;
 pub use mouse_cursor::MouseCursor;
 pub use window::*;

@@ -763,3 +763,7 @@ unsafe impl HasRawWindowHandle for Window<'_> {
         RawWindowHandle::Win32(handle)
     }
 }
+
+pub fn copy_to_clipboard(data: &str) {
+    todo!()
+}

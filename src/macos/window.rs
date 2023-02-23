@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use cocoa::appkit::{
-    NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered, NSView,
-    NSWindow, NSWindowStyleMask,
+    NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
+    NSPasteboard, NSView, NSWindow, NSWindowStyleMask,
 };
 use cocoa::base::{id, nil, NO, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
@@ -481,5 +481,16 @@ unsafe impl HasRawWindowHandle for Window {
         handle.ns_view = self.ns_view as *mut c_void;
 
         RawWindowHandle::AppKit(handle)
+    }
+}
+
+pub fn copy_to_clipboard(string: &str) {
+    unsafe {
+        let pb = NSPasteboard::generalPasteboard(nil);
+
+        let ns_str = NSString::alloc(nil).init_str(string);
+
+        pb.clearContents();
+        pb.setString_forType(ns_str, cocoa::appkit::NSPasteboardTypeString);
     }
 }
