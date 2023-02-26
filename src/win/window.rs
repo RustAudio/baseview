@@ -342,11 +342,16 @@ unsafe fn wnd_proc_inner(
                     WindowInfo::from_physical_size(PhySize { width, height }, window_info.scale());
 
                 // Only send the event if anything changed
-                if window_info.physical_size() == new_window_info.physical_size() {
+                let mut last_seen_window_info =
+                    window_state.last_processed_window_info.borrow_mut();
+                if new_window_info.physical_size() == last_seen_window_info.physical_size() {
                     return None;
                 }
 
+                // NOTE: See the docstring on `last_seen_window_info` for why this is tracked
+                //       separately from `window_info`
                 *window_info = new_window_info;
+                *last_seen_window_info = new_window_info;
 
                 new_window_info
             };
@@ -452,7 +457,13 @@ struct WindowState {
     /// GWLP_USERDATA) } as *const WindowState`.
     pub hwnd: HWND,
     window_class: ATOM,
+    /// The _current_ window info. Set in the `WM_SIZE` and `WM_DPICHANGED` handlers.
     window_info: RefCell<WindowInfo>,
+    /// The window info last seen in a `WM_SIZE` call. This needs to be kept track of separately
+    /// from `window_info` because `window_info` also can also change as the result of
+    /// `WM_DPICHANGED`. In that case the `WindowEvent::Resized` event should still be sent in the
+    /// `WM_SIZE` callback.
+    last_processed_window_info: RefCell<WindowInfo>,
     _parent_handle: Option<ParentHandle>,
     keyboard_state: RefCell<KeyboardState>,
     mouse_button_counter: Cell<usize>,
@@ -658,6 +669,7 @@ impl Window<'_> {
                 hwnd,
                 window_class,
                 window_info: RefCell::new(window_info),
+                last_processed_window_info: RefCell::new(window_info),
                 _parent_handle: parent_handle,
                 keyboard_state: RefCell::new(KeyboardState::new()),
                 mouse_button_counter: Cell::new(0),
