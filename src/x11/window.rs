@@ -6,7 +6,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::*;
 
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, XlibWindowHandle, RawDisplayHandle, HasRawDisplayHandle, XlibDisplayHandle};
+use raw_window_handle::{
+    HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, XlibDisplayHandle,
+    XlibWindowHandle,
+};
 use xcb::ffi::xcb_screen_t;
 use xcb::StructPtr;
 
