@@ -19,6 +19,8 @@ use winapi::um::winuser::{
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::{c_void, OsStr};
+use std::fmt;
+use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
@@ -510,17 +512,30 @@ impl WindowState {
                     )
                 };
             }
+            WindowTask::Custom(t) => {
+                t.0();
+            }
         }
     }
 }
 
 /// Tasks that must be deferred until the end of [`wnd_proc()`] to avoid reentrant `WindowState`
 /// borrows. See the docstring on [`WindowState::deferred_tasks`] for more information.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum WindowTask {
     /// Resize the window to the given size. The size is in logical pixels. DPI scaling is applied
     /// automatically.
     Resize(Size),
+    /// User-defined task.
+    Custom(CustomTask),
+}
+
+struct CustomTask(Box<dyn Fn() + 'static>);
+
+impl Debug for CustomTask {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("CustomTask").finish()
+    }
 }
 
 pub struct Window<'a> {
@@ -746,6 +761,11 @@ impl Window<'_> {
         // To avoid reentrant event handler calls we'll defer the actual resizing until after the
         // event has been handled
         let task = WindowTask::Resize(size);
+        self.state.deferred_tasks.borrow_mut().push_back(task);
+    }
+
+    pub fn defer(&mut self, task: impl Fn() + 'static) {
+        let task = WindowTask::Custom(CustomTask(Box::new(task)));
         self.state.deferred_tasks.borrow_mut().push_back(task);
     }
 

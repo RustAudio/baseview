@@ -115,6 +115,14 @@ impl<'a> Window<'a> {
         self.window.resize(size);
     }
 
+    /// Defers execution of the given task until the end of main loop cycle.
+    ///
+    /// This is sometimes necessary to avoid mutably borrowing internal fields more than once.
+    #[cfg(windows)]
+    pub fn defer(&mut self, task: impl Fn() + 'static) {
+        self.window.defer(task);
+    }
+
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
     /// access this context through [crate::Window::gl_context].
     #[cfg(feature = "opengl")]
