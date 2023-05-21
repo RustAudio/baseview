@@ -13,7 +13,7 @@ use winapi::um::winuser::{
     WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
     WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD,
     WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
-    XBUTTON1, XBUTTON2,
+    XBUTTON1, XBUTTON2, WM_MOUSELEAVE, TRACKMOUSEEVENT, TME_LEAVE, TrackMouseEvent,
 };
 
 use std::cell::{Cell, RefCell};
@@ -172,6 +172,20 @@ unsafe fn wnd_proc_inner(
             let mut window = window_state.create_window();
             let mut window = crate::Window::new(&mut window);
 
+            if !*window_state.mouse_in_window.borrow() {
+                *window_state.mouse_in_window.borrow_mut() = true;
+                let mut tme = TRACKMOUSEEVENT {
+                    cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                    dwFlags: TME_LEAVE,
+                    hwndTrack: hwnd,
+                    dwHoverTime: 0,
+                };
+
+                TrackMouseEvent(&mut tme);
+                let event = Event::Mouse(MouseEvent::CursorEntered);
+                window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+            }
+
             let x = (lparam & 0xFFFF) as i16 as i32;
             let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
@@ -189,6 +203,15 @@ unsafe fn wnd_proc_inner(
 
             Some(0)
         }
+        WM_MOUSELEAVE => {
+            let mut window = window_state.create_window();
+            let mut window = crate::Window::new(&mut window);
+
+            *window_state.mouse_in_window.borrow_mut() = false;
+            let event = Event::Mouse(MouseEvent::CursorLeft);
+            window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+            Some(0)
+        },
         WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
             let mut window = window_state.create_window();
             let mut window = crate::Window::new(&mut window);
@@ -461,6 +484,8 @@ struct WindowState {
     scale_policy: WindowScalePolicy,
     dw_style: u32,
 
+    mouse_in_window: RefCell<bool>,
+
     /// Tasks that should be executed at the end of `wnd_proc`. This is needed to avoid mutably
     /// borrowing the fields from `WindowState` more than once. For instance, when the window
     /// handler requests a resize in response to a keyboard event, the window state will already be
@@ -667,6 +692,8 @@ impl Window<'_> {
                 scale_policy: options.scale,
                 dw_style: flags,
 
+                mouse_in_window: RefCell::new(true),
+
                 deferred_tasks: RefCell::new(VecDeque::with_capacity(4)),
 
                 #[cfg(feature = "opengl")]
@@ -731,6 +758,15 @@ impl Window<'_> {
                     SWP_NOZORDER | SWP_NOMOVE,
                 );
             }
+            
+            let mut tme = TRACKMOUSEEVENT {
+                cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                dwFlags: TME_LEAVE,
+                hwndTrack: hwnd,
+                dwHoverTime: 0,
+            };
+
+            TrackMouseEvent(&mut tme);
 
             (window_handle, hwnd)
         }
