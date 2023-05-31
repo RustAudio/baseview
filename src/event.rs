@@ -75,6 +75,12 @@ pub enum MouseEvent {
     ///
     /// May not be available on all platforms.
     CursorLeft,
+
+    // TODO: Document
+    DragEntered,
+    DragMoved,
+    DragLeft,
+    DragDropped,
 }
 
 #[derive(Debug, Clone)]

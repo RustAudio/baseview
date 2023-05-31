@@ -1,7 +1,14 @@
-use winapi::shared::guiddef::GUID;
-use winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM};
-use winapi::shared::windef::{HWND, RECT};
+use winapi::Interface;
+use winapi::shared::guiddef::{GUID, REFIID, IsEqualIID};
+use winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM, DWORD};
+use winapi::shared::ntdef::{HRESULT, ULONG};
+use winapi::shared::windef::{HWND, RECT, POINTL};
+use winapi::shared::winerror::{S_OK, E_NOINTERFACE};
 use winapi::um::combaseapi::CoCreateGuid;
+use winapi::um::objidl::IDataObject;
+use winapi::um::ole2::{RegisterDragDrop, OleInitialize};
+use winapi::um::oleidl::{IDropTarget, IDropTargetVtbl, LPDROPTARGET, DROPEFFECT_COPY};
+use winapi::um::unknwnbase::{IUnknownVtbl, IUnknown};
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
     GetDpiForWindow, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW,
@@ -20,9 +27,11 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::{c_void, OsStr};
 use std::marker::PhantomData;
+use std::mem::transmute;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
 
@@ -460,6 +469,7 @@ struct WindowState {
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
     scale_policy: WindowScalePolicy,
     dw_style: u32,
+    _drop_target: Option<Arc<DropTarget>>,
 
     /// Tasks that should be executed at the end of `wnd_proc`. This is needed to avoid mutably
     /// borrowing the fields from `WindowState` more than once. For instance, when the window
@@ -666,6 +676,7 @@ impl Window<'_> {
                 handler: RefCell::new(None),
                 scale_policy: options.scale,
                 dw_style: flags,
+                _drop_target: None,
 
                 deferred_tasks: RefCell::new(VecDeque::with_capacity(4)),
 
@@ -711,7 +722,19 @@ impl Window<'_> {
                 None
             };
 
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
+            let window_state_ptr = Box::into_raw(window_state);
+
+            // TODO: Error handling
+            OleInitialize(null_mut());
+
+            let drop_target = Arc::new(DropTarget::new(window_state_ptr));
+
+            // TODO: Error handling
+            RegisterDragDrop(hwnd, Arc::as_ptr(&drop_target) as LPDROPTARGET);
+
+            (*window_state_ptr)._drop_target = Some(drop_target);
+
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, window_state_ptr as *const _ as _);
             SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
 
             if let Some(mut new_rect) = new_rect {
@@ -766,4 +789,147 @@ unsafe impl HasRawWindowHandle for Window<'_> {
 
 pub fn copy_to_clipboard(data: &str) {
     todo!()
+}
+
+#[repr(C)]
+pub struct DropTarget {
+    base: IDropTarget,
+    vtbl: Arc<IDropTargetVtbl>,
+
+    window_state: *mut WindowState,
+}
+
+impl DropTarget {
+    fn new(window_state: *mut WindowState) -> Self {
+        let vtbl = Arc::new(IDropTargetVtbl {
+            parent: IUnknownVtbl {
+                QueryInterface: Self::query_interface,
+                AddRef: Self::add_ref,
+                Release: Self::release,
+            },
+            DragEnter: Self::drag_enter,
+            DragOver: Self::drag_over,
+            DragLeave: Self::drag_leave,
+            Drop: Self::drop,
+        });
+       
+        Self {
+            base: IDropTarget { lpVtbl: Arc::as_ptr(&vtbl) },
+            vtbl,
+
+            window_state,
+        }
+    }
+
+    unsafe extern "system" fn query_interface(
+        this: *mut IUnknown,
+        riid: REFIID,
+        ppvObject: *mut *mut winapi::ctypes::c_void,
+    ) -> HRESULT
+    {
+        println!("query_interface");
+
+        if IsEqualIID(&*riid, &IUnknown::uuidof()) || IsEqualIID(&*riid, &IDropTarget::uuidof()){
+            Self::add_ref(this);
+            *ppvObject = unsafe { transmute(this) };
+            return S_OK;
+        }
+    
+        return E_NOINTERFACE;
+    }
+    
+    unsafe extern "system" fn add_ref(this: *mut IUnknown) -> ULONG {
+        let arc = Arc::from_raw(this);
+        let result = Arc::strong_count(&arc) + 1;
+        let _ = Arc::into_raw(arc);
+
+        Arc::increment_strong_count(this);
+
+        result as ULONG
+    }
+    
+    unsafe extern "system" fn release(this: *mut IUnknown) -> ULONG {
+        let arc = Arc::from_raw(this);
+        let result = Arc::strong_count(&arc) - 1;
+        let _ = Arc::into_raw(arc);
+
+        Arc::decrement_strong_count(this);
+
+        result as ULONG
+    }
+    
+    unsafe extern "system" fn drag_enter(
+        this: *mut IDropTarget,
+        pDataObj: *const IDataObject,
+        grfKeyState: DWORD,
+        pt: *const POINTL,
+        pdwEffect: *mut DWORD,
+    ) -> HRESULT
+    {
+        let drop_target = &*(this as *mut DropTarget);
+        let window_state = &*drop_target.window_state;
+        let mut window = window_state.create_window();
+        let mut window = crate::Window::new(&mut window);
+
+        let event = Event::Mouse(MouseEvent::DragEntered {});
+        window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+
+        *pdwEffect = DROPEFFECT_COPY;
+
+        S_OK
+    }
+    
+    unsafe extern "system" fn drag_over(
+        this: *mut IDropTarget,
+        grfKeyState: DWORD,
+        pt: *const POINTL,
+        pdwEffect: *mut DWORD,
+    ) -> HRESULT
+    {
+        let drop_target = &*(this as *mut DropTarget);
+        let window_state = &*drop_target.window_state;
+        let mut window = window_state.create_window();
+        let mut window = crate::Window::new(&mut window);
+
+        let event = Event::Mouse(MouseEvent::DragMoved {});
+        window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+
+        *pdwEffect = DROPEFFECT_COPY;
+
+        S_OK
+    }
+    
+    unsafe extern "system" fn drag_leave(this: *mut IDropTarget) -> HRESULT {
+        let drop_target = &*(this as *mut DropTarget);
+        let window_state = &*drop_target.window_state;
+        let mut window = window_state.create_window();
+        let mut window = crate::Window::new(&mut window);
+
+        let event = Event::Mouse(MouseEvent::DragLeft {});
+
+        window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+
+        S_OK
+    }
+    
+    unsafe extern "system" fn drop(
+        this: *mut IDropTarget,
+        pDataObj: *const IDataObject,
+        grfKeyState: DWORD,
+        pt: *const POINTL,
+        pdwEffect: *mut DWORD,
+    ) -> HRESULT
+    {
+        let drop_target = &*(this as *mut DropTarget);
+        let window_state = &*drop_target.window_state;
+        let mut window = window_state.create_window();
+        let mut window = crate::Window::new(&mut window);
+
+        let event = Event::Mouse(MouseEvent::DragDropped {});
+        window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+
+        *pdwEffect = DROPEFFECT_COPY;
+
+        S_OK
+    }
 }
