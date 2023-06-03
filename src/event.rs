@@ -98,6 +98,14 @@ pub enum Event {
     Window(WindowEvent),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DropEffect {
+    Copy,
+    Move,
+    Link,
+    Scroll,
+}
+
 /// Return value for [WindowHandler::on_event](`crate::WindowHandler::on_event()`),
 /// indicating whether the event was handled by your window or should be passed
 /// back to the platform.
@@ -117,4 +125,6 @@ pub enum EventStatus {
     /// DAW functionality for playing piano keys with the keyboard while a
     /// plugin window is in focus.
     Ignored,
+    // TODO: Document
+    AcceptDrop(DropEffect),
 }

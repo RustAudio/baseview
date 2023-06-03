@@ -7,7 +7,7 @@ use winapi::shared::winerror::{S_OK, E_NOINTERFACE};
 use winapi::um::combaseapi::CoCreateGuid;
 use winapi::um::objidl::IDataObject;
 use winapi::um::ole2::{RegisterDragDrop, OleInitialize};
-use winapi::um::oleidl::{IDropTarget, IDropTargetVtbl, LPDROPTARGET, DROPEFFECT_COPY};
+use winapi::um::oleidl::{IDropTarget, IDropTargetVtbl, LPDROPTARGET, DROPEFFECT_COPY, DROPEFFECT_NONE, DROPEFFECT_MOVE, DROPEFFECT_LINK, DROPEFFECT_SCROLL};
 use winapi::um::unknwnbase::{IUnknownVtbl, IUnknown};
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
@@ -39,7 +39,7 @@ const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 
 use crate::{
     Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
+    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, DropEffect, EventStatus,
 };
 
 use super::keyboard::KeyboardState;
@@ -872,9 +872,14 @@ impl DropTarget {
         let mut window = crate::Window::new(&mut window);
 
         let event = Event::Mouse(MouseEvent::DragEntered {});
-        window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
-
-        *pdwEffect = DROPEFFECT_COPY;
+        let event_status = window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+        match event_status {
+            EventStatus::AcceptDrop(DropEffect::Copy) => *pdwEffect = DROPEFFECT_COPY,
+            EventStatus::AcceptDrop(DropEffect::Move) => *pdwEffect = DROPEFFECT_MOVE,
+            EventStatus::AcceptDrop(DropEffect::Link) => *pdwEffect = DROPEFFECT_LINK,
+            EventStatus::AcceptDrop(DropEffect::Scroll) => *pdwEffect = DROPEFFECT_SCROLL,
+            _ => *pdwEffect = DROPEFFECT_NONE,
+        }
 
         S_OK
     }
@@ -892,9 +897,14 @@ impl DropTarget {
         let mut window = crate::Window::new(&mut window);
 
         let event = Event::Mouse(MouseEvent::DragMoved {});
-        window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
-
-        *pdwEffect = DROPEFFECT_COPY;
+        let event_status = window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+        match event_status {
+            EventStatus::AcceptDrop(DropEffect::Copy) => *pdwEffect = DROPEFFECT_COPY,
+            EventStatus::AcceptDrop(DropEffect::Move) => *pdwEffect = DROPEFFECT_MOVE,
+            EventStatus::AcceptDrop(DropEffect::Link) => *pdwEffect = DROPEFFECT_LINK,
+            EventStatus::AcceptDrop(DropEffect::Scroll) => *pdwEffect = DROPEFFECT_SCROLL,
+            _ => *pdwEffect = DROPEFFECT_NONE,
+        }
 
         S_OK
     }
@@ -926,9 +936,14 @@ impl DropTarget {
         let mut window = crate::Window::new(&mut window);
 
         let event = Event::Mouse(MouseEvent::DragDropped {});
-        window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
-
-        *pdwEffect = DROPEFFECT_COPY;
+        let event_status = window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+        match event_status {
+            EventStatus::AcceptDrop(DropEffect::Copy) => *pdwEffect = DROPEFFECT_COPY,
+            EventStatus::AcceptDrop(DropEffect::Move) => *pdwEffect = DROPEFFECT_MOVE,
+            EventStatus::AcceptDrop(DropEffect::Link) => *pdwEffect = DROPEFFECT_LINK,
+            EventStatus::AcceptDrop(DropEffect::Scroll) => *pdwEffect = DROPEFFECT_SCROLL,
+            _ => *pdwEffect = DROPEFFECT_NONE,
+        }
 
         S_OK
     }
