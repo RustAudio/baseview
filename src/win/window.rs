@@ -821,6 +821,28 @@ impl DropTarget {
         }
     }
 
+    fn on_event(this: *mut IDropTarget, pdwEffect: Option<*mut DWORD>, event: MouseEvent) {
+        unsafe {
+            let drop_target = &*(this as *mut DropTarget);
+            let window_state = &*drop_target.window_state;
+            let mut window = window_state.create_window();
+            let mut window = crate::Window::new(&mut window);
+    
+            let event = Event::Mouse(event);
+            let event_status = window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+
+            if let Some(pdwEffect) = pdwEffect {
+                match event_status {
+                    EventStatus::AcceptDrop(DropEffect::Copy) => *pdwEffect = DROPEFFECT_COPY,
+                    EventStatus::AcceptDrop(DropEffect::Move) => *pdwEffect = DROPEFFECT_MOVE,
+                    EventStatus::AcceptDrop(DropEffect::Link) => *pdwEffect = DROPEFFECT_LINK,
+                    EventStatus::AcceptDrop(DropEffect::Scroll) => *pdwEffect = DROPEFFECT_SCROLL,
+                    _ => *pdwEffect = DROPEFFECT_NONE,
+                }        
+            } 
+        }
+    }
+
     unsafe extern "system" fn query_interface(
         this: *mut IUnknown,
         riid: REFIID,
@@ -857,7 +879,7 @@ impl DropTarget {
 
         result as ULONG
     }
-    
+        
     unsafe extern "system" fn drag_enter(
         this: *mut IDropTarget,
         pDataObj: *const IDataObject,
@@ -866,21 +888,7 @@ impl DropTarget {
         pdwEffect: *mut DWORD,
     ) -> HRESULT
     {
-        let drop_target = &*(this as *mut DropTarget);
-        let window_state = &*drop_target.window_state;
-        let mut window = window_state.create_window();
-        let mut window = crate::Window::new(&mut window);
-
-        let event = Event::Mouse(MouseEvent::DragEntered {});
-        let event_status = window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
-        match event_status {
-            EventStatus::AcceptDrop(DropEffect::Copy) => *pdwEffect = DROPEFFECT_COPY,
-            EventStatus::AcceptDrop(DropEffect::Move) => *pdwEffect = DROPEFFECT_MOVE,
-            EventStatus::AcceptDrop(DropEffect::Link) => *pdwEffect = DROPEFFECT_LINK,
-            EventStatus::AcceptDrop(DropEffect::Scroll) => *pdwEffect = DROPEFFECT_SCROLL,
-            _ => *pdwEffect = DROPEFFECT_NONE,
-        }
-
+        Self::on_event(this, Some(pdwEffect), MouseEvent::DragEntered {});
         S_OK
     }
     
@@ -891,34 +899,12 @@ impl DropTarget {
         pdwEffect: *mut DWORD,
     ) -> HRESULT
     {
-        let drop_target = &*(this as *mut DropTarget);
-        let window_state = &*drop_target.window_state;
-        let mut window = window_state.create_window();
-        let mut window = crate::Window::new(&mut window);
-
-        let event = Event::Mouse(MouseEvent::DragMoved {});
-        let event_status = window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
-        match event_status {
-            EventStatus::AcceptDrop(DropEffect::Copy) => *pdwEffect = DROPEFFECT_COPY,
-            EventStatus::AcceptDrop(DropEffect::Move) => *pdwEffect = DROPEFFECT_MOVE,
-            EventStatus::AcceptDrop(DropEffect::Link) => *pdwEffect = DROPEFFECT_LINK,
-            EventStatus::AcceptDrop(DropEffect::Scroll) => *pdwEffect = DROPEFFECT_SCROLL,
-            _ => *pdwEffect = DROPEFFECT_NONE,
-        }
-
+        Self::on_event(this, Some(pdwEffect), MouseEvent::DragMoved {});
         S_OK
     }
     
     unsafe extern "system" fn drag_leave(this: *mut IDropTarget) -> HRESULT {
-        let drop_target = &*(this as *mut DropTarget);
-        let window_state = &*drop_target.window_state;
-        let mut window = window_state.create_window();
-        let mut window = crate::Window::new(&mut window);
-
-        let event = Event::Mouse(MouseEvent::DragLeft {});
-
-        window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
-
+        Self::on_event(this, None, MouseEvent::DragLeft {});
         S_OK
     }
     
@@ -930,21 +916,18 @@ impl DropTarget {
         pdwEffect: *mut DWORD,
     ) -> HRESULT
     {
-        let drop_target = &*(this as *mut DropTarget);
-        let window_state = &*drop_target.window_state;
-        let mut window = window_state.create_window();
-        let mut window = crate::Window::new(&mut window);
-
-        let event = Event::Mouse(MouseEvent::DragDropped {});
-        let event_status = window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
-        match event_status {
-            EventStatus::AcceptDrop(DropEffect::Copy) => *pdwEffect = DROPEFFECT_COPY,
-            EventStatus::AcceptDrop(DropEffect::Move) => *pdwEffect = DROPEFFECT_MOVE,
-            EventStatus::AcceptDrop(DropEffect::Link) => *pdwEffect = DROPEFFECT_LINK,
-            EventStatus::AcceptDrop(DropEffect::Scroll) => *pdwEffect = DROPEFFECT_SCROLL,
-            _ => *pdwEffect = DROPEFFECT_NONE,
-        }
-
+        Self::on_event(this, Some(pdwEffect), MouseEvent::DragDropped {});
         S_OK
+    }
+}
+
+impl DropEffect {
+    pub fn to_dword(&self) -> DWORD {
+        match self {
+            DropEffect::Copy => DROPEFFECT_COPY,
+            DropEffect::Move => DROPEFFECT_MOVE,
+            DropEffect::Link => DROPEFFECT_LINK,
+            DropEffect::Scroll => DROPEFFECT_SCROLL,
+        }
     }
 }
