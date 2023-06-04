@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use keyboard_types::{KeyboardEvent, Modifiers};
 
 use crate::{Point, WindowInfo};
@@ -32,7 +34,7 @@ pub enum ScrollDelta {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MouseEvent {
     /// The mouse cursor was moved
     CursorMoved {
@@ -77,10 +79,16 @@ pub enum MouseEvent {
     CursorLeft,
 
     // TODO: Document
-    DragEntered,
+    DragEntered {
+        data: Option<DropData>,
+    },
+
     DragMoved,
     DragLeft,
-    DragDropped,
+
+    DragDropped {
+        data: Option<DropData>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +112,11 @@ pub enum DropEffect {
     Move,
     Link,
     Scroll,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DropData {
+    Files(Vec<PathBuf>),
 }
 
 /// Return value for [WindowHandler::on_event](`crate::WindowHandler::on_event()`),

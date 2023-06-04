@@ -4,10 +4,12 @@ use winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM, DWOR
 use winapi::shared::ntdef::{HRESULT, ULONG};
 use winapi::shared::windef::{HWND, RECT, POINTL};
 use winapi::shared::winerror::{S_OK, E_NOINTERFACE};
+use winapi::shared::wtypes::DVASPECT_CONTENT;
 use winapi::um::combaseapi::CoCreateGuid;
-use winapi::um::objidl::IDataObject;
+use winapi::um::objidl::{IDataObject, STGMEDIUM, FORMATETC, TYMED_HGLOBAL};
 use winapi::um::ole2::{RegisterDragDrop, OleInitialize};
 use winapi::um::oleidl::{IDropTarget, IDropTargetVtbl, LPDROPTARGET, DROPEFFECT_COPY, DROPEFFECT_NONE, DROPEFFECT_MOVE, DROPEFFECT_LINK, DROPEFFECT_SCROLL};
+use winapi::um::shellapi::DragQueryFileW;
 use winapi::um::unknwnbase::{IUnknownVtbl, IUnknown};
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
@@ -20,15 +22,16 @@ use winapi::um::winuser::{
     WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
     WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD,
     WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
-    XBUTTON1, XBUTTON2,
+    XBUTTON1, XBUTTON2, CF_HDROP,
 };
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
-use std::ffi::{c_void, OsStr};
+use std::ffi::{c_void, OsStr, OsString};
 use std::marker::PhantomData;
 use std::mem::transmute;
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::prelude::OsStringExt;
 use std::ptr::null_mut;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -39,7 +42,7 @@ const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 
 use crate::{
     Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, DropEffect, EventStatus,
+    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, DropEffect, EventStatus, DropData,
 };
 
 use super::keyboard::KeyboardState;
@@ -843,6 +846,49 @@ impl DropTarget {
         }
     }
 
+    fn parse_drop_data(data_object: &IDataObject) -> Option<DropData> {
+        let format = FORMATETC {
+            cfFormat: CF_HDROP as u16,
+            ptd: null_mut(),
+            dwAspect: DVASPECT_CONTENT,
+            lindex: -1,
+            tymed: TYMED_HGLOBAL,
+        };
+
+        let mut medium = STGMEDIUM {
+            tymed: 0,
+            u: null_mut(),
+            pUnkForRelease: null_mut(),
+        };
+
+        unsafe {
+            let hresult = data_object.GetData(&format, &mut medium);
+            assert!(hresult == S_OK); // TODO: Error handling
+
+            let hdrop = transmute((*medium.u).hGlobal());
+       
+            let item_count = DragQueryFileW(hdrop, 0xFFFFFFFF, null_mut(), 0);
+            if item_count == 0 {
+                return None;
+            }
+            
+            let mut paths = Vec::with_capacity(item_count as usize);
+
+            for i in 0..item_count {
+                let characters = DragQueryFileW(hdrop, i, null_mut(), 0);
+                let buffer_size = characters as usize + 1;
+                let mut buffer = Vec::<u16>::with_capacity(buffer_size);
+
+                DragQueryFileW(hdrop, i, transmute(buffer.spare_capacity_mut().as_mut_ptr()), buffer_size as u32);
+                buffer.set_len(buffer_size);
+
+                paths.push(OsString::from_wide(&buffer[..characters as usize]).into())
+            }
+
+            Some(DropData::Files(paths))
+        }
+    }
+
     unsafe extern "system" fn query_interface(
         this: *mut IUnknown,
         riid: REFIID,
@@ -888,7 +934,12 @@ impl DropTarget {
         pdwEffect: *mut DWORD,
     ) -> HRESULT
     {
-        Self::on_event(this, Some(pdwEffect), MouseEvent::DragEntered {});
+        let data = Self::parse_drop_data(&*pDataObj);
+        let event = MouseEvent::DragEntered {
+            data
+        };
+
+        Self::on_event(this, Some(pdwEffect), event);
         S_OK
     }
     
@@ -899,12 +950,13 @@ impl DropTarget {
         pdwEffect: *mut DWORD,
     ) -> HRESULT
     {
-        Self::on_event(this, Some(pdwEffect), MouseEvent::DragMoved {});
+        let event = MouseEvent::DragMoved {};
+        Self::on_event(this, Some(pdwEffect), event);
         S_OK
     }
     
     unsafe extern "system" fn drag_leave(this: *mut IDropTarget) -> HRESULT {
-        Self::on_event(this, None, MouseEvent::DragLeft {});
+        Self::on_event(this, None, MouseEvent::DragLeft);
         S_OK
     }
     
@@ -916,7 +968,12 @@ impl DropTarget {
         pdwEffect: *mut DWORD,
     ) -> HRESULT
     {
-        Self::on_event(this, Some(pdwEffect), MouseEvent::DragDropped {});
+        let data = Self::parse_drop_data(&*pDataObj);
+        let event = MouseEvent::DragDropped {
+            data
+        };
+
+        Self::on_event(this, Some(pdwEffect), event);
         S_OK
     }
 }
