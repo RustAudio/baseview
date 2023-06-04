@@ -920,14 +920,3 @@ impl DropTarget {
         S_OK
     }
 }
-
-impl DropEffect {
-    pub fn to_dword(&self) -> DWORD {
-        match self {
-            DropEffect::Copy => DROPEFFECT_COPY,
-            DropEffect::Move => DROPEFFECT_MOVE,
-            DropEffect::Link => DROPEFFECT_LINK,
-            DropEffect::Scroll => DROPEFFECT_SCROLL,
-        }
-    }
-}
