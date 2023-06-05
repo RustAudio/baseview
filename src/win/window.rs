@@ -958,12 +958,17 @@ impl DropTarget {
     ) -> HRESULT
     {
         let drop_target = &mut *(this as *mut DropTarget);
+        let window_state = unsafe { &*drop_target.window_state };
         
         drop_target.parse_coordinates(pt);
         drop_target.parse_drop_data(&*pDataObj);
 
         let event = MouseEvent::DragEntered {
             position: drop_target.drag_position,
+            modifiers: window_state
+                .keyboard_state
+                .borrow()
+                .get_modifiers_from_mouse_wparam(grfKeyState as WPARAM),
             data: drop_target.drop_data.clone(),
         };
 
@@ -979,11 +984,16 @@ impl DropTarget {
     ) -> HRESULT
     {
         let drop_target = &mut *(this as *mut DropTarget);
+        let window_state = unsafe { &*drop_target.window_state };
 
         drop_target.parse_coordinates(pt);
 
         let event = MouseEvent::DragMoved {
             position: drop_target.drag_position,
+            modifiers: window_state
+                .keyboard_state
+                .borrow()
+                .get_modifiers_from_mouse_wparam(grfKeyState as WPARAM),
             data: drop_target.drop_data.clone(),
         };
 
@@ -993,13 +1003,7 @@ impl DropTarget {
     
     unsafe extern "system" fn drag_leave(this: *mut IDropTarget) -> HRESULT {
         let drop_target = &mut *(this as *mut DropTarget);
-
-        let event = MouseEvent::DragLeft {
-            position: drop_target.drag_position,
-            data: drop_target.drop_data.clone(),
-        };
-
-        drop_target.on_event(None, event);
+        drop_target.on_event(None, MouseEvent::DragLeft);
         S_OK
     }
     
@@ -1012,12 +1016,17 @@ impl DropTarget {
     ) -> HRESULT
     {
         let drop_target = &mut *(this as *mut DropTarget);
+        let window_state = unsafe { &*drop_target.window_state };
 
         drop_target.parse_coordinates(pt);
         drop_target.parse_drop_data(&*pDataObj);
 
         let event = MouseEvent::DragDropped {
             position: drop_target.drag_position,
+            modifiers: window_state
+                .keyboard_state
+                .borrow()
+                .get_modifiers_from_mouse_wparam(grfKeyState as WPARAM),
             data: drop_target.drop_data.clone(),
         };
 

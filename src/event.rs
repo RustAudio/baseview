@@ -80,22 +80,28 @@ pub enum MouseEvent {
 
     // TODO: Document
     DragEntered {
+        /// The logical coordinates of the mouse position
         position: Point,
+        /// The modifiers that were held down just before the event.
+        modifiers: Modifiers,
         data: DropData,
     },
 
     DragMoved {
+        /// The logical coordinates of the mouse position
         position: Point,
+        /// The modifiers that were held down just before the event.
+        modifiers: Modifiers,
         data: DropData,
     },
 
-    DragLeft {
-        position: Point,
-        data: DropData,
-    },
+    DragLeft,
 
     DragDropped {
+        /// The logical coordinates of the mouse position
         position: Point,
+        /// The modifiers that were held down just before the event.
+        modifiers: Modifiers,
         data: DropData,
     },
 }
