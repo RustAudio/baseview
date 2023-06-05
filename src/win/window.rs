@@ -801,9 +801,9 @@ pub struct DropTarget {
 
     window_state: *mut WindowState,
 
-    // Drop data is cached since DragOver callbacks don't provide drop data
-    // and handling drag move events gets awkward without having access to
-    // drop data
+    // These are cached since DragOver and DragLeave callbacks don't provide them,
+    // and handling drag move events gets awkward on the client end otherwise
+    drag_coordinates: (i32, i32),
     drop_data: DropData,
 }
 
@@ -827,6 +827,7 @@ impl DropTarget {
 
             window_state,
 
+            drag_coordinates: (0, 0),
             drop_data: DropData::None,
         }
     }
@@ -850,6 +851,18 @@ impl DropTarget {
                 }        
             } 
         }
+    }
+
+    fn parse_coordinates(&mut self, pt: *const POINTL) {
+        // There's a bug in winapi: the POINTL pointer should actually be a POINTL structure
+        // This happens to work on 64-bit platforms because two c_longs (that translate to
+        // 32-bit signed integers) happen to be the same size as a 64-bit pointer...
+        // For now, just hack around that bug
+
+        let x = pt as i64 & u32::MAX as i64;
+        let y = pt as i64 >> 32;
+        
+        self.drag_coordinates = (x as i32, y as i32)
     }
 
     fn parse_drop_data(&mut self, data_object: &IDataObject) {
@@ -943,9 +956,12 @@ impl DropTarget {
     ) -> HRESULT
     {
         let drop_target = &mut *(this as *mut DropTarget);
-
+        
+        drop_target.parse_coordinates(pt);
         drop_target.parse_drop_data(&*pDataObj);
+
         let event = MouseEvent::DragEntered {
+            coordinates: drop_target.drag_coordinates,
             data: drop_target.drop_data.clone(),
         };
 
@@ -962,7 +978,10 @@ impl DropTarget {
     {
         let drop_target = &mut *(this as *mut DropTarget);
 
+        drop_target.parse_coordinates(pt);
+
         let event = MouseEvent::DragMoved {
+            coordinates: drop_target.drag_coordinates,
             data: drop_target.drop_data.clone(),
         };
 
@@ -974,6 +993,7 @@ impl DropTarget {
         let drop_target = &mut *(this as *mut DropTarget);
 
         let event = MouseEvent::DragLeft {
+            coordinates: drop_target.drag_coordinates,
             data: drop_target.drop_data.clone(),
         };
 
@@ -991,8 +1011,11 @@ impl DropTarget {
     {
         let drop_target = &mut *(this as *mut DropTarget);
 
+        drop_target.parse_coordinates(pt);
         drop_target.parse_drop_data(&*pDataObj);
+
         let event = MouseEvent::DragDropped {
+            coordinates: drop_target.drag_coordinates,
             data: drop_target.drop_data.clone(),
         };
 

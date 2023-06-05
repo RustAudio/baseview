@@ -80,18 +80,22 @@ pub enum MouseEvent {
 
     // TODO: Document
     DragEntered {
+        coordinates: (i32, i32),
         data: DropData,
     },
 
     DragMoved {
+        coordinates: (i32, i32),
         data: DropData,
     },
 
     DragLeft {
+        coordinates: (i32, i32),
         data: DropData,
     },
 
     DragDropped {
+        coordinates: (i32, i32),
         data: DropData,
     },
 }
