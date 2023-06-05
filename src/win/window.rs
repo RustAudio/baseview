@@ -726,13 +726,9 @@ impl Window<'_> {
             };
 
             let window_state_ptr = Box::into_raw(window_state);
-
-            // TODO: Error handling
-            OleInitialize(null_mut());
-
             let drop_target = Arc::new(DropTarget::new(window_state_ptr));
 
-            // TODO: Error handling
+            OleInitialize(null_mut());
             RegisterDragDrop(hwnd, Arc::as_ptr(&drop_target) as LPDROPTARGET);
 
             (*window_state_ptr)._drop_target = Some(drop_target);

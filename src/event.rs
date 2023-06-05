@@ -78,12 +78,12 @@ pub enum MouseEvent {
     /// May not be available on all platforms.
     CursorLeft,
 
-    // TODO: Document
     DragEntered {
         /// The logical coordinates of the mouse position
         position: Point,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
+        /// Data being dragged
         data: DropData,
     },
 
@@ -92,6 +92,7 @@ pub enum MouseEvent {
         position: Point,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
+        /// Data being dragged
         data: DropData,
     },
 
@@ -102,6 +103,7 @@ pub enum MouseEvent {
         position: Point,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
+        /// Data being dragged
         data: DropData,
     },
 }
