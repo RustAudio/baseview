@@ -156,6 +156,7 @@ pub enum EventStatus {
     /// DAW functionality for playing piano keys with the keyboard while a
     /// plugin window is in focus.
     Ignored,
-    // TODO: Document
+    /// We are prepared to handle the data in the drag and dropping will
+    /// result in [DropEffect] 
     AcceptDrop(DropEffect),
 }
