@@ -800,6 +800,11 @@ pub struct DropTarget {
     vtbl: Arc<IDropTargetVtbl>,
 
     window_state: *mut WindowState,
+
+    // Drop data is cached since DragOver callbacks don't provide drop data
+    // and handling drag move events gets awkward without having access to
+    // drop data
+    drop_data: DropData,
 }
 
 impl DropTarget {
@@ -821,13 +826,14 @@ impl DropTarget {
             vtbl,
 
             window_state,
+
+            drop_data: DropData::None,
         }
     }
 
-    fn on_event(this: *mut IDropTarget, pdwEffect: Option<*mut DWORD>, event: MouseEvent) {
+    fn on_event(&self, pdwEffect: Option<*mut DWORD>, event: MouseEvent) {
         unsafe {
-            let drop_target = &*(this as *mut DropTarget);
-            let window_state = &*drop_target.window_state;
+            let window_state = &*self.window_state;
             let mut window = window_state.create_window();
             let mut window = crate::Window::new(&mut window);
     
@@ -846,7 +852,7 @@ impl DropTarget {
         }
     }
 
-    fn parse_drop_data(data_object: &IDataObject) -> Option<DropData> {
+    fn parse_drop_data(&mut self, data_object: &IDataObject) {
         let format = FORMATETC {
             cfFormat: CF_HDROP as u16,
             ptd: null_mut(),
@@ -863,13 +869,17 @@ impl DropTarget {
 
         unsafe {
             let hresult = data_object.GetData(&format, &mut medium);
-            assert!(hresult == S_OK); // TODO: Error handling
+            if hresult != S_OK {
+                self.drop_data = DropData::None;
+                return;
+            }
 
             let hdrop = transmute((*medium.u).hGlobal());
        
             let item_count = DragQueryFileW(hdrop, 0xFFFFFFFF, null_mut(), 0);
             if item_count == 0 {
-                return None;
+                self.drop_data = DropData::None;
+                return;
             }
             
             let mut paths = Vec::with_capacity(item_count as usize);
@@ -885,7 +895,7 @@ impl DropTarget {
                 paths.push(OsString::from_wide(&buffer[..characters as usize]).into())
             }
 
-            Some(DropData::Files(paths))
+            self.drop_data = DropData::Files(paths);
         }
     }
 
@@ -895,8 +905,6 @@ impl DropTarget {
         ppvObject: *mut *mut winapi::ctypes::c_void,
     ) -> HRESULT
     {
-        println!("query_interface");
-
         if IsEqualIID(&*riid, &IUnknown::uuidof()) || IsEqualIID(&*riid, &IDropTarget::uuidof()){
             Self::add_ref(this);
             *ppvObject = unsafe { transmute(this) };
@@ -934,12 +942,14 @@ impl DropTarget {
         pdwEffect: *mut DWORD,
     ) -> HRESULT
     {
-        let data = Self::parse_drop_data(&*pDataObj);
+        let drop_target = &mut *(this as *mut DropTarget);
+
+        drop_target.parse_drop_data(&*pDataObj);
         let event = MouseEvent::DragEntered {
-            data
+            data: drop_target.drop_data.clone(),
         };
 
-        Self::on_event(this, Some(pdwEffect), event);
+        drop_target.on_event(Some(pdwEffect), event);
         S_OK
     }
     
@@ -950,13 +960,24 @@ impl DropTarget {
         pdwEffect: *mut DWORD,
     ) -> HRESULT
     {
-        let event = MouseEvent::DragMoved {};
-        Self::on_event(this, Some(pdwEffect), event);
+        let drop_target = &mut *(this as *mut DropTarget);
+
+        let event = MouseEvent::DragMoved {
+            data: drop_target.drop_data.clone(),
+        };
+
+        drop_target.on_event(Some(pdwEffect), event);
         S_OK
     }
     
     unsafe extern "system" fn drag_leave(this: *mut IDropTarget) -> HRESULT {
-        Self::on_event(this, None, MouseEvent::DragLeft);
+        let drop_target = &mut *(this as *mut DropTarget);
+
+        let event = MouseEvent::DragLeft {
+            data: drop_target.drop_data.clone(),
+        };
+
+        drop_target.on_event(None, event);
         S_OK
     }
     
@@ -968,12 +989,14 @@ impl DropTarget {
         pdwEffect: *mut DWORD,
     ) -> HRESULT
     {
-        let data = Self::parse_drop_data(&*pDataObj);
+        let drop_target = &mut *(this as *mut DropTarget);
+
+        drop_target.parse_drop_data(&*pDataObj);
         let event = MouseEvent::DragDropped {
-            data
+            data: drop_target.drop_data.clone(),
         };
 
-        Self::on_event(this, Some(pdwEffect), event);
+        drop_target.on_event(Some(pdwEffect), event);
         S_OK
     }
 }

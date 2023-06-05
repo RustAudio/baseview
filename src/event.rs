@@ -80,14 +80,19 @@ pub enum MouseEvent {
 
     // TODO: Document
     DragEntered {
-        data: Option<DropData>,
+        data: DropData,
     },
 
-    DragMoved,
-    DragLeft,
+    DragMoved {
+        data: DropData,
+    },
+
+    DragLeft {
+        data: DropData,
+    },
 
     DragDropped {
-        data: Option<DropData>,
+        data: DropData,
     },
 }
 
@@ -116,6 +121,7 @@ pub enum DropEffect {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DropData {
+    None,
     Files(Vec<PathBuf>),
 }
 
