@@ -42,7 +42,7 @@ const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 
 use crate::{
     Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, DropEffect, EventStatus, DropData,
+    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy, DropEffect, EventStatus, DropData, Point,
 };
 
 use super::keyboard::KeyboardState;
@@ -803,7 +803,7 @@ pub struct DropTarget {
 
     // These are cached since DragOver and DragLeave callbacks don't provide them,
     // and handling drag move events gets awkward on the client end otherwise
-    drag_coordinates: (i32, i32),
+    drag_position: Point,
     drop_data: DropData,
 }
 
@@ -827,7 +827,7 @@ impl DropTarget {
 
             window_state,
 
-            drag_coordinates: (0, 0),
+            drag_position: Point::new(0.0, 0.0),
             drop_data: DropData::None,
         }
     }
@@ -858,11 +858,13 @@ impl DropTarget {
         // This happens to work on 64-bit platforms because two c_longs (that translate to
         // 32-bit signed integers) happen to be the same size as a 64-bit pointer...
         // For now, just hack around that bug
+        let window_state = unsafe { &*self.window_state };
 
         let x = pt as i64 & u32::MAX as i64;
         let y = pt as i64 >> 32;
         
-        self.drag_coordinates = (x as i32, y as i32)
+        let phy_point = PhyPoint::new(x as i32, y as i32);
+        self.drag_position = phy_point.to_logical(&window_state.window_info.borrow())
     }
 
     fn parse_drop_data(&mut self, data_object: &IDataObject) {
@@ -961,7 +963,7 @@ impl DropTarget {
         drop_target.parse_drop_data(&*pDataObj);
 
         let event = MouseEvent::DragEntered {
-            coordinates: drop_target.drag_coordinates,
+            position: drop_target.drag_position,
             data: drop_target.drop_data.clone(),
         };
 
@@ -981,7 +983,7 @@ impl DropTarget {
         drop_target.parse_coordinates(pt);
 
         let event = MouseEvent::DragMoved {
-            coordinates: drop_target.drag_coordinates,
+            position: drop_target.drag_position,
             data: drop_target.drop_data.clone(),
         };
 
@@ -993,7 +995,7 @@ impl DropTarget {
         let drop_target = &mut *(this as *mut DropTarget);
 
         let event = MouseEvent::DragLeft {
-            coordinates: drop_target.drag_coordinates,
+            position: drop_target.drag_position,
             data: drop_target.drop_data.clone(),
         };
 
@@ -1015,7 +1017,7 @@ impl DropTarget {
         drop_target.parse_drop_data(&*pDataObj);
 
         let event = MouseEvent::DragDropped {
-            coordinates: drop_target.drag_coordinates,
+            position: drop_target.drag_position,
             data: drop_target.drop_data.clone(),
         };
 
