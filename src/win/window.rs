@@ -8,6 +8,7 @@ use winapi::shared::wtypes::DVASPECT_CONTENT;
 use winapi::um::combaseapi::CoCreateGuid;
 use winapi::um::objidl::{IDataObject, STGMEDIUM, FORMATETC, TYMED_HGLOBAL};
 use winapi::um::ole2::{RegisterDragDrop, OleInitialize};
+use winapi::um::ole2::{RegisterDragDrop, OleInitialize, RevokeDragDrop};
 use winapi::um::oleidl::{IDropTarget, IDropTargetVtbl, LPDROPTARGET, DROPEFFECT_COPY, DROPEFFECT_NONE, DROPEFFECT_MOVE, DROPEFFECT_LINK, DROPEFFECT_SCROLL};
 use winapi::um::shellapi::DragQueryFileW;
 use winapi::um::unknwnbase::{IUnknownVtbl, IUnknown};
@@ -158,6 +159,7 @@ unsafe extern "system" fn wnd_proc(
 
         // NOTE: This is not handled in `wnd_proc_inner` because of the deferred task loop above
         if msg == WM_NCDESTROY {
+            RevokeDragDrop(hwnd);
             unregister_wnd_class((*window_state_ptr).window_class);
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             drop(Rc::from_raw(window_state_ptr));
