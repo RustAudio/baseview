@@ -3,11 +3,10 @@ use winapi::shared::guiddef::{GUID, REFIID, IsEqualIID};
 use winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM, DWORD};
 use winapi::shared::ntdef::{HRESULT, ULONG};
 use winapi::shared::windef::{HWND, RECT, POINTL};
-use winapi::shared::winerror::{S_OK, E_NOINTERFACE};
+use winapi::shared::winerror::{S_OK, E_NOINTERFACE, E_UNEXPECTED};
 use winapi::shared::wtypes::DVASPECT_CONTENT;
 use winapi::um::combaseapi::CoCreateGuid;
 use winapi::um::objidl::{IDataObject, STGMEDIUM, FORMATETC, TYMED_HGLOBAL};
-use winapi::um::ole2::{RegisterDragDrop, OleInitialize};
 use winapi::um::ole2::{RegisterDragDrop, OleInitialize, RevokeDragDrop};
 use winapi::um::oleidl::{IDropTarget, IDropTargetVtbl, LPDROPTARGET, DROPEFFECT_COPY, DROPEFFECT_NONE, DROPEFFECT_MOVE, DROPEFFECT_LINK, DROPEFFECT_SCROLL};
 use winapi::um::shellapi::DragQueryFileW;
@@ -34,7 +33,7 @@ use std::mem::transmute;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::prelude::OsStringExt;
 use std::ptr::null_mut;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
 
@@ -471,6 +470,7 @@ struct WindowState {
     mouse_button_counter: Cell<usize>,
     // Initialized late so the `Window` can hold a reference to this `WindowState`
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
+    _drop_target: RefCell<Option<Rc<DropTarget>>>,
     scale_policy: WindowScalePolicy,
     dw_style: u32,
 
@@ -677,6 +677,7 @@ impl Window<'_> {
                 // The Window refers to this `WindowState`, so this `handler` needs to be
                 // initialized later
                 handler: RefCell::new(None),
+                _drop_target: RefCell::new(None),
                 scale_policy: options.scale,
                 dw_style: flags,
 
@@ -724,10 +725,11 @@ impl Window<'_> {
                 None
             };
 
-            let drop_target = Rc::new(DropTarget::new(window_state.clone()));
+            let drop_target = Rc::new(DropTarget::new(Rc::downgrade(&window_state)));
+            *window_state._drop_target.borrow_mut() = Some(drop_target.clone());
 
             OleInitialize(null_mut());
-            RegisterDragDrop(hwnd, Rc::into_raw(drop_target) as LPDROPTARGET);
+            RegisterDragDrop(hwnd, Rc::as_ptr(&drop_target) as LPDROPTARGET);
 
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Rc::into_raw(window_state) as *const _ as _);
             SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
@@ -806,7 +808,7 @@ const DROP_TARGET_VTBL: IDropTargetVtbl = IDropTargetVtbl {
 pub struct DropTarget {
     base: IDropTarget,
 
-    window_state: Rc<WindowState>,
+    window_state: Weak<WindowState>,
 
     // These are cached since DragOver and DragLeave callbacks don't provide them,
     // and handling drag move events gets awkward on the client end otherwise
@@ -815,7 +817,7 @@ pub struct DropTarget {
 }
 
 impl DropTarget {
-    fn new(window_state: Rc<WindowState>) -> Self {
+    fn new(window_state: Weak<WindowState>) -> Self {
         Self {
             base: IDropTarget { lpVtbl: &DROP_TARGET_VTBL },
 
@@ -827,8 +829,11 @@ impl DropTarget {
     }
 
     fn on_event(&self, pdwEffect: Option<*mut DWORD>, event: MouseEvent) {
+        let Some(window_state) = self.window_state.upgrade() else {
+            return;
+        };
+
         unsafe {
-            let window_state = &*self.window_state;
             let mut window = window_state.create_window();
             let mut window = crate::Window::new(&mut window);
     
@@ -848,10 +853,12 @@ impl DropTarget {
     }
 
     fn parse_coordinates(&mut self, pt: POINTL) {
-        let window_state = unsafe { &*self.window_state };
+        let Some(window_state) = self.window_state.upgrade() else {
+            return;
+        };
 
         let phy_point = PhyPoint::new(pt.x, pt.y);
-        self.drag_position = phy_point.to_logical(&window_state.window_info.borrow())
+        self.drag_position = phy_point.to_logical(&window_state.window_info.borrow());
     }
 
     fn parse_drop_data(&mut self, data_object: &IDataObject) {
@@ -945,7 +952,11 @@ impl DropTarget {
     ) -> HRESULT
     {
         let drop_target = &mut *(this as *mut DropTarget);
-        let modifiers = drop_target.window_state.keyboard_state.borrow().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+        let Some(window_state) = drop_target.window_state.upgrade() else {
+            return E_UNEXPECTED;
+        };
+
+        let modifiers = window_state.keyboard_state.borrow().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
 
         drop_target.parse_coordinates(pt);
         drop_target.parse_drop_data(&*pDataObj);
@@ -968,7 +979,11 @@ impl DropTarget {
     ) -> HRESULT
     {
         let drop_target = &mut *(this as *mut DropTarget);
-        let modifiers = drop_target.window_state.keyboard_state.borrow().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+        let Some(window_state) = drop_target.window_state.upgrade() else {
+            return E_UNEXPECTED;
+        };
+
+        let modifiers = window_state.keyboard_state.borrow().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
 
         drop_target.parse_coordinates(pt);
 
@@ -997,7 +1012,11 @@ impl DropTarget {
     ) -> HRESULT
     {
         let drop_target = &mut *(this as *mut DropTarget);
-        let modifiers = drop_target.window_state.keyboard_state.borrow().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+        let Some(window_state) = drop_target.window_state.upgrade() else {
+            return E_UNEXPECTED;
+        };
+
+        let modifiers = window_state.keyboard_state.borrow().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
 
         drop_target.parse_coordinates(pt);
         drop_target.parse_drop_data(&*pDataObj);
