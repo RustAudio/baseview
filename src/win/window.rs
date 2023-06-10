@@ -472,7 +472,7 @@ struct WindowState {
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
     scale_policy: WindowScalePolicy,
     dw_style: u32,
-    _drop_target: Option<Arc<DropTarget>>,
+    _drop_target: Option<Rc<DropTarget>>,
 
     /// Tasks that should be executed at the end of `wnd_proc`. This is needed to avoid mutably
     /// borrowing the fields from `WindowState` more than once. For instance, when the window
@@ -726,10 +726,10 @@ impl Window<'_> {
             };
 
             let window_state_ptr = Box::into_raw(window_state);
-            let drop_target = Arc::new(DropTarget::new(window_state_ptr));
+            let drop_target = Rc::new(DropTarget::new(window_state_ptr));
 
             OleInitialize(null_mut());
-            RegisterDragDrop(hwnd, Arc::as_ptr(&drop_target) as LPDROPTARGET);
+            RegisterDragDrop(hwnd, Rc::as_ptr(&drop_target) as LPDROPTARGET);
 
             (*window_state_ptr)._drop_target = Some(drop_target);
 
@@ -924,21 +924,21 @@ impl DropTarget {
     }
     
     unsafe extern "system" fn add_ref(this: *mut IUnknown) -> ULONG {
-        let arc = Arc::from_raw(this);
-        let result = Arc::strong_count(&arc) + 1;
-        let _ = Arc::into_raw(arc);
+        let arc = Rc::from_raw(this);
+        let result = Rc::strong_count(&arc) + 1;
+        let _ = Rc::into_raw(arc);
 
-        Arc::increment_strong_count(this);
+        Rc::increment_strong_count(this);
 
         result as ULONG
     }
     
     unsafe extern "system" fn release(this: *mut IUnknown) -> ULONG {
-        let arc = Arc::from_raw(this);
-        let result = Arc::strong_count(&arc) - 1;
-        let _ = Arc::into_raw(arc);
+        let arc = Rc::from_raw(this);
+        let result = Rc::strong_count(&arc) - 1;
+        let _ = Rc::into_raw(arc);
 
-        Arc::decrement_strong_count(this);
+        Rc::decrement_strong_count(this);
 
         result as ULONG
     }
