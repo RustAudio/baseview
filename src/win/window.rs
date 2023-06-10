@@ -34,7 +34,6 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::prelude::OsStringExt;
 use std::ptr::null_mut;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
 
@@ -802,16 +801,20 @@ pub struct DropTarget {
     drop_data: DropData,
 }
 
+// These function pointers have to be stored in a (const) variable before they can be transmuted
+const DRAG_ENTER_PTR: unsafe extern "system" fn(this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT = DropTarget::drag_enter;
+const DRAG_OVER_PTR: unsafe extern "system" fn(this: *mut IDropTarget, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT = DropTarget::drag_over;
+const DROP_PTR: unsafe extern "system" fn(this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT = DropTarget::drop;
 const DROP_TARGET_VTBL: IDropTargetVtbl = IDropTargetVtbl {
     parent: IUnknownVtbl {
         QueryInterface: DropTarget::query_interface,
         AddRef: DropTarget::add_ref,
         Release: DropTarget::release,
     },
-    DragEnter: DropTarget::drag_enter,
-    DragOver: DropTarget::drag_over,
+    DragEnter: unsafe { transmute(DRAG_ENTER_PTR) },
+    DragOver: unsafe { transmute(DRAG_OVER_PTR) },
     DragLeave: DropTarget::drag_leave,
-    Drop: DropTarget::drop,
+    Drop: unsafe { transmute(DROP_PTR) },
 };
 
 impl DropTarget {
@@ -847,17 +850,10 @@ impl DropTarget {
         }
     }
 
-    fn parse_coordinates(&mut self, pt: *const POINTL) {
-        // There's a bug in winapi: the POINTL pointer should actually be a POINTL structure
-        // This happens to work on 64-bit platforms because two c_longs (that translate to
-        // 32-bit signed integers) happen to be the same size as a 64-bit pointer...
-        // For now, just hack around that bug
+    fn parse_coordinates(&mut self, pt: POINTL) {
         let window_state = unsafe { &*self.window_state };
 
-        let x = pt as i64 & u32::MAX as i64;
-        let y = pt as i64 >> 32;
-        
-        let phy_point = PhyPoint::new(x as i32, y as i32);
+        let phy_point = PhyPoint::new(pt.x, pt.y);
         self.drag_position = phy_point.to_logical(&window_state.window_info.borrow())
     }
 
@@ -947,7 +943,7 @@ impl DropTarget {
         this: *mut IDropTarget,
         pDataObj: *const IDataObject,
         grfKeyState: DWORD,
-        pt: *const POINTL,
+        pt: POINTL,
         pdwEffect: *mut DWORD,
     ) -> HRESULT
     {
@@ -973,7 +969,7 @@ impl DropTarget {
     unsafe extern "system" fn drag_over(
         this: *mut IDropTarget,
         grfKeyState: DWORD,
-        pt: *const POINTL,
+        pt: POINTL,
         pdwEffect: *mut DWORD,
     ) -> HRESULT
     {
@@ -1005,7 +1001,7 @@ impl DropTarget {
         this: *mut IDropTarget,
         pDataObj: *const IDataObject,
         grfKeyState: DWORD,
-        pt: *const POINTL,
+        pt: POINTL,
         pdwEffect: *mut DWORD,
     ) -> HRESULT
     {
