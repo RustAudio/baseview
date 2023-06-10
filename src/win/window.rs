@@ -160,7 +160,7 @@ unsafe extern "system" fn wnd_proc(
         if msg == WM_NCDESTROY {
             unregister_wnd_class((*window_state_ptr).window_class);
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-            drop(Box::from_raw(window_state_ptr));
+            drop(Rc::from_raw(window_state_ptr));
         }
 
         // The actual custom window proc has been moved to another function so we can always handle
@@ -471,7 +471,6 @@ struct WindowState {
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
     scale_policy: WindowScalePolicy,
     dw_style: u32,
-    _drop_target: Option<Rc<DropTarget>>,
 
     /// Tasks that should be executed at the end of `wnd_proc`. This is needed to avoid mutably
     /// borrowing the fields from `WindowState` more than once. For instance, when the window
@@ -666,7 +665,7 @@ impl Window<'_> {
             let (parent_handle, window_handle) = ParentHandle::new(hwnd);
             let parent_handle = if parented { Some(parent_handle) } else { None };
 
-            let window_state = Box::new(WindowState {
+            let window_state = Rc::new(WindowState {
                 hwnd,
                 window_class,
                 window_info: RefCell::new(window_info),
@@ -678,7 +677,6 @@ impl Window<'_> {
                 handler: RefCell::new(None),
                 scale_policy: options.scale,
                 dw_style: flags,
-                _drop_target: None,
 
                 deferred_tasks: RefCell::new(VecDeque::with_capacity(4)),
 
@@ -724,15 +722,12 @@ impl Window<'_> {
                 None
             };
 
-            let window_state_ptr = Box::into_raw(window_state);
-            let drop_target = Rc::new(DropTarget::new(window_state_ptr));
+            let drop_target = Rc::new(DropTarget::new(window_state.clone()));
 
             OleInitialize(null_mut());
-            RegisterDragDrop(hwnd, Rc::as_ptr(&drop_target) as LPDROPTARGET);
+            RegisterDragDrop(hwnd, Rc::into_raw(drop_target) as LPDROPTARGET);
 
-            (*window_state_ptr)._drop_target = Some(drop_target);
-
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, window_state_ptr as *const _ as _);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, Rc::into_raw(window_state) as *const _ as _);
             SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
 
             if let Some(mut new_rect) = new_rect {
@@ -789,18 +784,6 @@ pub fn copy_to_clipboard(data: &str) {
     todo!()
 }
 
-#[repr(C)]
-pub struct DropTarget {
-    base: IDropTarget,
-
-    window_state: *mut WindowState,
-
-    // These are cached since DragOver and DragLeave callbacks don't provide them,
-    // and handling drag move events gets awkward on the client end otherwise
-    drag_position: Point,
-    drop_data: DropData,
-}
-
 // These function pointers have to be stored in a (const) variable before they can be transmuted
 const DRAG_ENTER_PTR: unsafe extern "system" fn(this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT = DropTarget::drag_enter;
 const DRAG_OVER_PTR: unsafe extern "system" fn(this: *mut IDropTarget, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT = DropTarget::drag_over;
@@ -817,8 +800,20 @@ const DROP_TARGET_VTBL: IDropTargetVtbl = IDropTargetVtbl {
     Drop: unsafe { transmute(DROP_PTR) },
 };
 
+#[repr(C)]
+pub struct DropTarget {
+    base: IDropTarget,
+
+    window_state: Rc<WindowState>,
+
+    // These are cached since DragOver and DragLeave callbacks don't provide them,
+    // and handling drag move events gets awkward on the client end otherwise
+    drag_position: Point,
+    drop_data: DropData,
+}
+
 impl DropTarget {
-    fn new(window_state: *mut WindowState) -> Self {
+    fn new(window_state: Rc<WindowState>) -> Self {
         Self {
             base: IDropTarget { lpVtbl: &DROP_TARGET_VTBL },
 
@@ -948,17 +943,14 @@ impl DropTarget {
     ) -> HRESULT
     {
         let drop_target = &mut *(this as *mut DropTarget);
-        let window_state = unsafe { &*drop_target.window_state };
-        
+        let modifiers = drop_target.window_state.keyboard_state.borrow().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+
         drop_target.parse_coordinates(pt);
         drop_target.parse_drop_data(&*pDataObj);
 
         let event = MouseEvent::DragEntered {
             position: drop_target.drag_position,
-            modifiers: window_state
-                .keyboard_state
-                .borrow()
-                .get_modifiers_from_mouse_wparam(grfKeyState as WPARAM),
+            modifiers,
             data: drop_target.drop_data.clone(),
         };
 
@@ -974,16 +966,13 @@ impl DropTarget {
     ) -> HRESULT
     {
         let drop_target = &mut *(this as *mut DropTarget);
-        let window_state = unsafe { &*drop_target.window_state };
+        let modifiers = drop_target.window_state.keyboard_state.borrow().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
 
         drop_target.parse_coordinates(pt);
 
         let event = MouseEvent::DragMoved {
             position: drop_target.drag_position,
-            modifiers: window_state
-                .keyboard_state
-                .borrow()
-                .get_modifiers_from_mouse_wparam(grfKeyState as WPARAM),
+            modifiers,
             data: drop_target.drop_data.clone(),
         };
 
@@ -1006,17 +995,14 @@ impl DropTarget {
     ) -> HRESULT
     {
         let drop_target = &mut *(this as *mut DropTarget);
-        let window_state = unsafe { &*drop_target.window_state };
+        let modifiers = drop_target.window_state.keyboard_state.borrow().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
 
         drop_target.parse_coordinates(pt);
         drop_target.parse_drop_data(&*pDataObj);
 
         let event = MouseEvent::DragDropped {
             position: drop_target.drag_position,
-            modifiers: window_state
-                .keyboard_state
-                .borrow()
-                .get_modifiers_from_mouse_wparam(grfKeyState as WPARAM),
+            modifiers,
             data: drop_target.drop_data.clone(),
         };
 
