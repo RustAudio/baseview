@@ -916,7 +916,7 @@ impl DropTarget {
     {
         if IsEqualIID(&*riid, &IUnknown::uuidof()) || IsEqualIID(&*riid, &IDropTarget::uuidof()){
             Self::add_ref(this);
-            *ppvObject = unsafe { transmute(this) };
+            *ppvObject = this as *mut winapi::ctypes::c_void;
             return S_OK;
         }
     
