@@ -793,7 +793,6 @@ pub fn copy_to_clipboard(data: &str) {
 #[repr(C)]
 pub struct DropTarget {
     base: IDropTarget,
-    vtbl: Arc<IDropTargetVtbl>,
 
     window_state: *mut WindowState,
 
@@ -803,23 +802,22 @@ pub struct DropTarget {
     drop_data: DropData,
 }
 
+const DROP_TARGET_VTBL: IDropTargetVtbl = IDropTargetVtbl {
+    parent: IUnknownVtbl {
+        QueryInterface: DropTarget::query_interface,
+        AddRef: DropTarget::add_ref,
+        Release: DropTarget::release,
+    },
+    DragEnter: DropTarget::drag_enter,
+    DragOver: DropTarget::drag_over,
+    DragLeave: DropTarget::drag_leave,
+    Drop: DropTarget::drop,
+};
+
 impl DropTarget {
     fn new(window_state: *mut WindowState) -> Self {
-        let vtbl = Arc::new(IDropTargetVtbl {
-            parent: IUnknownVtbl {
-                QueryInterface: Self::query_interface,
-                AddRef: Self::add_ref,
-                Release: Self::release,
-            },
-            DragEnter: Self::drag_enter,
-            DragOver: Self::drag_over,
-            DragLeave: Self::drag_leave,
-            Drop: Self::drop,
-        });
-       
         Self {
-            base: IDropTarget { lpVtbl: Arc::as_ptr(&vtbl) },
-            vtbl,
+            base: IDropTarget { lpVtbl: &DROP_TARGET_VTBL },
 
             window_state,
 
