@@ -2,6 +2,8 @@ use winapi::shared::guiddef::GUID;
 use winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM};
 use winapi::shared::windef::{HWND, RECT};
 use winapi::um::combaseapi::CoCreateGuid;
+use winapi::um::ole2::{RegisterDragDrop, OleInitialize, RevokeDragDrop};
+use winapi::um::oleidl::LPDROPTARGET;
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
     GetDpiForWindow, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW,
@@ -16,7 +18,7 @@ use winapi::um::winuser::{
     XBUTTON1, XBUTTON2,
 };
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, RefCell, Ref, RefMut};
 use std::collections::VecDeque;
 use std::ffi::{c_void, OsStr};
 use std::marker::PhantomData;
@@ -33,6 +35,7 @@ use crate::{
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
+use super::drop_target::DropTarget;
 use super::keyboard::KeyboardState;
 
 #[cfg(feature = "opengl")]
@@ -147,9 +150,10 @@ unsafe extern "system" fn wnd_proc(
 
         // NOTE: This is not handled in `wnd_proc_inner` because of the deferred task loop above
         if msg == WM_NCDESTROY {
+            RevokeDragDrop(hwnd);
             unregister_wnd_class((*window_state_ptr).window_class);
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-            drop(Box::from_raw(window_state_ptr));
+            drop(Rc::from_raw(window_state_ptr));
         }
 
         // The actual custom window proc has been moved to another function so we can always handle
@@ -446,7 +450,7 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 /// because of the Windows message loops' reentrant nature. Care still needs to be taken to prevent
 /// `handler` from indirectly triggering other events that would also need to be handled using
 /// `handler`.
-struct WindowState {
+pub(super) struct WindowState {
     /// The HWND belonging to this window. The window's actual state is stored in the `WindowState`
     /// struct associated with this HWND through `unsafe { GetWindowLongPtrW(self.hwnd,
     /// GWLP_USERDATA) } as *const WindowState`.
@@ -458,6 +462,7 @@ struct WindowState {
     mouse_button_counter: Cell<usize>,
     // Initialized late so the `Window` can hold a reference to this `WindowState`
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
+    _drop_target: RefCell<Option<Rc<DropTarget>>>,
     scale_policy: WindowScalePolicy,
     dw_style: u32,
 
@@ -473,8 +478,20 @@ struct WindowState {
 }
 
 impl WindowState {
-    fn create_window(&self) -> Window {
+    pub(super) fn create_window(&self) -> Window {
         Window { state: self }
+    }
+
+    pub(super) fn window_info(&self) -> Ref<WindowInfo> {
+        self.window_info.borrow()
+    }
+
+    pub(super) fn keyboard_state(&self) -> Ref<KeyboardState> {
+        self.keyboard_state.borrow()
+    }
+
+    pub(super) fn handler_mut(&self) -> RefMut<Option<Box<dyn WindowHandler>>> {
+        self.handler.borrow_mut()
     }
 
     /// Handle a deferred task as described in [`Self::deferred_tasks
@@ -517,7 +534,7 @@ impl WindowState {
 /// Tasks that must be deferred until the end of [`wnd_proc()`] to avoid reentrant `WindowState`
 /// borrows. See the docstring on [`WindowState::deferred_tasks`] for more information.
 #[derive(Debug, Clone)]
-enum WindowTask {
+pub(super) enum WindowTask {
     /// Resize the window to the given size. The size is in logical pixels. DPI scaling is applied
     /// automatically.
     Resize(Size),
@@ -654,7 +671,7 @@ impl Window<'_> {
             let (parent_handle, window_handle) = ParentHandle::new(hwnd);
             let parent_handle = if parented { Some(parent_handle) } else { None };
 
-            let window_state = Box::new(WindowState {
+            let window_state = Rc::new(WindowState {
                 hwnd,
                 window_class,
                 window_info: RefCell::new(window_info),
@@ -664,6 +681,7 @@ impl Window<'_> {
                 // The Window refers to this `WindowState`, so this `handler` needs to be
                 // initialized later
                 handler: RefCell::new(None),
+                _drop_target: RefCell::new(None),
                 scale_policy: options.scale,
                 dw_style: flags,
 
@@ -711,7 +729,13 @@ impl Window<'_> {
                 None
             };
 
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(window_state) as *const _ as _);
+            let drop_target = Rc::new(DropTarget::new(Rc::downgrade(&window_state)));
+            *window_state._drop_target.borrow_mut() = Some(drop_target.clone());
+
+            OleInitialize(null_mut());
+            RegisterDragDrop(hwnd, Rc::as_ptr(&drop_target) as LPDROPTARGET);
+
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, Rc::into_raw(window_state) as *const _ as _);
             SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
 
             if let Some(mut new_rect) = new_rect {

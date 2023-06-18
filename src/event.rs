@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use keyboard_types::{KeyboardEvent, Modifiers};
 
 use crate::{Point, WindowInfo};
@@ -32,7 +34,7 @@ pub enum ScrollDelta {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MouseEvent {
     /// The mouse cursor was moved
     CursorMoved {
@@ -75,6 +77,35 @@ pub enum MouseEvent {
     ///
     /// May not be available on all platforms.
     CursorLeft,
+
+    DragEntered {
+        /// The logical coordinates of the mouse position
+        position: Point,
+        /// The modifiers that were held down just before the event.
+        modifiers: Modifiers,
+        /// Data being dragged
+        data: DropData,
+    },
+
+    DragMoved {
+        /// The logical coordinates of the mouse position
+        position: Point,
+        /// The modifiers that were held down just before the event.
+        modifiers: Modifiers,
+        /// Data being dragged
+        data: DropData,
+    },
+
+    DragLeft,
+
+    DragDropped {
+        /// The logical coordinates of the mouse position
+        position: Point,
+        /// The modifiers that were held down just before the event.
+        modifiers: Modifiers,
+        /// Data being dragged
+        data: DropData,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +121,20 @@ pub enum Event {
     Mouse(MouseEvent),
     Keyboard(KeyboardEvent),
     Window(WindowEvent),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DropEffect {
+    Copy,
+    Move,
+    Link,
+    Scroll,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DropData {
+    None,
+    Files(Vec<PathBuf>),
 }
 
 /// Return value for [WindowHandler::on_event](`crate::WindowHandler::on_event()`),
@@ -111,4 +156,7 @@ pub enum EventStatus {
     /// DAW functionality for playing piano keys with the keyboard while a
     /// plugin window is in focus.
     Ignored,
+    /// We are prepared to handle the data in the drag and dropping will
+    /// result in [DropEffect] 
+    AcceptDrop(DropEffect),
 }
