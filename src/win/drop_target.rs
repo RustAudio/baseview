@@ -22,6 +22,8 @@ use crate::{Point, DropData, MouseEvent, Event, EventStatus, DropEffect, PhyPoin
 use super::WindowState;
 
 // These function pointers have to be stored in a (const) variable before they can be transmuted
+// Transmuting is needed because winapi has a bug where the pt parameter has an incorrect
+// type `*const POINTL`
 const DRAG_ENTER_PTR: unsafe extern "system" fn(this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT = DropTarget::drag_enter;
 const DRAG_OVER_PTR: unsafe extern "system" fn(this: *mut IDropTarget, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT = DropTarget::drag_over;
 const DROP_PTR: unsafe extern "system" fn(this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT = DropTarget::drop;
