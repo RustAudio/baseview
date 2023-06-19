@@ -273,6 +273,10 @@ impl KeyboardState {
         KeyboardState { last_mods }
     }
 
+    pub(crate) fn last_mods(&self) -> NSEventModifierFlags {
+        self.last_mods
+    }
+
     pub(crate) fn process_native_event(&mut self, event: id) -> Option<KeyboardEvent> {
         unsafe {
             let event_type = event.eventType();
