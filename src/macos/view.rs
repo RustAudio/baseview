@@ -20,7 +20,7 @@ use crate::{
 };
 
 use super::{NSDragOperationGeneric, NSDragOperationCopy, NSDragOperationMove, NSDragOperationLink, NSDragOperationNone};
-use super::keyboard::make_modifiers;
+use super::keyboard::{make_modifiers, from_nsstring};
 use super::window::WindowState;
 
 /// Name of the field used to store the `WindowState` pointer.
@@ -403,7 +403,26 @@ fn get_drag_position(sender: id) -> Point {
 }
 
 fn get_drop_data(sender: id) -> DropData {
-    DropData::None
+    if sender == nil {
+        return DropData::None;
+    }
+
+    unsafe {
+        let pasteboard: id = msg_send![sender, draggingPasteboard];
+        let file_list: id = msg_send![pasteboard, propertyListForType: NSFilenamesPboardType];
+
+        if file_list == nil {
+            return DropData::None;
+        }
+
+        let mut files = vec![];
+        for i in 0..NSArray::count(file_list) {
+            let data = NSArray::objectAtIndex(file_list, i);
+            files.push(from_nsstring(data).into());
+        }
+
+        DropData::Files(files)
+    }
 }
 
 fn on_event(window_state: &mut WindowState, event: MouseEvent) -> NSUInteger {
@@ -431,54 +450,49 @@ extern "C" fn dragging_entered(this: &Object, _sel: Sel, sender: id) -> NSUInteg
     on_event(state, event)
 }
 
-extern "C" fn dragging_updated(this: &Object, _sel: Sel, dragging_info: id) -> NSUInteger {
-    if let Some(drag_info) = unsafe { get_drag_info(dragging_info) } {
-        let state: &mut WindowState = unsafe { WindowState::from_field(this) };
-        let event = WindowEvent::DragUpdated(drag_info);
-        state.trigger_event(Event::Window(event));
-    }
-    4 // NSDragOperationGeneric
-}
-
-extern "C" fn prepare_for_drag_operation(_this: &Object, _sel: Sel, _dragging_info: id) -> BOOL {
-    YES
-}
-
-extern "C" fn perform_drag_operation(this: &Object, _sel: Sel, dragging_info: id) -> BOOL {
-    if let Some(drag_info) = unsafe { get_drag_info(dragging_info) } {
-        let state: &mut WindowState = unsafe { WindowState::from_field(this) };
-        let event = WindowEvent::DragPerformed(drag_info);
-        state.trigger_event(Event::Window(event));
-    }
-    YES
-}
-
-extern "C" fn dragging_exited(this: &Object, _sel: Sel, dragging_info: id) {
-    let drag_info = unsafe { get_drag_info(dragging_info) };
+extern "C" fn dragging_updated(this: &Object, _sel: Sel, sender: id) -> NSUInteger {
     let state: &mut WindowState = unsafe { WindowState::from_field(this) };
-    let event = WindowEvent::DragExited(drag_info);
-    state.trigger_event(Event::Window(event));
+    let modifiers = state.keyboard_state().last_mods();
+    let drop_data = get_drop_data(sender);
+
+    let event = MouseEvent::DragMoved {
+        position: get_drag_position(sender),
+        modifiers: make_modifiers(modifiers),
+        data: drop_data,
+    };
+
+    on_event(state, event)
 }
 
-unsafe fn get_drag_info(dragging_info: id) -> Option<DragInfo> {
-    if dragging_info == nil {
-        return None;
+extern "C" fn prepare_for_drag_operation(_this: &Object, _sel: Sel, sender: id) -> BOOL {
+    // Always accept drag operation if we get this far
+    // This function won't be called unless dragging_entered/updated
+    // has returned an acceptable operation
+    YES
+}
+
+extern "C" fn perform_drag_operation(this: &Object, _sel: Sel, sender: id) -> BOOL {
+    let state: &mut WindowState = unsafe { WindowState::from_field(this) };
+    let modifiers = state.keyboard_state().last_mods();
+    let drop_data = get_drop_data(sender);
+
+    let event = MouseEvent::DragDropped {
+        position: get_drag_position(sender),
+        modifiers: make_modifiers(modifiers),
+        data: drop_data,
+    };
+
+    let event_status = state.trigger_event(Event::Mouse(event));
+    match event_status {
+        EventStatus::AcceptDrop(_) => YES,
+        _ => NO,
     }
+}
 
-    let pasteboard: id = msg_send![dragging_info, draggingPasteboard];
-    let file_list: id = msg_send![pasteboard, propertyListForType: NSFilenamesPboardType];
+extern "C" fn dragging_exited(this: &Object, _sel: Sel, sender: id) {
+    let state: &mut WindowState = unsafe { WindowState::from_field(this) };
+    let modifiers = state.keyboard_state().last_mods();
+    let drop_data = get_drop_data(sender);
 
-    if file_list == nil {
-        return None;
-    }
-
-    let mut file_vec: Vec<String> = vec![];
-    let count = NSArray::count(file_list);
-    if count > 0 {
-        let data = NSArray::objectAtIndex(file_list, 0);
-        let str = from_nsstring(data);
-        file_vec.push(str);
-    }
-
-    Some(DragInfo::FilesDragged { files: file_vec })
+    on_event(state, MouseEvent::DragLeft);
 }
