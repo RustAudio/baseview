@@ -280,10 +280,12 @@ impl Window {
                         | xcb::EVENT_MASK_BUTTON_RELEASE
                         | xcb::EVENT_MASK_KEY_PRESS
                         | xcb::EVENT_MASK_KEY_RELEASE
-                        | xcb::EVENT_MASK_STRUCTURE_NOTIFY,
+                        | xcb::EVENT_MASK_STRUCTURE_NOTIFY
+                        | xcb::EVENT_MASK_ENTER_WINDOW
+                        | xcb::EVENT_MASK_LEAVE_WINDOW,
                 ),
-                // As mentioend above, these two values are needed to be able to create a window
-                // with a dpeth of 32-bits when the parent window has a different depth
+                // As mentioned above, these two values are needed to be able to create a window
+                // with a depth of 32-bits when the parent window has a different depth
                 (xcb::CW_COLORMAP, colormap),
                 (xcb::CW_BORDER_PIXEL, 0),
             ],
@@ -607,6 +609,20 @@ impl Window {
                         }),
                     );
                 }
+            }
+
+            // mouse entering the window
+            // TODO: might need to consider the window used in `xcb::cast_event::<xcb::MotionNotifyEvent>(&event)`
+            xcb::ENTER_NOTIFY => {
+                handler.on_event(
+                    &mut crate::Window::new(self),
+                    Event::Mouse(MouseEvent::CursorEntered),
+                );
+            }
+
+            xcb::LEAVE_NOTIFY => {
+                handler
+                    .on_event(&mut crate::Window::new(self), Event::Mouse(MouseEvent::CursorLeft));
             }
 
             xcb::BUTTON_PRESS => {
