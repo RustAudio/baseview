@@ -611,12 +611,22 @@ impl Window {
                 }
             }
 
-            // mouse entering the window
-            // TODO: might need to consider the window used in `xcb::cast_event::<xcb::MotionNotifyEvent>(&event)`
             xcb::ENTER_NOTIFY => {
                 handler.on_event(
                     &mut crate::Window::new(self),
                     Event::Mouse(MouseEvent::CursorEntered),
+                );
+                // since no `MOTION_NOTIFY` event is generated when `ENTER_NOTIFY` is generated,
+                // we generate a CursorMoved as well, so the mouse position from here isn't lost
+                let event = unsafe { xcb::cast_event::<xcb::EnterNotifyEvent>(&event) };
+                let physical_pos = PhyPoint::new(event.event_x() as i32, event.event_y() as i32);
+                let logical_pos = physical_pos.to_logical(&self.window_info);
+                handler.on_event(
+                    &mut crate::Window::new(self),
+                    Event::Mouse(MouseEvent::CursorMoved {
+                        position: logical_pos,
+                        modifiers: key_mods(event.state()),
+                    }),
                 );
             }
 
