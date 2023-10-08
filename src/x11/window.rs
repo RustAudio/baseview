@@ -281,10 +281,12 @@ impl Window {
                         | xcb::EVENT_MASK_BUTTON_RELEASE
                         | xcb::EVENT_MASK_KEY_PRESS
                         | xcb::EVENT_MASK_KEY_RELEASE
-                        | xcb::EVENT_MASK_STRUCTURE_NOTIFY,
+                        | xcb::EVENT_MASK_STRUCTURE_NOTIFY
+                        | xcb::EVENT_MASK_ENTER_WINDOW
+                        | xcb::EVENT_MASK_LEAVE_WINDOW,
                 ),
-                // As mentioend above, these two values are needed to be able to create a window
-                // with a dpeth of 32-bits when the parent window has a different depth
+                // As mentioned above, these two values are needed to be able to create a window
+                // with a depth of 32-bits when the parent window has a different depth
                 (xcb::CW_COLORMAP, colormap),
                 (xcb::CW_BORDER_PIXEL, 0),
             ],
@@ -607,6 +609,30 @@ impl Window {
                         }),
                     );
                 }
+            }
+
+            xcb::ENTER_NOTIFY => {
+                handler.on_event(
+                    &mut crate::Window::new(self),
+                    Event::Mouse(MouseEvent::CursorEntered),
+                );
+                // since no `MOTION_NOTIFY` event is generated when `ENTER_NOTIFY` is generated,
+                // we generate a CursorMoved as well, so the mouse position from here isn't lost
+                let event = unsafe { xcb::cast_event::<xcb::EnterNotifyEvent>(&event) };
+                let physical_pos = PhyPoint::new(event.event_x() as i32, event.event_y() as i32);
+                let logical_pos = physical_pos.to_logical(&self.window_info);
+                handler.on_event(
+                    &mut crate::Window::new(self),
+                    Event::Mouse(MouseEvent::CursorMoved {
+                        position: logical_pos,
+                        modifiers: key_mods(event.state()),
+                    }),
+                );
+            }
+
+            xcb::LEAVE_NOTIFY => {
+                handler
+                    .on_event(&mut crate::Window::new(self), Event::Mouse(MouseEvent::CursorLeft));
             }
 
             xcb::BUTTON_PRESS => {
