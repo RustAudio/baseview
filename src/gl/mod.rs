@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::marker::PhantomData;
 
 // On X11 creating the context is a two step process
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
 use raw_window_handle::HasRawWindowHandle;
 
 #[cfg(target_os = "windows")]
@@ -14,6 +14,11 @@ use win as platform;
 #[cfg(target_os = "linux")]
 pub(crate) mod x11;
 #[cfg(target_os = "linux")]
+pub(crate) use self::x11 as platform;
+
+#[cfg(target_os = "freebsd")]
+pub(crate) mod x11;
+#[cfg(target_os = "freebsd")]
 pub(crate) use self::x11 as platform;
 
 #[cfg(target_os = "macos")]
@@ -75,7 +80,7 @@ pub struct GlContext {
 }
 
 impl GlContext {
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
     pub(crate) unsafe fn create(
         parent: &impl HasRawWindowHandle, config: GlConfig,
     ) -> Result<GlContext, GlError> {
@@ -86,7 +91,7 @@ impl GlContext {
     /// The X11 version needs to be set up in a different way compared to the Windows and macOS
     /// versions. So the platform-specific versions should be used to construct the context within
     /// baseview, and then this object can be passed to the user.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     pub(crate) fn new(context: platform::GlContext) -> GlContext {
         GlContext { context, phantom: PhantomData }
     }

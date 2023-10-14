@@ -17,10 +17,10 @@
 
 //! Keyboard types.
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "freebsd"))]
 use keyboard_types::{Code, Location};
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "freebsd"))]
 /// Map key code to location.
 ///
 /// The logic for this is adapted from InitKeyEvent in TextInputHandler (in the Mozilla

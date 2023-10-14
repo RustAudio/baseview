@@ -4,6 +4,8 @@ mod macos;
 mod win;
 #[cfg(target_os = "linux")]
 mod x11;
+#[cfg(target_os = "freebsd")]
+mod x11;
 
 mod clipboard;
 mod event;
