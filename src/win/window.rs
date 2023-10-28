@@ -182,15 +182,15 @@ unsafe fn wnd_proc_inner(
             if *mouse_was_outside_window {
                 // this makes Windows track whether the mouse leaves the window.
                 // When the mouse leaves it results in a `WM_MOUSELEAVE` event.
-                let track_mouse = Rc::new(TRACKMOUSEEVENT {
+                let mut track_mouse =TRACKMOUSEEVENT {
                     cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
                     dwFlags: winapi::um::winuser::TME_LEAVE,
                     hwndTrack: hwnd,
                     dwHoverTime: winapi::um::winuser::HOVER_DEFAULT,
-                });
+                };
                 // Couldn't find a good way to track whether the mouse enters,
                 // but if `WM_MOUSEMOVE` happens, the mouse must have entered.
-                TrackMouseEvent(Rc::as_ptr(&track_mouse) as winapi::um::winuser::LPTRACKMOUSEEVENT);
+                TrackMouseEvent(&mut track_mouse);
                 *mouse_was_outside_window = false;
 
                 let enter_event = Event::Mouse(MouseEvent::CursorEntered);
