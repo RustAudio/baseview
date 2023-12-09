@@ -418,6 +418,10 @@ impl WindowState {
         }
     }
 
+    pub(super) fn keyboard_state(&self) -> &KeyboardState {
+        &self.keyboard_state
+    }
+
     pub(super) fn process_native_key_event(&mut self, event: *mut Object) -> Option<KeyboardEvent> {
         self.keyboard_state.process_native_event(event)
     }
