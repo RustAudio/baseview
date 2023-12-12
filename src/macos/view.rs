@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use cocoa::appkit::{NSEvent, NSView, NSWindow, NSFilenamesPboardType};
+use cocoa::appkit::{NSEvent, NSFilenamesPboardType, NSView, NSWindow};
 use cocoa::base::{id, nil, BOOL, NO, YES};
 use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize, NSUInteger};
 
@@ -15,13 +15,16 @@ use uuid::Uuid;
 
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
-    Event, EventStatus, MouseButton, MouseEvent, Point, ScrollDelta, Size, WindowEvent, WindowInfo,
-    WindowOpenOptions, DropData, DropEffect,
+    DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, Point, ScrollDelta, Size,
+    WindowEvent, WindowInfo, WindowOpenOptions,
 };
 
-use super::{NSDragOperationGeneric, NSDragOperationCopy, NSDragOperationMove, NSDragOperationLink, NSDragOperationNone};
-use super::keyboard::{make_modifiers, from_nsstring};
+use super::keyboard::{from_nsstring, make_modifiers};
 use super::window::WindowState;
+use super::{
+    NSDragOperationCopy, NSDragOperationGeneric, NSDragOperationLink, NSDragOperationMove,
+    NSDragOperationNone,
+};
 
 /// Name of the field used to store the `WindowState` pointer.
 pub(super) const BASEVIEW_STATE_IVAR: &str = "baseview_state";
@@ -106,8 +109,11 @@ pub(super) unsafe fn create_view(window_options: &WindowOpenOptions) -> id {
 
     view.initWithFrame_(NSRect::new(NSPoint::new(0., 0.), NSSize::new(size.width, size.height)));
 
-    let _: id = msg_send![view, registerForDraggedTypes: NSArray::arrayWithObjects(nil, &[NSFilenamesPboardType])];
-    
+    let _: id = msg_send![
+        view,
+        registerForDraggedTypes: NSArray::arrayWithObjects(nil, &[NSFilenamesPboardType])
+    ];
+
     view
 }
 
@@ -173,10 +179,7 @@ unsafe fn create_view_class() -> &'static Class {
         sel!(draggingUpdated:),
         dragging_updated as extern "C" fn(&Object, Sel, id) -> NSUInteger,
     );
-    class.add_method(
-        sel!(draggingExited:),
-        dragging_exited as extern "C" fn(&Object, Sel, id),
-    );
+    class.add_method(sel!(draggingExited:), dragging_exited as extern "C" fn(&Object, Sel, id));
 
     add_mouse_button_class_method!(class, mouseDown, ButtonPressed, MouseButton::Left);
     add_mouse_button_class_method!(class, mouseUp, ButtonReleased, MouseButton::Left);
@@ -433,7 +436,7 @@ fn on_event(window_state: &mut WindowState, event: MouseEvent) -> NSUInteger {
         EventStatus::AcceptDrop(DropEffect::Link) => NSDragOperationLink,
         EventStatus::AcceptDrop(DropEffect::Scroll) => NSDragOperationGeneric,
         _ => NSDragOperationNone,
-    }        
+    }
 }
 
 extern "C" fn dragging_entered(this: &Object, _sel: Sel, sender: id) -> NSUInteger {

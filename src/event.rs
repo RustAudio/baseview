@@ -157,6 +157,6 @@ pub enum EventStatus {
     /// plugin window is in focus.
     Ignored,
     /// We are prepared to handle the data in the drag and dropping will
-    /// result in [DropEffect] 
+    /// result in [DropEffect]
     AcceptDrop(DropEffect),
 }

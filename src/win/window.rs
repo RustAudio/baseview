@@ -2,7 +2,7 @@ use winapi::shared::guiddef::GUID;
 use winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM};
 use winapi::shared::windef::{HWND, RECT};
 use winapi::um::combaseapi::CoCreateGuid;
-use winapi::um::ole2::{RegisterDragDrop, OleInitialize, RevokeDragDrop};
+use winapi::um::ole2::{OleInitialize, RegisterDragDrop, RevokeDragDrop};
 use winapi::um::oleidl::LPDROPTARGET;
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
@@ -18,7 +18,7 @@ use winapi::um::winuser::{
     XBUTTON1, XBUTTON2,
 };
 
-use std::cell::{Cell, RefCell, Ref, RefMut};
+use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::VecDeque;
 use std::ffi::{c_void, OsStr};
 use std::marker::PhantomData;
