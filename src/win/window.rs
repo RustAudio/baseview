@@ -42,7 +42,7 @@ use super::drop_target::DropTarget;
 use super::keyboard::KeyboardState;
 
 #[cfg(feature = "opengl")]
-use crate::{gl::GlContext, window::RawWindowHandleWrapper};
+use crate::gl::GlContext;
 
 unsafe fn generate_guid() -> String {
     let mut guid: GUID = std::mem::zeroed();
@@ -655,7 +655,7 @@ impl Window<'_> {
             let gl_context: Option<GlContext> = options.gl_config.map(|gl_config| {
                 let mut handle = Win32WindowHandle::empty();
                 handle.hwnd = hwnd as *mut c_void;
-                let handle = RawWindowHandleWrapper { handle: RawWindowHandle::Win32(handle) };
+                let handle = RawWindowHandle::Win32(handle);
 
                 GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
             });

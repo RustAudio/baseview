@@ -31,10 +31,7 @@ use super::keyboard::KeyboardState;
 use super::view::{create_view, BASEVIEW_STATE_IVAR};
 
 #[cfg(feature = "opengl")]
-use crate::{
-    gl::{GlConfig, GlContext},
-    window::RawWindowHandleWrapper,
-};
+use crate::gl::{GlConfig, GlContext};
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
@@ -313,7 +310,7 @@ impl Window {
         let mut handle = AppKitWindowHandle::empty();
         handle.ns_window = ns_window.unwrap_or(ptr::null_mut()) as *mut c_void;
         handle.ns_view = ns_view as *mut c_void;
-        let handle = RawWindowHandleWrapper { handle: RawWindowHandle::AppKit(handle) };
+        let handle = RawWindowHandle::AppKit(handle);
 
         unsafe { GlContext::create(&handle, config).expect("Could not create OpenGL context") }
     }
