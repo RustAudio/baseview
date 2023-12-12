@@ -467,7 +467,7 @@ extern "C" fn dragging_updated(this: &Object, _sel: Sel, sender: id) -> NSUInteg
     on_event(state, event)
 }
 
-extern "C" fn prepare_for_drag_operation(_this: &Object, _sel: Sel, sender: id) -> BOOL {
+extern "C" fn prepare_for_drag_operation(_this: &Object, _sel: Sel, _sender: id) -> BOOL {
     // Always accept drag operation if we get this far
     // This function won't be called unless dragging_entered/updated
     // has returned an acceptable operation
@@ -492,10 +492,8 @@ extern "C" fn perform_drag_operation(this: &Object, _sel: Sel, sender: id) -> BO
     }
 }
 
-extern "C" fn dragging_exited(this: &Object, _sel: Sel, sender: id) {
+extern "C" fn dragging_exited(this: &Object, _sel: Sel, _sender: id) {
     let state: &mut WindowState = unsafe { WindowState::from_field(this) };
-    let modifiers = state.keyboard_state().last_mods();
-    let drop_data = get_drop_data(sender);
 
     on_event(state, MouseEvent::DragLeft);
 }
