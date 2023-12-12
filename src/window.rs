@@ -87,16 +87,6 @@ impl<'a> Window<'a> {
         WindowHandle::new(window_handle)
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut Window) -> H,
-        B: Send + 'static,
-    {
-        let window_handle = platform::Window::open_as_if_parented::<H, B>(options, build);
-        WindowHandle::new(window_handle)
-    }
-
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
     where
         H: WindowHandler + 'static,

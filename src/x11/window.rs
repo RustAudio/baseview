@@ -147,26 +147,6 @@ impl Window {
         window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
-        let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
-
-        let (parent_handle, mut window_handle) = ParentHandle::new();
-
-        thread::spawn(move || {
-            Self::window_thread(None, options, build, tx.clone(), Some(parent_handle));
-        });
-
-        let raw_window_handle = rx.recv().unwrap().unwrap();
-        window_handle.raw_window_handle = Some(raw_window_handle.0);
-
-        window_handle
-    }
-
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
     where
         H: WindowHandler + 'static,

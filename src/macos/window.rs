@@ -166,44 +166,6 @@ impl Window {
         window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
-        let pool = unsafe { NSAutoreleasePool::new(nil) };
-
-        let scaling = match options.scale {
-            WindowScalePolicy::ScaleFactor(scale) => scale,
-            WindowScalePolicy::SystemScaleFactor => 1.0,
-        };
-
-        let window_info = WindowInfo::from_logical_size(options.size, scaling);
-
-        let ns_view = unsafe { create_view(&options) };
-
-        let window = Window {
-            ns_app: None,
-            ns_window: None,
-            ns_view,
-            close_requested: false,
-
-            #[cfg(feature = "opengl")]
-            gl_context: options
-                .gl_config
-                .map(|gl_config| Self::create_gl_context(None, ns_view, gl_config)),
-        };
-
-        let window_handle = Self::init(true, window, window_info, build);
-
-        unsafe {
-            let () = msg_send![pool, drain];
-        }
-
-        window_handle
-    }
-
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
     where
         H: WindowHandler + 'static,

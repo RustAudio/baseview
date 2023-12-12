@@ -565,17 +565,6 @@ impl Window<'_> {
         window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
-        let (window_handle, _) = Self::open(true, null_mut(), options, build);
-
-        window_handle
-    }
-
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
     where
         H: WindowHandler + 'static,
