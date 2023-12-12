@@ -1,7 +1,7 @@
 use std::ffi::c_void;
 use std::str::FromStr;
 
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::RawWindowHandle;
 
 use cocoa::appkit::{
     NSOpenGLContext, NSOpenGLContextParameter, NSOpenGLPFAAccelerated, NSOpenGLPFAAlphaSize,
@@ -28,10 +28,8 @@ pub struct GlContext {
 }
 
 impl GlContext {
-    pub unsafe fn create(
-        parent: &impl HasRawWindowHandle, config: GlConfig,
-    ) -> Result<GlContext, GlError> {
-        let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
+    pub unsafe fn create(parent: &RawWindowHandle, config: GlConfig) -> Result<GlContext, GlError> {
+        let handle = if let RawWindowHandle::AppKit(handle) = parent {
             handle
         } else {
             return Err(GlError::InvalidWindowHandle);
