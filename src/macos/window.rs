@@ -1,3 +1,4 @@
+use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::ptr;
@@ -254,19 +255,20 @@ impl Window {
 
         let retain_count_after_build: usize = unsafe { msg_send![window.ns_view, retainCount] };
 
+        let ns_view = window.ns_view;
+
         let window_state_ptr = Box::into_raw(Box::new(WindowState {
-            window,
-            window_handler,
+            window: RefCell::new(window),
+            window_handler: RefCell::new(window_handler),
             keyboard_state: KeyboardState::new(),
-            frame_timer: None,
+            frame_timer: Cell::new(None),
             retain_count_after_build,
-            window_info,
-            _parent_handle: parent_handle,
+            window_info: Cell::new(window_info),
+            _parent_handle: Cell::new(parent_handle),
         }));
 
         unsafe {
-            (*(*window_state_ptr).window.ns_view)
-                .set_ivar(BASEVIEW_STATE_IVAR, window_state_ptr as *mut c_void);
+            (*ns_view).set_ivar(BASEVIEW_STATE_IVAR, window_state_ptr as *const c_void);
 
             WindowState::setup_timer(window_state_ptr);
         }
@@ -317,34 +319,32 @@ impl Window {
 }
 
 pub(super) struct WindowState {
-    window: Window,
-    window_handler: Box<dyn WindowHandler>,
+    window: RefCell<Window>,
+    window_handler: RefCell<Box<dyn WindowHandler>>,
     keyboard_state: KeyboardState,
-    frame_timer: Option<CFRunLoopTimer>,
-    _parent_handle: Option<ParentHandle>,
+    frame_timer: Cell<Option<CFRunLoopTimer>>,
+    _parent_handle: Cell<Option<ParentHandle>>,
     pub retain_count_after_build: usize,
     /// The last known window info for this window.
-    pub window_info: WindowInfo,
+    pub window_info: Cell<WindowInfo>,
 }
 
 impl WindowState {
-    /// Returns a mutable reference to a WindowState from an Objective-C field
-    ///
-    /// Don't use this to create two simulataneous references to a single
-    /// WindowState. Apparently, macOS blocks for the duration of an event,
-    /// callback, meaning that this shouldn't be a problem in practice.
-    pub(super) unsafe fn from_field(obj: &Object) -> &mut Self {
-        let state_ptr: *mut c_void = *obj.get_ivar(BASEVIEW_STATE_IVAR);
+    /// Returns a reference to the `WindowState` held by a given `NSView`
+    pub(super) unsafe fn from_view(view: &Object) -> &Self {
+        let state_ptr: *const c_void = *view.get_ivar(BASEVIEW_STATE_IVAR);
 
-        &mut *(state_ptr as *mut Self)
+        &*(state_ptr as *const Self)
     }
 
-    pub(super) fn trigger_event(&mut self, event: Event) -> EventStatus {
-        self.window_handler.on_event(&mut crate::Window::new(&mut self.window), event)
+    pub(super) fn trigger_event(&self, event: Event) -> EventStatus {
+        let mut window = self.window.borrow_mut();
+        self.window_handler.borrow_mut().on_event(&mut crate::Window::new(&mut window), event)
     }
 
-    pub(super) fn trigger_frame(&mut self) {
-        self.window_handler.on_frame(&mut crate::Window::new(&mut self.window));
+    pub(super) fn trigger_frame(&self) {
+        let mut window = self.window.borrow_mut();
+        self.window_handler.borrow_mut().on_frame(&mut crate::Window::new(&mut window));
 
         let mut do_close = false;
 
@@ -360,14 +360,15 @@ impl WindowState {
         */
 
         // Check if the user requested the window to close
-        if self.window.close_requested {
+        if window.close_requested {
             do_close = true;
-            self.window.close_requested = false;
+            window.close_requested = false;
         }
 
         if do_close {
             unsafe {
-                if let Some(ns_window) = self.window.ns_window.take() {
+                let ns_window = self.window.borrow_mut().ns_window.take();
+                if let Some(ns_window) = ns_window {
                     ns_window.close();
                 } else {
                     // FIXME: How do we close a non-parented window? Is this even
@@ -381,15 +382,15 @@ impl WindowState {
         &self.keyboard_state
     }
 
-    pub(super) fn process_native_key_event(&mut self, event: *mut Object) -> Option<KeyboardEvent> {
+    pub(super) fn process_native_key_event(&self, event: *mut Object) -> Option<KeyboardEvent> {
         self.keyboard_state.process_native_event(event)
     }
 
     /// Don't call until WindowState pointer is stored in view
-    unsafe fn setup_timer(window_state_ptr: *mut WindowState) {
+    unsafe fn setup_timer(window_state_ptr: *const WindowState) {
         extern "C" fn timer_callback(_: *mut __CFRunLoopTimer, window_state_ptr: *mut c_void) {
             unsafe {
-                let window_state = &mut *(window_state_ptr as *mut WindowState);
+                let window_state = &*(window_state_ptr as *const WindowState);
 
                 window_state.trigger_frame();
             }
@@ -407,18 +408,16 @@ impl WindowState {
 
         CFRunLoop::get_current().add_timer(&timer, kCFRunLoopDefaultMode);
 
-        let window_state = &mut *(window_state_ptr);
-
-        window_state.frame_timer = Some(timer);
+        (*window_state_ptr).frame_timer.set(Some(timer));
     }
 
     /// Call when freeing view
     pub(super) unsafe fn stop_and_free(ns_view_obj: &mut Object) {
-        let state_ptr: *mut c_void = *ns_view_obj.get_ivar(BASEVIEW_STATE_IVAR);
+        let state_ptr: *const c_void = *ns_view_obj.get_ivar(BASEVIEW_STATE_IVAR);
 
         // Take back ownership of Box<WindowState> so that it gets dropped
         // when it goes out of scope
-        let mut window_state = Box::from_raw(state_ptr as *mut WindowState);
+        let window_state = Box::from_raw(state_ptr as *mut WindowState);
 
         if let Some(frame_timer) = window_state.frame_timer.take() {
             CFRunLoop::get_current().remove_timer(&frame_timer, kCFRunLoopDefaultMode);
@@ -432,7 +431,8 @@ impl WindowState {
         window_state.trigger_event(Event::Window(WindowEvent::WillClose));
 
         // If in non-parented mode, we want to also quit the app altogether
-        if let Some(app) = window_state.window.ns_app.take() {
+        let app = window_state.window.borrow_mut().ns_app.take();
+        if let Some(app) = app {
             app.stop_(app);
         }
     }
