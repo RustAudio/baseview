@@ -97,7 +97,6 @@ pub struct Window {
     window_id: u32,
     window_info: WindowInfo,
     visual_id: u32,
-    // FIXME: There's all this mouse cursor logic but it's never actually used, is this correct?
     mouse_cursor: MouseCursor,
 
     frame_interval: Duration,

@@ -24,8 +24,8 @@ use raw_window_handle::{
 };
 
 use crate::{
-    Event, EventStatus, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
-    WindowScalePolicy,
+    Event, EventStatus, MouseCursor, Size, WindowEvent, WindowHandler, WindowInfo,
+    WindowOpenOptions, WindowScalePolicy,
 };
 
 use super::keyboard::KeyboardState;
@@ -300,6 +300,10 @@ impl Window {
         if let Some(ns_window) = self.ns_window {
             unsafe { NSWindow::setContentSize_(ns_window, size) };
         }
+    }
+
+    pub fn set_mouse_cursor(&mut self, _mouse_cursor: MouseCursor) {
+        todo!()
     }
 
     #[cfg(feature = "opengl")]
