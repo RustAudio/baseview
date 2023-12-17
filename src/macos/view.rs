@@ -134,7 +134,10 @@ unsafe fn create_view_class() -> &'static Class {
         accepts_first_mouse as extern "C" fn(&Object, Sel, id) -> BOOL,
     );
 
-    class.add_method(sel!(release), release as extern "C" fn(&mut Object, Sel));
+    class.add_method(
+        sel!(windowShouldClose:),
+        window_should_close as extern "C" fn(&Object, Sel, id) -> BOOL,
+    );
     class.add_method(sel!(dealloc), dealloc as extern "C" fn(&mut Object, Sel));
     class.add_method(
         sel!(viewWillMoveToWindow:),
@@ -205,37 +208,14 @@ extern "C" fn accepts_first_mouse(_this: &Object, _sel: Sel, _event: id) -> BOOL
     YES
 }
 
-extern "C" fn release(this: &mut Object, _sel: Sel) {
-    // Hack for breaking circular references. We store the value of retainCount
-    // after build(), and then when retainCount drops back to that value, we
-    // drop the WindowState, hoping that any circular references it holds back
-    // to the NSView (e.g. wgpu surfaces) get released.
-    //
-    // This is definitely broken, since it can be thwarted by e.g. creating a
-    // wgpu surface at some point after build() (which will mean the NSView
-    // never gets dealloced) or dropping a wgpu surface at some point before
-    // drop() (which will mean the WindowState gets dropped early).
-    //
-    // TODO: Find a better solution for circular references.
+extern "C" fn window_should_close(this: &Object, _: Sel, _sender: id) -> BOOL {
+    let state = unsafe { WindowState::from_view(this) };
 
-    unsafe {
-        let retain_count: usize = msg_send![this, retainCount];
+    state.trigger_event(Event::Window(WindowEvent::WillClose));
 
-        let state_ptr: *mut c_void = *this.get_ivar(BASEVIEW_STATE_IVAR);
+    state.window_inner.close();
 
-        if !state_ptr.is_null() {
-            let retain_count_after_build = WindowState::from_view(this).retain_count_after_build;
-
-            if retain_count <= retain_count_after_build {
-                WindowState::stop_and_free(this);
-            }
-        }
-    }
-
-    unsafe {
-        let superclass = msg_send![this, superclass];
-        let () = msg_send![super(this, superclass), release];
-    }
+    NO
 }
 
 extern "C" fn dealloc(this: &mut Object, _sel: Sel) {
@@ -446,7 +426,7 @@ extern "C" fn dragging_entered(this: &Object, _sel: Sel, sender: id) -> NSUInteg
         data: drop_data,
     };
 
-    on_event(state, event)
+    on_event(&state, event)
 }
 
 extern "C" fn dragging_updated(this: &Object, _sel: Sel, sender: id) -> NSUInteger {
@@ -460,7 +440,7 @@ extern "C" fn dragging_updated(this: &Object, _sel: Sel, sender: id) -> NSUInteg
         data: drop_data,
     };
 
-    on_event(state, event)
+    on_event(&state, event)
 }
 
 extern "C" fn prepare_for_drag_operation(_this: &Object, _sel: Sel, _sender: id) -> BOOL {
@@ -491,5 +471,5 @@ extern "C" fn perform_drag_operation(this: &Object, _sel: Sel, sender: id) -> BO
 extern "C" fn dragging_exited(this: &Object, _sel: Sel, _sender: id) {
     let state = unsafe { WindowState::from_view(this) };
 
-    on_event(state, MouseEvent::DragLeft);
+    on_event(&state, MouseEvent::DragLeft);
 }
