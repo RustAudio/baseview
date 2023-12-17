@@ -1,5 +1,5 @@
+use std::ffi::c_void;
 use std::marker::PhantomData;
-use std::os::raw::{c_ulong, c_void};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -306,6 +306,8 @@ impl Window {
         //       compared to when raw-gl-context was a separate crate.
         #[cfg(feature = "opengl")]
         let gl_context = fb_config.map(|fb_config| {
+            use std::ffi::c_ulong;
+
             let window = window_id as c_ulong;
             let display = xcb_connection.conn.get_raw_dpy();
 
@@ -724,6 +726,6 @@ fn mouse_id(id: u8) -> MouseButton {
     }
 }
 
-pub fn copy_to_clipboard(data: &str) {
+pub fn copy_to_clipboard(_data: &str) {
     todo!()
 }
