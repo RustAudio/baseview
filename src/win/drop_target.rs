@@ -90,8 +90,7 @@ impl DropTarget {
         };
 
         unsafe {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
 
             let event = Event::Mouse(event);
             let event_status =

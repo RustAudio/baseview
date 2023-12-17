@@ -176,8 +176,7 @@ unsafe fn wnd_proc_inner(
 ) -> Option<LRESULT> {
     match msg {
         WM_MOUSEMOVE => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
 
             let x = (lparam & 0xFFFF) as i16 as i32;
             let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
@@ -197,8 +196,7 @@ unsafe fn wnd_proc_inner(
             Some(0)
         }
         WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
 
             let value = (wparam >> 16) as i16;
             let value = value as i32;
@@ -222,8 +220,7 @@ unsafe fn wnd_proc_inner(
         }
         WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
         | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
 
             let mut mouse_button_counter = window_state.mouse_button_counter.get();
 
@@ -286,8 +283,7 @@ unsafe fn wnd_proc_inner(
             None
         }
         WM_TIMER => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
 
             if wparam == WIN_FRAME_TIMER {
                 window_state.handler.borrow_mut().as_mut().unwrap().on_frame(&mut window);
@@ -298,8 +294,7 @@ unsafe fn wnd_proc_inner(
         WM_CLOSE => {
             // Make sure to release the borrow before the DefWindowProc call
             {
-                let mut window = window_state.create_window();
-                let mut window = crate::Window::new(&mut window);
+                let mut window = crate::Window::new(window_state.create_window());
 
                 window_state
                     .handler
@@ -315,8 +310,7 @@ unsafe fn wnd_proc_inner(
         }
         WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP
         | WM_INPUTLANGCHANGE => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
 
             let opt_event =
                 window_state.keyboard_state.borrow_mut().process_message(hwnd, msg, wparam, lparam);
@@ -337,8 +331,7 @@ unsafe fn wnd_proc_inner(
             }
         }
         WM_SIZE => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
 
             let width = (lparam & 0xFFFF) as u16 as u32;
             let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
@@ -684,8 +677,7 @@ impl Window<'_> {
             });
 
             let handler = {
-                let mut window = window_state.create_window();
-                let mut window = crate::Window::new(&mut window);
+                let mut window = crate::Window::new(window_state.create_window());
 
                 build(&mut window)
             };
