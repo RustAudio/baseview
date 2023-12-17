@@ -1,6 +1,5 @@
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
-use std::marker::PhantomData;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -38,9 +37,6 @@ pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
     close_requested: Arc<AtomicBool>,
     is_open: Arc<AtomicBool>,
-
-    // Ensure handle is !Send
-    _phantom: PhantomData<*mut ()>,
 }
 
 impl WindowHandle {
@@ -81,7 +77,6 @@ impl ParentHandle {
             raw_window_handle: Some(raw_window_handle),
             close_requested: Arc::clone(&close_requested),
             is_open: Arc::clone(&is_open),
-            _phantom: PhantomData::default(),
         };
 
         (Self { _close_requested: close_requested, is_open }, handle)
