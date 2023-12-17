@@ -21,7 +21,6 @@ use winapi::um::winuser::{
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::VecDeque;
 use std::ffi::{c_void, OsStr};
-use std::marker::PhantomData;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 use std::rc::Rc;
@@ -68,9 +67,6 @@ const WIN_FRAME_TIMER: usize = 4242;
 pub struct WindowHandle {
     hwnd: Option<HWND>,
     is_open: Rc<Cell<bool>>,
-
-    // Ensure handle is !Send
-    _phantom: PhantomData<*mut ()>,
 }
 
 impl WindowHandle {
@@ -108,11 +104,7 @@ impl ParentHandle {
     pub fn new(hwnd: HWND) -> (Self, WindowHandle) {
         let is_open = Rc::new(Cell::new(true));
 
-        let handle = WindowHandle {
-            hwnd: Some(hwnd),
-            is_open: Rc::clone(&is_open),
-            _phantom: PhantomData::default(),
-        };
+        let handle = WindowHandle { hwnd: Some(hwnd), is_open: Rc::clone(&is_open) };
 
         (Self { is_open }, handle)
     }
