@@ -33,9 +33,7 @@ macro_rules! add_simple_mouse_class_method {
     ($class:ident, $sel:ident, $event:expr) => {
         #[allow(non_snake_case)]
         extern "C" fn $sel(this: &Object, _: Sel, _: id){
-            let state: &mut WindowState = unsafe {
-                WindowState::from_field(this)
-            };
+            let state = unsafe { WindowState::from_view(this) };
 
             state.trigger_event(Event::Mouse($event));
         }
@@ -53,9 +51,7 @@ macro_rules! add_mouse_button_class_method {
     ($class:ident, $sel:ident, $event_ty:ident, $button:expr) => {
         #[allow(non_snake_case)]
         extern "C" fn $sel(this: &Object, _: Sel, event: id){
-            let state: &mut WindowState = unsafe {
-                WindowState::from_field(this)
-            };
+            let state = unsafe { WindowState::from_view(this) };
 
             let modifiers = unsafe { NSEvent::modifierFlags(event) };
 
@@ -76,9 +72,7 @@ macro_rules! add_simple_keyboard_class_method {
     ($class:ident, $sel:ident) => {
         #[allow(non_snake_case)]
         extern "C" fn $sel(this: &Object, _: Sel, event: id){
-            let state: &mut WindowState = unsafe {
-                WindowState::from_field(this)
-            };
+            let state = unsafe { WindowState::from_view(this) };
 
             if let Some(key_event) = state.process_native_key_event(event){
                 let status = state.trigger_event(Event::Keyboard(key_event));
@@ -230,7 +224,7 @@ extern "C" fn release(this: &mut Object, _sel: Sel) {
         let state_ptr: *mut c_void = *this.get_ivar(BASEVIEW_STATE_IVAR);
 
         if !state_ptr.is_null() {
-            let retain_count_after_build = WindowState::from_field(this).retain_count_after_build;
+            let retain_count_after_build = WindowState::from_view(this).retain_count_after_build;
 
             if retain_count <= retain_count_after_build {
                 WindowState::stop_and_free(this);
@@ -263,7 +257,7 @@ extern "C" fn view_did_change_backing_properties(this: &Object, _: Sel, _: id) {
         let scale_factor: f64 =
             if ns_window.is_null() { 1.0 } else { NSWindow::backingScaleFactor(ns_window) };
 
-        let state: &mut WindowState = WindowState::from_field(this);
+        let state = WindowState::from_view(this);
 
         let bounds: NSRect = msg_send![this, bounds];
 
@@ -272,10 +266,12 @@ extern "C" fn view_did_change_backing_properties(this: &Object, _: Sel, _: id) {
             scale_factor,
         );
 
+        let window_info = state.window_info.get();
+
         // Only send the event when the window's size has actually changed to be in line with the
         // other platform implementations
-        if new_window_info.physical_size() != state.window_info.physical_size() {
-            state.window_info = new_window_info;
+        if new_window_info.physical_size() != window_info.physical_size() {
+            state.window_info.set(new_window_info);
             state.trigger_event(Event::Window(WindowEvent::Resized(new_window_info)));
         }
     }
@@ -361,7 +357,7 @@ extern "C" fn update_tracking_areas(this: &Object, _self: Sel, _: id) {
 }
 
 extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: id) {
-    let state: &mut WindowState = unsafe { WindowState::from_field(this) };
+    let state = unsafe { WindowState::from_view(this) };
 
     let point: NSPoint = unsafe {
         let point = NSEvent::locationInWindow(event);
@@ -379,7 +375,7 @@ extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: id) {
 }
 
 extern "C" fn scroll_wheel(this: &Object, _: Sel, event: id) {
-    let state: &mut WindowState = unsafe { WindowState::from_field(this) };
+    let state = unsafe { WindowState::from_view(this) };
 
     let delta = unsafe {
         let x = NSEvent::scrollingDeltaX(event) as f32;
@@ -428,7 +424,7 @@ fn get_drop_data(sender: id) -> DropData {
     }
 }
 
-fn on_event(window_state: &mut WindowState, event: MouseEvent) -> NSUInteger {
+fn on_event(window_state: &WindowState, event: MouseEvent) -> NSUInteger {
     let event_status = window_state.trigger_event(Event::Mouse(event));
     match event_status {
         EventStatus::AcceptDrop(DropEffect::Copy) => NSDragOperationCopy,
@@ -440,7 +436,7 @@ fn on_event(window_state: &mut WindowState, event: MouseEvent) -> NSUInteger {
 }
 
 extern "C" fn dragging_entered(this: &Object, _sel: Sel, sender: id) -> NSUInteger {
-    let state: &mut WindowState = unsafe { WindowState::from_field(this) };
+    let state = unsafe { WindowState::from_view(this) };
     let modifiers = state.keyboard_state().last_mods();
     let drop_data = get_drop_data(sender);
 
@@ -454,7 +450,7 @@ extern "C" fn dragging_entered(this: &Object, _sel: Sel, sender: id) -> NSUInteg
 }
 
 extern "C" fn dragging_updated(this: &Object, _sel: Sel, sender: id) -> NSUInteger {
-    let state: &mut WindowState = unsafe { WindowState::from_field(this) };
+    let state = unsafe { WindowState::from_view(this) };
     let modifiers = state.keyboard_state().last_mods();
     let drop_data = get_drop_data(sender);
 
@@ -475,7 +471,7 @@ extern "C" fn prepare_for_drag_operation(_this: &Object, _sel: Sel, _sender: id)
 }
 
 extern "C" fn perform_drag_operation(this: &Object, _sel: Sel, sender: id) -> BOOL {
-    let state: &mut WindowState = unsafe { WindowState::from_field(this) };
+    let state = unsafe { WindowState::from_view(this) };
     let modifiers = state.keyboard_state().last_mods();
     let drop_data = get_drop_data(sender);
 
@@ -493,7 +489,7 @@ extern "C" fn perform_drag_operation(this: &Object, _sel: Sel, sender: id) -> BO
 }
 
 extern "C" fn dragging_exited(this: &Object, _sel: Sel, _sender: id) {
-    let state: &mut WindowState = unsafe { WindowState::from_field(this) };
+    let state = unsafe { WindowState::from_view(this) };
 
     on_event(state, MouseEvent::DragLeft);
 }
