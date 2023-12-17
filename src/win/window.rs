@@ -21,7 +21,6 @@ use winapi::um::winuser::{
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::VecDeque;
 use std::ffi::{c_void, OsStr};
-use std::marker::PhantomData;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 use std::rc::Rc;
@@ -34,7 +33,7 @@ use raw_window_handle::{
 const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 
 use crate::{
-    Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
+    Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
@@ -68,9 +67,6 @@ const WIN_FRAME_TIMER: usize = 4242;
 pub struct WindowHandle {
     hwnd: Option<HWND>,
     is_open: Rc<Cell<bool>>,
-
-    // Ensure handle is !Send
-    _phantom: PhantomData<*mut ()>,
 }
 
 impl WindowHandle {
@@ -108,11 +104,7 @@ impl ParentHandle {
     pub fn new(hwnd: HWND) -> (Self, WindowHandle) {
         let is_open = Rc::new(Cell::new(true));
 
-        let handle = WindowHandle {
-            hwnd: Some(hwnd),
-            is_open: Rc::clone(&is_open),
-            _phantom: PhantomData::default(),
-        };
+        let handle = WindowHandle { hwnd: Some(hwnd), is_open: Rc::clone(&is_open) };
 
         (Self { is_open }, handle)
     }
@@ -755,6 +747,10 @@ impl Window<'_> {
         // event has been handled
         let task = WindowTask::Resize(size);
         self.state.deferred_tasks.borrow_mut().push_back(task);
+    }
+
+    pub fn set_mouse_cursor(&mut self, _mouse_cursor: MouseCursor) {
+        todo!()
     }
 
     #[cfg(feature = "opengl")]

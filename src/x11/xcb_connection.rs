@@ -19,7 +19,6 @@ pub struct XcbConnection {
 
     pub(crate) atoms: Atoms,
 
-    // FIXME: Same here, there's a ton of unused cursor machinery in here
     pub(super) cursor_cache: HashMap<MouseCursor, u32>,
 }
 

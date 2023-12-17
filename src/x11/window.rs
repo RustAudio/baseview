@@ -1,5 +1,4 @@
 use std::ffi::c_void;
-use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -28,9 +27,6 @@ pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
     close_requested: Arc<AtomicBool>,
     is_open: Arc<AtomicBool>,
-
-    // Ensure handle is !Send
-    _phantom: PhantomData<*mut ()>,
 }
 
 impl WindowHandle {
@@ -75,7 +71,6 @@ impl ParentHandle {
             raw_window_handle: None,
             close_requested: Arc::clone(&close_requested),
             is_open: Arc::clone(&is_open),
-            _phantom: PhantomData::default(),
         };
 
         (Self { close_requested, is_open }, handle)
@@ -97,7 +92,6 @@ struct WindowInner {
     window_id: u32,
     window_info: WindowInfo,
     visual_id: u32,
-    // FIXME: There's all this mouse cursor logic but it's never actually used, is this correct?
     mouse_cursor: MouseCursor,
 
     frame_interval: Duration,
