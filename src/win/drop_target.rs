@@ -83,6 +83,7 @@ impl DropTarget {
         }
     }
 
+    #[allow(non_snake_case)]
     fn on_event(&self, pdwEffect: Option<*mut DWORD>, event: MouseEvent) {
         let Some(window_state) = self.window_state.upgrade() else {
             return;
@@ -165,6 +166,7 @@ impl DropTarget {
         }
     }
 
+    #[allow(non_snake_case)]
     unsafe extern "system" fn query_interface(
         this: *mut IUnknown, riid: REFIID, ppvObject: *mut *mut winapi::ctypes::c_void,
     ) -> HRESULT {
@@ -197,6 +199,7 @@ impl DropTarget {
         result as ULONG
     }
 
+    #[allow(non_snake_case)]
     unsafe extern "system" fn drag_enter(
         this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL,
         pdwEffect: *mut DWORD,
@@ -222,6 +225,7 @@ impl DropTarget {
         S_OK
     }
 
+    #[allow(non_snake_case)]
     unsafe extern "system" fn drag_over(
         this: *mut IDropTarget, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD,
     ) -> HRESULT {
@@ -251,6 +255,7 @@ impl DropTarget {
         S_OK
     }
 
+    #[allow(non_snake_case)]
     unsafe extern "system" fn drop(
         this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL,
         pdwEffect: *mut DWORD,
