@@ -786,6 +786,6 @@ unsafe impl HasRawDisplayHandle for Window<'_> {
     }
 }
 
-pub fn copy_to_clipboard(data: &str) {
+pub fn copy_to_clipboard(_data: &str) {
     todo!()
 }
