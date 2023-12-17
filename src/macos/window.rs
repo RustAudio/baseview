@@ -100,22 +100,26 @@ impl Drop for ParentHandle {
     }
 }
 
-pub struct Window {
+struct WindowInner {
     /// Only set if we created the parent window, i.e. we are running in
     /// parentless mode
-    ns_app: Option<id>,
+    ns_app: Cell<Option<id>>,
     /// Only set if we created the parent window, i.e. we are running in
     /// parentless mode
-    ns_window: Option<id>,
+    ns_window: Cell<Option<id>>,
     /// Our subclassed NSView
     ns_view: id,
-    close_requested: bool,
+    close_requested: Cell<bool>,
 
     #[cfg(feature = "opengl")]
     gl_context: Option<GlContext>,
 }
 
-impl Window {
+pub struct Window<'a> {
+    inner: &'a WindowInner,
+}
+
+impl<'a> Window<'a> {
     pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
         P: HasRawWindowHandle,
@@ -140,11 +144,11 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window {
-            ns_app: None,
-            ns_window: None,
+        let window_inner = WindowInner {
+            ns_app: Cell::new(None),
+            ns_window: Cell::new(None),
             ns_view,
-            close_requested: false,
+            close_requested: Cell::new(false),
 
             #[cfg(feature = "opengl")]
             gl_context: options
@@ -152,7 +156,7 @@ impl Window {
                 .map(|gl_config| Self::create_gl_context(None, ns_view, gl_config)),
         };
 
-        let window_handle = Self::init(true, window, window_info, build);
+        let window_handle = Self::init(true, window_inner, window_info, build);
 
         unsafe {
             let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
@@ -216,11 +220,11 @@ impl Window {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window = Window {
-            ns_app: Some(app),
-            ns_window: Some(ns_window),
+        let window_inner = WindowInner {
+            ns_app: Cell::new(Some(app)),
+            ns_window: Cell::new(Some(ns_window)),
             ns_view,
-            close_requested: false,
+            close_requested: Cell::new(false),
 
             #[cfg(feature = "opengl")]
             gl_context: options
@@ -228,7 +232,7 @@ impl Window {
                 .map(|gl_config| Self::create_gl_context(Some(ns_window), ns_view, gl_config)),
         };
 
-        let _ = Self::init(false, window, window_info, build);
+        let _ = Self::init(false, window_inner, window_info, build);
 
         unsafe {
             ns_window.setContentView_(ns_view);
@@ -241,24 +245,26 @@ impl Window {
     }
 
     fn init<H, B>(
-        parented: bool, mut window: Window, window_info: WindowInfo, build: B,
+        parented: bool, window_inner: WindowInner, window_info: WindowInfo, build: B,
     ) -> WindowHandle
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let window_handler = Box::new(build(&mut crate::Window::new(&mut window)));
+        let mut window = crate::Window::new(Window { inner: &window_inner });
+        let window_handler = Box::new(build(&mut window));
 
         let (parent_handle, window_handle) = ParentHandle::new(window.raw_window_handle());
         let parent_handle = if parented { Some(parent_handle) } else { None };
 
-        let retain_count_after_build: usize = unsafe { msg_send![window.ns_view, retainCount] };
+        let retain_count_after_build: usize =
+            unsafe { msg_send![window_inner.ns_view, retainCount] };
 
-        let ns_view = window.ns_view;
+        let ns_view = window_inner.ns_view;
 
         let window_state_ptr = Box::into_raw(Box::new(WindowState {
-            window: RefCell::new(window),
+            window_inner,
             window_handler: RefCell::new(window_handler),
             keyboard_state: KeyboardState::new(),
             frame_timer: Cell::new(None),
@@ -277,7 +283,7 @@ impl Window {
     }
 
     pub fn close(&mut self) {
-        self.close_requested = true;
+        self.inner.close_requested.set(true);
     }
 
     pub fn resize(&mut self, size: Size) {
@@ -285,26 +291,26 @@ impl Window {
         //       the size is in fractional pixels.
         let size = NSSize::new(size.width.round(), size.height.round());
 
-        unsafe { NSView::setFrameSize(self.ns_view, size) };
+        unsafe { NSView::setFrameSize(self.inner.ns_view, size) };
         unsafe {
-            let _: () = msg_send![self.ns_view, setNeedsDisplay: YES];
+            let _: () = msg_send![self.inner.ns_view, setNeedsDisplay: YES];
         }
 
         // When using OpenGL the `NSOpenGLView` needs to be resized separately? Why? Because macOS.
         #[cfg(feature = "opengl")]
-        if let Some(gl_context) = &self.gl_context {
+        if let Some(gl_context) = &self.inner.gl_context {
             gl_context.resize(size);
         }
 
         // If this is a standalone window then we'll also need to resize the window itself
-        if let Some(ns_window) = self.ns_window {
+        if let Some(ns_window) = self.inner.ns_window.get() {
             unsafe { NSWindow::setContentSize_(ns_window, size) };
         }
     }
 
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<&GlContext> {
-        self.gl_context.as_ref()
+        self.inner.gl_context.as_ref()
     }
 
     #[cfg(feature = "opengl")]
@@ -319,7 +325,7 @@ impl Window {
 }
 
 pub(super) struct WindowState {
-    window: RefCell<Window>,
+    window_inner: WindowInner,
     window_handler: RefCell<Box<dyn WindowHandler>>,
     keyboard_state: KeyboardState,
     frame_timer: Cell<Option<CFRunLoopTimer>>,
@@ -338,13 +344,13 @@ impl WindowState {
     }
 
     pub(super) fn trigger_event(&self, event: Event) -> EventStatus {
-        let mut window = self.window.borrow_mut();
-        self.window_handler.borrow_mut().on_event(&mut crate::Window::new(&mut window), event)
+        let mut window = crate::Window::new(Window { inner: &self.window_inner });
+        self.window_handler.borrow_mut().on_event(&mut window, event)
     }
 
     pub(super) fn trigger_frame(&self) {
-        let mut window = self.window.borrow_mut();
-        self.window_handler.borrow_mut().on_frame(&mut crate::Window::new(&mut window));
+        let mut window = crate::Window::new(Window { inner: &self.window_inner });
+        self.window_handler.borrow_mut().on_frame(&mut window);
 
         let mut do_close = false;
 
@@ -360,14 +366,14 @@ impl WindowState {
         */
 
         // Check if the user requested the window to close
-        if window.close_requested {
+        if self.window_inner.close_requested.get() {
             do_close = true;
-            window.close_requested = false;
+            self.window_inner.close_requested.set(false);
         }
 
         if do_close {
             unsafe {
-                let ns_window = self.window.borrow_mut().ns_window.take();
+                let ns_window = self.window_inner.ns_window.take();
                 if let Some(ns_window) = ns_window {
                     ns_window.close();
                 } else {
@@ -431,26 +437,26 @@ impl WindowState {
         window_state.trigger_event(Event::Window(WindowEvent::WillClose));
 
         // If in non-parented mode, we want to also quit the app altogether
-        let app = window_state.window.borrow_mut().ns_app.take();
+        let app = window_state.window_inner.ns_app.take();
         if let Some(app) = app {
             app.stop_(app);
         }
     }
 }
 
-unsafe impl HasRawWindowHandle for Window {
+unsafe impl<'a> HasRawWindowHandle for Window<'a> {
     fn raw_window_handle(&self) -> RawWindowHandle {
-        let ns_window = self.ns_window.unwrap_or(ptr::null_mut()) as *mut c_void;
+        let ns_window = self.inner.ns_window.get().unwrap_or(ptr::null_mut()) as *mut c_void;
 
         let mut handle = AppKitWindowHandle::empty();
         handle.ns_window = ns_window;
-        handle.ns_view = self.ns_view as *mut c_void;
+        handle.ns_view = self.inner.ns_view as *mut c_void;
 
         RawWindowHandle::AppKit(handle)
     }
 }
 
-unsafe impl HasRawDisplayHandle for Window {
+unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
     fn raw_display_handle(&self) -> RawDisplayHandle {
         RawDisplayHandle::AppKit(AppKitDisplayHandle::empty())
     }
