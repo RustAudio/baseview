@@ -24,10 +24,11 @@ use raw_window_handle::{
 };
 
 use crate::{
-    Event, EventStatus, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    Event, EventStatus, Size, MouseCursor, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
     WindowScalePolicy,
 };
 
+use super::cursor::Cursor;
 use super::keyboard::KeyboardState;
 use super::view::{create_view, BASEVIEW_STATE_IVAR};
 
@@ -299,6 +300,18 @@ impl Window {
         // If this is a standalone window then we'll also need to resize the window itself
         if let Some(ns_window) = self.ns_window {
             unsafe { NSWindow::setContentSize_(ns_window, size) };
+        }
+    }
+
+    pub fn set_mouse_cursor(&self, cursor: MouseCursor) {
+        let native_cursor = Cursor::from(cursor);
+        unsafe {
+            let bounds: NSRect = msg_send![self.ns_view as id, bounds];
+            let cursor = native_cursor.load();
+            let _: () = msg_send![self.ns_view as id,
+                addCursorRect:bounds
+                cursor:cursor
+            ];
         }
     }
 

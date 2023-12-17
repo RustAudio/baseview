@@ -6,7 +6,7 @@ use winapi::um::ole2::{OleInitialize, RegisterDragDrop, RevokeDragDrop};
 use winapi::um::oleidl::LPDROPTARGET;
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    GetDpiForWindow, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW,
+    GetDpiForWindow, GetMessageW, GetWindowLongPtrW, LoadCursorW, SetCursor, PostMessageW, RegisterClassW,
     ReleaseCapture, SetCapture, SetProcessDpiAwarenessContext, SetTimer, SetWindowLongPtrW,
     SetWindowPos, TranslateMessage, UnregisterClassW, CS_OWNDC, GET_XBUTTON_WPARAM, GWLP_USERDATA,
     IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE,
@@ -34,7 +34,7 @@ use raw_window_handle::{
 const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 
 use crate::{
-    Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
+    Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, MouseCursor, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
@@ -436,7 +436,7 @@ unsafe fn register_wnd_class() -> ATOM {
         cbClsExtra: 0,
         cbWndExtra: 0,
         hIcon: null_mut(),
-        hCursor: LoadCursorW(null_mut(), IDC_ARROW),
+        hCursor: null_mut(), // If the class cursor is not NULL, the system restores the class cursor each time the mouse is moved.
         hbrBackground: null_mut(),
         lpszMenuName: null_mut(),
     };
@@ -749,6 +749,13 @@ impl Window<'_> {
             }
 
             (window_handle, hwnd)
+        }
+    }
+
+    pub fn set_mouse_cursor(&mut self, cursor: MouseCursor) {
+        unsafe {
+            let cursor = LoadCursorW(null_mut(), cursor.to_windows_cursor());
+            SetCursor(cursor);
         }
     }
 
