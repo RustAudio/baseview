@@ -34,7 +34,7 @@ use raw_window_handle::{
 const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 
 use crate::{
-    Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
+    Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
@@ -763,6 +763,10 @@ impl Window<'_> {
         // event has been handled
         let task = WindowTask::Resize(size);
         self.state.deferred_tasks.borrow_mut().push_back(task);
+    }
+
+    pub fn set_mouse_cursor(&mut self, _mouse_cursor: MouseCursor) {
+        todo!()
     }
 
     #[cfg(feature = "opengl")]
