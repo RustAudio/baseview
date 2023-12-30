@@ -482,17 +482,14 @@ impl WindowState {
         self.handler.borrow_mut()
     }
 
-    /// Handle a deferred task as described in [`Self::deferred_tasks
+    /// Handle a deferred task as described in [`Self::deferred_tasks`].
     pub(self) fn handle_deferred_task(&self, task: WindowTask) {
         match task {
             WindowTask::Resize(size) => {
-                let window_info = {
-                    let mut window_info = self.window_info.borrow_mut();
-                    let scaling = window_info.scale();
-                    *window_info = WindowInfo::from_logical_size(size, scaling);
-
-                    *window_info
-                };
+                // `self.window_info` will be modified in response to the `WM_SIZE` event that
+                // follows the `SetWindowPos()` call
+                let scaling = self.window_info.borrow().scale();
+                let window_info = WindowInfo::from_logical_size(size, scaling);
 
                 // If the window is a standalone window then the size needs to include the window
                 // decorations
