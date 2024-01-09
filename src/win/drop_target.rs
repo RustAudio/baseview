@@ -2,31 +2,51 @@ use std::ffi::OsString;
 use std::mem::transmute;
 use std::os::windows::prelude::OsStringExt;
 use std::ptr::null_mut;
-use std::rc::{Weak, Rc};
+use std::rc::{Rc, Weak};
 
-use winapi::Interface;
-use winapi::shared::guiddef::{REFIID, IsEqualIID};
+use winapi::shared::guiddef::{IsEqualIID, REFIID};
 use winapi::shared::minwindef::{DWORD, WPARAM};
 use winapi::shared::ntdef::{HRESULT, ULONG};
 use winapi::shared::windef::POINTL;
-use winapi::shared::winerror::{S_OK, E_NOINTERFACE, E_UNEXPECTED};
+use winapi::shared::winerror::{E_NOINTERFACE, E_UNEXPECTED, S_OK};
 use winapi::shared::wtypes::DVASPECT_CONTENT;
-use winapi::um::objidl::{IDataObject, FORMATETC, TYMED_HGLOBAL, STGMEDIUM};
-use winapi::um::oleidl::{IDropTarget, IDropTargetVtbl, DROPEFFECT_COPY, DROPEFFECT_MOVE, DROPEFFECT_LINK, DROPEFFECT_SCROLL, DROPEFFECT_NONE};
+use winapi::um::objidl::{IDataObject, FORMATETC, STGMEDIUM, TYMED_HGLOBAL};
+use winapi::um::oleidl::{
+    IDropTarget, IDropTargetVtbl, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE,
+    DROPEFFECT_NONE, DROPEFFECT_SCROLL,
+};
 use winapi::um::shellapi::DragQueryFileW;
-use winapi::um::unknwnbase::{IUnknownVtbl, IUnknown};
+use winapi::um::unknwnbase::{IUnknown, IUnknownVtbl};
 use winapi::um::winuser::CF_HDROP;
+use winapi::Interface;
 
-use crate::{Point, DropData, MouseEvent, Event, EventStatus, DropEffect, PhyPoint};
+use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent, PhyPoint, Point};
 
 use super::WindowState;
 
 // These function pointers have to be stored in a (const) variable before they can be transmuted
 // Transmuting is needed because winapi has a bug where the pt parameter has an incorrect
 // type `*const POINTL`
-const DRAG_ENTER_PTR: unsafe extern "system" fn(this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT = DropTarget::drag_enter;
-const DRAG_OVER_PTR: unsafe extern "system" fn(this: *mut IDropTarget, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT = DropTarget::drag_over;
-const DROP_PTR: unsafe extern "system" fn(this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT = DropTarget::drop;
+const DRAG_ENTER_PTR: unsafe extern "system" fn(
+    this: *mut IDropTarget,
+    pDataObj: *const IDataObject,
+    grfKeyState: DWORD,
+    pt: POINTL,
+    pdwEffect: *mut DWORD,
+) -> HRESULT = DropTarget::drag_enter;
+const DRAG_OVER_PTR: unsafe extern "system" fn(
+    this: *mut IDropTarget,
+    grfKeyState: DWORD,
+    pt: POINTL,
+    pdwEffect: *mut DWORD,
+) -> HRESULT = DropTarget::drag_over;
+const DROP_PTR: unsafe extern "system" fn(
+    this: *mut IDropTarget,
+    pDataObj: *const IDataObject,
+    grfKeyState: DWORD,
+    pt: POINTL,
+    pdwEffect: *mut DWORD,
+) -> HRESULT = DropTarget::drop;
 const DROP_TARGET_VTBL: IDropTargetVtbl = IDropTargetVtbl {
     parent: IUnknownVtbl {
         QueryInterface: DropTarget::query_interface,
@@ -63,17 +83,18 @@ impl DropTarget {
         }
     }
 
+    #[allow(non_snake_case)]
     fn on_event(&self, pdwEffect: Option<*mut DWORD>, event: MouseEvent) {
         let Some(window_state) = self.window_state.upgrade() else {
             return;
         };
 
         unsafe {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
-    
+            let mut window = crate::Window::new(window_state.create_window());
+
             let event = Event::Mouse(event);
-            let event_status = window_state.handler_mut().as_mut().unwrap().on_event(&mut window, event);
+            let event_status =
+                window_state.handler_mut().as_mut().unwrap().on_event(&mut window, event);
 
             if let Some(pdwEffect) = pdwEffect {
                 match event_status {
@@ -82,8 +103,8 @@ impl DropTarget {
                     EventStatus::AcceptDrop(DropEffect::Link) => *pdwEffect = DROPEFFECT_LINK,
                     EventStatus::AcceptDrop(DropEffect::Scroll) => *pdwEffect = DROPEFFECT_SCROLL,
                     _ => *pdwEffect = DROPEFFECT_NONE,
-                }        
-            } 
+                }
+            }
         }
     }
 
@@ -105,11 +126,7 @@ impl DropTarget {
             tymed: TYMED_HGLOBAL,
         };
 
-        let mut medium = STGMEDIUM {
-            tymed: 0,
-            u: null_mut(),
-            pUnkForRelease: null_mut(),
-        };
+        let mut medium = STGMEDIUM { tymed: 0, u: null_mut(), pUnkForRelease: null_mut() };
 
         unsafe {
             let hresult = data_object.GetData(&format, &mut medium);
@@ -119,13 +136,13 @@ impl DropTarget {
             }
 
             let hdrop = transmute((*medium.u).hGlobal());
-       
+
             let item_count = DragQueryFileW(hdrop, 0xFFFFFFFF, null_mut(), 0);
             if item_count == 0 {
                 self.drop_data = DropData::None;
                 return;
             }
-            
+
             let mut paths = Vec::with_capacity(item_count as usize);
 
             for i in 0..item_count {
@@ -133,7 +150,12 @@ impl DropTarget {
                 let buffer_size = characters as usize + 1;
                 let mut buffer = Vec::<u16>::with_capacity(buffer_size);
 
-                DragQueryFileW(hdrop, i, transmute(buffer.spare_capacity_mut().as_mut_ptr()), buffer_size as u32);
+                DragQueryFileW(
+                    hdrop,
+                    i,
+                    transmute(buffer.spare_capacity_mut().as_mut_ptr()),
+                    buffer_size as u32,
+                );
                 buffer.set_len(buffer_size);
 
                 paths.push(OsString::from_wide(&buffer[..characters as usize]).into())
@@ -143,21 +165,19 @@ impl DropTarget {
         }
     }
 
+    #[allow(non_snake_case)]
     unsafe extern "system" fn query_interface(
-        this: *mut IUnknown,
-        riid: REFIID,
-        ppvObject: *mut *mut winapi::ctypes::c_void,
-    ) -> HRESULT
-    {
-        if IsEqualIID(&*riid, &IUnknown::uuidof()) || IsEqualIID(&*riid, &IDropTarget::uuidof()){
+        this: *mut IUnknown, riid: REFIID, ppvObject: *mut *mut winapi::ctypes::c_void,
+    ) -> HRESULT {
+        if IsEqualIID(&*riid, &IUnknown::uuidof()) || IsEqualIID(&*riid, &IDropTarget::uuidof()) {
             Self::add_ref(this);
             *ppvObject = this as *mut winapi::ctypes::c_void;
             return S_OK;
         }
-    
+
         return E_NOINTERFACE;
     }
-    
+
     unsafe extern "system" fn add_ref(this: *mut IUnknown) -> ULONG {
         let arc = Rc::from_raw(this);
         let result = Rc::strong_count(&arc) + 1;
@@ -167,7 +187,7 @@ impl DropTarget {
 
         result as ULONG
     }
-    
+
     unsafe extern "system" fn release(this: *mut IUnknown) -> ULONG {
         let arc = Rc::from_raw(this);
         let result = Rc::strong_count(&arc) - 1;
@@ -177,21 +197,19 @@ impl DropTarget {
 
         result as ULONG
     }
-        
+
+    #[allow(non_snake_case)]
     unsafe extern "system" fn drag_enter(
-        this: *mut IDropTarget,
-        pDataObj: *const IDataObject,
-        grfKeyState: DWORD,
-        pt: POINTL,
+        this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL,
         pdwEffect: *mut DWORD,
-    ) -> HRESULT
-    {
+    ) -> HRESULT {
         let drop_target = &mut *(this as *mut DropTarget);
         let Some(window_state) = drop_target.window_state.upgrade() else {
             return E_UNEXPECTED;
         };
 
-        let modifiers = window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+        let modifiers =
+            window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
 
         drop_target.parse_coordinates(pt);
         drop_target.parse_drop_data(&*pDataObj);
@@ -205,20 +223,18 @@ impl DropTarget {
         drop_target.on_event(Some(pdwEffect), event);
         S_OK
     }
-    
+
+    #[allow(non_snake_case)]
     unsafe extern "system" fn drag_over(
-        this: *mut IDropTarget,
-        grfKeyState: DWORD,
-        pt: POINTL,
-        pdwEffect: *mut DWORD,
-    ) -> HRESULT
-    {
+        this: *mut IDropTarget, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD,
+    ) -> HRESULT {
         let drop_target = &mut *(this as *mut DropTarget);
         let Some(window_state) = drop_target.window_state.upgrade() else {
             return E_UNEXPECTED;
         };
 
-        let modifiers = window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+        let modifiers =
+            window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
 
         drop_target.parse_coordinates(pt);
 
@@ -231,27 +247,25 @@ impl DropTarget {
         drop_target.on_event(Some(pdwEffect), event);
         S_OK
     }
-    
+
     unsafe extern "system" fn drag_leave(this: *mut IDropTarget) -> HRESULT {
         let drop_target = &mut *(this as *mut DropTarget);
         drop_target.on_event(None, MouseEvent::DragLeft);
         S_OK
     }
-    
+
+    #[allow(non_snake_case)]
     unsafe extern "system" fn drop(
-        this: *mut IDropTarget,
-        pDataObj: *const IDataObject,
-        grfKeyState: DWORD,
-        pt: POINTL,
+        this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL,
         pdwEffect: *mut DWORD,
-    ) -> HRESULT
-    {
+    ) -> HRESULT {
         let drop_target = &mut *(this as *mut DropTarget);
         let Some(window_state) = drop_target.window_state.upgrade() else {
             return E_UNEXPECTED;
         };
 
-        let modifiers = window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+        let modifiers =
+            window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
 
         drop_target.parse_coordinates(pt);
         drop_target.parse_drop_data(&*pDataObj);

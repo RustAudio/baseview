@@ -1,10 +1,12 @@
 use std::marker::PhantomData;
 
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::{
+    HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle,
+};
 
 use crate::event::{Event, EventStatus};
 use crate::window_open_options::WindowOpenOptions;
-use crate::Size;
+use crate::{MouseCursor, Size};
 
 #[cfg(target_os = "macos")]
 use crate::macos as platform;
@@ -17,12 +19,6 @@ pub struct WindowHandle {
     window_handle: platform::WindowHandle,
     // so that WindowHandle is !Send on all platforms
     phantom: PhantomData<*mut ()>,
-}
-
-/// Quick wrapper to satisfy [HasRawWindowHandle], because of course a raw window handle wouldn't
-/// have a raw window handle, that would be silly.
-pub(crate) struct RawWindowHandleWrapper {
-    pub handle: RawWindowHandle,
 }
 
 impl WindowHandle {
@@ -54,10 +50,7 @@ pub trait WindowHandler {
 }
 
 pub struct Window<'a> {
-    #[cfg(target_os = "windows")]
-    window: &'a mut platform::Window<'a>,
-    #[cfg(not(target_os = "windows"))]
-    window: &'a mut platform::Window,
+    window: platform::Window<'a>,
 
     // so that Window is !Send on all platforms
     phantom: PhantomData<*mut ()>,
@@ -65,12 +58,12 @@ pub struct Window<'a> {
 
 impl<'a> Window<'a> {
     #[cfg(target_os = "windows")]
-    pub(crate) fn new(window: &'a mut platform::Window<'a>) -> Window<'a> {
+    pub(crate) fn new(window: platform::Window<'a>) -> Window<'a> {
         Window { window, phantom: PhantomData }
     }
 
     #[cfg(not(target_os = "windows"))]
-    pub(crate) fn new(window: &mut platform::Window) -> Window {
+    pub(crate) fn new(window: platform::Window) -> Window {
         Window { window, phantom: PhantomData }
     }
 
@@ -82,16 +75,6 @@ impl<'a> Window<'a> {
         B: Send + 'static,
     {
         let window_handle = platform::Window::open_parented::<P, H, B>(parent, options, build);
-        WindowHandle::new(window_handle)
-    }
-
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut Window) -> H,
-        B: Send + 'static,
-    {
-        let window_handle = platform::Window::open_as_if_parented::<H, B>(options, build);
         WindowHandle::new(window_handle)
     }
 
@@ -115,6 +98,10 @@ impl<'a> Window<'a> {
         self.window.resize(size);
     }
 
+    pub fn set_mouse_cursor(&mut self, cursor: MouseCursor) {
+        self.window.set_mouse_cursor(cursor);
+    }
+
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
     /// access this context through [crate::Window::gl_context].
     #[cfg(feature = "opengl")]
@@ -129,8 +116,8 @@ unsafe impl<'a> HasRawWindowHandle for Window<'a> {
     }
 }
 
-unsafe impl HasRawWindowHandle for RawWindowHandleWrapper {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        self.handle
+unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
+    fn raw_display_handle(&self) -> RawDisplayHandle {
+        self.window.raw_display_handle()
     }
 }

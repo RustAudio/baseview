@@ -1,12 +1,14 @@
-use std::marker::PhantomData;
-use std::os::raw::{c_ulong, c_void};
+use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::time::*;
 
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, XlibHandle};
+use raw_window_handle::{
+    HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, XlibDisplayHandle,
+    XlibWindowHandle,
+};
 use xcb::ffi::xcb_screen_t;
 use xcb::StructPtr;
 
@@ -19,18 +21,12 @@ use crate::{
 use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
 
 #[cfg(feature = "opengl")]
-use crate::{
-    gl::{platform, GlContext},
-    window::RawWindowHandleWrapper,
-};
+use crate::gl::{platform, GlContext};
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
     close_requested: Arc<AtomicBool>,
     is_open: Arc<AtomicBool>,
-
-    // Ensure handle is !Send
-    _phantom: PhantomData<*mut ()>,
 }
 
 impl WindowHandle {
@@ -57,7 +53,7 @@ unsafe impl HasRawWindowHandle for WindowHandle {
             }
         }
 
-        RawWindowHandle::Xlib(XlibHandle::empty())
+        RawWindowHandle::Xlib(XlibWindowHandle::empty())
     }
 }
 
@@ -75,7 +71,6 @@ impl ParentHandle {
             raw_window_handle: None,
             close_requested: Arc::clone(&close_requested),
             is_open: Arc::clone(&is_open),
-            _phantom: PhantomData::default(),
         };
 
         (Self { close_requested, is_open }, handle)
@@ -92,11 +87,11 @@ impl Drop for ParentHandle {
     }
 }
 
-pub struct Window {
+struct WindowInner {
     xcb_connection: XcbConnection,
     window_id: u32,
     window_info: WindowInfo,
-    // FIXME: There's all this mouse cursor logic but it's never actually used, is this correct?
+    visual_id: u32,
     mouse_cursor: MouseCursor,
 
     frame_interval: Duration,
@@ -110,6 +105,10 @@ pub struct Window {
     gl_context: Option<GlContext>,
 }
 
+pub struct Window<'a> {
+    inner: &'a mut WindowInner,
+}
+
 // Hack to allow sending a RawWindowHandle between threads. Do not make public
 struct SendableRwh(RawWindowHandle);
 
@@ -117,7 +116,7 @@ unsafe impl Send for SendableRwh {}
 
 type WindowOpenResult = Result<SendableRwh, ()>;
 
-impl Window {
+impl<'a> Window<'a> {
     pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
         P: HasRawWindowHandle,
@@ -138,26 +137,6 @@ impl Window {
 
         thread::spawn(move || {
             Self::window_thread(Some(parent_id), options, build, tx.clone(), Some(parent_handle));
-        });
-
-        let raw_window_handle = rx.recv().unwrap().unwrap();
-        window_handle.raw_window_handle = Some(raw_window_handle.0);
-
-        window_handle
-    }
-
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
-        let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
-
-        let (parent_handle, mut window_handle) = ParentHandle::new();
-
-        thread::spawn(move || {
-            Self::window_thread(None, options, build, tx.clone(), Some(parent_handle));
         });
 
         let raw_window_handle = rx.recv().unwrap().unwrap();
@@ -280,10 +259,12 @@ impl Window {
                         | xcb::EVENT_MASK_BUTTON_RELEASE
                         | xcb::EVENT_MASK_KEY_PRESS
                         | xcb::EVENT_MASK_KEY_RELEASE
-                        | xcb::EVENT_MASK_STRUCTURE_NOTIFY,
+                        | xcb::EVENT_MASK_STRUCTURE_NOTIFY
+                        | xcb::EVENT_MASK_ENTER_WINDOW
+                        | xcb::EVENT_MASK_LEAVE_WINDOW,
                 ),
-                // As mentioend above, these two values are needed to be able to create a window
-                // with a dpeth of 32-bits when the parent window has a different depth
+                // As mentioned above, these two values are needed to be able to create a window
+                // with a depth of 32-bits when the parent window has a different depth
                 (xcb::CW_COLORMAP, colormap),
                 (xcb::CW_BORDER_PIXEL, 0),
             ],
@@ -323,21 +304,22 @@ impl Window {
         //       compared to when raw-gl-context was a separate crate.
         #[cfg(feature = "opengl")]
         let gl_context = fb_config.map(|fb_config| {
-            let mut handle = XlibHandle::empty();
-            handle.window = window_id as c_ulong;
-            handle.display = xcb_connection.conn.get_raw_dpy() as *mut c_void;
-            let handle = RawWindowHandleWrapper { handle: RawWindowHandle::Xlib(handle) };
+            use std::ffi::c_ulong;
+
+            let window = window_id as c_ulong;
+            let display = xcb_connection.conn.get_raw_dpy();
 
             // Because of the visual negotation we had to take some extra steps to create this context
-            let context = unsafe { platform::GlContext::create(&handle, fb_config) }
+            let context = unsafe { platform::GlContext::create(window, display, fb_config) }
                 .expect("Could not create OpenGL context");
             GlContext::new(context)
         });
 
-        let mut window = Self {
+        let mut inner = WindowInner {
             xcb_connection,
             window_id,
             window_info,
+            visual_id: visual,
             mouse_cursor: MouseCursor::default(),
 
             frame_interval: Duration::from_millis(15),
@@ -351,57 +333,56 @@ impl Window {
             gl_context,
         };
 
-        let mut handler = build(&mut crate::Window::new(&mut window));
+        let mut window = crate::Window::new(Window { inner: &mut inner });
+
+        let mut handler = build(&mut window);
 
         // Send an initial window resized event so the user is alerted of
         // the correct dpi scaling.
-        handler.on_event(
-            &mut crate::Window::new(&mut window),
-            Event::Window(WindowEvent::Resized(window_info)),
-        );
+        handler.on_event(&mut window, Event::Window(WindowEvent::Resized(window_info)));
 
         let _ = tx.send(Ok(SendableRwh(window.raw_window_handle())));
 
-        window.run_event_loop(&mut handler);
+        inner.run_event_loop(&mut handler);
     }
 
     pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
-        if self.mouse_cursor == mouse_cursor {
+        if self.inner.mouse_cursor == mouse_cursor {
             return;
         }
 
-        let xid = self.xcb_connection.get_cursor_xid(mouse_cursor);
+        let xid = self.inner.xcb_connection.get_cursor_xid(mouse_cursor);
 
         if xid != 0 {
             xcb::change_window_attributes(
-                &self.xcb_connection.conn,
-                self.window_id,
+                &self.inner.xcb_connection.conn,
+                self.inner.window_id,
                 &[(xcb::CW_CURSOR, xid)],
             );
 
-            self.xcb_connection.conn.flush();
+            self.inner.xcb_connection.conn.flush();
         }
 
-        self.mouse_cursor = mouse_cursor;
+        self.inner.mouse_cursor = mouse_cursor;
     }
 
     pub fn close(&mut self) {
-        self.close_requested = true;
+        self.inner.close_requested = true;
     }
 
     pub fn resize(&mut self, size: Size) {
-        let scaling = self.window_info.scale();
+        let scaling = self.inner.window_info.scale();
         let new_window_info = WindowInfo::from_logical_size(size, scaling);
 
         xcb::configure_window(
-            &self.xcb_connection.conn,
-            self.window_id,
+            &self.inner.xcb_connection.conn,
+            self.inner.window_id,
             &[
                 (xcb::CONFIG_WINDOW_WIDTH as u16, new_window_info.physical_size().width),
                 (xcb::CONFIG_WINDOW_HEIGHT as u16, new_window_info.physical_size().height),
             ],
         );
-        self.xcb_connection.conn.flush();
+        self.inner.xcb_connection.conn.flush();
 
         // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
         // and notify the window handler about it
@@ -409,7 +390,7 @@ impl Window {
 
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<&crate::gl::GlContext> {
-        self.gl_context.as_ref()
+        self.inner.gl_context.as_ref()
     }
 
     fn find_visual_for_depth(screen: &StructPtr<xcb_screen_t>, depth: u8) -> Option<u32> {
@@ -427,7 +408,9 @@ impl Window {
 
         None
     }
+}
 
+impl WindowInner {
     #[inline]
     fn drain_xcb_events(&mut self, handler: &mut dyn WindowHandler) {
         // the X server has a tendency to send spurious/extraneous configure notify events when a
@@ -445,7 +428,7 @@ impl Window {
             let window_info = self.window_info;
 
             handler.on_event(
-                &mut crate::Window::new(self),
+                &mut crate::Window::new(Window { inner: self }),
                 Event::Window(WindowEvent::Resized(window_info)),
             );
         }
@@ -475,7 +458,7 @@ impl Window {
             // if it's already time to draw a new frame.
             let next_frame = last_frame + self.frame_interval;
             if Instant::now() >= next_frame {
-                handler.on_frame(&mut crate::Window::new(self));
+                handler.on_frame(&mut crate::Window::new(Window { inner: self }));
                 last_frame = Instant::max(next_frame, Instant::now() - self.frame_interval);
             }
 
@@ -521,14 +504,20 @@ impl Window {
     }
 
     fn handle_close_requested(&mut self, handler: &mut dyn WindowHandler) {
-        handler.on_event(&mut crate::Window::new(self), Event::Window(WindowEvent::WillClose));
+        handler.on_event(
+            &mut crate::Window::new(Window { inner: self }),
+            Event::Window(WindowEvent::WillClose),
+        );
 
         // FIXME: handler should decide whether window stays open or not
         self.event_loop_running = false;
     }
 
     fn handle_must_close(&mut self, handler: &mut dyn WindowHandler) {
-        handler.on_event(&mut crate::Window::new(self), Event::Window(WindowEvent::WillClose));
+        handler.on_event(
+            &mut crate::Window::new(Window { inner: self }),
+            Event::Window(WindowEvent::WillClose),
+        );
 
         self.event_loop_running = false;
     }
@@ -600,13 +589,39 @@ impl Window {
                     let logical_pos = physical_pos.to_logical(&self.window_info);
 
                     handler.on_event(
-                        &mut crate::Window::new(self),
+                        &mut crate::Window::new(Window { inner: self }),
                         Event::Mouse(MouseEvent::CursorMoved {
                             position: logical_pos,
                             modifiers: key_mods(event.state()),
                         }),
                     );
                 }
+            }
+
+            xcb::ENTER_NOTIFY => {
+                handler.on_event(
+                    &mut crate::Window::new(Window { inner: self }),
+                    Event::Mouse(MouseEvent::CursorEntered),
+                );
+                // since no `MOTION_NOTIFY` event is generated when `ENTER_NOTIFY` is generated,
+                // we generate a CursorMoved as well, so the mouse position from here isn't lost
+                let event = unsafe { xcb::cast_event::<xcb::EnterNotifyEvent>(&event) };
+                let physical_pos = PhyPoint::new(event.event_x() as i32, event.event_y() as i32);
+                let logical_pos = physical_pos.to_logical(&self.window_info);
+                handler.on_event(
+                    &mut crate::Window::new(Window { inner: self }),
+                    Event::Mouse(MouseEvent::CursorMoved {
+                        position: logical_pos,
+                        modifiers: key_mods(event.state()),
+                    }),
+                );
+            }
+
+            xcb::LEAVE_NOTIFY => {
+                handler.on_event(
+                    &mut crate::Window::new(Window { inner: self }),
+                    Event::Mouse(MouseEvent::CursorLeft),
+                );
             }
 
             xcb::BUTTON_PRESS => {
@@ -616,7 +631,7 @@ impl Window {
                 match detail {
                     4..=7 => {
                         handler.on_event(
-                            &mut crate::Window::new(self),
+                            &mut crate::Window::new(Window { inner: self }),
                             Event::Mouse(MouseEvent::WheelScrolled {
                                 delta: match detail {
                                     4 => ScrollDelta::Lines { x: 0.0, y: 1.0 },
@@ -632,7 +647,7 @@ impl Window {
                     detail => {
                         let button_id = mouse_id(detail);
                         handler.on_event(
-                            &mut crate::Window::new(self),
+                            &mut crate::Window::new(Window { inner: self }),
                             Event::Mouse(MouseEvent::ButtonPressed {
                                 button: button_id,
                                 modifiers: key_mods(event.state()),
@@ -649,7 +664,7 @@ impl Window {
                 if !(4..=7).contains(&detail) {
                     let button_id = mouse_id(detail);
                     handler.on_event(
-                        &mut crate::Window::new(self),
+                        &mut crate::Window::new(Window { inner: self }),
                         Event::Mouse(MouseEvent::ButtonReleased {
                             button: button_id,
                             modifiers: key_mods(event.state()),
@@ -665,7 +680,7 @@ impl Window {
                 let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
 
                 handler.on_event(
-                    &mut crate::Window::new(self),
+                    &mut crate::Window::new(Window { inner: self }),
                     Event::Keyboard(convert_key_press_event(event)),
                 );
             }
@@ -674,7 +689,7 @@ impl Window {
                 let event = unsafe { xcb::cast_event::<xcb::KeyReleaseEvent>(&event) };
 
                 handler.on_event(
-                    &mut crate::Window::new(self),
+                    &mut crate::Window::new(Window { inner: self }),
                     Event::Keyboard(convert_key_release_event(event)),
                 );
             }
@@ -684,13 +699,26 @@ impl Window {
     }
 }
 
-unsafe impl HasRawWindowHandle for Window {
+unsafe impl<'a> HasRawWindowHandle for Window<'a> {
     fn raw_window_handle(&self) -> RawWindowHandle {
-        let mut handle = XlibHandle::empty();
-        handle.window = self.window_id as c_ulong;
-        handle.display = self.xcb_connection.conn.get_raw_dpy() as *mut c_void;
+        let mut handle = XlibWindowHandle::empty();
+
+        handle.window = self.inner.window_id.into();
+        handle.visual_id = self.inner.visual_id.into();
 
         RawWindowHandle::Xlib(handle)
+    }
+}
+
+unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
+    fn raw_display_handle(&self) -> RawDisplayHandle {
+        let display = self.inner.xcb_connection.conn.get_raw_dpy();
+        let mut handle = XlibDisplayHandle::empty();
+
+        handle.display = display as *mut c_void;
+        handle.screen = unsafe { x11::xlib::XDefaultScreen(display) };
+
+        RawDisplayHandle::Xlib(handle)
     }
 }
 
@@ -705,6 +733,6 @@ fn mouse_id(id: u8) -> MouseButton {
     }
 }
 
-pub fn copy_to_clipboard(data: &str) {
+pub fn copy_to_clipboard(_data: &str) {
     todo!()
 }

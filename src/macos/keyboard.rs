@@ -18,6 +18,8 @@
 
 //! Conversion of platform keyboard event into cross-platform event.
 
+use std::cell::Cell;
+
 use cocoa::appkit::{NSEvent, NSEventModifierFlags, NSEventType};
 use cocoa::base::id;
 use cocoa::foundation::NSString;
@@ -44,7 +46,7 @@ pub(crate) fn from_nsstring(s: id) -> String {
 /// Most of the logic in this module is adapted from Mozilla, and in particular
 /// TextInputHandler.mm.
 pub(crate) struct KeyboardState {
-    last_mods: NSEventModifierFlags,
+    last_mods: Cell<NSEventModifierFlags>,
 }
 
 /// Convert a macOS platform key code (keyCode field of NSEvent).
@@ -269,11 +271,15 @@ fn is_modifier_code(code: Code) -> bool {
 
 impl KeyboardState {
     pub(crate) fn new() -> KeyboardState {
-        let last_mods = NSEventModifierFlags::empty();
+        let last_mods = Cell::new(NSEventModifierFlags::empty());
         KeyboardState { last_mods }
     }
 
-    pub(crate) fn process_native_event(&mut self, event: id) -> Option<KeyboardEvent> {
+    pub(crate) fn last_mods(&self) -> NSEventModifierFlags {
+        self.last_mods.get()
+    }
+
+    pub(crate) fn process_native_event(&self, event: id) -> Option<KeyboardEvent> {
         unsafe {
             let event_type = event.eventType();
             let key_code = event.keyCode();
@@ -288,8 +294,8 @@ impl KeyboardState {
                     // We use `bits` here because we want to distinguish the
                     // device dependent bits (when both left and right keys
                     // may be pressed, for example).
-                    let any_down = raw_mods.bits() & !self.last_mods.bits();
-                    self.last_mods = raw_mods;
+                    let any_down = raw_mods.bits() & !self.last_mods.get().bits();
+                    self.last_mods.set(raw_mods);
                     if is_modifier_code(code) {
                         if any_down == 0 {
                             KeyState::Up

@@ -21,17 +21,19 @@ use winapi::um::winuser::{
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::VecDeque;
 use std::ffi::{c_void, OsStr};
-use std::marker::PhantomData;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 use std::rc::Rc;
 
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle, Win32Handle};
+use raw_window_handle::{
+    HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, Win32WindowHandle,
+    WindowsDisplayHandle,
+};
 
 const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 
 use crate::{
-    Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
+    Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
@@ -39,7 +41,7 @@ use super::drop_target::DropTarget;
 use super::keyboard::KeyboardState;
 
 #[cfg(feature = "opengl")]
-use crate::{gl::GlContext, window::RawWindowHandleWrapper};
+use crate::gl::GlContext;
 
 unsafe fn generate_guid() -> String {
     let mut guid: GUID = std::mem::zeroed();
@@ -65,9 +67,6 @@ const WIN_FRAME_TIMER: usize = 4242;
 pub struct WindowHandle {
     hwnd: Option<HWND>,
     is_open: Rc<Cell<bool>>,
-
-    // Ensure handle is !Send
-    _phantom: PhantomData<*mut ()>,
 }
 
 impl WindowHandle {
@@ -87,12 +86,12 @@ impl WindowHandle {
 unsafe impl HasRawWindowHandle for WindowHandle {
     fn raw_window_handle(&self) -> RawWindowHandle {
         if let Some(hwnd) = self.hwnd {
-            let mut handle = Win32Handle::empty();
+            let mut handle = Win32WindowHandle::empty();
             handle.hwnd = hwnd as *mut c_void;
 
             RawWindowHandle::Win32(handle)
         } else {
-            RawWindowHandle::Win32(Win32Handle::empty())
+            RawWindowHandle::Win32(Win32WindowHandle::empty())
         }
     }
 }
@@ -105,11 +104,7 @@ impl ParentHandle {
     pub fn new(hwnd: HWND) -> (Self, WindowHandle) {
         let is_open = Rc::new(Cell::new(true));
 
-        let handle = WindowHandle {
-            hwnd: Some(hwnd),
-            is_open: Rc::clone(&is_open),
-            _phantom: PhantomData::default(),
-        };
+        let handle = WindowHandle { hwnd: Some(hwnd), is_open: Rc::clone(&is_open) };
 
         (Self { is_open }, handle)
     }
@@ -173,10 +168,7 @@ unsafe fn wnd_proc_inner(
 ) -> Option<LRESULT> {
     match msg {
         WM_MOUSEMOVE => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
-            let mut handler = window_state.handler.borrow_mut();
-            let handler = handler.as_mut().unwrap();
+            let mut window = crate::Window::new(window_state.create_window());
 
             let mut mouse_was_outside_window = window_state.mouse_was_outside_window.borrow_mut();
             if *mouse_was_outside_window {
@@ -194,7 +186,7 @@ unsafe fn wnd_proc_inner(
                 *mouse_was_outside_window = false;
 
                 let enter_event = Event::Mouse(MouseEvent::CursorEntered);
-                handler.on_event(&mut window, enter_event);
+                window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, enter_event);
             }
 
             let x = (lparam & 0xFFFF) as i16 as i32;
@@ -209,13 +201,12 @@ unsafe fn wnd_proc_inner(
                     .borrow()
                     .get_modifiers_from_mouse_wparam(wparam),
             });
-            handler.on_event(&mut window, move_event);
+            window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, move_event);
             Some(0)
         }
 
         WM_MOUSELEAVE => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
             let event = Event::Mouse(MouseEvent::CursorLeft);
             window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
 
@@ -223,8 +214,7 @@ unsafe fn wnd_proc_inner(
             Some(0)
         }
         WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
 
             let value = (wparam >> 16) as i16;
             let value = value as i32;
@@ -248,8 +238,7 @@ unsafe fn wnd_proc_inner(
         }
         WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
         | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
 
             let mut mouse_button_counter = window_state.mouse_button_counter.get();
 
@@ -312,8 +301,7 @@ unsafe fn wnd_proc_inner(
             None
         }
         WM_TIMER => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
 
             if wparam == WIN_FRAME_TIMER {
                 window_state.handler.borrow_mut().as_mut().unwrap().on_frame(&mut window);
@@ -324,8 +312,7 @@ unsafe fn wnd_proc_inner(
         WM_CLOSE => {
             // Make sure to release the borrow before the DefWindowProc call
             {
-                let mut window = window_state.create_window();
-                let mut window = crate::Window::new(&mut window);
+                let mut window = crate::Window::new(window_state.create_window());
 
                 window_state
                     .handler
@@ -341,8 +328,7 @@ unsafe fn wnd_proc_inner(
         }
         WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP
         | WM_INPUTLANGCHANGE => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
 
             let opt_event =
                 window_state.keyboard_state.borrow_mut().process_message(hwnd, msg, wparam, lparam);
@@ -363,8 +349,7 @@ unsafe fn wnd_proc_inner(
             }
         }
         WM_SIZE => {
-            let mut window = window_state.create_window();
-            let mut window = crate::Window::new(&mut window);
+            let mut window = crate::Window::new(window_state.create_window());
 
             let width = (lparam & 0xFFFF) as u16 as u32;
             let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
@@ -592,17 +577,6 @@ impl Window<'_> {
         window_handle
     }
 
-    pub fn open_as_if_parented<H, B>(options: WindowOpenOptions, build: B) -> WindowHandle
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
-        let (window_handle, _) = Self::open(true, null_mut(), options, build);
-
-        window_handle
-    }
-
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
     where
         H: WindowHandler + 'static,
@@ -691,9 +665,9 @@ impl Window<'_> {
 
             #[cfg(feature = "opengl")]
             let gl_context: Option<GlContext> = options.gl_config.map(|gl_config| {
-                let mut handle = Win32Handle::empty();
+                let mut handle = Win32WindowHandle::empty();
                 handle.hwnd = hwnd as *mut c_void;
-                let handle = RawWindowHandleWrapper { handle: RawWindowHandle::Win32(handle) };
+                let handle = RawWindowHandle::Win32(handle);
 
                 GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
             });
@@ -723,8 +697,7 @@ impl Window<'_> {
             });
 
             let handler = {
-                let mut window = window_state.create_window();
-                let mut window = crate::Window::new(&mut window);
+                let mut window = crate::Window::new(window_state.create_window());
 
                 build(&mut window)
             };
@@ -804,6 +777,10 @@ impl Window<'_> {
         self.state.deferred_tasks.borrow_mut().push_back(task);
     }
 
+    pub fn set_mouse_cursor(&mut self, _mouse_cursor: MouseCursor) {
+        todo!()
+    }
+
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<&GlContext> {
         self.state.gl_context.as_ref()
@@ -812,13 +789,19 @@ impl Window<'_> {
 
 unsafe impl HasRawWindowHandle for Window<'_> {
     fn raw_window_handle(&self) -> RawWindowHandle {
-        let mut handle = Win32Handle::empty();
+        let mut handle = Win32WindowHandle::empty();
         handle.hwnd = self.state.hwnd as *mut c_void;
 
         RawWindowHandle::Win32(handle)
     }
 }
 
-pub fn copy_to_clipboard(data: &str) {
+unsafe impl HasRawDisplayHandle for Window<'_> {
+    fn raw_display_handle(&self) -> RawDisplayHandle {
+        RawDisplayHandle::Windows(WindowsDisplayHandle::empty())
+    }
+}
+
+pub fn copy_to_clipboard(_data: &str) {
     todo!()
 }

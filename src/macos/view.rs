@@ -1,8 +1,8 @@
 use std::ffi::c_void;
 
-use cocoa::appkit::{NSEvent, NSView, NSWindow};
+use cocoa::appkit::{NSEvent, NSFilenamesPboardType, NSView, NSWindow};
 use cocoa::base::{id, nil, BOOL, NO, YES};
-use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize};
+use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize, NSUInteger};
 
 use objc::{
     class,
@@ -15,12 +15,16 @@ use uuid::Uuid;
 
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
-    Event, EventStatus, MouseButton, MouseEvent, Point, ScrollDelta, Size, WindowEvent, WindowInfo,
-    WindowOpenOptions,
+    DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, Point, ScrollDelta, Size,
+    WindowEvent, WindowInfo, WindowOpenOptions,
 };
 
-use super::keyboard::make_modifiers;
+use super::keyboard::{from_nsstring, make_modifiers};
 use super::window::WindowState;
+use super::{
+    NSDragOperationCopy, NSDragOperationGeneric, NSDragOperationLink, NSDragOperationMove,
+    NSDragOperationNone,
+};
 
 /// Name of the field used to store the `WindowState` pointer.
 pub(super) const BASEVIEW_STATE_IVAR: &str = "baseview_state";
@@ -29,9 +33,7 @@ macro_rules! add_simple_mouse_class_method {
     ($class:ident, $sel:ident, $event:expr) => {
         #[allow(non_snake_case)]
         extern "C" fn $sel(this: &Object, _: Sel, _: id){
-            let state: &mut WindowState = unsafe {
-                WindowState::from_field(this)
-            };
+            let state = unsafe { WindowState::from_view(this) };
 
             state.trigger_event(Event::Mouse($event));
         }
@@ -49,9 +51,7 @@ macro_rules! add_mouse_button_class_method {
     ($class:ident, $sel:ident, $event_ty:ident, $button:expr) => {
         #[allow(non_snake_case)]
         extern "C" fn $sel(this: &Object, _: Sel, event: id){
-            let state: &mut WindowState = unsafe {
-                WindowState::from_field(this)
-            };
+            let state = unsafe { WindowState::from_view(this) };
 
             let modifiers = unsafe { NSEvent::modifierFlags(event) };
 
@@ -72,9 +72,7 @@ macro_rules! add_simple_keyboard_class_method {
     ($class:ident, $sel:ident) => {
         #[allow(non_snake_case)]
         extern "C" fn $sel(this: &Object, _: Sel, event: id){
-            let state: &mut WindowState = unsafe {
-                WindowState::from_field(this)
-            };
+            let state = unsafe { WindowState::from_view(this) };
 
             if let Some(key_event) = state.process_native_key_event(event){
                 let status = state.trigger_event(Event::Keyboard(key_event));
@@ -105,6 +103,11 @@ pub(super) unsafe fn create_view(window_options: &WindowOpenOptions) -> id {
 
     view.initWithFrame_(NSRect::new(NSPoint::new(0., 0.), NSSize::new(size.width, size.height)));
 
+    let _: id = msg_send![
+        view,
+        registerForDraggedTypes: NSArray::arrayWithObjects(nil, &[NSFilenamesPboardType])
+    ];
+
     view
 }
 
@@ -131,7 +134,10 @@ unsafe fn create_view_class() -> &'static Class {
         accepts_first_mouse as extern "C" fn(&Object, Sel, id) -> BOOL,
     );
 
-    class.add_method(sel!(release), release as extern "C" fn(&mut Object, Sel));
+    class.add_method(
+        sel!(windowShouldClose:),
+        window_should_close as extern "C" fn(&Object, Sel, id) -> BOOL,
+    );
     class.add_method(sel!(dealloc), dealloc as extern "C" fn(&mut Object, Sel));
     class.add_method(
         sel!(viewWillMoveToWindow:),
@@ -153,6 +159,24 @@ unsafe fn create_view_class() -> &'static Class {
         sel!(viewDidChangeBackingProperties:),
         view_did_change_backing_properties as extern "C" fn(&Object, Sel, id),
     );
+
+    class.add_method(
+        sel!(draggingEntered:),
+        dragging_entered as extern "C" fn(&Object, Sel, id) -> NSUInteger,
+    );
+    class.add_method(
+        sel!(prepareForDragOperation:),
+        prepare_for_drag_operation as extern "C" fn(&Object, Sel, id) -> BOOL,
+    );
+    class.add_method(
+        sel!(performDragOperation:),
+        perform_drag_operation as extern "C" fn(&Object, Sel, id) -> BOOL,
+    );
+    class.add_method(
+        sel!(draggingUpdated:),
+        dragging_updated as extern "C" fn(&Object, Sel, id) -> NSUInteger,
+    );
+    class.add_method(sel!(draggingExited:), dragging_exited as extern "C" fn(&Object, Sel, id));
 
     add_mouse_button_class_method!(class, mouseDown, ButtonPressed, MouseButton::Left);
     add_mouse_button_class_method!(class, mouseUp, ButtonReleased, MouseButton::Left);
@@ -184,37 +208,14 @@ extern "C" fn accepts_first_mouse(_this: &Object, _sel: Sel, _event: id) -> BOOL
     YES
 }
 
-extern "C" fn release(this: &mut Object, _sel: Sel) {
-    // Hack for breaking circular references. We store the value of retainCount
-    // after build(), and then when retainCount drops back to that value, we
-    // drop the WindowState, hoping that any circular references it holds back
-    // to the NSView (e.g. wgpu surfaces) get released.
-    //
-    // This is definitely broken, since it can be thwarted by e.g. creating a
-    // wgpu surface at some point after build() (which will mean the NSView
-    // never gets dealloced) or dropping a wgpu surface at some point before
-    // drop() (which will mean the WindowState gets dropped early).
-    //
-    // TODO: Find a better solution for circular references.
+extern "C" fn window_should_close(this: &Object, _: Sel, _sender: id) -> BOOL {
+    let state = unsafe { WindowState::from_view(this) };
 
-    unsafe {
-        let retain_count: usize = msg_send![this, retainCount];
+    state.trigger_event(Event::Window(WindowEvent::WillClose));
 
-        let state_ptr: *mut c_void = *this.get_ivar(BASEVIEW_STATE_IVAR);
+    state.window_inner.close();
 
-        if !state_ptr.is_null() {
-            let retain_count_after_build = WindowState::from_field(this).retain_count_after_build;
-
-            if retain_count <= retain_count_after_build {
-                WindowState::stop_and_free(this);
-            }
-        }
-    }
-
-    unsafe {
-        let superclass = msg_send![this, superclass];
-        let () = msg_send![super(this, superclass), release];
-    }
+    NO
 }
 
 extern "C" fn dealloc(this: &mut Object, _sel: Sel) {
@@ -236,7 +237,7 @@ extern "C" fn view_did_change_backing_properties(this: &Object, _: Sel, _: id) {
         let scale_factor: f64 =
             if ns_window.is_null() { 1.0 } else { NSWindow::backingScaleFactor(ns_window) };
 
-        let state: &mut WindowState = WindowState::from_field(this);
+        let state = WindowState::from_view(this);
 
         let bounds: NSRect = msg_send![this, bounds];
 
@@ -245,10 +246,12 @@ extern "C" fn view_did_change_backing_properties(this: &Object, _: Sel, _: id) {
             scale_factor,
         );
 
+        let window_info = state.window_info.get();
+
         // Only send the event when the window's size has actually changed to be in line with the
         // other platform implementations
-        if new_window_info.physical_size() != state.window_info.physical_size() {
-            state.window_info = new_window_info;
+        if new_window_info.physical_size() != window_info.physical_size() {
+            state.window_info.set(new_window_info);
             state.trigger_event(Event::Window(WindowEvent::Resized(new_window_info)));
         }
     }
@@ -334,7 +337,7 @@ extern "C" fn update_tracking_areas(this: &Object, _self: Sel, _: id) {
 }
 
 extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: id) {
-    let state: &mut WindowState = unsafe { WindowState::from_field(this) };
+    let state = unsafe { WindowState::from_view(this) };
 
     let point: NSPoint = unsafe {
         let point = NSEvent::locationInWindow(event);
@@ -352,7 +355,7 @@ extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: id) {
 }
 
 extern "C" fn scroll_wheel(this: &Object, _: Sel, event: id) {
-    let state: &mut WindowState = unsafe { WindowState::from_field(this) };
+    let state = unsafe { WindowState::from_view(this) };
 
     let delta = unsafe {
         let x = NSEvent::scrollingDeltaX(event) as f32;
@@ -371,4 +374,102 @@ extern "C" fn scroll_wheel(this: &Object, _: Sel, event: id) {
         delta,
         modifiers: make_modifiers(modifiers),
     }));
+}
+
+fn get_drag_position(sender: id) -> Point {
+    let point: NSPoint = unsafe { msg_send![sender, draggingLocation] };
+    Point::new(point.x, point.y)
+}
+
+fn get_drop_data(sender: id) -> DropData {
+    if sender == nil {
+        return DropData::None;
+    }
+
+    unsafe {
+        let pasteboard: id = msg_send![sender, draggingPasteboard];
+        let file_list: id = msg_send![pasteboard, propertyListForType: NSFilenamesPboardType];
+
+        if file_list == nil {
+            return DropData::None;
+        }
+
+        let mut files = vec![];
+        for i in 0..NSArray::count(file_list) {
+            let data = NSArray::objectAtIndex(file_list, i);
+            files.push(from_nsstring(data).into());
+        }
+
+        DropData::Files(files)
+    }
+}
+
+fn on_event(window_state: &WindowState, event: MouseEvent) -> NSUInteger {
+    let event_status = window_state.trigger_event(Event::Mouse(event));
+    match event_status {
+        EventStatus::AcceptDrop(DropEffect::Copy) => NSDragOperationCopy,
+        EventStatus::AcceptDrop(DropEffect::Move) => NSDragOperationMove,
+        EventStatus::AcceptDrop(DropEffect::Link) => NSDragOperationLink,
+        EventStatus::AcceptDrop(DropEffect::Scroll) => NSDragOperationGeneric,
+        _ => NSDragOperationNone,
+    }
+}
+
+extern "C" fn dragging_entered(this: &Object, _sel: Sel, sender: id) -> NSUInteger {
+    let state = unsafe { WindowState::from_view(this) };
+    let modifiers = state.keyboard_state().last_mods();
+    let drop_data = get_drop_data(sender);
+
+    let event = MouseEvent::DragEntered {
+        position: get_drag_position(sender),
+        modifiers: make_modifiers(modifiers),
+        data: drop_data,
+    };
+
+    on_event(&state, event)
+}
+
+extern "C" fn dragging_updated(this: &Object, _sel: Sel, sender: id) -> NSUInteger {
+    let state = unsafe { WindowState::from_view(this) };
+    let modifiers = state.keyboard_state().last_mods();
+    let drop_data = get_drop_data(sender);
+
+    let event = MouseEvent::DragMoved {
+        position: get_drag_position(sender),
+        modifiers: make_modifiers(modifiers),
+        data: drop_data,
+    };
+
+    on_event(&state, event)
+}
+
+extern "C" fn prepare_for_drag_operation(_this: &Object, _sel: Sel, _sender: id) -> BOOL {
+    // Always accept drag operation if we get this far
+    // This function won't be called unless dragging_entered/updated
+    // has returned an acceptable operation
+    YES
+}
+
+extern "C" fn perform_drag_operation(this: &Object, _sel: Sel, sender: id) -> BOOL {
+    let state = unsafe { WindowState::from_view(this) };
+    let modifiers = state.keyboard_state().last_mods();
+    let drop_data = get_drop_data(sender);
+
+    let event = MouseEvent::DragDropped {
+        position: get_drag_position(sender),
+        modifiers: make_modifiers(modifiers),
+        data: drop_data,
+    };
+
+    let event_status = state.trigger_event(Event::Mouse(event));
+    match event_status {
+        EventStatus::AcceptDrop(_) => YES,
+        _ => NO,
+    }
+}
+
+extern "C" fn dragging_exited(this: &Object, _sel: Sel, _sender: id) {
+    let state = unsafe { WindowState::from_view(this) };
+
+    on_event(&state, MouseEvent::DragLeft);
 }

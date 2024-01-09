@@ -1,8 +1,6 @@
 use std::ffi::{c_void, CString};
 use std::os::raw::{c_int, c_ulong};
 
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
-
 use x11::glx;
 use x11::xlib;
 
@@ -80,19 +78,11 @@ impl GlContext {
     ///
     /// Use [Self::get_fb_config_and_visual] to create both of these things.
     pub unsafe fn create(
-        parent: &impl HasRawWindowHandle, config: FbConfig,
+        window: c_ulong, display: *mut xlib::_XDisplay, config: FbConfig,
     ) -> Result<GlContext, GlError> {
-        let handle = if let RawWindowHandle::Xlib(handle) = parent.raw_window_handle() {
-            handle
-        } else {
-            return Err(GlError::InvalidWindowHandle);
-        };
-
-        if handle.display.is_null() {
+        if display.is_null() {
             return Err(GlError::InvalidWindowHandle);
         }
-
-        let display = handle.display as *mut xlib::_XDisplay;
 
         errors::XErrorHandler::handle(display, |error_handler| {
             #[allow(non_snake_case)]
@@ -144,13 +134,13 @@ impl GlContext {
                 return Err(GlError::CreationFailed(CreationFailedError::ContextCreationFailed));
             }
 
-            let res = glx::glXMakeCurrent(display, handle.window, context);
+            let res = glx::glXMakeCurrent(display, window, context);
             error_handler.check()?;
             if res == 0 {
                 return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
             }
 
-            glXSwapIntervalEXT(display, handle.window, config.gl_config.vsync as i32);
+            glXSwapIntervalEXT(display, window, config.gl_config.vsync as i32);
             error_handler.check()?;
 
             if glx::glXMakeCurrent(display, 0, std::ptr::null_mut()) == 0 {
@@ -158,7 +148,7 @@ impl GlContext {
                 return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
             }
 
-            Ok(GlContext { window: handle.window, display, context })
+            Ok(GlContext { window, display, context })
         })
     }
 

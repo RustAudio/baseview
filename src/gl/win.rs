@@ -1,7 +1,7 @@
 use std::ffi::{c_void, CString, OsStr};
 use std::os::windows::ffi::OsStrExt;
 
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::RawWindowHandle;
 
 use winapi::shared::minwindef::{HINSTANCE, HMODULE};
 use winapi::shared::ntdef::WCHAR;
@@ -77,10 +77,8 @@ extern "C" {
 }
 
 impl GlContext {
-    pub unsafe fn create(
-        parent: &impl HasRawWindowHandle, config: GlConfig,
-    ) -> Result<GlContext, GlError> {
-        let handle = if let RawWindowHandle::Win32(handle) = parent.raw_window_handle() {
+    pub unsafe fn create(parent: &RawWindowHandle, config: GlConfig) -> Result<GlContext, GlError> {
+        let handle = if let RawWindowHandle::Win32(handle) = parent {
             handle
         } else {
             return Err(GlError::InvalidWindowHandle);
