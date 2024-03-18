@@ -8,14 +8,14 @@ use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
     GetDpiForWindow, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW,
     ReleaseCapture, SetCapture, SetProcessDpiAwarenessContext, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, TranslateMessage, UnregisterClassW, CS_OWNDC, GET_XBUTTON_WPARAM, GWLP_USERDATA,
-    IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE,
-    WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY,
-    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
-    WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD,
-    WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
-    XBUTTON1, XBUTTON2,
+    SetWindowPos, TrackMouseEvent, TranslateMessage, UnregisterClassW, CS_OWNDC,
+    GET_XBUTTON_WPARAM, GWLP_USERDATA, IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER, TRACKMOUSEEVENT,
+    WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN,
+    WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL,
+    WM_MOUSELEAVE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_RBUTTONDOWN, WM_RBUTTONUP,
+    WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER,
+    WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, XBUTTON1, XBUTTON2,
 };
 
 use std::cell::{Cell, Ref, RefCell, RefMut};
@@ -170,21 +170,47 @@ unsafe fn wnd_proc_inner(
         WM_MOUSEMOVE => {
             let mut window = crate::Window::new(window_state.create_window());
 
+            let mut mouse_was_outside_window = window_state.mouse_was_outside_window.borrow_mut();
+            if *mouse_was_outside_window {
+                // this makes Windows track whether the mouse leaves the window.
+                // When the mouse leaves it results in a `WM_MOUSELEAVE` event.
+                let mut track_mouse =TRACKMOUSEEVENT {
+                    cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                    dwFlags: winapi::um::winuser::TME_LEAVE,
+                    hwndTrack: hwnd,
+                    dwHoverTime: winapi::um::winuser::HOVER_DEFAULT,
+                };
+                // Couldn't find a good way to track whether the mouse enters,
+                // but if `WM_MOUSEMOVE` happens, the mouse must have entered.
+                TrackMouseEvent(&mut track_mouse);
+                *mouse_was_outside_window = false;
+
+                let enter_event = Event::Mouse(MouseEvent::CursorEntered);
+                window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, enter_event);
+            }
+
             let x = (lparam & 0xFFFF) as i16 as i32;
             let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
             let physical_pos = PhyPoint { x, y };
             let logical_pos = physical_pos.to_logical(&window_state.window_info.borrow());
-            let event = Event::Mouse(MouseEvent::CursorMoved {
+            let move_event = Event::Mouse(MouseEvent::CursorMoved {
                 position: logical_pos,
                 modifiers: window_state
                     .keyboard_state
                     .borrow()
                     .get_modifiers_from_mouse_wparam(wparam),
             });
+            window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, move_event);
+            Some(0)
+        }
 
+        WM_MOUSELEAVE => {
+            let mut window = crate::Window::new(window_state.create_window());
+            let event = Event::Mouse(MouseEvent::CursorLeft);
             window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
 
+            *window_state.mouse_was_outside_window.borrow_mut() = true;
             Some(0)
         }
         WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
@@ -448,6 +474,7 @@ pub(super) struct WindowState {
     _parent_handle: Option<ParentHandle>,
     keyboard_state: RefCell<KeyboardState>,
     mouse_button_counter: Cell<usize>,
+    mouse_was_outside_window: RefCell<bool>,
     // Initialized late so the `Window` can hold a reference to this `WindowState`
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
     _drop_target: RefCell<Option<Rc<DropTarget>>>,
@@ -655,6 +682,7 @@ impl Window<'_> {
                 _parent_handle: parent_handle,
                 keyboard_state: RefCell::new(KeyboardState::new()),
                 mouse_button_counter: Cell::new(0),
+                mouse_was_outside_window: RefCell::new(true),
                 // The Window refers to this `WindowState`, so this `handler` needs to be
                 // initialized later
                 handler: RefCell::new(None),
