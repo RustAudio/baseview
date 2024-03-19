@@ -297,7 +297,6 @@ impl<'a> Window<'a> {
             let view = self.inner.ns_view.as_mut().unwrap();
             let window: id = msg_send![view, window];
             if window != nil {
-                let _: () = msg_send![window, makeKeyWindow];
                 msg_send![window, makeFirstResponder:view]
             }
         }
