@@ -770,6 +770,14 @@ impl Window<'_> {
         }
     }
 
+    pub fn has_input_focus(&mut self) -> bool {
+        unimplemented!()
+    }
+
+    pub fn set_input_focus(&mut self) {
+        unimplemented!()
+    }
+
     pub fn resize(&mut self, size: Size) {
         // To avoid reentrant event handler calls we'll defer the actual resizing until after the
         // event has been handled
