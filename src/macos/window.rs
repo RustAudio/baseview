@@ -468,8 +468,6 @@ impl NSWindowNotificationObserver {
             };
 
             let notification_center: id = msg_send![class!(NSNotificationCenter), defaultCenter];
-
-            let window: id = msg_send![window_state.window_inner.ns_view, window];
             let window_state_ptr = Rc::into_raw(Rc::clone(&window_state));
 
             (*observer).set_ivar(BASEVIEW_STATE_IVAR, window_state_ptr as *const c_void);
@@ -479,7 +477,7 @@ impl NSWindowNotificationObserver {
                 addObserver:observer
                 selector:sel!(handleNotification:)
                 name:NSString::alloc(nil).init_str(Self::NS_WINDOW_DID_BECOME_KEY_NOTIFICATION)
-                object:window
+                object:nil
             ];
 
             let _: () = msg_send![
@@ -487,7 +485,7 @@ impl NSWindowNotificationObserver {
                 addObserver:observer
                 selector:sel!(handleNotification:)
                 name:NSString::alloc(nil).init_str(Self::NS_WINDOW_DID_RESIGN_KEY_NOTIFICATION)
-                object:window
+                object:nil
             ];
 
             Self { observer }
