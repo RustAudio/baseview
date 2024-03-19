@@ -7,7 +7,7 @@ use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
     NSPasteboard, NSView, NSWindow, NSWindowStyleMask,
 };
-use cocoa::base::{id, nil, NO, YES};
+use cocoa::base::{id, nil, BOOL, NO, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use core_foundation::runloop::{
     CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer, kCFRunLoopDefaultMode,
@@ -44,6 +44,7 @@ impl WindowHandle {
     pub fn is_open(&self) -> bool {
         self.state.window_inner.open.get()
     }
+
 }
 
 unsafe impl HasRawWindowHandle for WindowHandle {
@@ -278,6 +279,28 @@ impl<'a> Window<'a> {
 
     pub fn close(&mut self) {
         self.inner.close();
+    }
+
+    pub fn has_input_focus(&mut self) -> bool {
+        unsafe {
+            let view = self.inner.ns_view.as_mut().unwrap();
+            let window: id = msg_send![view, window];
+            if window == nil { return false; };
+            let first_responder: id = msg_send![window, firstResponder];
+            let is_focused: BOOL = msg_send![view, isEqual: first_responder];
+            is_focused == YES
+        }
+    }
+
+    pub fn set_input_focus(&mut self) {
+        unsafe {
+            let view = self.inner.ns_view.as_mut().unwrap();
+            let window: id = msg_send![view, window];
+            if window != nil {
+                let _: () = msg_send![window, makeKeyWindow];
+                msg_send![window, makeFirstResponder:view]
+            }
+        }
     }
 
     pub fn resize(&mut self, size: Size) {
