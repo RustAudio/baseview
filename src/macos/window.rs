@@ -7,23 +7,28 @@ use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
     NSPasteboard, NSView, NSWindow, NSWindowStyleMask,
 };
-use cocoa::base::{id, nil, NO, YES};
+use cocoa::base::{id, nil, BOOL, NO, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use core_foundation::runloop::{
     CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer, kCFRunLoopDefaultMode,
 };
 use keyboard_types::KeyboardEvent;
-
-use objc::{msg_send, runtime::Object, sel, sel_impl};
-
+use objc::{
+    class,
+    declare::ClassDecl,
+    msg_send,
+    runtime::{Object, Sel},
+    sel, sel_impl,
+};
 use raw_window_handle::{
     AppKitDisplayHandle, AppKitWindowHandle, HasRawDisplayHandle, HasRawWindowHandle,
     RawDisplayHandle, RawWindowHandle,
 };
+use uuid::Uuid;
 
 use crate::{
-    Event, EventStatus, MouseCursor, Size, WindowHandler, WindowInfo, WindowOpenOptions,
-    WindowScalePolicy,
+    Event, EventStatus, MouseCursor, Size, WindowEvent, WindowHandler, WindowInfo,
+    WindowOpenOptions, WindowScalePolicy,
 };
 
 use super::keyboard::KeyboardState;
@@ -34,6 +39,7 @@ use crate::gl::{GlConfig, GlContext};
 
 pub struct WindowHandle {
     state: Rc<WindowState>,
+    _observer: NSWindowNotificationObserver,
 }
 
 impl WindowHandle {
@@ -273,7 +279,10 @@ impl<'a> Window<'a> {
             WindowState::setup_timer(window_state_ptr);
         }
 
-        WindowHandle { state: window_state }
+        WindowHandle {
+            _observer: NSWindowNotificationObserver::new(window_state.clone()),
+            state: window_state,
+        }
     }
 
     pub fn close(&mut self) {
@@ -413,5 +422,84 @@ pub fn copy_to_clipboard(string: &str) {
 
         pb.clearContents();
         pb.setString_forType(ns_str, cocoa::appkit::NSPasteboardTypeString);
+    }
+}
+
+extern "C" fn handle_notification(this: &Object, _cmd: Sel, notification: id) {
+    unsafe {
+        let state = WindowState::from_view(this);
+
+        let notification_object: id = msg_send![notification, object];
+        let window: id = msg_send![state.window_inner.ns_view, window];
+
+        if notification_object == window {
+            let notification_name: id = msg_send![notification, name];
+            let did_become_key: BOOL = msg_send![notification_name, isEqualToString:NSString::alloc(nil).init_str(NSWindowNotificationObserver::NS_WINDOW_DID_BECOME_KEY_NOTIFICATION)];
+
+            if did_become_key == YES {
+                state.trigger_event(Event::Window(WindowEvent::Focused));
+            } else {
+                state.trigger_event(Event::Window(WindowEvent::Unfocused));
+            }
+        }
+    }
+}
+
+struct NSWindowNotificationObserver {
+    observer: id,
+}
+
+impl NSWindowNotificationObserver {
+    const NS_WINDOW_DID_BECOME_KEY_NOTIFICATION: &'static str = "NSWindowDidBecomeKeyNotification";
+    const NS_WINDOW_DID_RESIGN_KEY_NOTIFICATION: &'static str = "NSWindowDidResignKeyNotification";
+
+    fn new(window_state: Rc<WindowState>) -> Self {
+        unsafe {
+            let observer: id = {
+                let name = format!("BaseviewObserver_{}", Uuid::new_v4().to_simple());
+                let mut decl = ClassDecl::new(&name, class!(NSObject)).unwrap();
+                decl.add_method(
+                    sel!(handleNotification:),
+                    handle_notification as extern "C" fn(&Object, Sel, id),
+                );
+                decl.add_ivar::<*mut c_void>(BASEVIEW_STATE_IVAR);
+                let class = decl.register();
+                msg_send![class, new]
+            };
+
+            let notification_center: id = msg_send![class!(NSNotificationCenter), defaultCenter];
+
+            let window: id = msg_send![window_state.window_inner.ns_view, window];
+            let window_state_ptr = Rc::into_raw(Rc::clone(&window_state));
+
+            (*observer).set_ivar(BASEVIEW_STATE_IVAR, window_state_ptr as *const c_void);
+
+            let _: () = msg_send![
+                notification_center,
+                addObserver:observer
+                selector:sel!(handleNotification:)
+                name:NSString::alloc(nil).init_str(Self::NS_WINDOW_DID_BECOME_KEY_NOTIFICATION)
+                object:window
+            ];
+
+            let _: () = msg_send![
+                notification_center,
+                addObserver:observer
+                selector:sel!(handleNotification:)
+                name:NSString::alloc(nil).init_str(Self::NS_WINDOW_DID_RESIGN_KEY_NOTIFICATION)
+                object:window
+            ];
+
+            Self { observer }
+        }
+    }
+}
+
+impl Drop for NSWindowNotificationObserver {
+    fn drop(&mut self) {
+        unsafe {
+            let notification_center: id = msg_send![class!(NSNotificationCenter), defaultCenter];
+            let _: () = msg_send![notification_center, removeObserver:self.observer];
+        }
     }
 }
