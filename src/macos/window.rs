@@ -429,18 +429,25 @@ extern "C" fn handle_notification(this: &Object, _cmd: Sel, notification: id) {
     unsafe {
         let state = WindowState::from_view(this);
 
+        // The subject of the notication, in this case an NSWindow object.
         let notification_object: id = msg_send![notification, object];
+
+        // The NSWindow object associated with our NSView.
         let window: id = msg_send![state.window_inner.ns_view, window];
 
-        if notification_object == window {
-            let notification_name: id = msg_send![notification, name];
-            let did_become_key: BOOL = msg_send![notification_name, isEqualToString:NSString::alloc(nil).init_str(NSWindowNotificationObserver::NS_WINDOW_DID_BECOME_KEY_NOTIFICATION)];
+        let first_responder: id = msg_send![window, firstResponder];
 
-            if did_become_key == YES {
-                state.trigger_event(Event::Window(WindowEvent::Focused));
+        // Only trigger focus events if the NSWindow that's being notified about is our window,
+        // and if the window's first responder is our NSView.
+        // If the first responder isn't our NSView, the focus events will instead be triggered
+        // by the becomeFirstResponder and resignFirstResponder methods on the NSView itself.
+        if notification_object == window && first_responder == state.window_inner.ns_view {
+            let is_key_window: BOOL = msg_send![window, isKeyWindow];
+            state.trigger_event(Event::Window(if is_key_window == YES {
+                WindowEvent::Focused
             } else {
-                state.trigger_event(Event::Window(WindowEvent::Unfocused));
-            }
+                WindowEvent::Unfocused
+            }));
         }
     }
 }
@@ -455,6 +462,7 @@ impl NSWindowNotificationObserver {
 
     fn new(window_state: Rc<WindowState>) -> Self {
         unsafe {
+            // Create unique observer class and instantiate it.
             let observer: id = {
                 let name = format!("BaseviewObserver_{}", Uuid::new_v4().to_simple());
                 let mut decl = ClassDecl::new(&name, class!(NSObject)).unwrap();
@@ -467,10 +475,12 @@ impl NSWindowNotificationObserver {
                 msg_send![class, new]
             };
 
-            let notification_center: id = msg_send![class!(NSNotificationCenter), defaultCenter];
+            // Attach a pointer to WindowState to the observer instance.
             let window_state_ptr = Rc::into_raw(Rc::clone(&window_state));
-
             (*observer).set_ivar(BASEVIEW_STATE_IVAR, window_state_ptr as *const c_void);
+
+            // Start observing notifications for when NSWindows become/resign key status.
+            let notification_center: id = msg_send![class!(NSNotificationCenter), defaultCenter];
 
             let _: () = msg_send![
                 notification_center,

@@ -124,6 +124,14 @@ unsafe fn create_view_class() -> &'static Class {
         sel!(acceptsFirstResponder),
         property_yes as extern "C" fn(&Object, Sel) -> BOOL,
     );
+    class.add_method(
+        sel!(becomeFirstResponder),
+        become_first_responder as extern "C" fn(&Object, Sel) -> BOOL,
+    );
+    class.add_method(
+        sel!(resignFirstResponder),
+        resign_first_responder as extern "C" fn(&Object, Sel) -> BOOL,
+    );
     class.add_method(sel!(isFlipped), property_yes as extern "C" fn(&Object, Sel) -> BOOL);
     class.add_method(
         sel!(preservesContentInLiveResize),
@@ -205,6 +213,18 @@ extern "C" fn property_no(_this: &Object, _sel: Sel) -> BOOL {
 }
 
 extern "C" fn accepts_first_mouse(_this: &Object, _sel: Sel, _event: id) -> BOOL {
+    YES
+}
+
+extern "C" fn become_first_responder(this: &Object, _sel: Sel) -> BOOL {
+    let state = unsafe { WindowState::from_view(this) };
+    state.trigger_event(Event::Window(WindowEvent::Focused));
+    YES
+}
+
+extern "C" fn resign_first_responder(this: &Object, _sel: Sel) -> BOOL {
+    let state = unsafe { WindowState::from_view(this) };
+    state.trigger_event(Event::Window(WindowEvent::Unfocused));
     YES
 }
 
