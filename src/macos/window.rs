@@ -68,7 +68,7 @@ pub(super) struct WindowInner {
     /// parentless mode
     ns_window: Cell<Option<id>>,
     /// Our subclassed NSView
-    ns_view: id,
+    pub(crate) ns_view: id,
 
     #[cfg(feature = "opengl")]
     gl_context: Option<GlContext>,

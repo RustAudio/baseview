@@ -218,7 +218,14 @@ extern "C" fn accepts_first_mouse(_this: &Object, _sel: Sel, _event: id) -> BOOL
 
 extern "C" fn become_first_responder(this: &Object, _sel: Sel) -> BOOL {
     let state = unsafe { WindowState::from_view(this) };
-    state.trigger_event(Event::Window(WindowEvent::Focused));
+    let is_key_window = unsafe {
+        let window: id = msg_send![state.window_inner.ns_view, window];
+        let is_key_window: BOOL = msg_send![window, isKeyWindow];
+        is_key_window == YES
+    };
+    if is_key_window {
+        state.trigger_event(Event::Window(WindowEvent::Focused));
+    }
     YES
 }
 
