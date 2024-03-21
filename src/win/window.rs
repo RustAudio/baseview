@@ -8,7 +8,7 @@ use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
     GetDpiForWindow, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW,
     ReleaseCapture, SetCapture, SetProcessDpiAwarenessContext, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, TrackMouseEvent, TranslateMessage, UnregisterClassW, CS_OWNDC,
+    SetWindowPos, SetFocus, GetForegroundWindow, TrackMouseEvent, TranslateMessage, UnregisterClassW, CS_OWNDC,
     GET_XBUTTON_WPARAM, GWLP_USERDATA, IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER, TRACKMOUSEEVENT,
     WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN,
     WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL,
@@ -771,11 +771,14 @@ impl Window<'_> {
     }
 
     pub fn has_input_focus(&mut self) -> bool {
-        unimplemented!()
+        let foreground_window = unsafe { GetForegroundWindow() };
+        foreground_window == self.state.hwnd
     }
 
     pub fn set_input_focus(&mut self) {
-        unimplemented!()
+        unsafe {
+            SetFocus(self.state.hwnd);
+        }
     }
 
     pub fn resize(&mut self, size: Size) {
