@@ -24,7 +24,7 @@ struct OpenWindowExample {
 }
 
 impl WindowHandler for OpenWindowExample {
-    fn on_frame(&mut self, _window: &mut Window) {
+    fn on_frame(&mut self) {
         let mut buf = self.surface.buffer_mut().unwrap();
         if self.damaged {
             buf.fill(0xFFAAAAAA);
@@ -37,7 +37,7 @@ impl WindowHandler for OpenWindowExample {
         }
     }
 
-    fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
+    fn on_event(&mut self, event: Event) -> EventStatus {
         match &event {
             #[cfg(target_os = "macos")]
             Event::Mouse(MouseEvent::ButtonPressed { .. }) => copy_to_clipboard("This is a test!"),
@@ -84,8 +84,8 @@ fn main() {
     });
 
     Window::open_blocking(window_open_options, |window| {
-        let ctx = unsafe { softbuffer::Context::new(window) }.unwrap();
-        let mut surface = unsafe { softbuffer::Surface::new(&ctx, window) }.unwrap();
+        let ctx = unsafe { softbuffer::Context::new(&window) }.unwrap();
+        let mut surface = unsafe { softbuffer::Surface::new(&ctx, &window) }.unwrap();
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         OpenWindowExample {

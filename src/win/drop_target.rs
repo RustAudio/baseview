@@ -11,18 +11,19 @@ use winapi::shared::windef::POINTL;
 use winapi::shared::winerror::{E_NOINTERFACE, E_UNEXPECTED, S_OK};
 use winapi::shared::wtypes::DVASPECT_CONTENT;
 use winapi::um::objidl::{IDataObject, FORMATETC, STGMEDIUM, TYMED_HGLOBAL};
+use winapi::um::ole2::RegisterDragDrop;
 use winapi::um::oleidl::{
     IDropTarget, IDropTargetVtbl, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE,
-    DROPEFFECT_NONE, DROPEFFECT_SCROLL,
+    DROPEFFECT_NONE, DROPEFFECT_SCROLL, LPDROPTARGET,
 };
 use winapi::um::shellapi::{DragQueryFileW, HDROP};
 use winapi::um::unknwnbase::{IUnknown, IUnknownVtbl};
 use winapi::um::winuser::CF_HDROP;
 use winapi::Interface;
 
+use crate::win::proc::ProcState;
+use crate::win::win32_window::Win32Window;
 use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent, PhyPoint, Point};
-
-use super::WindowState;
 
 // These function pointers have to be stored in a (const) variable before they can be transmuted
 // Transmuting is needed because winapi has a bug where the pt parameter has an incorrect
@@ -63,7 +64,7 @@ const DROP_TARGET_VTBL: IDropTargetVtbl = IDropTargetVtbl {
 pub(super) struct DropTarget {
     base: IDropTarget,
 
-    window_state: Weak<WindowState>,
+    proc_state: Weak<ProcState>,
 
     // These are cached since DragOver and DragLeave callbacks don't provide them,
     // and handling drag move events gets awkward on the client end otherwise
@@ -71,30 +72,33 @@ pub(super) struct DropTarget {
     drop_data: DropData,
 }
 
+// FIXME: properly handle unwinding
 impl DropTarget {
-    pub(super) fn new(window_state: Weak<WindowState>) -> Self {
-        Self {
+    pub(super) fn register(proc_state: Weak<ProcState>, window: &Win32Window) -> Rc<Self> {
+        let drop_target = Rc::new(Self {
             base: IDropTarget { lpVtbl: &DROP_TARGET_VTBL },
-
-            window_state,
-
+            proc_state,
             drag_position: Point::new(0.0, 0.0),
             drop_data: DropData::None,
+        });
+
+        let handle = window.handle();
+        unsafe {
+            RegisterDragDrop(handle, Rc::as_ptr(&drop_target) as LPDROPTARGET);
         }
+
+        drop_target
     }
 
     #[allow(non_snake_case)]
     fn on_event(&self, pdwEffect: Option<*mut DWORD>, event: MouseEvent) {
-        let Some(window_state) = self.window_state.upgrade() else {
+        let Some(window_state) = self.proc_state.upgrade() else {
             return;
         };
 
         unsafe {
-            let mut window = crate::Window::new(window_state.create_window());
-
             let event = Event::Mouse(event);
-            let event_status =
-                window_state.handler_mut().as_mut().unwrap().on_event(&mut window, event);
+            let event_status = window_state.handler_mut().on_event(event);
 
             if let Some(pdwEffect) = pdwEffect {
                 match event_status {
@@ -109,12 +113,13 @@ impl DropTarget {
     }
 
     fn parse_coordinates(&mut self, pt: POINTL) {
-        let Some(window_state) = self.window_state.upgrade() else {
+        let Some(window_state) = self.proc_state.upgrade() else {
             return;
         };
 
         let phy_point = PhyPoint::new(pt.x, pt.y);
-        self.drag_position = phy_point.to_logical(&window_state.window_info());
+        let current_window_size = window_state.window.win32_window.current_size();
+        self.drag_position = phy_point.to_logical(&current_window_size);
     }
 
     fn parse_drop_data(&mut self, data_object: &IDataObject) {
@@ -204,12 +209,14 @@ impl DropTarget {
         pdwEffect: *mut DWORD,
     ) -> HRESULT {
         let drop_target = &mut *(this as *mut DropTarget);
-        let Some(window_state) = drop_target.window_state.upgrade() else {
+        let Some(window_state) = drop_target.proc_state.upgrade() else {
             return E_UNEXPECTED;
         };
 
-        let modifiers =
-            window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+        let modifiers = window_state
+            .keyboard_state
+            .borrow()
+            .get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
 
         drop_target.parse_coordinates(pt);
         drop_target.parse_drop_data(&*pDataObj);
@@ -229,12 +236,14 @@ impl DropTarget {
         this: *mut IDropTarget, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD,
     ) -> HRESULT {
         let drop_target = &mut *(this as *mut DropTarget);
-        let Some(window_state) = drop_target.window_state.upgrade() else {
+        let Some(window_state) = drop_target.proc_state.upgrade() else {
             return E_UNEXPECTED;
         };
 
-        let modifiers =
-            window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+        let modifiers = window_state
+            .keyboard_state
+            .borrow()
+            .get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
 
         drop_target.parse_coordinates(pt);
 
@@ -260,12 +269,14 @@ impl DropTarget {
         pdwEffect: *mut DWORD,
     ) -> HRESULT {
         let drop_target = &mut *(this as *mut DropTarget);
-        let Some(window_state) = drop_target.window_state.upgrade() else {
+        let Some(window_state) = drop_target.proc_state.upgrade() else {
             return E_UNEXPECTED;
         };
 
-        let modifiers =
-            window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+        let modifiers = window_state
+            .keyboard_state
+            .borrow()
+            .get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
 
         drop_target.parse_coordinates(pt);
         drop_target.parse_drop_data(&*pDataObj);

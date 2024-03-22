@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::ptr;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
@@ -16,8 +16,7 @@ use keyboard_types::KeyboardEvent;
 use objc::class;
 use objc::{msg_send, runtime::Object, sel, sel_impl};
 use raw_window_handle::{
-    AppKitDisplayHandle, AppKitWindowHandle, HasRawDisplayHandle, HasRawWindowHandle,
-    RawDisplayHandle, RawWindowHandle,
+    AppKitDisplayHandle, AppKitWindowHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
 
 use crate::{
@@ -29,7 +28,7 @@ use super::keyboard::KeyboardState;
 use super::view::{create_view, BASEVIEW_STATE_IVAR};
 
 #[cfg(feature = "opengl")]
-use crate::gl::{GlConfig, GlContext};
+use crate::gl::{platform::GlContext, GlConfig};
 
 pub struct WindowHandle {
     state: Rc<WindowState>,
@@ -51,7 +50,7 @@ unsafe impl HasRawWindowHandle for WindowHandle {
     }
 }
 
-pub(super) struct WindowInner {
+pub struct Window {
     open: Cell<bool>,
 
     /// Only set if we created the parent window, i.e. we are running in
@@ -64,11 +63,11 @@ pub(super) struct WindowInner {
     ns_view: id,
 
     #[cfg(feature = "opengl")]
-    gl_context: Option<GlContext>,
+    gl_context: Option<Rc<GlContext>>,
 }
 
-impl WindowInner {
-    pub(super) fn close(&self) {
+impl Window {
+    pub fn close(&self) {
         if self.open.get() {
             self.open.set(false);
 
@@ -107,7 +106,7 @@ impl WindowInner {
         }
     }
 
-    fn raw_window_handle(&self) -> RawWindowHandle {
+    pub fn raw_window_handle(&self) -> RawWindowHandle {
         if self.open.get() {
             let ns_window = self.ns_window.get().unwrap_or(ptr::null_mut()) as *mut c_void;
 
@@ -120,20 +119,11 @@ impl WindowInner {
 
         RawWindowHandle::AppKit(AppKitWindowHandle::empty())
     }
-}
 
-pub struct Window<'a> {
-    inner: &'a WindowInner,
-}
-
-impl<'a> Window<'a> {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
-    where
-        P: HasRawWindowHandle,
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
+    pub fn open_parented<H: WindowHandler>(
+        parent: &impl HasRawWindowHandle, options: WindowOpenOptions,
+        build: impl FnOnce(crate::Window) -> H,
+    ) -> WindowHandle {
         let pool = unsafe { NSAutoreleasePool::new(nil) };
 
         let scaling = match options.scale {
@@ -151,7 +141,7 @@ impl<'a> Window<'a> {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window_inner = WindowInner {
+        let window_inner = Window {
             open: Cell::new(true),
             ns_app: Cell::new(None),
             ns_window: Cell::new(None),
@@ -160,7 +150,7 @@ impl<'a> Window<'a> {
             #[cfg(feature = "opengl")]
             gl_context: options
                 .gl_config
-                .map(|gl_config| Self::create_gl_context(None, ns_view, gl_config)),
+                .map(|gl_config| Rc::new(Self::create_gl_context(None, ns_view, gl_config))),
         };
 
         let window_handle = Self::init(window_inner, window_info, build);
@@ -174,12 +164,9 @@ impl<'a> Window<'a> {
         window_handle
     }
 
-    pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
+    pub fn open_blocking<H: WindowHandler>(
+        options: WindowOpenOptions, build: impl FnOnce(crate::Window) -> H,
+    ) {
         let pool = unsafe { NSAutoreleasePool::new(nil) };
 
         // It seems prudent to run NSApp() here before doing other
@@ -226,16 +213,16 @@ impl<'a> Window<'a> {
 
         let ns_view = unsafe { create_view(&options) };
 
-        let window_inner = WindowInner {
+        let window_inner = Window {
             open: Cell::new(true),
             ns_app: Cell::new(Some(app)),
             ns_window: Cell::new(Some(ns_window)),
             ns_view,
 
             #[cfg(feature = "opengl")]
-            gl_context: options
-                .gl_config
-                .map(|gl_config| Self::create_gl_context(Some(ns_window), ns_view, gl_config)),
+            gl_context: options.gl_config.map(|gl_config| {
+                Rc::new(Self::create_gl_context(Some(ns_window), ns_view, gl_config))
+            }),
         };
 
         let _ = Self::init(window_inner, window_info, build);
@@ -250,14 +237,11 @@ impl<'a> Window<'a> {
         }
     }
 
-    fn init<H, B>(window_inner: WindowInner, window_info: WindowInfo, build: B) -> WindowHandle
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
-        let mut window = crate::Window::new(Window { inner: &window_inner });
-        let window_handler = Box::new(build(&mut window));
+    fn init<H: WindowHandler>(
+        window_inner: Window, window_info: WindowInfo, build: impl FnOnce(crate::Window) -> H,
+    ) -> WindowHandle {
+        let window_inner = Rc::new(window_inner);
+        let window_handler = Box::new(build(crate::Window::new(Rc::downgrade(&window_inner))));
 
         let ns_view = window_inner.ns_view;
 
@@ -280,13 +264,9 @@ impl<'a> Window<'a> {
         WindowHandle { state: window_state }
     }
 
-    pub fn close(&mut self) {
-        self.inner.close();
-    }
-
-    pub fn has_focus(&mut self) -> bool {
+    pub fn has_focus(&self) -> bool {
         unsafe {
-            let view = self.inner.ns_view.as_mut().unwrap();
+            let view = self.ns_view;
             let window: id = msg_send![view, window];
             if window == nil {
                 return false;
@@ -298,9 +278,9 @@ impl<'a> Window<'a> {
         }
     }
 
-    pub fn focus(&mut self) {
+    pub fn focus(&self) {
         unsafe {
-            let view = self.inner.ns_view.as_mut().unwrap();
+            let view = self.ns_view;
             let window: id = msg_send![view, window];
             if window != nil {
                 msg_send![window, makeFirstResponder:view]
@@ -308,38 +288,38 @@ impl<'a> Window<'a> {
         }
     }
 
-    pub fn resize(&mut self, size: Size) {
-        if self.inner.open.get() {
+    pub fn resize(&self, size: Size) {
+        if self.open.get() {
             // NOTE: macOS gives you a personal rave if you pass in fractional pixels here. Even
             // though the size is in fractional pixels.
             let size = NSSize::new(size.width.round(), size.height.round());
 
-            unsafe { NSView::setFrameSize(self.inner.ns_view, size) };
+            unsafe { NSView::setFrameSize(self.ns_view, size) };
             unsafe {
-                let _: () = msg_send![self.inner.ns_view, setNeedsDisplay: YES];
+                let _: () = msg_send![self.ns_view, setNeedsDisplay: YES];
             }
 
             // When using OpenGL the `NSOpenGLView` needs to be resized separately? Why? Because
             // macOS.
             #[cfg(feature = "opengl")]
-            if let Some(gl_context) = &self.inner.gl_context {
+            if let Some(gl_context) = &self.gl_context {
                 gl_context.resize(size);
             }
 
             // If this is a standalone window then we'll also need to resize the window itself
-            if let Some(ns_window) = self.inner.ns_window.get() {
+            if let Some(ns_window) = self.ns_window.get() {
                 unsafe { NSWindow::setContentSize_(ns_window, size) };
             }
         }
     }
 
-    pub fn set_mouse_cursor(&mut self, _mouse_cursor: MouseCursor) {
+    pub fn set_mouse_cursor(&self, _mouse_cursor: MouseCursor) {
         todo!()
     }
 
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<&GlContext> {
-        self.inner.gl_context.as_ref()
+    pub fn gl_context(&self) -> Option<Weak<GlContext>> {
+        self.gl_context.as_ref().map(Rc::downgrade)
     }
 
     #[cfg(feature = "opengl")]
@@ -351,10 +331,14 @@ impl<'a> Window<'a> {
 
         unsafe { GlContext::create(&handle, config).expect("Could not create OpenGL context") }
     }
+
+    pub fn raw_display_handle(&self) -> RawDisplayHandle {
+        RawDisplayHandle::AppKit(AppKitDisplayHandle::empty())
+    }
 }
 
 pub(super) struct WindowState {
-    pub(super) window_inner: WindowInner,
+    pub(super) window_inner: Rc<Window>,
     window_handler: RefCell<Box<dyn WindowHandler>>,
     keyboard_state: KeyboardState,
     frame_timer: Cell<Option<CFRunLoopTimer>>,
@@ -379,13 +363,11 @@ impl WindowState {
     }
 
     pub(super) fn trigger_event(&self, event: Event) -> EventStatus {
-        let mut window = crate::Window::new(Window { inner: &self.window_inner });
-        self.window_handler.borrow_mut().on_event(&mut window, event)
+        self.window_handler.borrow_mut().on_event(event)
     }
 
     pub(super) fn trigger_frame(&self) {
-        let mut window = crate::Window::new(Window { inner: &self.window_inner });
-        self.window_handler.borrow_mut().on_frame(&mut window);
+        self.window_handler.borrow_mut().on_frame();
     }
 
     pub(super) fn keyboard_state(&self) -> &KeyboardState {
@@ -418,18 +400,6 @@ impl WindowState {
         CFRunLoop::get_current().add_timer(&timer, kCFRunLoopDefaultMode);
 
         (*window_state_ptr).frame_timer.set(Some(timer));
-    }
-}
-
-unsafe impl<'a> HasRawWindowHandle for Window<'a> {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        self.inner.raw_window_handle()
-    }
-}
-
-unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
-    fn raw_display_handle(&self) -> RawDisplayHandle {
-        RawDisplayHandle::AppKit(AppKitDisplayHandle::empty())
     }
 }
 

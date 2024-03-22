@@ -1,6 +1,9 @@
+use raw_window_handle::{RawDisplayHandle, XlibDisplayHandle};
 use std::cell::RefCell;
 use std::collections::hash_map::{Entry, HashMap};
 use std::error::Error;
+use std::ffi::{c_int, c_void};
+use std::os::fd::{AsRawFd, RawFd};
 
 use x11::{xlib, xlib::Display, xlib_xcb};
 
@@ -120,6 +123,19 @@ impl XcbConnection {
 
     pub fn screen(&self) -> &Screen {
         &self.conn.setup().roots[self.screen]
+    }
+
+    pub fn file_descriptor(&self) -> RawFd {
+        self.conn.as_raw_fd()
+    }
+
+    pub fn raw_display_handle(&self) -> RawDisplayHandle {
+        let mut handle = XlibDisplayHandle::empty();
+
+        handle.display = self.dpy as *mut c_void;
+        handle.screen = self.screen as c_int;
+
+        RawDisplayHandle::Xlib(handle)
     }
 }
 

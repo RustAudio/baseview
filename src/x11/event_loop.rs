@@ -5,70 +5,53 @@ use crate::{
     WindowInfo,
 };
 use std::error::Error;
-use std::os::fd::AsRawFd;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
+
 use x11rb::protocol::Event as XEvent;
 
 pub(super) struct EventLoop {
+    // Using the trait object will be necessary when we add multi-window support anyway
     handler: Box<dyn WindowHandler>,
-    window: WindowInner,
-    parent_handle: Option<ParentHandle>,
+    window: Rc<Window>,
 
-    new_physical_size: Option<PhySize>,
+    handle_receiver: Option<WindowHandleReceiver>,
+
     frame_interval: Duration,
+
     event_loop_running: bool,
+    close_request_handled: bool,
+
+    new_size: Option<PhySize>,
 }
 
 impl EventLoop {
     pub fn new(
-        window: WindowInner, handler: impl WindowHandler + 'static,
-        parent_handle: Option<ParentHandle>,
+        window: Rc<Window>, handler: impl WindowHandler,
+        handle_receiver: Option<WindowHandleReceiver>,
     ) -> Self {
         Self {
             window,
             handler: Box::new(handler),
-            parent_handle,
+            handle_receiver,
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
-            new_physical_size: None,
+            close_request_handled: false,
+            new_size: None,
         }
-    }
-
-    #[inline]
-    fn drain_xcb_events(&mut self) -> Result<(), Box<dyn Error>> {
-        // the X server has a tendency to send spurious/extraneous configure notify events when a
-        // window is resized, and we need to batch those together and just send one resize event
-        // when they've all been coalesced.
-        self.new_physical_size = None;
-
-        while let Some(event) = self.window.xcb_connection.conn.poll_for_event()? {
-            self.handle_xcb_event(event);
-        }
-
-        if let Some(size) = self.new_physical_size.take() {
-            self.window.window_info =
-                WindowInfo::from_physical_size(size, self.window.window_info.scale());
-
-            let window_info = self.window.window_info;
-
-            self.handler.on_event(
-                &mut crate::Window::new(Window { inner: &self.window }),
-                Event::Window(WindowEvent::Resized(window_info)),
-            );
-        }
-
-        Ok(())
     }
 
     // Event loop
     // FIXME: poll() acts fine on linux, sometimes funky on *BSD. XCB upstream uses a define to
     // switch between poll() and select() (the latter of which is fine on *BSD), and we should do
     // the same.
+    // NOTE: x11rb uses calloop under the hood, so that won't be an issue anymore once we switch to
+    // it
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
         use nix::poll::*;
 
-        let xcb_fd = self.window.xcb_connection.conn.as_raw_fd();
+        let xcb_fd = self.window.xcb_connection.file_descriptor();
 
         let mut last_frame = Instant::now();
         self.event_loop_running = true;
@@ -82,7 +65,7 @@ impl EventLoop {
             // if it's already time to draw a new frame.
             let next_frame = last_frame + self.frame_interval;
             if Instant::now() >= next_frame {
-                self.handler.on_frame(&mut crate::Window::new(Window { inner: &self.window }));
+                self.handler.on_frame();
                 last_frame = Instant::max(next_frame, Instant::now() - self.frame_interval);
             }
 
@@ -112,25 +95,40 @@ impl EventLoop {
             // FIXME: This will need to be changed from just setting an atomic to somehow
             // synchronizing with the window being closed (using a synchronous channel, or
             // by joining on the event loop thread).
-            if let Some(parent_handle) = &self.parent_handle {
-                if parent_handle.parent_did_drop() {
+            if let Some(parent_handle) = &self.handle_receiver {
+                if parent_handle.close_requested() {
                     self.handle_must_close();
-                    self.window.close_requested.set(false);
                 }
             }
 
             // Check if the user has requested the window to close
             if self.window.close_requested.get() {
                 self.handle_must_close();
-                self.window.close_requested.set(false);
             }
         }
 
         Ok(())
     }
 
+    fn handle_close_requested(&mut self) {
+        // FIXME: handler should decide whether window stays open or not
+        self.handle_must_close();
+    }
+
+    fn handle_must_close(&mut self) {
+        if self.close_request_handled {
+            return;
+        }
+        self.handler.on_event(Event::Window(WindowEvent::WillClose));
+
+        self.event_loop_running = false;
+        self.close_request_handled = true;
+    }
+
     fn handle_xcb_event(&mut self, event: XEvent) {
-        // For all the keyboard and mouse events, you can fetch
+        let xcb_connection = &self.window.xcb_connection;
+
+        // For all of the keyboard and mouse events, you can fetch
         // `x`, `y`, `detail`, and `state`.
         // - `x` and `y` are the position inside the window where the cursor currently is
         //   when the event happened.
@@ -156,20 +154,19 @@ impl EventLoop {
             ////
             XEvent::ClientMessage(event) => {
                 if event.format == 32
-                    && event.data.as_data32()[0]
-                        == self.window.xcb_connection.atoms.WM_DELETE_WINDOW
+                    && event.data.as_data32()[0] == xcb_connection.atoms.WM_DELETE_WINDOW
                 {
                     self.handle_close_requested();
                 }
             }
 
             XEvent::ConfigureNotify(event) => {
-                let new_physical_size = PhySize::new(event.width as u32, event.height as u32);
+                let new_size = PhySize::new(event.width as u32, event.height as u32);
 
-                if self.new_physical_size.is_some()
-                    || new_physical_size != self.window.window_info.physical_size()
-                {
-                    self.new_physical_size = Some(new_physical_size);
+                match self.new_size {
+                    None => self.new_size = Some(new_size),
+                    Some(s) if s != new_size => self.new_size = Some(new_size),
+                    _ => {}
                 }
             }
 
@@ -178,80 +175,62 @@ impl EventLoop {
             ////
             XEvent::MotionNotify(event) => {
                 let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
-                let logical_pos = physical_pos.to_logical(&self.window.window_info);
 
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Mouse(MouseEvent::CursorMoved {
-                        position: logical_pos,
-                        modifiers: key_mods(event.state),
-                    }),
-                );
+                let logical_pos =
+                    physical_pos.with_scale_factor(self.window.x11_window.dpi_scale_factor);
+
+                self.handler.on_event(Event::Mouse(MouseEvent::CursorMoved {
+                    position: logical_pos,
+                    modifiers: key_mods(event.state),
+                }));
             }
 
             XEvent::EnterNotify(event) => {
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Mouse(MouseEvent::CursorEntered),
-                );
+                self.handler.on_event(Event::Mouse(MouseEvent::CursorEntered));
                 // since no `MOTION_NOTIFY` event is generated when `ENTER_NOTIFY` is generated,
                 // we generate a CursorMoved as well, so the mouse position from here isn't lost
                 let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
-                let logical_pos = physical_pos.to_logical(&self.window.window_info);
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Mouse(MouseEvent::CursorMoved {
-                        position: logical_pos,
-                        modifiers: key_mods(event.state),
-                    }),
-                );
+                let logical_pos =
+                    physical_pos.with_scale_factor(self.window.x11_window.dpi_scale_factor);
+                self.handler.on_event(Event::Mouse(MouseEvent::CursorMoved {
+                    position: logical_pos,
+                    modifiers: key_mods(event.state),
+                }));
             }
 
             XEvent::LeaveNotify(_) => {
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Mouse(MouseEvent::CursorLeft),
-                );
+                self.handler.on_event(Event::Mouse(MouseEvent::CursorLeft));
             }
 
             XEvent::ButtonPress(event) => match event.detail {
                 4..=7 => {
-                    self.handler.on_event(
-                        &mut crate::Window::new(Window { inner: &self.window }),
-                        Event::Mouse(MouseEvent::WheelScrolled {
-                            delta: match event.detail {
-                                4 => ScrollDelta::Lines { x: 0.0, y: 1.0 },
-                                5 => ScrollDelta::Lines { x: 0.0, y: -1.0 },
-                                6 => ScrollDelta::Lines { x: -1.0, y: 0.0 },
-                                7 => ScrollDelta::Lines { x: 1.0, y: 0.0 },
-                                _ => unreachable!(),
-                            },
-                            modifiers: key_mods(event.state),
-                        }),
-                    );
+                    self.handler.on_event(Event::Mouse(MouseEvent::WheelScrolled {
+                        delta: match event.detail {
+                            4 => ScrollDelta::Lines { x: 0.0, y: 1.0 },
+                            5 => ScrollDelta::Lines { x: 0.0, y: -1.0 },
+                            6 => ScrollDelta::Lines { x: -1.0, y: 0.0 },
+                            7 => ScrollDelta::Lines { x: 1.0, y: 0.0 },
+                            _ => unreachable!(),
+                        },
+                        modifiers: key_mods(event.state),
+                    }));
                 }
                 detail => {
                     let button_id = mouse_id(detail);
-                    self.handler.on_event(
-                        &mut crate::Window::new(Window { inner: &self.window }),
-                        Event::Mouse(MouseEvent::ButtonPressed {
-                            button: button_id,
-                            modifiers: key_mods(event.state),
-                        }),
-                    );
+                    self.handler.on_event(Event::Mouse(MouseEvent::ButtonPressed {
+                        button: button_id,
+                        modifiers: key_mods(event.state),
+                    }));
                 }
             },
 
             XEvent::ButtonRelease(event) => {
                 if !(4..=7).contains(&event.detail) {
                     let button_id = mouse_id(event.detail);
-                    self.handler.on_event(
-                        &mut crate::Window::new(Window { inner: &self.window }),
-                        Event::Mouse(MouseEvent::ButtonReleased {
-                            button: button_id,
-                            modifiers: key_mods(event.state),
-                        }),
-                    );
+                    self.handler.on_event(Event::Mouse(MouseEvent::ButtonReleased {
+                        button: button_id,
+                        modifiers: key_mods(event.state),
+                    }));
                 }
             }
 
@@ -259,35 +238,35 @@ impl EventLoop {
             // keys
             ////
             XEvent::KeyPress(event) => {
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Keyboard(convert_key_press_event(&event)),
-                );
+                self.handler.on_event(Event::Keyboard(convert_key_press_event(&event)));
             }
 
             XEvent::KeyRelease(event) => {
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Keyboard(convert_key_release_event(&event)),
-                );
+                self.handler.on_event(Event::Keyboard(convert_key_release_event(&event)));
             }
 
             _ => {}
         }
     }
 
-    fn handle_close_requested(&mut self) {
-        // FIXME: handler should decide whether window stays open or not
-        self.handle_must_close();
-    }
+    fn drain_xcb_events(&mut self) -> Result<(), Box<dyn Error>> {
+        // the X server has a tendency to send spurious/extraneous configure notify events when a
+        // window is resized, and we need to batch those together and just send one resize event
+        // when they've all been coalesced.
+        self.new_size = None;
 
-    fn handle_must_close(&mut self) {
-        self.handler.on_event(
-            &mut crate::Window::new(Window { inner: &self.window }),
-            Event::Window(WindowEvent::WillClose),
-        );
+        while let Some(event) = self.window.xcb_connection.conn.poll_for_event()? {
+            self.handle_xcb_event(event);
+        }
 
-        self.event_loop_running = false;
+        if let Some(size) = self.new_size.take() {
+            let window_info =
+                WindowInfo::from_physical_size(size, self.window.x11_window.dpi_scale_factor);
+
+            self.handler.on_event(Event::Window(WindowEvent::Resized(window_info)));
+        }
+
+        Ok(())
     }
 }
 
