@@ -95,6 +95,11 @@ impl PhyPoint {
             y: f64::from(self.y) * window_info.scale_recip(),
         }
     }
+
+    #[inline]
+    pub(crate) fn with_scale_factor(&self, scale_factor: f64) -> Point {
+        Point { x: f64::from(self.x) / scale_factor, y: f64::from(self.y) / scale_factor }
+    }
 }
 
 /// A size in logical coordinates
