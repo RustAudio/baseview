@@ -18,7 +18,7 @@
 
 //! X11 keyboard handling
 
-use xcb::xproto;
+use x11rb::protocol::xproto::{KeyButMask, KeyPressEvent, KeyReleaseEvent};
 
 use keyboard_types::*;
 
@@ -361,32 +361,32 @@ fn hardware_keycode_to_code(hw_keycode: u16) -> Code {
 }
 
 // Extracts the keyboard modifiers from, e.g., the `state` field of
-// `xcb::xproto::ButtonPressEvent`
-pub(super) fn key_mods(mods: u16) -> Modifiers {
+// `x11rb::protocol::xproto::ButtonPressEvent`
+pub(super) fn key_mods(mods: KeyButMask) -> Modifiers {
     let mut ret = Modifiers::default();
-    let mut key_masks = [
-        (xproto::MOD_MASK_SHIFT, Modifiers::SHIFT),
-        (xproto::MOD_MASK_CONTROL, Modifiers::CONTROL),
+    let key_masks = [
+        (KeyButMask::SHIFT, Modifiers::SHIFT),
+        (KeyButMask::CONTROL, Modifiers::CONTROL),
         // X11's mod keys are configurable, but this seems
         // like a reasonable default for US keyboards, at least,
         // where the "windows" key seems to be MOD_MASK_4.
-        (xproto::MOD_MASK_1, Modifiers::ALT),
-        (xproto::MOD_MASK_2, Modifiers::NUM_LOCK),
-        (xproto::MOD_MASK_4, Modifiers::META),
-        (xproto::MOD_MASK_LOCK, Modifiers::CAPS_LOCK),
+        (KeyButMask::BUTTON1, Modifiers::ALT),
+        (KeyButMask::BUTTON2, Modifiers::NUM_LOCK),
+        (KeyButMask::BUTTON4, Modifiers::META),
+        (KeyButMask::LOCK, Modifiers::CAPS_LOCK),
     ];
-    for (mask, modifiers) in &mut key_masks {
-        if mods & (*mask as u16) != 0 {
+    for (mask, modifiers) in &key_masks {
+        if mods.contains(*mask) {
             ret |= *modifiers;
         }
     }
     ret
 }
 
-pub(super) fn convert_key_press_event(key_press: &xcb::KeyPressEvent) -> KeyboardEvent {
-    let hw_keycode = key_press.detail();
+pub(super) fn convert_key_press_event(key_press: &KeyPressEvent) -> KeyboardEvent {
+    let hw_keycode = key_press.detail;
     let code = hardware_keycode_to_code(hw_keycode.into());
-    let modifiers = key_mods(key_press.state());
+    let modifiers = key_mods(key_press.state);
     let key = code_to_key(code, modifiers);
     let location = code_to_location(code);
     let state = KeyState::Down;
@@ -394,10 +394,10 @@ pub(super) fn convert_key_press_event(key_press: &xcb::KeyPressEvent) -> Keyboar
     KeyboardEvent { code, key, modifiers, location, state, repeat: false, is_composing: false }
 }
 
-pub(super) fn convert_key_release_event(key_release: &xcb::KeyReleaseEvent) -> KeyboardEvent {
-    let hw_keycode = key_release.detail();
+pub(super) fn convert_key_release_event(key_release: &KeyReleaseEvent) -> KeyboardEvent {
+    let hw_keycode = key_release.detail;
     let code = hardware_keycode_to_code(hw_keycode.into());
-    let modifiers = key_mods(key_release.state());
+    let modifiers = key_mods(key_release.state);
     let key = code_to_key(code, modifiers);
     let location = code_to_location(code);
     let state = KeyState::Up;
