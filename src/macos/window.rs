@@ -287,8 +287,9 @@ impl<'a> Window<'a> {
             let window: id = msg_send![view, window];
             if window == nil { return false; };
             let first_responder: id = msg_send![window, firstResponder];
+            let is_key_window: BOOL = msg_send![window, isKeyWindow];
             let is_focused: BOOL = msg_send![view, isEqual: first_responder];
-            is_focused == YES
+            is_key_window == YES && is_focused == YES
         }
     }
 
