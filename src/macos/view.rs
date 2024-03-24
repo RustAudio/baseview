@@ -2,7 +2,7 @@ use std::ffi::c_void;
 
 use cocoa::appkit::{NSEvent, NSFilenamesPboardType, NSView, NSWindow};
 use cocoa::base::{id, nil, BOOL, NO, YES};
-use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize, NSUInteger};
+use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize, NSString, NSUInteger};
 
 use objc::{
     class,
@@ -94,6 +94,18 @@ macro_rules! add_simple_keyboard_class_method {
     };
 }
 
+unsafe fn register_notification(observer: id, notification_name: &'static str, object: id) {
+    let notification_center: id = msg_send![class!(NSNotificationCenter), defaultCenter];
+
+    let _: () = msg_send![
+        notification_center,
+        addObserver:observer
+        selector:sel!(handleNotification:)
+        name:NSString::alloc(nil).init_str(notification_name)
+        object:object
+    ];
+}
+
 pub(super) unsafe fn create_view(window_options: &WindowOpenOptions) -> id {
     let class = create_view_class();
 
@@ -102,6 +114,9 @@ pub(super) unsafe fn create_view(window_options: &WindowOpenOptions) -> id {
     let size = window_options.size;
 
     view.initWithFrame_(NSRect::new(NSPoint::new(0., 0.), NSSize::new(size.width, size.height)));
+
+    register_notification(view, "NSWindowDidBecomeKeyNotification", nil);
+    register_notification(view, "NSWindowDidResignKeyNotification", nil);
 
     let _: id = msg_send![
         view,
@@ -185,6 +200,10 @@ unsafe fn create_view_class() -> &'static Class {
         dragging_updated as extern "C" fn(&Object, Sel, id) -> NSUInteger,
     );
     class.add_method(sel!(draggingExited:), dragging_exited as extern "C" fn(&Object, Sel, id));
+    class.add_method(
+        sel!(handleNotification:),
+        handle_notification as extern "C" fn(&Object, Sel, id),
+    );
 
     add_mouse_button_class_method!(class, mouseDown, ButtonPressed, MouseButton::Left);
     add_mouse_button_class_method!(class, mouseUp, ButtonReleased, MouseButton::Left);
@@ -219,7 +238,7 @@ extern "C" fn accepts_first_mouse(_this: &Object, _sel: Sel, _event: id) -> BOOL
 extern "C" fn become_first_responder(this: &Object, _sel: Sel) -> BOOL {
     let state = unsafe { WindowState::from_view(this) };
     let is_key_window = unsafe {
-        let window: id = msg_send![state.window_inner.ns_view, window];
+        let window: id = msg_send![this, window];
         let is_key_window: BOOL = msg_send![window, isKeyWindow];
         is_key_window == YES
     };
@@ -251,6 +270,9 @@ extern "C" fn dealloc(this: &mut Object, _sel: Sel) {
 
         let superclass = msg_send![this, superclass];
         let () = msg_send![super(this, superclass), dealloc];
+
+        let notification_center: id = msg_send![class!(NSNotificationCenter), defaultCenter];
+        let () = msg_send![notification_center, removeObserver:this];
 
         // Delete class
         ::objc::runtime::objc_disposeClassPair(class);
@@ -499,4 +521,31 @@ extern "C" fn dragging_exited(this: &Object, _sel: Sel, _sender: id) {
     let state = unsafe { WindowState::from_view(this) };
 
     on_event(&state, MouseEvent::DragLeft);
+}
+
+extern "C" fn handle_notification(this: &Object, _cmd: Sel, notification: id) {
+    unsafe {
+        let state = WindowState::from_view(this);
+
+        // The subject of the notication, in this case an NSWindow object.
+        let notification_object: id = msg_send![notification, object];
+
+        // The NSWindow object associated with our NSView.
+        let window: id = msg_send![this, window];
+
+        let first_responder: id = msg_send![window, firstResponder];
+
+        // Only trigger focus events if the NSWindow that's being notified about is our window,
+        // and if the window's first responder is our NSView.
+        // If the first responder isn't our NSView, the focus events will instead be triggered
+        // by the becomeFirstResponder and resignFirstResponder methods on the NSView itself.
+        if notification_object == window && first_responder == state.window_inner.ns_view {
+            let is_key_window: BOOL = msg_send![window, isKeyWindow];
+            state.trigger_event(Event::Window(if is_key_window == YES {
+                WindowEvent::Focused
+            } else {
+                WindowEvent::Unfocused
+            }));
+        }
+    }
 }
