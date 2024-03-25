@@ -23,9 +23,8 @@ keyboard-types = { version = "0.6.1", default-features = false }
 raw-window-handle = "0.5"
 
 [target.'cfg(target_os="linux")'.dependencies]
-xcb = { version = "0.9", features = ["thread", "xlib_xcb", "dri2"] }
-x11 = { version = "2.18", features = ["xlib", "xcursor"] }
-xcb-util = { version = "0.3", features = ["icccm"] }
+x11rb = { version = "0.13.0", features = ["cursor", "resource_manager", "allow-unsafe-code"] }
+x11 = { version = "2.21", features = ["xlib", "xcursor", "xlib_xcb"] }
 nix = "0.22.0"
 
 [target.'cfg(target_os="windows")'.dependencies]
