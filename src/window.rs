@@ -102,12 +102,12 @@ impl<'a> Window<'a> {
         self.window.set_mouse_cursor(cursor);
     }
 
-    pub fn has_input_focus(&mut self) -> bool {
-        self.window.has_input_focus()
+    pub fn has_focus(&mut self) -> bool {
+        self.window.has_focus()
     }
 
-    pub fn set_input_focus(&mut self) {
-        self.window.set_input_focus()
+    pub fn focus(&mut self) {
+        self.window.focus()
     }
 
     /// If provided, then an OpenGL context will be created for this window. You'll be able to

@@ -770,12 +770,12 @@ impl Window<'_> {
         }
     }
 
-    pub fn has_input_focus(&mut self) -> bool {
+    pub fn has_focus(&mut self) -> bool {
         let foreground_window = unsafe { GetForegroundWindow() };
         foreground_window == self.state.hwnd
     }
 
-    pub fn set_input_focus(&mut self) {
+    pub fn focus(&mut self) {
         unsafe {
             SetFocus(self.state.hwnd);
         }

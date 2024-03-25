@@ -370,11 +370,11 @@ impl<'a> Window<'a> {
         self.inner.close_requested = true;
     }
 
-    pub fn has_input_focus(&mut self) -> bool {
+    pub fn has_focus(&mut self) -> bool {
         unimplemented!()
     }
 
-    pub fn set_input_focus(&mut self) {
+    pub fn focus(&mut self) {
         unimplemented!()
     }
 

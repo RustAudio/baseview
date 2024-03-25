@@ -281,7 +281,7 @@ impl<'a> Window<'a> {
         self.inner.close();
     }
 
-    pub fn has_input_focus(&mut self) -> bool {
+    pub fn has_focus(&mut self) -> bool {
         unsafe {
             let view = self.inner.ns_view.as_mut().unwrap();
             let window: id = msg_send![view, window];
@@ -293,7 +293,7 @@ impl<'a> Window<'a> {
         }
     }
 
-    pub fn set_input_focus(&mut self) {
+    pub fn focus(&mut self) {
         unsafe {
             let view = self.inner.ns_view.as_mut().unwrap();
             let window: id = msg_send![view, window];
