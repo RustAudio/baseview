@@ -13,9 +13,8 @@ use core_foundation::runloop::{
     CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer, kCFRunLoopDefaultMode,
 };
 use keyboard_types::KeyboardEvent;
-
+use objc::class;
 use objc::{msg_send, runtime::Object, sel, sel_impl};
-
 use raw_window_handle::{
     AppKitDisplayHandle, AppKitWindowHandle, HasRawDisplayHandle, HasRawWindowHandle,
     RawDisplayHandle, RawWindowHandle,
@@ -83,6 +82,11 @@ impl WindowInner {
                 if let Some(frame_timer) = window_state.frame_timer.take() {
                     CFRunLoop::get_current().remove_timer(&frame_timer, kCFRunLoopDefaultMode);
                 }
+
+                // Deregister NSView from NotificationCenter.
+                let notification_center: id =
+                    msg_send![class!(NSNotificationCenter), defaultCenter];
+                let () = msg_send![notification_center, removeObserver:self.ns_view];
 
                 drop(window_state);
 
