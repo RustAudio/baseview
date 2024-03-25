@@ -771,8 +771,8 @@ impl Window<'_> {
     }
 
     pub fn has_focus(&mut self) -> bool {
-        let foreground_window = unsafe { GetFocus() };
-        foreground_window == self.state.hwnd
+        let focused_window = unsafe { GetFocus() };
+        focused_window == self.state.hwnd
     }
 
     pub fn focus(&mut self) {
