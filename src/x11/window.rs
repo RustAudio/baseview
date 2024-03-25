@@ -359,6 +359,14 @@ impl<'a> Window<'a> {
         self.inner.close_requested = true;
     }
 
+    pub fn has_focus(&mut self) -> bool {
+        unimplemented!()
+    }
+
+    pub fn focus(&mut self) {
+        unimplemented!()
+    }
+
     pub fn resize(&mut self, size: Size) {
         let scaling = self.inner.window_info.scale();
         let new_window_info = WindowInfo::from_logical_size(size, scaling);
