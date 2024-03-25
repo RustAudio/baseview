@@ -1,10 +1,13 @@
+use std::num::NonZeroU32;
 use std::time::Duration;
 
 use rtrb::{Consumer, RingBuffer};
 
 #[cfg(target_os = "macos")]
 use baseview::copy_to_clipboard;
-use baseview::{Event, EventStatus, MouseEvent, Window, WindowHandler, WindowScalePolicy};
+use baseview::{
+    Event, EventStatus, MouseEvent, PhySize, Window, WindowEvent, WindowHandler, WindowScalePolicy,
+};
 
 #[derive(Debug, Clone)]
 enum Message {
@@ -13,10 +16,22 @@ enum Message {
 
 struct OpenWindowExample {
     rx: Consumer<Message>,
+
+    ctx: softbuffer::Context,
+    surface: softbuffer::Surface,
+    current_size: PhySize,
+    damaged: bool,
 }
 
 impl WindowHandler for OpenWindowExample {
     fn on_frame(&mut self, _window: &mut Window) {
+        let mut buf = self.surface.buffer_mut().unwrap();
+        if self.damaged {
+            buf.fill(0xFFAAAAAA);
+            self.damaged = false;
+        }
+        buf.present().unwrap();
+
         while let Ok(message) = self.rx.pop() {
             println!("Message: {:?}", message);
         }
@@ -29,10 +44,20 @@ impl WindowHandler for OpenWindowExample {
 
                 #[cfg(target_os = "macos")]
                 match e {
-                    MouseEvent::ButtonPressed { .. } => {
-                        copy_to_clipboard(&"This is a test!")
-                    }
+                    MouseEvent::ButtonPressed { .. } => copy_to_clipboard(&"This is a test!"),
                     _ => (),
+                }
+            }
+            Event::Window(WindowEvent::Resized(info)) => {
+                println!("Resized: {:?}", info);
+                let new_size = info.physical_size();
+                self.current_size = new_size;
+
+                if let (Some(width), Some(height)) =
+                    (NonZeroU32::new(new_size.width), NonZeroU32::new(new_size.height))
+                {
+                    self.surface.resize(width, height).unwrap();
+                    self.damaged = true;
                 }
             }
             Event::Keyboard(e) => println!("Keyboard event: {:?}", e),
@@ -56,13 +81,19 @@ fn main() {
 
     let (mut tx, rx) = RingBuffer::new(128);
 
-    ::std::thread::spawn(move || loop {
-        ::std::thread::sleep(Duration::from_secs(5));
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(5));
 
         if let Err(_) = tx.push(Message::Hello) {
             println!("Failed sending message");
         }
     });
 
-    Window::open_blocking(window_open_options, |_| OpenWindowExample { rx });
+    Window::open_blocking(window_open_options, |window| {
+        let ctx = unsafe { softbuffer::Context::new(window) }.unwrap();
+        let mut surface = unsafe { softbuffer::Surface::new(&ctx, window) }.unwrap();
+        surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
+
+        OpenWindowExample { ctx, surface, rx, current_size: PhySize::new(512, 512), damaged: true }
+    });
 }
