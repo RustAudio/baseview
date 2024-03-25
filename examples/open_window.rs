@@ -38,16 +38,9 @@ impl WindowHandler for OpenWindowExample {
     }
 
     fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
-        match event {
-            Event::Mouse(e) => {
-                println!("Mouse event: {:?}", e);
-
-                #[cfg(target_os = "macos")]
-                match e {
-                    MouseEvent::ButtonPressed { .. } => copy_to_clipboard(&"This is a test!"),
-                    _ => (),
-                }
-            }
+        match &event {
+            #[cfg(target_os = "macos")]
+            Event::Mouse(MouseEvent::ButtonPressed { .. }) => copy_to_clipboard(&"This is a test!"),
             Event::Window(WindowEvent::Resized(info)) => {
                 println!("Resized: {:?}", info);
                 let new_size = info.physical_size();
@@ -60,9 +53,10 @@ impl WindowHandler for OpenWindowExample {
                     self.damaged = true;
                 }
             }
-            Event::Keyboard(e) => println!("Keyboard event: {:?}", e),
-            Event::Window(e) => println!("Window event: {:?}", e),
+            _ => {}
         }
+
+        log_event(&event);
 
         EventStatus::Captured
     }
@@ -96,4 +90,12 @@ fn main() {
 
         OpenWindowExample { ctx, surface, rx, current_size: PhySize::new(512, 512), damaged: true }
     });
+}
+
+fn log_event(event: &Event) {
+    match event {
+        Event::Mouse(e) => println!("Mouse event: {:?}", e),
+        Event::Keyboard(e) => println!("Keyboard event: {:?}", e),
+        Event::Window(e) => println!("Window event: {:?}", e),
+    }
 }
