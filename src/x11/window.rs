@@ -14,9 +14,8 @@ use raw_window_handle::{
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    AtomEnum, ChangeWindowAttributesAux, ColormapAlloc, ConfigureWindowAux, ConnectionExt as _,
-    CreateGCAux, CreateWindowAux, EventMask, PropMode, Screen, VisualClass, Visualid,
-    Window as XWindow, WindowClass,
+    AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt as _, CreateGCAux,
+    CreateWindowAux, EventMask, PropMode, Visualid, Window as XWindow, WindowClass,
 };
 use x11rb::protocol::Event as XEvent;
 use x11rb::wrapper::ConnectionExt as _;
@@ -31,6 +30,7 @@ use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mo
 
 #[cfg(feature = "opengl")]
 use crate::gl::{platform, GlContext};
+use crate::x11::visual_info::WindowVisualConfig;
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
@@ -187,11 +187,9 @@ impl<'a> Window<'a> {
         // FIXME: baseview error type instead of unwrap()
         let xcb_connection = XcbConnection::new()?;
 
-        // Get screen information (?)
-        let setup = xcb_connection.conn.setup();
-        let screen = &setup.roots[xcb_connection.screen];
-
-        let parent_id = parent.unwrap_or_else(|| screen.root);
+        // Get screen information
+        let screen = xcb_connection.screen();
+        let parent_id = parent.unwrap_or(screen.root);
 
         let gc_id = xcb_connection.conn.generate_id()?;
         xcb_connection.conn.create_gc(
@@ -207,39 +205,18 @@ impl<'a> Window<'a> {
 
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
-        // Now it starts becoming fun. If we're creating an OpenGL context, then we need to create
-        // the window with a visual that matches the framebuffer used for the OpenGL context. So the
-        // idea is that we first retrieve a framebuffer config that matches our wanted OpenGL
-        // configuration, find the visual that matches that framebuffer config, create the window
-        // with that visual, and then finally create an OpenGL context for the window. If we don't
-        // use OpenGL, then we'll just take a random visual with a 32-bit depth.
-        let create_default_config = || {
-            Self::find_visual_for_depth(screen, 32)
-                .map(|visual| (32, visual))
-                .unwrap_or((x11rb::COPY_FROM_PARENT as u8, x11rb::COPY_FROM_PARENT as u32))
-        };
         #[cfg(feature = "opengl")]
-        let (fb_config, (depth, visual)) = match options.gl_config {
-            Some(gl_config) => unsafe {
-                platform::GlContext::get_fb_config_and_visual(xcb_connection.dpy, gl_config)
-                    .map(|(fb_config, window_config)| {
-                        (Some(fb_config), (window_config.depth, window_config.visual))
-                    })
-                    .expect("Could not fetch framebuffer config")
-            },
-            None => (None, create_default_config()),
-        };
-        #[cfg(not(feature = "opengl"))]
-        let (depth, visual) = create_default_config();
+        let visual_info =
+            WindowVisualConfig::find_best_visual_config_for_gl(&xcb_connection, options.gl_config);
 
-        // For this 32-bith depth to work, you also need to define a color map and set a border
-        // pixel: https://cgit.freedesktop.org/xorg/xserver/tree/dix/window.c#n818
-        let colormap = xcb_connection.conn.generate_id()?;
-        xcb_connection.conn.create_colormap(ColormapAlloc::NONE, colormap, screen.root, visual)?;
+        #[cfg(not(feature = "opengl"))]
+        let visual_info = WindowVisualConfig::find_best_visual_config(&xcb_connection);
+
+        let color_map = visual_info.create_color_map(&xcb_connection)?;
 
         let window_id = xcb_connection.conn.generate_id()?;
         xcb_connection.conn.create_window(
-            depth,
+            visual_info.visual_depth,
             window_id,
             parent_id,
             0,                                         // x coordinate of the new window
@@ -248,7 +225,7 @@ impl<'a> Window<'a> {
             window_info.physical_size().height as u16, // window height
             0,                                         // window border
             WindowClass::INPUT_OUTPUT,
-            visual,
+            visual_info.visual_id,
             &CreateWindowAux::new()
                 .event_mask(
                     EventMask::EXPOSURE
@@ -263,7 +240,7 @@ impl<'a> Window<'a> {
                 )
                 // As mentioned above, these two values are needed to be able to create a window
                 // with a depth of 32-bits when the parent window has a different depth
-                .colormap(colormap)
+                .colormap(color_map)
                 .border_pixel(0),
         )?;
         xcb_connection.conn.map_window(window_id)?;
@@ -292,7 +269,7 @@ impl<'a> Window<'a> {
         //       no error handling anymore at this point. Everything is more or less unchanged
         //       compared to when raw-gl-context was a separate crate.
         #[cfg(feature = "opengl")]
-        let gl_context = fb_config.map(|fb_config| {
+        let gl_context = visual_info.fb_config.map(|fb_config| {
             use std::ffi::c_ulong;
 
             let window = window_id as c_ulong;
@@ -308,7 +285,7 @@ impl<'a> Window<'a> {
             xcb_connection,
             window_id,
             window_info,
-            visual_id: visual,
+            visual_id: visual_info.visual_id,
             mouse_cursor: MouseCursor::default(),
 
             frame_interval: Duration::from_millis(15),
@@ -386,22 +363,6 @@ impl<'a> Window<'a> {
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<&crate::gl::GlContext> {
         self.inner.gl_context.as_ref()
-    }
-
-    fn find_visual_for_depth(screen: &Screen, depth: u8) -> Option<Visualid> {
-        for candidate_depth in &screen.allowed_depths {
-            if candidate_depth.depth != depth {
-                continue;
-            }
-
-            for candidate_visual in &candidate_depth.visuals {
-                if candidate_visual.class == VisualClass::TRUE_COLOR {
-                    return Some(candidate_visual.visual_id);
-                }
-            }
-        }
-
-        None
     }
 }
 

@@ -5,7 +5,7 @@ use x11::{xlib, xlib::Display, xlib_xcb};
 
 use x11rb::connection::Connection;
 use x11rb::cursor::Handle as CursorHandle;
-use x11rb::protocol::xproto::Cursor;
+use x11rb::protocol::xproto::{Cursor, Screen};
 use x11rb::resource_manager;
 use x11rb::xcb_ffi::XCBConnection;
 
@@ -76,8 +76,7 @@ impl XcbConnection {
     // If neither work, I guess just assume 96.0 and don't do any scaling.
     fn get_scaling_screen_dimensions(&self) -> f64 {
         // Figure out screen information
-        let setup = self.conn.setup();
-        let screen = &setup.roots[self.screen];
+        let screen = self.screen();
 
         // Get the DPI from the screen struct
         //
@@ -114,5 +113,9 @@ impl XcbConnection {
                 Ok(cursor)
             }
         }
+    }
+
+    pub fn screen(&self) -> &Screen {
+        &self.conn2.setup().roots[self.screen]
     }
 }

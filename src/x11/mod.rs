@@ -6,3 +6,4 @@ pub use window::*;
 
 mod cursor;
 mod keyboard;
+mod visual_info;
