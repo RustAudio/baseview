@@ -7,15 +7,14 @@ use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
     NSPasteboard, NSView, NSWindow, NSWindowStyleMask,
 };
-use cocoa::base::{id, nil, NO, YES};
+use cocoa::base::{id, nil, BOOL, NO, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use core_foundation::runloop::{
     CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer, kCFRunLoopDefaultMode,
 };
 use keyboard_types::KeyboardEvent;
-
+use objc::class;
 use objc::{msg_send, runtime::Object, sel, sel_impl};
-
 use raw_window_handle::{
     AppKitDisplayHandle, AppKitWindowHandle, HasRawDisplayHandle, HasRawWindowHandle,
     RawDisplayHandle, RawWindowHandle,
@@ -44,6 +43,7 @@ impl WindowHandle {
     pub fn is_open(&self) -> bool {
         self.state.window_inner.open.get()
     }
+
 }
 
 unsafe impl HasRawWindowHandle for WindowHandle {
@@ -82,6 +82,11 @@ impl WindowInner {
                 if let Some(frame_timer) = window_state.frame_timer.take() {
                     CFRunLoop::get_current().remove_timer(&frame_timer, kCFRunLoopDefaultMode);
                 }
+
+                // Deregister NSView from NotificationCenter.
+                let notification_center: id =
+                    msg_send![class!(NSNotificationCenter), defaultCenter];
+                let () = msg_send![notification_center, removeObserver:self.ns_view];
 
                 drop(window_state);
 
@@ -278,6 +283,28 @@ impl<'a> Window<'a> {
 
     pub fn close(&mut self) {
         self.inner.close();
+    }
+
+    pub fn has_focus(&mut self) -> bool {
+        unsafe {
+            let view = self.inner.ns_view.as_mut().unwrap();
+            let window: id = msg_send![view, window];
+            if window == nil { return false; };
+            let first_responder: id = msg_send![window, firstResponder];
+            let is_key_window: BOOL = msg_send![window, isKeyWindow];
+            let is_focused: BOOL = msg_send![view, isEqual: first_responder];
+            is_key_window == YES && is_focused == YES
+        }
+    }
+
+    pub fn focus(&mut self) {
+        unsafe {
+            let view = self.inner.ns_view.as_mut().unwrap();
+            let window: id = msg_send![view, window];
+            if window != nil {
+                msg_send![window, makeFirstResponder:view]
+            }
+        }
     }
 
     pub fn resize(&mut self, size: Size) {

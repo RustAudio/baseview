@@ -102,6 +102,14 @@ impl<'a> Window<'a> {
         self.window.set_mouse_cursor(cursor);
     }
 
+    pub fn has_focus(&mut self) -> bool {
+        self.window.has_focus()
+    }
+
+    pub fn focus(&mut self) {
+        self.window.focus()
+    }
+
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
     /// access this context through [crate::Window::gl_context].
     #[cfg(feature = "opengl")]
