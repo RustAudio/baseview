@@ -5,12 +5,12 @@ use baseview::{
 use std::num::NonZeroU32;
 
 struct ParentWindowHandler {
-    ctx: softbuffer::Context,
+    _ctx: softbuffer::Context,
     surface: softbuffer::Surface,
     current_size: PhySize,
     damaged: bool,
 
-    child_window: Option<WindowHandle>,
+    _child_window: Option<WindowHandle>,
 }
 
 impl ParentWindowHandler {
@@ -33,11 +33,11 @@ impl ParentWindowHandler {
 
         // TODO: no way to query physical size initially?
         Self {
-            ctx,
+            _ctx: ctx,
             surface,
             current_size: PhySize::new(512, 512),
             damaged: true,
-            child_window: Some(child_window),
+            _child_window: Some(child_window),
         }
     }
 }
@@ -76,7 +76,7 @@ impl WindowHandler for ParentWindowHandler {
 }
 
 struct ChildWindowHandler {
-    ctx: softbuffer::Context,
+    _ctx: softbuffer::Context,
     surface: softbuffer::Surface,
     current_size: PhySize,
     damaged: bool,
@@ -89,7 +89,7 @@ impl ChildWindowHandler {
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         // TODO: no way to query physical size initially?
-        Self { ctx, surface, current_size: PhySize::new(256, 256), damaged: true }
+        Self { _ctx: ctx, surface, current_size: PhySize::new(256, 256), damaged: true }
     }
 }
 
