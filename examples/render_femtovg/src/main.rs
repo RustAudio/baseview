@@ -1,4 +1,4 @@
-use baseview::gl::GlConfig;
+use baseview::gl::{GlConfig, GlContext};
 use baseview::{
     Event, EventStatus, MouseEvent, PhyPoint, Size, Window, WindowEvent, WindowHandler, WindowInfo,
     WindowOpenOptions, WindowScalePolicy,
@@ -7,6 +7,8 @@ use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
 
 struct FemtovgExample {
+    _window: Window,
+    gl_context: GlContext,
     canvas: Canvas<OpenGl>,
     current_size: WindowInfo,
     current_mouse_position: PhyPoint,
@@ -14,35 +16,36 @@ struct FemtovgExample {
 }
 
 impl FemtovgExample {
-    fn new(window: &mut Window) -> Self {
-        let context = window.gl_context().unwrap();
-        unsafe { context.make_current() };
+    fn new(window: Window) -> Self {
+        let gl_context = window.gl_context().unwrap();
+        unsafe { gl_context.make_current() };
 
         let renderer =
-            unsafe { OpenGl::new_from_function(|s| context.get_proc_address(s)) }.unwrap();
+            unsafe { OpenGl::new_from_function(|s| gl_context.get_proc_address(s)) }.unwrap();
 
         let mut canvas = Canvas::new(renderer).unwrap();
         // TODO: get actual window width
         canvas.set_size(512, 512, 1.0);
 
-        unsafe { context.make_not_current() };
+        unsafe { gl_context.make_not_current() };
         Self {
             canvas,
             current_size: WindowInfo::from_logical_size(Size { width: 512.0, height: 512.0 }, 1.0),
             current_mouse_position: PhyPoint { x: 256, y: 256 },
             damaged: true,
+            _window: window,
+            gl_context,
         }
     }
 }
 
 impl WindowHandler for FemtovgExample {
-    fn on_frame(&mut self, window: &mut Window) {
+    fn on_frame(&mut self) {
         if !self.damaged {
             return;
         }
 
-        let context = window.gl_context().unwrap();
-        unsafe { context.make_current() };
+        unsafe { self.gl_context.make_current() };
 
         let screen_height = self.canvas.height();
         let screen_width = self.canvas.width();
@@ -70,12 +73,12 @@ impl WindowHandler for FemtovgExample {
 
         // Tell renderer to execute all drawing commands
         self.canvas.flush();
-        context.swap_buffers();
-        unsafe { context.make_not_current() };
+        self.gl_context.swap_buffers();
+        unsafe { self.gl_context.make_not_current() };
         self.damaged = false;
     }
 
-    fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
+    fn on_event(&mut self, event: Event) -> EventStatus {
         match event {
             Event::Window(WindowEvent::Resized(size)) => {
                 let phy_size = size.physical_size();

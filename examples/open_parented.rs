@@ -14,9 +14,9 @@ struct ParentWindowHandler {
 }
 
 impl ParentWindowHandler {
-    pub fn new(window: &mut Window) -> Self {
-        let ctx = unsafe { softbuffer::Context::new(window) }.unwrap();
-        let mut surface = unsafe { softbuffer::Surface::new(&ctx, window) }.unwrap();
+    pub fn new(window: Window) -> Self {
+        let ctx = unsafe { softbuffer::Context::new(&window) }.unwrap();
+        let mut surface = unsafe { softbuffer::Surface::new(&ctx, &window) }.unwrap();
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         let window_open_options = baseview::WindowOpenOptions {
@@ -28,8 +28,9 @@ impl ParentWindowHandler {
             #[cfg(feature = "opengl")]
             gl_config: None,
         };
+
         let child_window =
-            Window::open_parented(window, window_open_options, ChildWindowHandler::new);
+            Window::open_parented(&window, window_open_options, ChildWindowHandler::new);
 
         // TODO: no way to query physical size initially?
         Self {
@@ -43,7 +44,7 @@ impl ParentWindowHandler {
 }
 
 impl WindowHandler for ParentWindowHandler {
-    fn on_frame(&mut self, _window: &mut Window) {
+    fn on_frame(&mut self) {
         let mut buf = self.surface.buffer_mut().unwrap();
         if self.damaged {
             buf.fill(0xFFAAAAAA);
@@ -52,7 +53,7 @@ impl WindowHandler for ParentWindowHandler {
         buf.present().unwrap();
     }
 
-    fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
+    fn on_event(&mut self, event: Event) -> EventStatus {
         match event {
             Event::Window(WindowEvent::Resized(info)) => {
                 println!("Parent Resized: {:?}", info);
@@ -83,9 +84,9 @@ struct ChildWindowHandler {
 }
 
 impl ChildWindowHandler {
-    pub fn new(window: &mut Window) -> Self {
-        let ctx = unsafe { softbuffer::Context::new(window) }.unwrap();
-        let mut surface = unsafe { softbuffer::Surface::new(&ctx, window) }.unwrap();
+    pub fn new(window: Window) -> Self {
+        let ctx = unsafe { softbuffer::Context::new(&window) }.unwrap();
+        let mut surface = unsafe { softbuffer::Surface::new(&ctx, &window) }.unwrap();
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         // TODO: no way to query physical size initially?
@@ -94,7 +95,7 @@ impl ChildWindowHandler {
 }
 
 impl WindowHandler for ChildWindowHandler {
-    fn on_frame(&mut self, _window: &mut Window) {
+    fn on_frame(&mut self) {
         let mut buf = self.surface.buffer_mut().unwrap();
         if self.damaged {
             buf.fill(0xFFAA0000);
@@ -103,7 +104,7 @@ impl WindowHandler for ChildWindowHandler {
         buf.present().unwrap();
     }
 
-    fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
+    fn on_event(&mut self, event: Event) -> EventStatus {
         match event {
             Event::Window(WindowEvent::Resized(info)) => {
                 println!("Child Resized: {:?}", info);
