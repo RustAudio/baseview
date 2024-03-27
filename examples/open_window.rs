@@ -4,9 +4,9 @@ use std::time::Duration;
 use rtrb::{Consumer, RingBuffer};
 
 #[cfg(target_os = "macos")]
-use baseview::copy_to_clipboard;
+use baseview::{copy_to_clipboard, MouseEvent};
 use baseview::{
-    Event, EventStatus, MouseEvent, PhySize, Window, WindowEvent, WindowHandler, WindowScalePolicy,
+    Event, EventStatus, PhySize, Window, WindowEvent, WindowHandler, WindowScalePolicy,
 };
 
 #[derive(Debug, Clone)]
@@ -17,7 +17,7 @@ enum Message {
 struct OpenWindowExample {
     rx: Consumer<Message>,
 
-    ctx: softbuffer::Context,
+    _ctx: softbuffer::Context,
     surface: softbuffer::Surface,
     current_size: PhySize,
     damaged: bool,
@@ -88,7 +88,13 @@ fn main() {
         let mut surface = unsafe { softbuffer::Surface::new(&ctx, window) }.unwrap();
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
-        OpenWindowExample { ctx, surface, rx, current_size: PhySize::new(512, 512), damaged: true }
+        OpenWindowExample {
+            _ctx: ctx,
+            surface,
+            rx,
+            current_size: PhySize::new(512, 512),
+            damaged: true,
+        }
     });
 }
 
