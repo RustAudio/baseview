@@ -66,8 +66,8 @@ impl WindowVisualConfig {
 pub fn create_color_map(
     connection: &XcbConnection, visual_id: Visualid,
 ) -> Result<Colormap, Box<dyn Error>> {
-    let colormap = connection.conn2.generate_id()?;
-    connection.conn2.create_colormap(
+    let colormap = connection.conn.generate_id()?;
+    connection.conn.create_colormap(
         ColormapAlloc::NONE,
         colormap,
         connection.screen().root,

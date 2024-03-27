@@ -116,6 +116,6 @@ impl XcbConnection {
     }
 
     pub fn screen(&self) -> &Screen {
-        &self.conn2.setup().roots[self.screen]
+        &self.conn.setup().roots[self.screen]
     }
 }
