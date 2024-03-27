@@ -1,0 +1,9 @@
+[package]
+name = "render_femtovg"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+baseview = { path = "../..", features = ["opengl"] }
+femtovg = "0.9.0"
