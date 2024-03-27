@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::error::Error;
 use std::ffi::c_void;
 use std::os::fd::AsRawFd;
@@ -101,11 +102,11 @@ struct WindowInner {
     window_id: XWindow,
     window_info: WindowInfo,
     visual_id: Visualid,
-    mouse_cursor: MouseCursor,
+    mouse_cursor: Cell<MouseCursor>,
 
     frame_interval: Duration,
     event_loop_running: bool,
-    close_requested: bool,
+    close_requested: Cell<bool>,
 
     new_physical_size: Option<PhySize>,
     parent_handle: Option<ParentHandle>,
@@ -115,7 +116,7 @@ struct WindowInner {
 }
 
 pub struct Window<'a> {
-    inner: &'a mut WindowInner,
+    inner: &'a WindowInner,
 }
 
 // Hack to allow sending a RawWindowHandle between threads. Do not make public
@@ -284,11 +285,11 @@ impl<'a> Window<'a> {
             window_id,
             window_info,
             visual_id: visual_info.visual_id,
-            mouse_cursor: MouseCursor::default(),
+            mouse_cursor: Cell::new(MouseCursor::default()),
 
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
-            close_requested: false,
+            close_requested: Cell::new(false),
 
             new_physical_size: None,
             parent_handle,
@@ -312,8 +313,8 @@ impl<'a> Window<'a> {
         Ok(())
     }
 
-    pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
-        if self.inner.mouse_cursor == mouse_cursor {
+    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) {
+        if self.inner.mouse_cursor.get() == mouse_cursor {
             return;
         }
 
@@ -327,11 +328,11 @@ impl<'a> Window<'a> {
             let _ = self.inner.xcb_connection.conn.flush();
         }
 
-        self.inner.mouse_cursor = mouse_cursor;
+        self.inner.mouse_cursor.set(mouse_cursor);
     }
 
     pub fn close(&mut self) {
-        self.inner.close_requested = true;
+        self.inner.close_requested.set(true);
     }
 
     pub fn has_focus(&mut self) -> bool {
@@ -444,14 +445,14 @@ impl WindowInner {
             if let Some(parent_handle) = &self.parent_handle {
                 if parent_handle.parent_did_drop() {
                     self.handle_must_close(handler);
-                    self.close_requested = false;
+                    self.close_requested.set(false);
                 }
             }
 
             // Check if the user has requested the window to close
-            if self.close_requested {
+            if self.close_requested.get() {
                 self.handle_must_close(handler);
-                self.close_requested = false;
+                self.close_requested.set(false);
             }
         }
 
