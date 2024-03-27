@@ -121,10 +121,8 @@ impl GlContext {
         let framework_name = CFString::from_str("com.apple.opengl").unwrap();
         let framework =
             unsafe { CFBundleGetBundleWithIdentifier(framework_name.as_concrete_TypeRef()) };
-        let addr = unsafe {
-            CFBundleGetFunctionPointerForName(framework, symbol_name.as_concrete_TypeRef())
-        };
-        addr as *const c_void
+
+        unsafe { CFBundleGetFunctionPointerForName(framework, symbol_name.as_concrete_TypeRef()) }
     }
 
     pub fn swap_buffers(&self) {
