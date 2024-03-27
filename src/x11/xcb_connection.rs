@@ -14,7 +14,7 @@ use crate::MouseCursor;
 use super::cursor;
 
 x11rb::atom_manager! {
-    pub Atoms2: AtomsCookie {
+    pub Atoms: AtomsCookie {
         WM_PROTOCOLS,
         WM_DELETE_WINDOW,
     }
@@ -25,9 +25,9 @@ x11rb::atom_manager! {
 /// Keeps track of the xcb connection itself and the xlib display ID that was used to connect.
 pub struct XcbConnection {
     pub(crate) dpy: *mut Display,
-    pub(crate) conn2: XCBConnection,
+    pub(crate) conn: XCBConnection,
     pub(crate) screen: usize,
-    pub(crate) atoms2: Atoms2,
+    pub(crate) atoms: Atoms,
     pub(crate) resources: resource_manager::Database,
     pub(crate) cursor_handle: CursorHandle,
     pub(super) cursor_cache: HashMap<MouseCursor, u32>,
@@ -40,20 +40,20 @@ impl XcbConnection {
         let xcb_connection = unsafe { xlib_xcb::XGetXCBConnection(dpy) };
         assert!(!xcb_connection.is_null());
         let screen = unsafe { xlib::XDefaultScreen(dpy) } as usize;
-        let conn2 = unsafe { XCBConnection::from_raw_xcb_connection(xcb_connection, true)? };
+        let conn = unsafe { XCBConnection::from_raw_xcb_connection(xcb_connection, true)? };
         unsafe {
             xlib_xcb::XSetEventQueueOwner(dpy, xlib_xcb::XEventQueueOwner::XCBOwnsEventQueue)
         };
 
-        let atoms2 = Atoms2::new(&conn2)?.reply()?;
-        let resources = resource_manager::new_from_default(&conn2)?;
-        let cursor_handle = CursorHandle::new(&conn2, screen, &resources)?.reply()?;
+        let atoms = Atoms::new(&conn)?.reply()?;
+        let resources = resource_manager::new_from_default(&conn)?;
+        let cursor_handle = CursorHandle::new(&conn, screen, &resources)?.reply()?;
 
         Ok(Self {
             dpy,
-            conn2,
+            conn,
             screen,
-            atoms2,
+            atoms,
             resources,
             cursor_handle,
             cursor_cache: HashMap::new(),
@@ -76,7 +76,7 @@ impl XcbConnection {
     // If neither work, I guess just assume 96.0 and don't do any scaling.
     fn get_scaling_screen_dimensions(&self) -> f64 {
         // Figure out screen information
-        let setup = self.conn2.setup();
+        let setup = self.conn.setup();
         let screen = &setup.roots[self.screen];
 
         // Get the DPI from the screen struct
@@ -109,7 +109,7 @@ impl XcbConnection {
             Entry::Occupied(entry) => Ok(*entry.get()),
             Entry::Vacant(entry) => {
                 let cursor =
-                    cursor::get_xcursor(&self.conn2, self.screen, &self.cursor_handle, cursor)?;
+                    cursor::get_xcursor(&self.conn, self.screen, &self.cursor_handle, cursor)?;
                 entry.insert(cursor);
                 Ok(cursor)
             }
