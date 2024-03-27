@@ -207,12 +207,10 @@ impl<'a> Window<'a> {
 
         #[cfg(feature = "opengl")]
         let visual_info =
-            WindowVisualConfig::find_best_visual_config_for_gl(&xcb_connection, options.gl_config);
+            WindowVisualConfig::find_best_visual_config_for_gl(&xcb_connection, options.gl_config)?;
 
         #[cfg(not(feature = "opengl"))]
-        let visual_info = WindowVisualConfig::find_best_visual_config(&xcb_connection);
-
-        let color_map = visual_info.create_color_map(&xcb_connection)?;
+        let visual_info = WindowVisualConfig::find_best_visual_config(&xcb_connection)?;
 
         let window_id = xcb_connection.conn.generate_id()?;
         xcb_connection.conn.create_window(
@@ -240,7 +238,7 @@ impl<'a> Window<'a> {
                 )
                 // As mentioned above, these two values are needed to be able to create a window
                 // with a depth of 32-bits when the parent window has a different depth
-                .colormap(color_map)
+                .colormap(visual_info.color_map)
                 .border_pixel(0),
         )?;
         xcb_connection.conn.map_window(window_id)?;
