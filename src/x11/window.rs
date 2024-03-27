@@ -188,13 +188,13 @@ impl<'a> Window<'a> {
         let xcb_connection = XcbConnection::new()?;
 
         // Get screen information (?)
-        let setup = xcb_connection.conn2.setup();
+        let setup = xcb_connection.conn.setup();
         let screen = &setup.roots[xcb_connection.screen];
 
         let parent_id = parent.unwrap_or_else(|| screen.root);
 
-        let gc_id = xcb_connection.conn2.generate_id()?;
-        xcb_connection.conn2.create_gc(
+        let gc_id = xcb_connection.conn.generate_id()?;
+        xcb_connection.conn.create_gc(
             gc_id,
             parent_id,
             &CreateGCAux::new().foreground(screen.black_pixel).graphics_exposures(0),
@@ -234,11 +234,11 @@ impl<'a> Window<'a> {
 
         // For this 32-bith depth to work, you also need to define a color map and set a border
         // pixel: https://cgit.freedesktop.org/xorg/xserver/tree/dix/window.c#n818
-        let colormap = xcb_connection.conn2.generate_id()?;
-        xcb_connection.conn2.create_colormap(ColormapAlloc::NONE, colormap, screen.root, visual)?;
+        let colormap = xcb_connection.conn.generate_id()?;
+        xcb_connection.conn.create_colormap(ColormapAlloc::NONE, colormap, screen.root, visual)?;
 
-        let window_id = xcb_connection.conn2.generate_id()?;
-        xcb_connection.conn2.create_window(
+        let window_id = xcb_connection.conn.generate_id()?;
+        xcb_connection.conn.create_window(
             depth,
             window_id,
             parent_id,
@@ -266,11 +266,11 @@ impl<'a> Window<'a> {
                 .colormap(colormap)
                 .border_pixel(0),
         )?;
-        xcb_connection.conn2.map_window(window_id)?;
+        xcb_connection.conn.map_window(window_id)?;
 
         // Change window title
         let title = options.title;
-        xcb_connection.conn2.change_property8(
+        xcb_connection.conn.change_property8(
             PropMode::REPLACE,
             window_id,
             AtomEnum::WM_NAME,
@@ -278,15 +278,15 @@ impl<'a> Window<'a> {
             title.as_bytes(),
         )?;
 
-        xcb_connection.conn2.change_property32(
+        xcb_connection.conn.change_property32(
             PropMode::REPLACE,
             window_id,
-            xcb_connection.atoms2.WM_PROTOCOLS,
+            xcb_connection.atoms.WM_PROTOCOLS,
             AtomEnum::ATOM,
-            &[xcb_connection.atoms2.WM_DELETE_WINDOW],
+            &[xcb_connection.atoms.WM_DELETE_WINDOW],
         )?;
 
-        xcb_connection.conn2.flush()?;
+        xcb_connection.conn.flush()?;
 
         // TODO: These APIs could use a couple tweaks now that everything is internal and there is
         //       no error handling anymore at this point. Everything is more or less unchanged
@@ -345,11 +345,11 @@ impl<'a> Window<'a> {
         let xid = self.inner.xcb_connection.get_cursor(mouse_cursor).unwrap();
 
         if xid != 0 {
-            let _ = self.inner.xcb_connection.conn2.change_window_attributes(
+            let _ = self.inner.xcb_connection.conn.change_window_attributes(
                 self.inner.window_id,
                 &ChangeWindowAttributesAux::new().cursor(xid),
             );
-            let _ = self.inner.xcb_connection.conn2.flush();
+            let _ = self.inner.xcb_connection.conn.flush();
         }
 
         self.inner.mouse_cursor = mouse_cursor;
@@ -371,13 +371,13 @@ impl<'a> Window<'a> {
         let scaling = self.inner.window_info.scale();
         let new_window_info = WindowInfo::from_logical_size(size, scaling);
 
-        let _ = self.inner.xcb_connection.conn2.configure_window(
+        let _ = self.inner.xcb_connection.conn.configure_window(
             self.inner.window_id,
             &ConfigureWindowAux::new()
                 .width(new_window_info.physical_size().width)
                 .height(new_window_info.physical_size().height),
         );
-        let _ = self.inner.xcb_connection.conn2.flush();
+        let _ = self.inner.xcb_connection.conn.flush();
 
         // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
         // and notify the window handler about it
@@ -413,7 +413,7 @@ impl WindowInner {
         // when they've all been coalesced.
         self.new_physical_size = None;
 
-        while let Some(event) = self.xcb_connection.conn2.poll_for_event()? {
+        while let Some(event) = self.xcb_connection.conn.poll_for_event()? {
             self.handle_xcb_event(handler, event);
         }
 
@@ -438,7 +438,7 @@ impl WindowInner {
     fn run_event_loop(&mut self, handler: &mut dyn WindowHandler) -> Result<(), Box<dyn Error>> {
         use nix::poll::*;
 
-        let xcb_fd = self.xcb_connection.conn2.as_raw_fd();
+        let xcb_fd = self.xcb_connection.conn.as_raw_fd();
 
         let mut last_frame = Instant::now();
         self.event_loop_running = true;
@@ -545,7 +545,7 @@ impl WindowInner {
             ////
             XEvent::ClientMessage(event) => {
                 if event.format == 32
-                    && event.data.as_data32()[0] == self.xcb_connection.atoms2.WM_DELETE_WINDOW
+                    && event.data.as_data32()[0] == self.xcb_connection.atoms.WM_DELETE_WINDOW
                 {
                     self.handle_close_requested(handler);
                 }
