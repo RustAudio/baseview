@@ -40,7 +40,7 @@ impl XcbConnection {
         let xcb_connection = unsafe { xlib_xcb::XGetXCBConnection(dpy) };
         assert!(!xcb_connection.is_null());
         let screen = unsafe { xlib::XDefaultScreen(dpy) } as usize;
-        let conn = unsafe { XCBConnection::from_raw_xcb_connection(xcb_connection, true)? };
+        let conn = unsafe { XCBConnection::from_raw_xcb_connection(xcb_connection, false)? };
         unsafe {
             xlib_xcb::XSetEventQueueOwner(dpy, xlib_xcb::XEventQueueOwner::XCBOwnsEventQueue)
         };
@@ -117,5 +117,13 @@ impl XcbConnection {
 
     pub fn screen(&self) -> &Screen {
         &self.conn.setup().roots[self.screen]
+    }
+}
+
+impl Drop for XcbConnection {
+    fn drop(&mut self) {
+        unsafe {
+            xlib::XCloseDisplay(self.dpy);
+        }
     }
 }
