@@ -229,12 +229,12 @@ impl GlContext {
     }
 
     pub fn swap_buffers(&self) {
-        errors::XErrorHandler::handle(self.display, |error_handler| {
-            unsafe {
+        unsafe {
+            errors::XErrorHandler::handle(self.display, |error_handler| {
                 glx::glXSwapBuffers(self.display, self.window);
-            }
-            error_handler.check().unwrap();
-        })
+                error_handler.check().unwrap();
+            })
+        }
     }
 }
 
