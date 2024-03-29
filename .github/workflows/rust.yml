@@ -5,7 +5,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  build:
     name: Build & Test
     strategy:
       matrix:
@@ -23,6 +23,7 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
+        components: rustfmt, clippy
     - name: Build Default
       run: cargo build --workspace --all-targets --verbose
     - name: Build All Features
@@ -31,32 +32,9 @@ jobs:
       run: cargo test --workspace --all-targets --all-features --verbose
     - name: Check docs
       run: cargo doc --examples --all-features --no-deps
+    - name: Clippy
+      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+    - name: Format
+      run: cargo fmt --all -- --check
 
-  clippy:
-    name: Clippy
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: clippy
-      - name: Install XCB and GL dependencies
-        if: contains(matrix.os, 'ubuntu')
-        run: sudo apt-get install libx11-xcb-dev libxcb-dri2-0-dev libgl1-mesa-dev libxcb-icccm4-dev libxcursor-dev
-      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-  rustfmt:
-    name: Format check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: rustfmt
-      - name: Format
-        run: cargo fmt --all -- --check
