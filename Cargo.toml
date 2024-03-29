@@ -43,3 +43,16 @@ softbuffer = "0.3.4"
 
 [workspace]
 members = ["examples/render_femtovg"]
+
+[lints.clippy]
+missing-safety-doc = "allow"
+
+[[example]]
+name = "open_window"
+test = true
+doctest = true
+
+[[example]]
+name = "open_parented"
+test = true
+doctest = true

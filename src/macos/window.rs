@@ -43,7 +43,6 @@ impl WindowHandle {
     pub fn is_open(&self) -> bool {
         self.state.window_inner.open.get()
     }
-
 }
 
 unsafe impl HasRawWindowHandle for WindowHandle {
@@ -289,7 +288,9 @@ impl<'a> Window<'a> {
         unsafe {
             let view = self.inner.ns_view.as_mut().unwrap();
             let window: id = msg_send![view, window];
-            if window == nil { return false; };
+            if window == nil {
+                return false;
+            };
             let first_responder: id = msg_send![window, firstResponder];
             let is_key_window: BOOL = msg_send![window, isKeyWindow];
             let is_focused: BOOL = msg_send![view, isEqual: first_responder];

@@ -40,7 +40,7 @@ impl WindowHandler for OpenWindowExample {
     fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
         match &event {
             #[cfg(target_os = "macos")]
-            Event::Mouse(MouseEvent::ButtonPressed { .. }) => copy_to_clipboard(&"This is a test!"),
+            Event::Mouse(MouseEvent::ButtonPressed { .. }) => copy_to_clipboard("This is a test!"),
             Event::Window(WindowEvent::Resized(info)) => {
                 println!("Resized: {:?}", info);
                 let new_size = info.physical_size();
@@ -78,7 +78,7 @@ fn main() {
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(5));
 
-        if let Err(_) = tx.push(Message::Hello) {
+        if tx.push(Message::Hello).is_err() {
             println!("Failed sending message");
         }
     });
