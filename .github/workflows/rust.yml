@@ -6,7 +6,6 @@ env:
 
 jobs:
   build:
-    name: Build & Test
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
@@ -34,7 +33,7 @@ jobs:
       run: cargo doc --examples --all-features --no-deps
     - name: Clippy
       run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-    - name: Format
+    - name: Check Formatting (rustfmt)
       run: cargo fmt --all -- --check
 
 
