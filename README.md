@@ -23,10 +23,10 @@ Below is a proposed list of milestones (roughly in-order) and their status. Subj
 
 ### Linux
 
-Install dependencies, e.g.,
+Install dependencies, e.g.:
 
 ```sh
-sudo apt-get install libx11-dev libxcursor-dev libxcb-dri2-0-dev libxcb-icccm4-dev libx11-xcb-dev
+sudo apt-get install libx11-dev libxcb1-dev libx11-xcb-dev libgl1-mesa-dev
 ```
 
 ## License
