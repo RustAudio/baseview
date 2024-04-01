@@ -107,6 +107,7 @@ pub(crate) struct WindowInner {
 
     pub(crate) close_requested: Cell<bool>,
     drag_n_drop: DragNDrop,
+    root_window_id: Option<XWindow>,
 }
 
 pub struct Window<'a> {
@@ -283,6 +284,17 @@ impl<'a> Window<'a> {
             GlContext::new(context)
         });
 
+        let root_window_id =
+            if let Ok(r) = xcb_connection.conn.get_geometry(window_id).unwrap().reply() {
+                if r.root != window_id {
+                    Some(r.root)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
         let mut inner = WindowInner {
             xcb_connection,
             window_id,
@@ -290,6 +302,7 @@ impl<'a> Window<'a> {
             visual_id: visual_info.visual_id,
             mouse_cursor: Cell::new(MouseCursor::default()),
             drag_n_drop: DragNDrop::new(),
+            root_window_id,
 
             close_requested: Cell::new(false),
 
