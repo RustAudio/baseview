@@ -7,15 +7,16 @@ use winapi::um::oleidl::LPDROPTARGET;
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
     GetDpiForWindow, GetFocus, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW,
-    RegisterClassW, ReleaseCapture, SetCapture, SetFocus, SetProcessDpiAwarenessContext, SetTimer,
-    SetWindowLongPtrW, SetWindowPos, TrackMouseEvent, TranslateMessage, UnregisterClassW, CS_OWNDC,
-    GET_XBUTTON_WPARAM, GWLP_USERDATA, IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER, TRACKMOUSEEVENT,
-    WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN,
-    WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL,
-    WM_MOUSELEAVE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_RBUTTONDOWN, WM_RBUTTONUP,
-    WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER,
-    WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX,
-    WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE, XBUTTON1, XBUTTON2,
+    RegisterClassW, ReleaseCapture, SetCapture, SetCursor, SetFocus, SetProcessDpiAwarenessContext,
+    SetTimer, SetWindowLongPtrW, SetWindowPos, TrackMouseEvent, TranslateMessage, UnregisterClassW,
+    CS_OWNDC, GET_XBUTTON_WPARAM, GWLP_USERDATA, HTCLIENT, IDC_ARROW, MSG, SWP_NOMOVE,
+    SWP_NOZORDER, TRACKMOUSEEVENT, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED,
+    WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+    WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSELEAVE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN,
+    WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD,
+    WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+    XBUTTON1, XBUTTON2,
 };
 
 use std::cell::{Cell, Ref, RefCell, RefMut};
@@ -37,6 +38,7 @@ use crate::{
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
+use super::cursor::cursor_to_lpcwstr;
 use super::drop_target::DropTarget;
 use super::keyboard::KeyboardState;
 
@@ -428,6 +430,24 @@ unsafe fn wnd_proc_inner(
 
             None
         }
+        // if WM_SETCURSOR returns `None`, WM_SETCURSOR continues to get handled by the outer window,
+        // If it return `Some(0)`, the current window decides what the cursor is
+        WM_SETCURSOR => {
+            let low_word = (lparam & 0xFFFF) as i16 as isize;
+            let mouse_in_window = low_word == HTCLIENT;
+            if mouse_in_window {
+                // Here we need to set the cursor back to what the state says, since it can have changed when outside the window
+                let cursor =
+                    LoadCursorW(null_mut(), cursor_to_lpcwstr(*window_state.cursor_icon.borrow()));
+                unsafe {
+                    SetCursor(cursor);
+                }
+                Some(0)
+            } else {
+                // cursor is being changed by some other window, e.g. when having mouse on the borders to resize it
+                None
+            }
+        }
         // NOTE: `WM_NCDESTROY` is handled in the outer function because this deallocates the window
         //        state
         BV_WINDOW_MUST_CLOSE => {
@@ -480,6 +500,7 @@ pub(super) struct WindowState {
     keyboard_state: RefCell<KeyboardState>,
     mouse_button_counter: Cell<usize>,
     mouse_was_outside_window: RefCell<bool>,
+    cursor_icon: RefCell<MouseCursor>,
     // Initialized late so the `Window` can hold a reference to this `WindowState`
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
     _drop_target: RefCell<Option<Rc<DropTarget>>>,
@@ -544,6 +565,13 @@ impl WindowState {
                     )
                 };
             }
+            WindowTask::SetMouseCursor(icon) => {
+                *self.cursor_icon.borrow_mut() = icon;
+                unsafe {
+                    let cursor = LoadCursorW(null_mut(), cursor_to_lpcwstr(icon));
+                    SetCursor(cursor);
+                }
+            }
         }
     }
 }
@@ -555,6 +583,8 @@ pub(super) enum WindowTask {
     /// Resize the window to the given size. The size is in logical pixels. DPI scaling is applied
     /// automatically.
     Resize(Size),
+    // Change the icon of the mouse cursor.
+    SetMouseCursor(MouseCursor),
 }
 
 pub struct Window<'a> {
@@ -685,6 +715,7 @@ impl Window<'_> {
                 keyboard_state: RefCell::new(KeyboardState::new()),
                 mouse_button_counter: Cell::new(0),
                 mouse_was_outside_window: RefCell::new(true),
+                cursor_icon: RefCell::new(MouseCursor::Default),
                 // The Window refers to this `WindowState`, so this `handler` needs to be
                 // initialized later
                 handler: RefCell::new(None),
@@ -790,8 +821,9 @@ impl Window<'_> {
         self.state.deferred_tasks.borrow_mut().push_back(task);
     }
 
-    pub fn set_mouse_cursor(&mut self, _mouse_cursor: MouseCursor) {
-        todo!()
+    pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
+        let task = WindowTask::SetMouseCursor(mouse_cursor);
+        self.state.deferred_tasks.borrow_mut().push_back(task);
     }
 
     #[cfg(feature = "opengl")]
