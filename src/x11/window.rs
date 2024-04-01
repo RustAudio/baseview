@@ -105,6 +105,7 @@ struct WindowInner {
     visual_id: Visualid,
     mouse_cursor: MouseCursor,
     drag_n_drop: DragNDrop,
+    root_window_id: Option<XWindow>,
 
     frame_interval: Duration,
     event_loop_running: bool,
@@ -291,6 +292,17 @@ impl<'a> Window<'a> {
             GlContext::new(context)
         });
 
+        let root_window_id =
+            if let Ok(r) = xcb_connection.conn.get_geometry(window_id).unwrap().reply() {
+                if r.root != window_id {
+                    Some(r.root)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
         let mut inner = WindowInner {
             xcb_connection,
             window_id,
@@ -298,6 +310,7 @@ impl<'a> Window<'a> {
             visual_id: visual_info.visual_id,
             mouse_cursor: MouseCursor::default(),
             drag_n_drop: DragNDrop::new(),
+            root_window_id,
 
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
@@ -594,24 +607,20 @@ impl WindowInner {
                     let mut physical_pos = PhyPoint::new(x as i32, y as i32);
 
                     // The coordinates are relative to the root window, not our window >:(
-                    if let Ok(r) =
-                        self.xcb_connection.conn.get_geometry(self.window_id).unwrap().reply()
-                    {
-                        if r.root != self.window_id {
-                            if let Ok(r) = self
-                                .xcb_connection
-                                .conn
-                                .translate_coordinates(
-                                    r.root,
-                                    self.window_id,
-                                    physical_pos.x as i16,
-                                    physical_pos.y as i16,
-                                )
-                                .unwrap()
-                                .reply()
-                            {
-                                physical_pos = PhyPoint::new(r.dst_x as i32, r.dst_y as i32);
-                            }
+                    if let Some(root_id) = self.root_window_id {
+                        if let Ok(r) = self
+                            .xcb_connection
+                            .conn
+                            .translate_coordinates(
+                                root_id,
+                                self.window_id,
+                                physical_pos.x as i16,
+                                physical_pos.y as i16,
+                            )
+                            .unwrap()
+                            .reply()
+                        {
+                            physical_pos = PhyPoint::new(r.dst_x as i32, r.dst_y as i32);
                         }
                     }
 
