@@ -7,6 +7,7 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
+use keyboard_types::Modifiers;
 use raw_window_handle::{
     HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, XlibDisplayHandle,
     XlibWindowHandle,
@@ -14,15 +15,16 @@ use raw_window_handle::{
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt as _, CreateGCAux,
-    CreateWindowAux, EventMask, PropMode, Visualid, Window as XWindow, WindowClass,
+    Atom, AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, CreateGCAux,
+    CreateWindowAux, EventMask, PropMode, Timestamp, Visualid, Window as XWindow, WindowClass,
 };
 use x11rb::wrapper::ConnectionExt as _;
 
+use super::drag_n_drop::DragNDrop;
 use super::XcbConnection;
 use crate::{
-    Event, MouseCursor, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
-    WindowScalePolicy,
+    DropData, Event, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta,
+    Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
 #[cfg(feature = "opengl")]
@@ -104,6 +106,7 @@ pub(crate) struct WindowInner {
     mouse_cursor: Cell<MouseCursor>,
 
     pub(crate) close_requested: Cell<bool>,
+    drag_n_drop: DragNDrop,
 }
 
 pub struct Window<'a> {
@@ -252,6 +255,15 @@ impl<'a> Window<'a> {
             &[xcb_connection.atoms.WM_DELETE_WINDOW],
         )?;
 
+        // Enable drag and drop (TODO: Make this toggleable?)
+        xcb_connection.conn.change_property32(
+            PropMode::REPLACE,
+            window_id,
+            xcb_connection.atoms.XdndAware,
+            AtomEnum::ATOM,
+            &[5u32], // Latest version; hasn't changed since 2002
+        )?;
+
         xcb_connection.conn.flush()?;
         let xcb_connection = Rc::new(xcb_connection);
 
@@ -277,6 +289,7 @@ impl<'a> Window<'a> {
             window_info,
             visual_id: visual_info.visual_id,
             mouse_cursor: Cell::new(MouseCursor::default()),
+            drag_n_drop: DragNDrop::new(),
 
             close_requested: Cell::new(false),
 
