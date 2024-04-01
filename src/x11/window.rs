@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::*;
 
+use keyboard_types::Modifiers;
 use raw_window_handle::{
     HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, XlibDisplayHandle,
     XlibWindowHandle,
@@ -14,16 +15,17 @@ use raw_window_handle::{
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt as _, CreateGCAux,
-    CreateWindowAux, EventMask, PropMode, Visualid, Window as XWindow, WindowClass,
+    Atom, AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, CreateGCAux,
+    CreateWindowAux, EventMask, PropMode, Timestamp, Visualid, Window as XWindow, WindowClass,
 };
 use x11rb::protocol::Event as XEvent;
 use x11rb::wrapper::ConnectionExt as _;
 
+use super::drag_n_drop::DragNDrop;
 use super::XcbConnection;
 use crate::{
-    Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
+    DropData, Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, Point, ScrollDelta,
+    Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
 use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
@@ -102,6 +104,7 @@ struct WindowInner {
     window_info: WindowInfo,
     visual_id: Visualid,
     mouse_cursor: MouseCursor,
+    drag_n_drop: DragNDrop,
 
     frame_interval: Duration,
     event_loop_running: bool,
@@ -261,6 +264,15 @@ impl<'a> Window<'a> {
             &[xcb_connection.atoms.WM_DELETE_WINDOW],
         )?;
 
+        // Enable drag and drop (TODO: Make this toggleable?)
+        xcb_connection.conn.change_property32(
+            PropMode::REPLACE,
+            window_id,
+            xcb_connection.atoms.XdndAware,
+            AtomEnum::ATOM,
+            &[5u32], // Latest version; hasn't changed since 2002
+        )?;
+
         xcb_connection.conn.flush()?;
 
         // TODO: These APIs could use a couple tweaks now that everything is internal and there is
@@ -285,6 +297,7 @@ impl<'a> Window<'a> {
             window_info,
             visual_id: visual_info.visual_id,
             mouse_cursor: MouseCursor::default(),
+            drag_n_drop: DragNDrop::new(),
 
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
@@ -503,13 +516,202 @@ impl WindowInner {
             // window
             ////
             XEvent::ClientMessage(event) => {
-                if event.format == 32
-                    && event.data.as_data32()[0] == self.xcb_connection.atoms.WM_DELETE_WINDOW
-                {
+                if event.format != 32 {
+                    return;
+                }
+
+                if event.data.as_data32()[0] == self.xcb_connection.atoms.WM_DELETE_WINDOW {
                     self.handle_close_requested(handler);
+                    return;
+                }
+
+                ////
+                // drag n drop
+                ////
+                if event.type_ == self.xcb_connection.atoms.XdndEnter {
+                    let data = event.data.as_data32();
+
+                    let source_window = data[0] as XWindow;
+                    let flags = data[1];
+                    let version = flags >> 24;
+
+                    self.drag_n_drop.version = Some(version);
+
+                    let has_more_types = flags - (flags & (u32::max_value() - 1)) == 1;
+                    if !has_more_types {
+                        let type_list = vec![data[2] as Atom, data[3] as Atom, data[4] as Atom];
+                        self.drag_n_drop.type_list = Some(type_list);
+                    } else if let Ok(more_types) =
+                        self.drag_n_drop.get_type_list(source_window, &self.xcb_connection)
+                    {
+                        self.drag_n_drop.type_list = Some(more_types);
+                    }
+
+                    handler.on_event(
+                        &mut crate::Window::new(Window { inner: self }),
+                        Event::Mouse(MouseEvent::DragEntered {
+                            // We don't get the position until we get an `XdndPosition` event.
+                            position: Point::new(0.0, 0.0),
+                            // We don't get modifiers for drag n drop events.
+                            modifiers: Modifiers::empty(),
+                            // We don't get data until we get an `XdndPosition` event.
+                            data: DropData::None,
+                        }),
+                    );
+                } else if event.type_ == self.xcb_connection.atoms.XdndPosition {
+                    let data = event.data.as_data32();
+
+                    let source_window = data[0] as XWindow;
+
+                    // By our own state flow, `version` should never be `None` at this point.
+                    let version = self.drag_n_drop.version.unwrap_or(5);
+
+                    let accepted = if let Some(ref type_list) = self.drag_n_drop.type_list {
+                        type_list.contains(&self.xcb_connection.atoms.TextUriList)
+                    } else {
+                        false
+                    };
+
+                    if !accepted {
+                        if let Err(_e) = self.drag_n_drop.send_status(
+                            self.window_id,
+                            source_window,
+                            false,
+                            &self.xcb_connection,
+                        ) {
+                            // TODO: log warning
+                        }
+
+                        self.drag_n_drop.reset();
+                        return;
+                    }
+
+                    self.drag_n_drop.source_window = Some(source_window);
+
+                    let packed_coordinates = data[2];
+                    let x = packed_coordinates >> 16;
+                    let y = packed_coordinates & !(x << 16);
+                    let mut physical_pos = PhyPoint::new(x as i32, y as i32);
+
+                    // The coordinates are relative to the root window, not our window >:(
+                    if let Ok(r) =
+                        self.xcb_connection.conn.get_geometry(self.window_id).unwrap().reply()
+                    {
+                        if r.root != self.window_id {
+                            if let Ok(r) = self
+                                .xcb_connection
+                                .conn
+                                .translate_coordinates(
+                                    r.root,
+                                    self.window_id,
+                                    physical_pos.x as i16,
+                                    physical_pos.y as i16,
+                                )
+                                .unwrap()
+                                .reply()
+                            {
+                                physical_pos = PhyPoint::new(r.dst_x as i32, r.dst_y as i32);
+                            }
+                        }
+                    }
+
+                    self.drag_n_drop.logical_pos = physical_pos.to_logical(&self.window_info);
+
+                    let ev = Event::Mouse(MouseEvent::DragMoved {
+                        position: self.drag_n_drop.logical_pos,
+                        // We don't get modifiers for drag n drop events.
+                        modifiers: Modifiers::empty(),
+                        data: self.drag_n_drop.data.clone(),
+                    });
+                    handler.on_event(&mut crate::Window::new(Window { inner: self }), ev);
+
+                    if let DropData::None = &self.drag_n_drop.data {
+                        let time = if version >= 1 {
+                            data[3] as Timestamp
+                        } else {
+                            // In version 0, time isn't specified
+                            x11rb::CURRENT_TIME
+                        };
+
+                        // This results in the `SelectionNotify` event below
+                        if let Err(_e) = self.drag_n_drop.convert_selection(
+                            self.window_id,
+                            time,
+                            &self.xcb_connection,
+                        ) {
+                            // TODO: log warning
+                        }
+                    }
+
+                    if let Err(_e) = self.drag_n_drop.send_status(
+                        self.window_id,
+                        source_window,
+                        true,
+                        &self.xcb_connection,
+                    ) {
+                        // TODO: log warning
+                    }
+                } else if event.type_ == self.xcb_connection.atoms.XdndDrop {
+                    let (source_window, accepted) =
+                        if let Some(source_window) = self.drag_n_drop.source_window {
+                            let ev = Event::Mouse(MouseEvent::DragDropped {
+                                position: self.drag_n_drop.logical_pos,
+                                // We don't get modifiers for drag n drop events.
+                                modifiers: Modifiers::empty(),
+                                data: self.drag_n_drop.data.clone(),
+                            });
+                            handler.on_event(&mut crate::Window::new(Window { inner: self }), ev);
+
+                            (source_window, true)
+                        } else {
+                            // `source_window` won't be part of our DND state if we already rejected the drop in our
+                            // `XdndPosition` handler.
+                            let source_window = event.data.as_data32()[0] as XWindow;
+                            (source_window, false)
+                        };
+
+                    if let Err(_e) = self.drag_n_drop.send_finished(
+                        self.window_id,
+                        source_window,
+                        accepted,
+                        &self.xcb_connection,
+                    ) {
+                        // TODO: log warning
+                    }
+
+                    self.drag_n_drop.reset();
+                } else if event.type_ == self.xcb_connection.atoms.XdndLeave {
+                    self.drag_n_drop.reset();
+
+                    handler.on_event(
+                        &mut crate::Window::new(Window { inner: self }),
+                        Event::Mouse(MouseEvent::DragLeft),
+                    );
                 }
             }
 
+            XEvent::SelectionNotify(event) => {
+                if event.property == self.xcb_connection.atoms.XdndSelection {
+                    if let Ok(mut data) =
+                        self.drag_n_drop.read_data(self.window_id, &self.xcb_connection)
+                    {
+                        match self.drag_n_drop.parse_data(&mut data) {
+                            Ok(path_list) => {
+                                self.drag_n_drop.data = DropData::Files(path_list);
+                            }
+                            Err(_e) => {
+                                self.drag_n_drop.data = DropData::None;
+
+                                // TODO: Log warning
+                            }
+                        }
+                    }
+                }
+            }
+
+            ////
+            // window resize
+            ////
             XEvent::ConfigureNotify(event) => {
                 let new_physical_size = PhySize::new(event.width as u32, event.height as u32);
 
@@ -545,6 +747,7 @@ impl WindowInner {
                 // we generate a CursorMoved as well, so the mouse position from here isn't lost
                 let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
                 let logical_pos = physical_pos.to_logical(&self.window_info);
+
                 handler.on_event(
                     &mut crate::Window::new(Window { inner: self }),
                     Event::Mouse(MouseEvent::CursorMoved {
@@ -588,7 +791,6 @@ impl WindowInner {
                     );
                 }
             },
-
             XEvent::ButtonRelease(event) => {
                 if !(4..=7).contains(&event.detail) {
                     let button_id = mouse_id(event.detail);

@@ -5,7 +5,7 @@ use x11::{xlib, xlib::Display, xlib_xcb};
 
 use x11rb::connection::Connection;
 use x11rb::cursor::Handle as CursorHandle;
-use x11rb::protocol::xproto::{Cursor, Screen};
+use x11rb::protocol::xproto::{self, Cursor, Screen};
 use x11rb::resource_manager;
 use x11rb::xcb_ffi::XCBConnection;
 
@@ -13,10 +13,27 @@ use crate::MouseCursor;
 
 use super::cursor;
 
+mod get_property;
+pub use get_property::GetPropertyError;
+
 x11rb::atom_manager! {
     pub Atoms: AtomsCookie {
         WM_PROTOCOLS,
         WM_DELETE_WINDOW,
+
+        // Drag-N-Drop Atoms
+        XdndAware,
+        XdndEnter,
+        XdndLeave,
+        XdndDrop,
+        XdndPosition,
+        XdndStatus,
+        XdndActionPrivate,
+        XdndSelection,
+        XdndFinished,
+        XdndTypeList,
+        TextUriList: b"text/uri-list",
+        None: b"None",
     }
 }
 
@@ -115,6 +132,12 @@ impl XcbConnection {
 
     pub fn screen(&self) -> &Screen {
         &self.conn.setup().roots[self.screen]
+    }
+
+    pub fn get_property<T: bytemuck::Pod>(
+        &self, window: xproto::Window, property: xproto::Atom, property_type: xproto::Atom,
+    ) -> Result<Vec<T>, GetPropertyError> {
+        self::get_property::get_property(window, property, property_type, &self.conn)
     }
 }
 
