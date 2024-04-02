@@ -1,4 +1,6 @@
-// Code copied and modifed from https://github.com/rust-windowing/winit/blob/master/src/platform_impl/linux/x11/util/window_property.rs
+// The following code was copied and modified from:
+// https://github.com/rust-windowing/winit/blob/44aabdddcc9f720aec860c1f83c1041082c28560/src/platform_impl/linux/x11/util/window_property.rs
+// winit license (Apache License 2.0): https://github.com/rust-windowing/winit/blob/44aabdddcc9f720aec860c1f83c1041082c28560/LICENSE
 
 use std::error::Error;
 use std::ffi::c_int;
@@ -18,18 +20,6 @@ pub enum GetPropertyError {
     TypeMismatch(xproto::Atom),
     FormatMismatch(c_int),
 }
-
-/*
-impl GetPropertyError {
-    pub fn is_actual_property_type(&self, t: xproto::Atom) -> bool {
-        if let GetPropertyError::TypeMismatch(actual_type) = *self {
-            actual_type == t
-        } else {
-            false
-        }
-    }
-}
-*/
 
 impl<T: Into<ReplyError>> From<T> for GetPropertyError {
     fn from(e: T) -> Self {

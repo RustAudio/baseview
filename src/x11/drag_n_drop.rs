@@ -1,4 +1,6 @@
-// Code copied and modifed from https://github.com/rust-windowing/winit/blob/master/src/platform_impl/linux/x11/dnd.rs
+// The following code was copied and modified from:
+// https://github.com/rust-windowing/winit/blob/44aabdddcc9f720aec860c1f83c1041082c28560/src/platform_impl/linux/x11/dnd.rs
+// winit license (Apache License 2.0): https://github.com/rust-windowing/winit/blob/44aabdddcc9f720aec860c1f83c1041082c28560/LICENSE
 
 use std::{
     io,
