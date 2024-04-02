@@ -1,5 +1,5 @@
 use winapi::shared::guiddef::GUID;
-use winapi::shared::minwindef::{ATOM, FALSE, LPARAM, LRESULT, UINT, WPARAM};
+use winapi::shared::minwindef::{ATOM, FALSE, LOWORD, LPARAM, LRESULT, UINT, WPARAM};
 use winapi::shared::windef::{HWND, RECT};
 use winapi::um::combaseapi::CoCreateGuid;
 use winapi::um::ole2::{OleInitialize, RegisterDragDrop, RevokeDragDrop};
@@ -430,21 +430,21 @@ unsafe fn wnd_proc_inner(
 
             None
         }
-        // if WM_SETCURSOR returns `None`, WM_SETCURSOR continues to get handled by the outer window,
-        // If it return `Some(0)`, the current window decides what the cursor is
+        // If WM_SETCURSOR returns `None`, WM_SETCURSOR continues to get handled by the outer window(s),
+        // If it returns `Some(1)`, the current window decides what the cursor is
         WM_SETCURSOR => {
-            let low_word = (lparam & 0xFFFF) as i16 as isize;
+            let low_word = LOWORD(lparam as u32) as isize;
             let mouse_in_window = low_word == HTCLIENT;
             if mouse_in_window {
                 // Here we need to set the cursor back to what the state says, since it can have changed when outside the window
                 let cursor =
-                    LoadCursorW(null_mut(), cursor_to_lpcwstr(*window_state.cursor_icon.borrow()));
+                    LoadCursorW(null_mut(), cursor_to_lpcwstr(window_state.cursor_icon.get()));
                 unsafe {
                     SetCursor(cursor);
                 }
-                Some(0)
+                Some(1)
             } else {
-                // cursor is being changed by some other window, e.g. when having mouse on the borders to resize it
+                // Cursor is being changed by some other window, e.g. when having mouse on the borders to resize it
                 None
             }
         }
@@ -500,7 +500,7 @@ pub(super) struct WindowState {
     keyboard_state: RefCell<KeyboardState>,
     mouse_button_counter: Cell<usize>,
     mouse_was_outside_window: RefCell<bool>,
-    cursor_icon: RefCell<MouseCursor>,
+    cursor_icon: Cell<MouseCursor>,
     // Initialized late so the `Window` can hold a reference to this `WindowState`
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
     _drop_target: RefCell<Option<Rc<DropTarget>>>,
@@ -565,13 +565,6 @@ impl WindowState {
                     )
                 };
             }
-            WindowTask::SetMouseCursor(icon) => {
-                *self.cursor_icon.borrow_mut() = icon;
-                unsafe {
-                    let cursor = LoadCursorW(null_mut(), cursor_to_lpcwstr(icon));
-                    SetCursor(cursor);
-                }
-            }
         }
     }
 }
@@ -583,8 +576,6 @@ pub(super) enum WindowTask {
     /// Resize the window to the given size. The size is in logical pixels. DPI scaling is applied
     /// automatically.
     Resize(Size),
-    // Change the icon of the mouse cursor.
-    SetMouseCursor(MouseCursor),
 }
 
 pub struct Window<'a> {
@@ -715,7 +706,7 @@ impl Window<'_> {
                 keyboard_state: RefCell::new(KeyboardState::new()),
                 mouse_button_counter: Cell::new(0),
                 mouse_was_outside_window: RefCell::new(true),
-                cursor_icon: RefCell::new(MouseCursor::Default),
+                cursor_icon: Cell::new(MouseCursor::Default),
                 // The Window refers to this `WindowState`, so this `handler` needs to be
                 // initialized later
                 handler: RefCell::new(None),
@@ -822,8 +813,11 @@ impl Window<'_> {
     }
 
     pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
-        let task = WindowTask::SetMouseCursor(mouse_cursor);
-        self.state.deferred_tasks.borrow_mut().push_back(task);
+        self.state.cursor_icon.set(mouse_cursor);
+        unsafe {
+            let cursor = LoadCursorW(null_mut(), cursor_to_lpcwstr(mouse_cursor));
+            SetCursor(cursor);
+        }
     }
 
     #[cfg(feature = "opengl")]

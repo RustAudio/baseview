@@ -41,3 +41,9 @@ pub enum MouseCursor {
     ColResize,
     RowResize,
 }
+
+impl Default for MouseCursor {
+    fn default() -> Self {
+        Self::Default
+    }
+}

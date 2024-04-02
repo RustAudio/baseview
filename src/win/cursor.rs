@@ -13,9 +13,8 @@ pub fn cursor_to_lpcwstr(cursor: MouseCursor) -> LPCWSTR {
         MouseCursor::Hand => IDC_HAND,
         MouseCursor::HandGrabbing => IDC_SIZEALL,
         MouseCursor::Help => IDC_HELP,
-
-        // hiding cursor can't be turned into an lpcwstr since it's done by ShowCursor instead of SetCursor
-        MouseCursor::Hidden => IDC_ARROW,
+        // an empty LPCWSTR results in the cursor being hidden
+        MouseCursor::Hidden => std::ptr::null(),
 
         MouseCursor::Text => IDC_IBEAM,
         MouseCursor::VerticalText => IDC_IBEAM,
