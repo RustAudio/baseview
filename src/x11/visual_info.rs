@@ -63,7 +63,7 @@ impl WindowVisualConfig {
 
 // For this 32-bit depth to work, you also need to define a color map and set a border
 // pixel: https://cgit.freedesktop.org/xorg/xserver/tree/dix/window.c#n818
-pub fn create_color_map(
+fn create_color_map(
     connection: &XcbConnection, visual_id: Visualid,
 ) -> Result<Colormap, Box<dyn Error>> {
     let colormap = connection.conn.generate_id()?;

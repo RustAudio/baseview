@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::hash_map::{Entry, HashMap};
 use std::error::Error;
 
@@ -30,7 +31,7 @@ pub struct XcbConnection {
     pub(crate) atoms: Atoms,
     pub(crate) resources: resource_manager::Database,
     pub(crate) cursor_handle: CursorHandle,
-    pub(super) cursor_cache: HashMap<MouseCursor, u32>,
+    pub(super) cursor_cache: RefCell<HashMap<MouseCursor, u32>>,
 }
 
 impl XcbConnection {
@@ -56,7 +57,7 @@ impl XcbConnection {
             atoms,
             resources,
             cursor_handle,
-            cursor_cache: HashMap::new(),
+            cursor_cache: RefCell::new(HashMap::new()),
         })
     }
 
@@ -101,8 +102,12 @@ impl XcbConnection {
     }
 
     #[inline]
-    pub fn get_cursor(&mut self, cursor: MouseCursor) -> Result<Cursor, Box<dyn Error>> {
-        match self.cursor_cache.entry(cursor) {
+    pub fn get_cursor(&self, cursor: MouseCursor) -> Result<Cursor, Box<dyn Error>> {
+        // PANIC: this function is the only point where we access the cache, and we never call
+        // external functions that may make a reentrant call to this function
+        let mut cursor_cache = self.cursor_cache.borrow_mut();
+
+        match cursor_cache.entry(cursor) {
             Entry::Occupied(entry) => Ok(*entry.get()),
             Entry::Vacant(entry) => {
                 let cursor =
