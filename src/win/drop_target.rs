@@ -15,7 +15,7 @@ use winapi::um::oleidl::{
     IDropTarget, IDropTargetVtbl, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE,
     DROPEFFECT_NONE, DROPEFFECT_SCROLL,
 };
-use winapi::um::shellapi::DragQueryFileW;
+use winapi::um::shellapi::{DragQueryFileW, HDROP};
 use winapi::um::unknwnbase::{IUnknown, IUnknownVtbl};
 use winapi::um::winuser::CF_HDROP;
 use winapi::Interface;
@@ -135,7 +135,7 @@ impl DropTarget {
                 return;
             }
 
-            let hdrop = transmute((*medium.u).hGlobal());
+            let hdrop = *(*medium.u).hGlobal() as HDROP;
 
             let item_count = DragQueryFileW(hdrop, 0xFFFFFFFF, null_mut(), 0);
             if item_count == 0 {
@@ -153,7 +153,7 @@ impl DropTarget {
                 DragQueryFileW(
                     hdrop,
                     i,
-                    transmute(buffer.spare_capacity_mut().as_mut_ptr()),
+                    buffer.spare_capacity_mut().as_mut_ptr().cast(),
                     buffer_size as u32,
                 );
                 buffer.set_len(buffer_size);
@@ -175,7 +175,7 @@ impl DropTarget {
             return S_OK;
         }
 
-        return E_NOINTERFACE;
+        E_NOINTERFACE
     }
 
     unsafe extern "system" fn add_ref(this: *mut IUnknown) -> ULONG {

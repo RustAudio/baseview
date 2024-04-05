@@ -23,7 +23,7 @@ pub struct WindowHandle {
 
 impl WindowHandle {
     fn new(window_handle: platform::WindowHandle) -> Self {
-        Self { window_handle, phantom: PhantomData::default() }
+        Self { window_handle, phantom: PhantomData }
     }
 
     /// Close the window

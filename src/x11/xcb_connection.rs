@@ -92,10 +92,8 @@ impl XcbConnection {
         let _xres = width_px * 25.4 / width_mm;
         let yres = height_px * 25.4 / height_mm;
 
-        let yscale = yres / 96.0;
-
         // TODO: choose between `xres` and `yres`? (probably both are the same?)
-        yscale
+        yres / 96.0
     }
 
     #[inline]
