@@ -45,11 +45,11 @@ impl WindowHandle {
 }
 
 /// Receives the requests sent from the [`WindowHandle`]
-pub struct WindowHandleReceiver {
+pub struct ParentHandle {
     shared: Arc<HandleShared>,
 }
 
-impl WindowHandleReceiver {
+impl ParentHandle {
     pub fn new() -> (Self, UninitializedWindowHandle) {
         let shared = Arc::new(HandleShared {
             close_requested: AtomicBool::new(false),
@@ -59,13 +59,13 @@ impl WindowHandleReceiver {
         (Self { shared: shared.clone() }, UninitializedWindowHandle { shared })
     }
 
-    pub fn close_requested(&self) -> bool {
+    pub fn parent_did_drop(&self) -> bool {
         self.shared.close_requested.load(Ordering::Relaxed)
     }
 }
 
 // Notify the external handles that the window has been closed
-impl Drop for WindowHandleReceiver {
+impl Drop for ParentHandle {
     fn drop(&mut self) {
         self.shared.is_open.store(false, Ordering::Relaxed);
     }

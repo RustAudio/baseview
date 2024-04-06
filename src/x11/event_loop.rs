@@ -1,57 +1,71 @@
+use crate::x11::handle::ParentHandle;
 use crate::x11::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
-use crate::x11::{ParentHandle, Window, WindowInner};
+use crate::x11::Window;
 use crate::{
     Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, WindowEvent, WindowHandler,
     WindowInfo,
 };
 use std::error::Error;
+use std::os::fd::AsRawFd;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
-
 use x11rb::protocol::Event as XEvent;
 
 pub(super) struct EventLoop {
-    // Using the trait object will be necessary when we add multi-window support anyway
     handler: Box<dyn WindowHandler>,
     window: Rc<Window>,
 
-    handle_receiver: Option<WindowHandleReceiver>,
+    parent_handle: Option<ParentHandle>,
 
+    new_physical_size: Option<PhySize>,
     frame_interval: Duration,
-
     event_loop_running: bool,
-    close_request_handled: bool,
-
-    new_size: Option<PhySize>,
 }
 
 impl EventLoop {
     pub fn new(
-        window: Rc<Window>, handler: impl WindowHandler,
-        handle_receiver: Option<WindowHandleReceiver>,
+        window: Rc<Window>, handler: impl WindowHandler, parent_handle: Option<ParentHandle>,
     ) -> Self {
         Self {
             window,
             handler: Box::new(handler),
-            handle_receiver,
+            parent_handle,
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
-            close_request_handled: false,
-            new_size: None,
+            new_physical_size: None,
         }
+    }
+
+    #[inline]
+    fn drain_xcb_events(&mut self) -> Result<(), Box<dyn Error>> {
+        // the X server has a tendency to send spurious/extraneous configure notify events when a
+        // window is resized, and we need to batch those together and just send one resize event
+        // when they've all been coalesced.
+        self.new_physical_size = None;
+
+        while let Some(event) = self.window.xcb_connection.conn.poll_for_event()? {
+            self.handle_xcb_event(event);
+        }
+
+        if let Some(size) = self.new_physical_size.take() {
+            let window_info =
+                WindowInfo::from_physical_size(size, self.window.x11_window.dpi_scale_factor);
+
+            self.handler.on_event(Event::Window(WindowEvent::Resized(window_info)));
+        }
+
+        Ok(())
     }
 
     // Event loop
     // FIXME: poll() acts fine on linux, sometimes funky on *BSD. XCB upstream uses a define to
     // switch between poll() and select() (the latter of which is fine on *BSD), and we should do
     // the same.
-    // NOTE: x11rb uses calloop under the hood, so that won't be an issue anymore once we switch to
-    // it
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
         use nix::poll::*;
 
-        let xcb_fd = self.window.xcb_connection.file_descriptor();
+        let xcb_fd = self.window.xcb_connection.conn.as_raw_fd();
 
         let mut last_frame = Instant::now();
         self.event_loop_running = true;
@@ -95,40 +109,25 @@ impl EventLoop {
             // FIXME: This will need to be changed from just setting an atomic to somehow
             // synchronizing with the window being closed (using a synchronous channel, or
             // by joining on the event loop thread).
-            if let Some(parent_handle) = &self.handle_receiver {
-                if parent_handle.close_requested() {
+            if let Some(parent_handle) = &self.parent_handle {
+                if parent_handle.parent_did_drop() {
                     self.handle_must_close();
+                    self.window.close_requested.set(false);
                 }
             }
 
             // Check if the user has requested the window to close
             if self.window.close_requested.get() {
                 self.handle_must_close();
+                self.window.close_requested.set(false);
             }
         }
 
         Ok(())
     }
 
-    fn handle_close_requested(&mut self) {
-        // FIXME: handler should decide whether window stays open or not
-        self.handle_must_close();
-    }
-
-    fn handle_must_close(&mut self) {
-        if self.close_request_handled {
-            return;
-        }
-        self.handler.on_event(Event::Window(WindowEvent::WillClose));
-
-        self.event_loop_running = false;
-        self.close_request_handled = true;
-    }
-
     fn handle_xcb_event(&mut self, event: XEvent) {
-        let xcb_connection = &self.window.xcb_connection;
-
-        // For all of the keyboard and mouse events, you can fetch
+        // For all the keyboard and mouse events, you can fetch
         // `x`, `y`, `detail`, and `state`.
         // - `x` and `y` are the position inside the window where the cursor currently is
         //   when the event happened.
@@ -154,18 +153,21 @@ impl EventLoop {
             ////
             XEvent::ClientMessage(event) => {
                 if event.format == 32
-                    && event.data.as_data32()[0] == xcb_connection.atoms.WM_DELETE_WINDOW
+                    && event.data.as_data32()[0]
+                        == self.window.xcb_connection.atoms.WM_DELETE_WINDOW
                 {
                     self.handle_close_requested();
                 }
             }
 
             XEvent::ConfigureNotify(event) => {
-                let new_size = PhySize::new(event.width as u32, event.height as u32);
+                let new_physical_size = PhySize::new(event.width as u32, event.height as u32);
 
-                match self.new_size {
-                    None => self.new_size = Some(new_size),
-                    Some(s) if s != new_size => self.new_size = Some(new_size),
+                match self.new_physical_size {
+                    None => self.new_physical_size = Some(new_physical_size),
+                    Some(s) if s != new_physical_size => {
+                        self.new_physical_size = Some(new_physical_size)
+                    }
                     _ => {}
                 }
             }
@@ -249,24 +251,15 @@ impl EventLoop {
         }
     }
 
-    fn drain_xcb_events(&mut self) -> Result<(), Box<dyn Error>> {
-        // the X server has a tendency to send spurious/extraneous configure notify events when a
-        // window is resized, and we need to batch those together and just send one resize event
-        // when they've all been coalesced.
-        self.new_size = None;
+    fn handle_close_requested(&mut self) {
+        // FIXME: handler should decide whether window stays open or not
+        self.handle_must_close();
+    }
 
-        while let Some(event) = self.window.xcb_connection.conn.poll_for_event()? {
-            self.handle_xcb_event(event);
-        }
+    fn handle_must_close(&mut self) {
+        self.handler.on_event(Event::Window(WindowEvent::WillClose));
 
-        if let Some(size) = self.new_size.take() {
-            let window_info =
-                WindowInfo::from_physical_size(size, self.window.x11_window.dpi_scale_factor);
-
-            self.handler.on_event(Event::Window(WindowEvent::Resized(window_info)));
-        }
-
-        Ok(())
+        self.event_loop_running = false;
     }
 }
 

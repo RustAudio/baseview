@@ -9,7 +9,7 @@ use std::thread;
 use raw_window_handle::{HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, XcbWindowHandle};
 
 use crate::x11::event_loop::EventLoop;
-use crate::x11::handle::{WindowHandle, WindowHandleReceiver};
+use crate::x11::handle::{ParentHandle, WindowHandle};
 use crate::{Event, MouseCursor, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions};
 
 use crate::x11::x11_window::X11Window;
@@ -41,7 +41,7 @@ impl Window {
 
         let (tx, rx) = mpsc::sync_channel::<XcbWindowHandle>(1);
 
-        let (parent_handle, window_handle) = WindowHandleReceiver::new();
+        let (parent_handle, window_handle) = ParentHandle::new();
 
         // TODO: handle window creation errors
         thread::spawn(move || {
@@ -64,8 +64,7 @@ impl Window {
 
     fn window_thread<H, B>(
         parent: Option<u32>, options: WindowOpenOptions, build: B,
-        tx: Option<mpsc::SyncSender<XcbWindowHandle>>,
-        handle_receiver: Option<WindowHandleReceiver>,
+        tx: Option<mpsc::SyncSender<XcbWindowHandle>>, handle_receiver: Option<ParentHandle>,
     ) -> Result<(), Box<dyn Error>>
     where
         H: WindowHandler,
