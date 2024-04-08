@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use keyboard_types::{Key, Modifiers};
 use raw_window_handle::{
     HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
@@ -108,6 +109,11 @@ impl<'a> Window<'a> {
 
     pub fn focus(&mut self) {
         self.window.focus()
+    }
+
+    pub fn code_to_key(&self, code: i16, modifiers: Modifiers) -> Key {
+        let s = self.window.state.keyboard_state();
+        s.get_key(code, modifiers)
     }
 
     /// If provided, then an OpenGL context will be created for this window. You'll be able to

@@ -58,7 +58,7 @@ const SHIFT_STATE_ALTGR: ShiftState = 2;
 const N_SHIFT_STATE: ShiftState = 4;
 
 /// Per-window keyboard state.
-pub(super) struct KeyboardState {
+pub(crate) struct KeyboardState {
     hkl: HKL,
     // A map from (vk, is_shifted) to string val
     key_vals: HashMap<(VkCode, ShiftState), String>,
@@ -700,5 +700,13 @@ impl KeyboardState {
             }
             _ => vk,
         }
+    }
+
+    pub(crate) fn get_key(&self, code: i16, modifiers: Modifiers) -> Key {
+        // let stash_vk = self.stash_vk.take();
+        // let vk = self.refine_vk(stash_vk.unwrap_or(0), scan_code);
+        let vk = code as u8;
+        let key = self.get_base_key(vk, modifiers);
+        key
     }
 }

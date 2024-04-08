@@ -6,9 +6,9 @@ use winapi::um::ole2::{OleInitialize, RegisterDragDrop, RevokeDragDrop};
 use winapi::um::oleidl::LPDROPTARGET;
 use winapi::um::winuser::{
     AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    GetDpiForWindow, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW,
-    ReleaseCapture, SetCapture, SetProcessDpiAwarenessContext, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, SetFocus, GetFocus, TrackMouseEvent, TranslateMessage, UnregisterClassW, CS_OWNDC,
+    GetDpiForWindow, GetFocus, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW,
+    RegisterClassW, ReleaseCapture, SetCapture, SetFocus, SetProcessDpiAwarenessContext, SetTimer,
+    SetWindowLongPtrW, SetWindowPos, TrackMouseEvent, TranslateMessage, UnregisterClassW, CS_OWNDC,
     GET_XBUTTON_WPARAM, GWLP_USERDATA, IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER, TRACKMOUSEEVENT,
     WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN,
     WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL,
@@ -174,7 +174,7 @@ unsafe fn wnd_proc_inner(
             if *mouse_was_outside_window {
                 // this makes Windows track whether the mouse leaves the window.
                 // When the mouse leaves it results in a `WM_MOUSELEAVE` event.
-                let mut track_mouse =TRACKMOUSEEVENT {
+                let mut track_mouse = TRACKMOUSEEVENT {
                     cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
                     dwFlags: winapi::um::winuser::TME_LEAVE,
                     hwndTrack: hwnd,
@@ -186,7 +186,12 @@ unsafe fn wnd_proc_inner(
                 *mouse_was_outside_window = false;
 
                 let enter_event = Event::Mouse(MouseEvent::CursorEntered);
-                window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, enter_event);
+                window_state
+                    .handler
+                    .borrow_mut()
+                    .as_mut()
+                    .unwrap()
+                    .on_event(&mut window, enter_event);
             }
 
             let x = (lparam & 0xFFFF) as i16 as i32;
@@ -369,9 +374,8 @@ unsafe fn wnd_proc_inner(
                 new_window_info
             };
 
-            window_state
-                .handler
-                .borrow_mut()
+            let try_borrow_mut = &mut window_state.handler.try_borrow_mut().ok()?;
+            try_borrow_mut
                 .as_mut()
                 .unwrap()
                 .on_event(&mut window, Event::Window(WindowEvent::Resized(new_window_info)));
@@ -464,7 +468,7 @@ unsafe fn unregister_wnd_class(wnd_class: ATOM) {
 /// because of the Windows message loops' reentrant nature. Care still needs to be taken to prevent
 /// `handler` from indirectly triggering other events that would also need to be handled using
 /// `handler`.
-pub(super) struct WindowState {
+pub(crate) struct WindowState {
     /// The HWND belonging to this window. The window's actual state is stored in the `WindowState`
     /// struct associated with this HWND through `unsafe { GetWindowLongPtrW(self.hwnd,
     /// GWLP_USERDATA) } as *const WindowState`.
@@ -501,7 +505,7 @@ impl WindowState {
         self.window_info.borrow()
     }
 
-    pub(super) fn keyboard_state(&self) -> Ref<KeyboardState> {
+    pub(crate) fn keyboard_state(&self) -> Ref<KeyboardState> {
         self.keyboard_state.borrow()
     }
 
@@ -553,7 +557,7 @@ pub(super) enum WindowTask {
 }
 
 pub struct Window<'a> {
-    state: &'a WindowState,
+    pub(crate) state: &'a WindowState,
 }
 
 impl Window<'_> {
