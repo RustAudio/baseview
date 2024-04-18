@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ptr::null_mut;
 use std::rc::Rc;
@@ -8,9 +8,11 @@ use winapi::um::ole2::OleInitialize;
 use raw_window_handle::{
     HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, WindowsDisplayHandle,
 };
+use winapi::um::winuser::{LoadCursorW, SetCursor};
 
 #[cfg(feature = "opengl")]
 use crate::gl::win::GlContext;
+use crate::win::cursor::cursor_to_lpcwstr;
 use crate::win::handle::{WindowHandle, WindowHandleTransmitter};
 use crate::win::proc::ProcState;
 use crate::win::win32_window::Win32Window;
@@ -28,6 +30,7 @@ enum WindowTask {
 
 pub struct Window {
     pub(crate) win32_window: Win32Window,
+    cursor_icon: Cell<MouseCursor>,
 
     /// Tasks that should be executed at the end of `wnd_proc`.
     /// This is needed to avoid re-entrant calls into the `WindowHandler`.
@@ -72,6 +75,7 @@ impl Window {
         let win32_window = Win32Window::create(parent, &options);
         let window = Rc::new(Window {
             win32_window,
+            cursor_icon: Cell::new(MouseCursor::Default),
             deferred_tasks: RefCell::new(VecDeque::with_capacity(4)),
         });
         let handler = build_handler(crate::Window::new(Rc::downgrade(&window)));
@@ -106,7 +110,7 @@ impl Window {
     }
 
     pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) {
-        self.state.cursor_icon.set(mouse_cursor);
+        self.cursor_icon.set(mouse_cursor);
         unsafe {
             let cursor = LoadCursorW(null_mut(), cursor_to_lpcwstr(mouse_cursor));
             SetCursor(cursor);

@@ -1,7 +1,7 @@
 use std::ffi::{c_void, CString, OsStr};
 use std::os::windows::ffi::OsStrExt;
 
-use raw_window_handle::{RawWindowHandle, Win32WindowHandle};
+use raw_window_handle::Win32WindowHandle;
 
 use winapi::shared::minwindef::{HINSTANCE, HMODULE};
 use winapi::shared::ntdef::WCHAR;
