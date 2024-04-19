@@ -284,17 +284,6 @@ impl<'a> Window<'a> {
             GlContext::new(context)
         });
 
-        let root_window_id =
-            if let Ok(r) = xcb_connection.conn.get_geometry(window_id).unwrap().reply() {
-                if r.root != window_id {
-                    Some(r.root)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
         let mut inner = WindowInner {
             xcb_connection,
             window_id,
