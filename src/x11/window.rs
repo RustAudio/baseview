@@ -99,7 +99,6 @@ pub(crate) struct WindowInner {
     pub(crate) window_info: WindowInfo,
     visual_id: Visualid,
     mouse_cursor: Cell<MouseCursor>,
-    root_window_id: Option<XWindow>,
 
     pub(crate) close_requested: Cell<bool>,
 
@@ -281,24 +280,12 @@ impl<'a> Window<'a> {
             GlContext::new(context)
         });
 
-        let root_window_id =
-            if let Ok(r) = xcb_connection.conn.get_geometry(window_id).unwrap().reply() {
-                if r.root != window_id {
-                    Some(r.root)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
         let mut inner = WindowInner {
             xcb_connection,
             window_id,
             window_info,
             visual_id: visual_info.visual_id,
             mouse_cursor: Cell::new(MouseCursor::default()),
-            root_window_id,
 
             close_requested: Cell::new(false),
 

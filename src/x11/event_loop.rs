@@ -240,30 +240,22 @@ impl EventLoop {
                     let mut physical_pos = PhyPoint::new(x as i32, y as i32);
 
                     // The coordinates are relative to the root window, not our window >:(
-                    if let Ok(r) = self
-                        .window
-                        .xcb_connection
-                        .conn
-                        .get_geometry(self.window.window_id)
-                        .unwrap()
-                        .reply()
-                    {
-                        if r.root != self.window.window_id {
-                            if let Ok(r) = self
-                                .window
-                                .xcb_connection
-                                .conn
-                                .translate_coordinates(
-                                    r.root,
-                                    self.window.window_id,
-                                    physical_pos.x as i16,
-                                    physical_pos.y as i16,
-                                )
-                                .unwrap()
-                                .reply()
-                            {
-                                physical_pos = PhyPoint::new(r.dst_x as i32, r.dst_y as i32);
-                            }
+                    let root_id = self.window.xcb_connection.screen().root;
+                    if root_id != self.window.window_id {
+                        if let Ok(r) = self
+                            .window
+                            .xcb_connection
+                            .conn
+                            .translate_coordinates(
+                                root_id,
+                                self.window.window_id,
+                                physical_pos.x as i16,
+                                physical_pos.y as i16,
+                            )
+                            .unwrap()
+                            .reply()
+                        {
+                            physical_pos = PhyPoint::new(r.dst_x as i32, r.dst_y as i32);
                         }
                     }
 
