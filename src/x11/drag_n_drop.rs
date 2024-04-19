@@ -10,6 +10,8 @@ use std::{
 };
 
 use percent_encoding::percent_decode;
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::Timestamp;
 use x11rb::{
     errors::ConnectionError,
     protocol::xproto::{self, ConnectionExt},
@@ -31,6 +33,7 @@ pub(crate) struct DragNDrop {
 
     // Populated by SelectionNotify event handler (triggered by XdndPosition event handler)
     pub data: DropData,
+    pub data_requested_at: Option<Timestamp>,
 
     pub logical_pos: Point,
 }
@@ -42,6 +45,7 @@ impl DragNDrop {
             type_list: None,
             source_window: None,
             data: DropData::None,
+            data_requested_at: None,
             logical_pos: Point::new(0.0, 0.0),
         }
     }
@@ -51,6 +55,7 @@ impl DragNDrop {
         self.type_list = None;
         self.source_window = None;
         self.data = DropData::None;
+        self.data_requested_at = None;
         self.logical_pos = Point::new(0.0, 0.0);
     }
 
@@ -70,9 +75,14 @@ impl DragNDrop {
             type_: conn.atoms.XdndStatus as _,
         };
 
-        conn.conn
-            .send_event(false, target_window, xproto::EventMask::NO_EVENT, event.serialize())
-            .map(|_| ())
+        conn.conn.send_event(
+            false,
+            target_window,
+            xproto::EventMask::NO_EVENT,
+            event.serialize(),
+        )?;
+
+        conn.conn.flush()
     }
 
     pub fn send_finished(

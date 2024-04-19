@@ -174,6 +174,7 @@ impl EventLoop {
                 // drag n drop
                 ////
                 if event.type_ == self.window.xcb_connection.atoms.XdndEnter {
+                    self.drag_n_drop.reset();
                     let data = event.data.as_data32();
 
                     let source_window = data[0] as XWindow;
@@ -278,7 +279,7 @@ impl EventLoop {
                     self.handler
                         .on_event(&mut crate::Window::new(Window { inner: &self.window }), ev);
 
-                    if let DropData::None = &self.drag_n_drop.data {
+                    if self.drag_n_drop.data_requested_at.is_none() {
                         let time = if version >= 1 {
                             data[3] as Timestamp
                         } else {
@@ -293,6 +294,9 @@ impl EventLoop {
                             &self.window.xcb_connection,
                         ) {
                             // TODO: log warning
+                        } else {
+                            self.drag_n_drop.data_requested_at = Some(time);
+                            self.window.xcb_connection.conn.flush().unwrap();
                         }
                     }
 
@@ -347,6 +351,16 @@ impl EventLoop {
 
             XEvent::SelectionNotify(event) => {
                 if event.property == self.window.xcb_connection.atoms.XdndSelection {
+                    let Some(requested_time) = self.drag_n_drop.data_requested_at else {
+                        // eprintln!("Received DnD selection data, but we didn't request any. Weird. Skipping.");
+                        return;
+                    };
+
+                    if event.time != requested_time {
+                        // eprintln!("Received stale DnD selection data ({}), expected data is {requested_time}. Skipping.", event.time);
+                        return;
+                    }
+
                     if let Ok(mut data) = self
                         .drag_n_drop
                         .read_data(self.window.window_id, &self.window.xcb_connection)
