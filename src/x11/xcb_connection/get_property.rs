@@ -1,6 +1,41 @@
-// The following code was copied and modified from:
-// https://github.com/rust-windowing/winit/blob/44aabdddcc9f720aec860c1f83c1041082c28560/src/platform_impl/linux/x11/util/window_property.rs
-// winit license (Apache License 2.0): https://github.com/rust-windowing/winit/blob/44aabdddcc9f720aec860c1f83c1041082c28560/LICENSE
+/*
+The code in this file was derived from the Winit project (https://github.com/rust-windowing/winit).
+The original, unmodified code file this work is derived from can be found here:
+
+https://github.com/rust-windowing/winit/blob/44aabdddcc9f720aec860c1f83c1041082c28560/src/platform_impl/linux/x11/util/window_property.rs
+
+The original code this is based on is licensed under the following terms:
+*/
+
+/*
+Copyright 2024 "The Winit contributors".
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+/*
+The full licensing terms of the original source code, at the time of writing, can also be found at:
+https://github.com/rust-windowing/winit/blob/44aabdddcc9f720aec860c1f83c1041082c28560/LICENSE .
+
+The Derived Work present in this file contains modifications made to the original source code, is
+Copyright (c) 2024 "The Baseview contributors",
+and is licensed under either the Apache License, Version 2.0; or The MIT license, at your option.
+
+Copies of those licenses can be respectively found at:
+* https://github.com/RustAudio/baseview/blob/master/LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0 ;
+* https://github.com/RustAudio/baseview/blob/master/LICENSE-MIT.
+
+*/
 
 use std::error::Error;
 use std::ffi::c_int;
@@ -139,15 +174,9 @@ impl<'a, T: Pod> PropIterator<'a, T> {
             // We can just do a bytewise append.
             data.extend_from_slice(bytemuck::cast_slice(&reply.value));
         } else {
-            // Rust's borrowing and types system makes this a bit tricky.
-            //
-            // We need to make sure that the data is properly aligned. Unfortunately the best
-            // safe way to do this is to copy the data to another buffer and then append.
-            //
-            // TODO(notgull): It may be worth it to use `unsafe` to copy directly from
-            // `reply.value` to `data`; check if this is faster. Use benchmarks!
             let old_len = data.len();
             let added_len = reply.value.len() / mem::size_of::<T>();
+
             data.resize(old_len + added_len, T::zeroed());
             bytemuck::cast_slice_mut::<T, u8>(&mut data[old_len..]).copy_from_slice(&reply.value);
         }
