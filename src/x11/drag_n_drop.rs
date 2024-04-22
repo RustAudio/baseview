@@ -175,14 +175,16 @@ impl DragNDropState {
 
                 request_convert_selection(window, timestamp)?;
 
-                let position = translate_root_coordinates(window, event_x, event_y)?;
-
+                // We set our state before translating position data, in case that fails.
                 *self = WaitingForData {
                     requested_at: timestamp,
                     source_window: event_source_window,
-                    position,
+                    position: PhyPoint::new(0, 0),
                     dropped: false,
                 };
+
+                let WaitingForData { position, .. } = self else { unreachable!() };
+                *position = translate_root_coordinates(window, event_x, event_y)?;
 
                 Ok(())
             }
@@ -194,12 +196,15 @@ impl DragNDropState {
                 Ok(())
             }
 
-            // We have already received the data. We can
+            // We have already received the data. We can update the position and notify the handler
             Ready { position, data, .. } => {
-                *position = translate_root_coordinates(window, event_x, event_y)?;
-
                 // Inform the source that we are still accepting the drop.
-                send_status_event(event_source_window, window, true)?;
+                // Do this first, in case translate_root_coordinates fails, or the handler panics.
+                // Do not return right away on failure though, we can still inform the handler about
+                // the new position.
+                let status_result = send_status_event(event_source_window, window, true);
+
+                *position = translate_root_coordinates(window, event_x, event_y)?;
 
                 handler.on_event(
                     &mut crate::Window::new(Window { inner: window }),
@@ -211,6 +216,7 @@ impl DragNDropState {
                     }),
                 );
 
+                status_result?;
                 Ok(())
             }
         }
@@ -263,7 +269,7 @@ impl DragNDropState {
         match self {
             // Someone sent us a position event without first sending an enter event.
             // Weird, but we'll still politely tell them we reject the drop.
-            NoCurrentSession => Ok(send_finished_event(event_source_window, window, false)?),
+            NoCurrentSession => send_finished_event(event_source_window, window, false),
 
             // The current session's source window does not match the given event.
             // This means it can either be from a stale session, or a misbehaving app.
@@ -274,17 +280,15 @@ impl DragNDropState {
             | Ready { source_window, .. }
                 if *source_window != event_source_window =>
             {
-                Ok(send_finished_event(event_source_window, window, false)?)
+                send_finished_event(event_source_window, window, false)
             }
 
             // We decided to permanently reject this drop.
             // This means the WindowHandler can't do anything with the data, so we reject the drop.
             PermanentlyRejected { .. } => {
-                send_finished_event(event_source_window, window, false)?;
-
                 *self = NoCurrentSession;
 
-                Ok(())
+                send_finished_event(event_source_window, window, false)
             }
 
             // We received a drop event without any position event. That's very weird, but not
@@ -297,7 +301,18 @@ impl DragNDropState {
                 // We have the timestamp, we can use it to request to convert the selection,
                 // even in this state.
 
-                request_convert_selection(window, timestamp)?;
+                // If we fail to send the request when the drop has completed, we can't do anything.
+                // Just cancel the drop.
+                if let Err(e) = request_convert_selection(window, timestamp) {
+                    *self = NoCurrentSession;
+
+                    // Try to inform the source that we ended up rejecting the drop.
+                    // If the initial request failed, this is likely to fail too, so we'll ignore
+                    // it if it errors, so we can focus on the original error.
+                    let _ = send_finished_event(event_source_window, window, false);
+
+                    return Err(e);
+                };
 
                 *self = WaitingForData {
                     requested_at: timestamp,
@@ -333,11 +348,13 @@ impl DragNDropState {
 
             // The normal case.
             Ready { .. } => {
-                send_finished_event(event_source_window, window, true)?;
-
                 let Ready { data, position, .. } = mem::replace(self, NoCurrentSession) else {
                     unreachable!()
                 };
+
+                // Don't return immediately if sending the reply fails, we can still notify the window
+                // handler about the drop.
+                let reply_result = send_finished_event(event_source_window, window, true);
 
                 handler.on_event(
                     &mut crate::Window::new(Window { inner: window }),
@@ -349,7 +366,7 @@ impl DragNDropState {
                     }),
                 );
 
-                Ok(())
+                reply_result
             }
         }
     }
@@ -393,11 +410,11 @@ impl DragNDropState {
 
                 // Inform the source that we are (still) accepting the drop.
 
-                // Handle the case where the user already dropped, but we received the data only later.
+                // Handle the case where the user already dropped, but we only received the data later.
                 if dropped {
                     *self = NoCurrentSession;
 
-                    send_finished_event(source_window, window, true)?;
+                    let reply_result = send_finished_event(source_window, window, true);
 
                     // Now that we have actual drop data, we can inform the handler about the drag AND drop events.
                     handler.on_event(
@@ -419,11 +436,13 @@ impl DragNDropState {
                             modifiers: Modifiers::empty(),
                         }),
                     );
+
+                    reply_result
                 } else {
                     // Save the data, now that we finally have it!
                     *self = Ready { data: data.clone(), source_window, position };
 
-                    send_status_event(source_window, window, true)?;
+                    let reply_result = send_status_event(source_window, window, true);
 
                     // Now that we have actual drop data, we can inform the handler about the drag event.
                     handler.on_event(
@@ -435,9 +454,9 @@ impl DragNDropState {
                             modifiers: Modifiers::empty(),
                         }),
                     );
-                }
 
-                Ok(())
+                    reply_result
+                }
             }
         }
     }
