@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::ptr;
 use std::rc::Rc;
@@ -267,6 +268,7 @@ impl<'a> Window<'a> {
             keyboard_state: KeyboardState::new(),
             frame_timer: Cell::new(None),
             window_info: Cell::new(window_info),
+            deferred_events: RefCell::default(),
         });
 
         let window_state_ptr = Rc::into_raw(Rc::clone(&window_state));
@@ -360,6 +362,10 @@ pub(super) struct WindowState {
     frame_timer: Cell<Option<CFRunLoopTimer>>,
     /// The last known window info for this window.
     pub window_info: Cell<WindowInfo>,
+
+    /// Events that should be triggered before calling `on_frame`. This is needed to avoid mutably
+    /// borrowing the fields from `WindowState` more than once.
+    deferred_events: RefCell<VecDeque<Event>>,
 }
 
 impl WindowState {
@@ -383,7 +389,15 @@ impl WindowState {
         self.window_handler.borrow_mut().on_event(&mut window, event)
     }
 
+    pub(super) fn defer_event(&self, event: Event) {
+        self.deferred_events.borrow_mut().push_back(event);
+    }
+
     pub(super) fn trigger_frame(&self) {
+        for event in self.deferred_events.borrow_mut().drain(..) {
+            self.trigger_event(event);
+        }
+
         let mut window = crate::Window::new(Window { inner: &self.window_inner });
         self.window_handler.borrow_mut().on_frame(&mut window);
     }
