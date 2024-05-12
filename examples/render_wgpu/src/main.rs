@@ -1,4 +1,4 @@
-use baseview::{MouseEvent, Size, Window, WindowHandler, WindowInfo, WindowOpenOptions};
+use baseview::{MouseEvent, Size, Window, WindowHandler, WindowOpenOptions};
 use wgpu::{util::DeviceExt, Buffer, Device, Queue, RenderPipeline, Surface};
 
 struct WgpuExample {
