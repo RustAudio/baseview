@@ -1,4 +1,4 @@
-use baseview::{Size, Window, WindowHandler, WindowOpenOptions};
+use baseview::{MouseEvent, Size, Window, WindowHandler, WindowInfo, WindowOpenOptions};
 use wgpu::{util::DeviceExt, Buffer, Device, Queue, RenderPipeline, Surface};
 
 struct WgpuExample {
@@ -35,7 +35,7 @@ impl<'a> WgpuExample {
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
+            contents: bytemuck::cast_slice(VERTICES_START),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
@@ -142,8 +142,34 @@ impl WindowHandler for WgpuExample {
         output.present();
     }
     fn on_event(
-        &mut self, _window: &mut baseview::Window, _event: baseview::Event,
+        &mut self, _window: &mut baseview::Window, event: baseview::Event,
     ) -> baseview::EventStatus {
+        match event {
+            baseview::Event::Mouse(MouseEvent::CursorMoved { position, modifiers: _ }) => {
+                let center_x: f32 = (position.x as f32 - 256.0) / 256.0;
+                let center_y: f32 = (256.0 - position.y as f32) / 256.0;
+                let vertices = &[
+                    Vertex { position: [center_x, center_y + 0.25, 0.0], color: [1.0, 0.0, 0.0] },
+                    Vertex {
+                        position: [center_x - 0.25, center_y - 0.25, 0.0],
+                        color: [0.0, 1.0, 0.0],
+                    },
+                    Vertex {
+                        position: [center_x + 0.25, center_y - 0.25, 0.0],
+                        color: [0.0, 0.0, 1.0],
+                    },
+                ];
+                let vertex_buffer =
+                    self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("Vertex Buffer"),
+                        contents: bytemuck::cast_slice(vertices),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+
+                self.vertex_buffer = vertex_buffer;
+            }
+            _ => {}
+        }
         baseview::EventStatus::Captured
     }
 }
@@ -155,10 +181,10 @@ struct Vertex {
     color: [f32; 3],
 }
 
-const VERTICES: &[Vertex] = &[
-    Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
-    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
-    Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+const VERTICES_START: &[Vertex] = &[
+    Vertex { position: [0.0, 0.25, 0.0], color: [1.0, 0.0, 0.0] },
+    Vertex { position: [-0.25, -0.25, 0.0], color: [0.0, 1.0, 0.0] },
+    Vertex { position: [0.25, -0.25, 0.0], color: [0.0, 0.0, 1.0] },
 ];
 
 impl Vertex {
