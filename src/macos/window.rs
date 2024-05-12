@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, RefCell, RefMut};
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::ptr;
@@ -386,20 +386,26 @@ impl WindowState {
 
     pub(super) fn trigger_event(&self, event: Event) -> EventStatus {
         let mut window = crate::Window::new(Window { inner: &self.window_inner });
-        self.window_handler.borrow_mut().on_event(&mut window, event)
+        let mut window_handler = self.window_handler.borrow_mut();
+        let status = window_handler.on_event(&mut window, event);
+        self.trigger_deferred_events(&mut window_handler);
+        status
     }
 
     pub(super) fn defer_event(&self, event: Event) {
-        self.deferred_events.borrow_mut().push_back(event);
+        if let Ok(mut window_handler) = self.window_handler.try_borrow_mut() {
+            let mut window = crate::Window::new(Window { inner: &self.window_inner });
+            window_handler.on_event(&mut window, event);
+        } else {
+            self.deferred_events.borrow_mut().push_back(event);
+        }
     }
 
     pub(super) fn trigger_frame(&self) {
-        for event in self.deferred_events.borrow_mut().drain(..) {
-            self.trigger_event(event);
-        }
-
         let mut window = crate::Window::new(Window { inner: &self.window_inner });
-        self.window_handler.borrow_mut().on_frame(&mut window);
+        let mut window_handler = self.window_handler.borrow_mut();
+        self.trigger_deferred_events(&mut window_handler);
+        window_handler.on_frame(&mut window);
     }
 
     pub(super) fn keyboard_state(&self) -> &KeyboardState {
@@ -432,6 +438,13 @@ impl WindowState {
         CFRunLoop::get_current().add_timer(&timer, kCFRunLoopDefaultMode);
 
         (*window_state_ptr).frame_timer.set(Some(timer));
+    }
+
+    fn trigger_deferred_events(&self, window_handler: &mut RefMut<'_, Box<dyn WindowHandler>>) {
+        for event in self.deferred_events.borrow_mut().drain(..) {
+            let mut window = crate::Window::new(Window { inner: &self.window_inner });
+            window_handler.on_event(&mut window, event);
+        }
     }
 }
 
