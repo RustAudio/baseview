@@ -9,3 +9,4 @@ edition = "2021"
 wgpu = "0.18"
 baseview = {path = "../..", features = ["opengl"]}
 pollster = "0.3.0"
+bytemuck = {version = "1.15.0", features = ["derive"]}

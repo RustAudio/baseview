@@ -1,13 +1,12 @@
 use baseview::{Size, Window, WindowHandler, WindowOpenOptions};
-use wgpu::{Device, Instance, Queue, RenderPipeline, Surface, SurfaceConfiguration};
+use wgpu::{util::DeviceExt, Buffer, Device, Queue, RenderPipeline, Surface};
 
 struct WgpuExample {
     pipeline: RenderPipeline,
     device: Device,
-    config: SurfaceConfiguration,
-    instance: Instance,
     surface: Surface,
     queue: Queue,
+    vertex_buffer: Buffer,
 }
 
 impl<'a> WgpuExample {
@@ -33,6 +32,12 @@ impl<'a> WgpuExample {
             )
             .await
             .unwrap();
+
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
@@ -65,7 +70,11 @@ impl<'a> WgpuExample {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[] },
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[Vertex::desc()],
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
@@ -95,7 +104,7 @@ impl<'a> WgpuExample {
 
         surface.configure(&device, &config);
 
-        Self { pipeline, device, config, instance, surface, queue }
+        Self { pipeline, device, surface, queue, vertex_buffer }
     }
 }
 
@@ -125,6 +134,7 @@ impl WindowHandler for WgpuExample {
             });
 
             render_pass.set_pipeline(&self.pipeline);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.draw(0..3, 0..1);
         }
 
@@ -135,6 +145,34 @@ impl WindowHandler for WgpuExample {
         &mut self, _window: &mut baseview::Window, _event: baseview::Event,
     ) -> baseview::EventStatus {
         baseview::EventStatus::Captured
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
+
+const VERTICES: &[Vertex] = &[
+    Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
+    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
+    Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+];
+
+impl Vertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
     }
 }
 
