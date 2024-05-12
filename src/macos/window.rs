@@ -392,7 +392,7 @@ impl WindowState {
         status
     }
 
-    pub(super) fn defer_event(&self, event: Event) {
+    pub(super) fn trigger_deferrable_event(&self, event: Event) {
         if let Ok(mut window_handler) = self.window_handler.try_borrow_mut() {
             let mut window = crate::Window::new(Window { inner: &self.window_inner });
             window_handler.on_event(&mut window, event);

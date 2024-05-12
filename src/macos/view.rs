@@ -249,14 +249,14 @@ extern "C" fn become_first_responder(this: &Object, _sel: Sel) -> BOOL {
         is_key_window == YES
     };
     if is_key_window {
-        state.defer_event(Event::Window(WindowEvent::Focused));
+        state.trigger_deferrable_event(Event::Window(WindowEvent::Focused));
     }
     YES
 }
 
 extern "C" fn resign_first_responder(this: &Object, _sel: Sel) -> BOOL {
     let state = unsafe { WindowState::from_view(this) };
-    state.defer_event(Event::Window(WindowEvent::Unfocused));
+    state.trigger_deferrable_event(Event::Window(WindowEvent::Unfocused));
     YES
 }
 
