@@ -1,10 +1,13 @@
 use baseview::{Size, Window, WindowHandler, WindowOpenOptions};
-use wgpu::{Device, RenderPipeline, Surface};
+use wgpu::{Device, Instance, Queue, RenderPipeline, Surface, SurfaceConfiguration};
 
 struct WgpuExample {
     pipeline: RenderPipeline,
-    surface: Surface,
     device: Device,
+    config: SurfaceConfiguration,
+    instance: Instance,
+    surface: Surface,
+    queue: Queue,
 }
 
 impl<'a> WgpuExample {
@@ -19,7 +22,7 @@ impl<'a> WgpuExample {
             })
             .await
             .unwrap();
-        let (device, _queue) = adapter
+        let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     features: wgpu::Features::empty(),
@@ -42,8 +45,9 @@ impl<'a> WgpuExample {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: 512,
-            height: 512,
+            // TODO this needs to be twice the window size for some reason
+            width: 1024,
+            height: 1024,
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
@@ -61,48 +65,42 @@ impl<'a> WgpuExample {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main", // 1.
-                buffers: &[],           // 2.
-            },
+            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[] },
             fragment: Some(wgpu::FragmentState {
-                // 3.
                 module: &shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    // 4.
                     format: config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList, // 1.
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw, // 2.
+                front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None, // 1.
+            depth_stencil: None,
             multisample: wgpu::MultisampleState {
-                count: 1,                         // 2.
-                mask: !0,                         // 3.
-                alpha_to_coverage_enabled: false, // 4.
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
             },
             multiview: None,
         });
 
         surface.configure(&device, &config);
 
-        Self { pipeline, surface, device }
+        Self { pipeline, device, config, instance, surface, queue }
     }
 }
 
 impl WindowHandler for WgpuExample {
-    fn on_frame(&mut self, window: &mut baseview::Window) {
+    fn on_frame(&mut self, _window: &mut baseview::Window) {
         let output = self.surface.get_current_texture().unwrap();
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -110,26 +108,31 @@ impl WindowHandler for WgpuExample {
             label: Some("Render Encoder"),
         });
 
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-        });
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
 
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.draw(0..3, 0..1);
+            render_pass.set_pipeline(&self.pipeline);
+            render_pass.draw(0..3, 0..1);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
     }
     fn on_event(
-        &mut self, window: &mut baseview::Window, event: baseview::Event,
+        &mut self, _window: &mut baseview::Window, _event: baseview::Event,
     ) -> baseview::EventStatus {
         baseview::EventStatus::Captured
     }
@@ -140,6 +143,7 @@ fn main() {
         title: "wgpu on baseview".into(),
         size: Size::new(512.0, 512.0),
         scale: baseview::WindowScalePolicy::SystemScaleFactor,
+        gl_config: None,
     };
 
     Window::open_blocking(window_open_options, |window| {
