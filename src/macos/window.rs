@@ -389,7 +389,7 @@ impl WindowState {
         let mut window = crate::Window::new(Window { inner: &self.window_inner });
         let mut window_handler = self.window_handler.borrow_mut();
         let status = window_handler.on_event(&mut window, event);
-        self.trigger_deferred_events(window_handler.as_mut());
+        self.send_deferred_events(window_handler.as_mut());
         status
     }
 
@@ -400,6 +400,7 @@ impl WindowState {
         if let Ok(mut window_handler) = self.window_handler.try_borrow_mut() {
             let mut window = crate::Window::new(Window { inner: &self.window_inner });
             window_handler.on_event(&mut window, event);
+            self.send_deferred_events(window_handler.as_mut());
         } else {
             self.deferred_events.borrow_mut().push_back(event);
         }
@@ -408,7 +409,7 @@ impl WindowState {
     pub(super) fn trigger_frame(&self) {
         let mut window = crate::Window::new(Window { inner: &self.window_inner });
         let mut window_handler = self.window_handler.borrow_mut();
-        self.trigger_deferred_events(window_handler.as_mut());
+        self.send_deferred_events(window_handler.as_mut());
         window_handler.on_frame(&mut window);
     }
 
@@ -444,9 +445,9 @@ impl WindowState {
         (*window_state_ptr).frame_timer.set(Some(timer));
     }
 
-    fn trigger_deferred_events(&self, window_handler: &mut dyn WindowHandler) {
+    fn send_deferred_events(&self, window_handler: &mut dyn WindowHandler) {
         let mut window = crate::Window::new(Window { inner: &self.window_inner });
-        for event in self.deferred_events.borrow_mut().drain(..) {
+        while let Some(event) = self.deferred_events.borrow_mut().pop_front() {
             window_handler.on_event(&mut window, event);
         }
     }
