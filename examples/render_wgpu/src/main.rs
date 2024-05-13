@@ -44,8 +44,7 @@ impl<'a> WgpuExample {
             .formats
             .iter()
             .copied()
-            .filter(|f| f.is_srgb())
-            .next()
+            .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -144,31 +143,27 @@ impl WindowHandler for WgpuExample {
     fn on_event(
         &mut self, _window: &mut baseview::Window, event: baseview::Event,
     ) -> baseview::EventStatus {
-        match event {
-            baseview::Event::Mouse(MouseEvent::CursorMoved { position, modifiers: _ }) => {
-                let center_x: f32 = (position.x as f32 - 256.0) / 256.0;
-                let center_y: f32 = (256.0 - position.y as f32) / 256.0;
-                let vertices = &[
-                    Vertex { position: [center_x, center_y + 0.25, 0.0], color: [1.0, 0.0, 0.0] },
-                    Vertex {
-                        position: [center_x - 0.25, center_y - 0.25, 0.0],
-                        color: [0.0, 1.0, 0.0],
-                    },
-                    Vertex {
-                        position: [center_x + 0.25, center_y - 0.25, 0.0],
-                        color: [0.0, 0.0, 1.0],
-                    },
-                ];
-                let vertex_buffer =
-                    self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("Vertex Buffer"),
-                        contents: bytemuck::cast_slice(vertices),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    });
+        if let baseview::Event::Mouse(MouseEvent::CursorMoved { position, modifiers: _ }) = event {
+            let center_x: f32 = (position.x as f32 - 256.0) / 256.0;
+            let center_y: f32 = (256.0 - position.y as f32) / 256.0;
+            let vertices = &[
+                Vertex { position: [center_x, center_y + 0.25, 0.0], color: [1.0, 0.0, 0.0] },
+                Vertex {
+                    position: [center_x - 0.25, center_y - 0.25, 0.0],
+                    color: [0.0, 1.0, 0.0],
+                },
+                Vertex {
+                    position: [center_x + 0.25, center_y - 0.25, 0.0],
+                    color: [0.0, 0.0, 1.0],
+                },
+            ];
+            let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
 
-                self.vertex_buffer = vertex_buffer;
-            }
-            _ => {}
+            self.vertex_buffer = vertex_buffer;
         }
         baseview::EventStatus::Captured
     }
