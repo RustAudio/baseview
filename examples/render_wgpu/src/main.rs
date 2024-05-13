@@ -1,5 +1,5 @@
 use baseview::{MouseEvent, Size, Window, WindowHandler, WindowOpenOptions};
-use wgpu::{util::DeviceExt, Buffer, Device, Queue, RenderPipeline, Surface};
+use wgpu::{util::DeviceExt, Buffer, Device, Queue, RenderPipeline, Surface, SurfaceCapabilities};
 
 struct WgpuExample {
     pipeline: RenderPipeline,
@@ -7,6 +7,7 @@ struct WgpuExample {
     surface: Surface,
     queue: Queue,
     vertex_buffer: Buffer,
+    surface_caps: SurfaceCapabilities,
 }
 
 impl<'a> WgpuExample {
@@ -49,9 +50,8 @@ impl<'a> WgpuExample {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            // TODO this needs to be twice the window size for some reason
-            width: 1024,
-            height: 1024,
+            width: 512,
+            height: 512,
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
@@ -103,7 +103,7 @@ impl<'a> WgpuExample {
 
         surface.configure(&device, &config);
 
-        Self { pipeline, device, surface, queue, vertex_buffer }
+        Self { pipeline, device, surface, queue, vertex_buffer, surface_caps }
     }
 }
 
@@ -143,27 +143,53 @@ impl WindowHandler for WgpuExample {
     fn on_event(
         &mut self, _window: &mut baseview::Window, event: baseview::Event,
     ) -> baseview::EventStatus {
-        if let baseview::Event::Mouse(MouseEvent::CursorMoved { position, modifiers: _ }) = event {
-            let center_x: f32 = (position.x as f32 - 256.0) / 256.0;
-            let center_y: f32 = (256.0 - position.y as f32) / 256.0;
-            let vertices = &[
-                Vertex { position: [center_x, center_y + 0.25, 0.0], color: [1.0, 0.0, 0.0] },
-                Vertex {
-                    position: [center_x - 0.25, center_y - 0.25, 0.0],
-                    color: [0.0, 1.0, 0.0],
-                },
-                Vertex {
-                    position: [center_x + 0.25, center_y - 0.25, 0.0],
-                    color: [0.0, 0.0, 1.0],
-                },
-            ];
-            let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+        match event {
+            baseview::Event::Mouse(MouseEvent::CursorMoved { position, modifiers: _ }) => {
+                let center_x: f32 = (position.x as f32 - 256.0) / 256.0;
+                let center_y: f32 = (256.0 - position.y as f32) / 256.0;
+                let vertices = &[
+                    Vertex { position: [center_x, center_y + 0.25, 0.0], color: [1.0, 0.0, 0.0] },
+                    Vertex {
+                        position: [center_x - 0.25, center_y - 0.25, 0.0],
+                        color: [0.0, 1.0, 0.0],
+                    },
+                    Vertex {
+                        position: [center_x + 0.25, center_y - 0.25, 0.0],
+                        color: [0.0, 0.0, 1.0],
+                    },
+                ];
+                let vertex_buffer =
+                    self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("Vertex Buffer"),
+                        contents: bytemuck::cast_slice(vertices),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
 
-            self.vertex_buffer = vertex_buffer;
+                self.vertex_buffer = vertex_buffer;
+            }
+            baseview::Event::Window(baseview::WindowEvent::Resized(size)) => {
+                let surface_format = self
+                    .surface_caps
+                    .formats
+                    .iter()
+                    .copied()
+                    .find(|f| f.is_srgb())
+                    .unwrap_or(self.surface_caps.formats[0]);
+
+                self.surface.configure(
+                    &self.device,
+                    &wgpu::SurfaceConfiguration {
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                        format: surface_format,
+                        width: size.physical_size().width,
+                        height: size.physical_size().height,
+                        present_mode: self.surface_caps.present_modes[0],
+                        alpha_mode: self.surface_caps.alpha_modes[0],
+                        view_formats: vec![],
+                    },
+                )
+            }
+            _ => {}
         }
         baseview::EventStatus::Captured
     }
