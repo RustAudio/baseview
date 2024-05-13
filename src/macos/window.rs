@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell, RefMut};
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::ptr;
@@ -363,8 +363,7 @@ pub(super) struct WindowState {
     /// The last known window info for this window.
     pub window_info: Cell<WindowInfo>,
 
-    /// Events that should be triggered before calling `on_frame`. This is needed to avoid mutably
-    /// borrowing the fields from `WindowState` more than once.
+    /// Events that will be triggered at the end of `window_handler`'s borrow.
     deferred_events: RefCell<VecDeque<Event>>,
 }
 
@@ -384,6 +383,8 @@ impl WindowState {
         state
     }
 
+    /// Trigger the event immediately and return the event status.
+    /// Will panic if `window_handler` is already borrowed (see `trigger_deferrable_event`).
     pub(super) fn trigger_event(&self, event: Event) -> EventStatus {
         let mut window = crate::Window::new(Window { inner: &self.window_inner });
         let mut window_handler = self.window_handler.borrow_mut();
@@ -392,6 +393,9 @@ impl WindowState {
         status
     }
 
+    /// Trigger the event immediately if `window_handler` can be borrowed mutably,
+    /// otherwise add the event to a queue that will be cleared once `window_handler`'s mutable borrow ends.
+    /// As this method might result in the event triggering asynchronously, it can't reliably return the event status.
     pub(super) fn trigger_deferrable_event(&self, event: Event) {
         if let Ok(mut window_handler) = self.window_handler.try_borrow_mut() {
             let mut window = crate::Window::new(Window { inner: &self.window_inner });
@@ -441,8 +445,8 @@ impl WindowState {
     }
 
     fn trigger_deferred_events(&self, window_handler: &mut dyn WindowHandler) {
+        let mut window = crate::Window::new(Window { inner: &self.window_inner });
         for event in self.deferred_events.borrow_mut().drain(..) {
-            let mut window = crate::Window::new(Window { inner: &self.window_inner });
             window_handler.on_event(&mut window, event);
         }
     }
