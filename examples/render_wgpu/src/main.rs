@@ -1,5 +1,9 @@
 use baseview::{MouseEvent, Size, Window, WindowHandler, WindowOpenOptions};
-use wgpu::{util::DeviceExt, Buffer, Device, Queue, RenderPipeline, Surface, SurfaceCapabilities};
+use wgpu::{
+    util::DeviceExt, BindGroup, Buffer, Device, Queue, RenderPipeline, Surface, SurfaceCapabilities,
+};
+
+const WINDOW_SIZE: u32 = 512;
 
 struct WgpuExample {
     pipeline: RenderPipeline,
@@ -7,7 +11,10 @@ struct WgpuExample {
     surface: Surface,
     queue: Queue,
     vertex_buffer: Buffer,
+    mouse_pos_buffer: Buffer,
     surface_caps: SurfaceCapabilities,
+    bind_group: BindGroup,
+    size: (u32, u32),
 }
 
 impl<'a> WgpuExample {
@@ -40,6 +47,33 @@ impl<'a> WgpuExample {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
+        let mouse_pos_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("mouse position buffer"),
+            contents: bytemuck::cast_slice(&[0.0, 0.0]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: mouse_pos_buffer.as_entire_binding(),
+            }],
+        });
+
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
             .formats
@@ -50,8 +84,8 @@ impl<'a> WgpuExample {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: 512,
-            height: 512,
+            width: WINDOW_SIZE,
+            height: WINDOW_SIZE,
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
@@ -62,7 +96,7 @@ impl<'a> WgpuExample {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -103,7 +137,17 @@ impl<'a> WgpuExample {
 
         surface.configure(&device, &config);
 
-        Self { pipeline, device, surface, queue, vertex_buffer, surface_caps }
+        Self {
+            pipeline,
+            device,
+            surface,
+            queue,
+            vertex_buffer,
+            surface_caps,
+            bind_group,
+            mouse_pos_buffer,
+            size: (WINDOW_SIZE, WINDOW_SIZE),
+        }
     }
 }
 
@@ -133,6 +177,7 @@ impl WindowHandler for WgpuExample {
             });
 
             render_pass.set_pipeline(&self.pipeline);
+            render_pass.set_bind_group(0, &self.bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.draw(0..3, 0..1);
         }
@@ -145,29 +190,21 @@ impl WindowHandler for WgpuExample {
     ) -> baseview::EventStatus {
         match event {
             baseview::Event::Mouse(MouseEvent::CursorMoved { position, modifiers: _ }) => {
-                let center_x: f32 = (position.x as f32 - 256.0) / 256.0;
-                let center_y: f32 = (256.0 - position.y as f32) / 256.0;
-                let vertices = &[
-                    Vertex { position: [center_x, center_y + 0.25, 0.0], color: [1.0, 0.0, 0.0] },
-                    Vertex {
-                        position: [center_x - 0.25, center_y - 0.25, 0.0],
-                        color: [0.0, 1.0, 0.0],
-                    },
-                    Vertex {
-                        position: [center_x + 0.25, center_y - 0.25, 0.0],
-                        color: [0.0, 0.0, 1.0],
-                    },
-                ];
-                let vertex_buffer =
-                    self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("Vertex Buffer"),
-                        contents: bytemuck::cast_slice(vertices),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    });
+                let center_x: f32 =
+                    (position.x as f32 - (self.size.0 as f32 / 2.0)) / (self.size.0 as f32 / 2.0);
+                let center_y: f32 =
+                    ((self.size.1 as f32 / 2.0) - position.y as f32) / (self.size.1 as f32 / 2.0);
 
-                self.vertex_buffer = vertex_buffer;
+                self.queue.write_buffer(
+                    &self.mouse_pos_buffer,
+                    0,
+                    bytemuck::cast_slice(&[center_x, center_y]),
+                )
             }
             baseview::Event::Window(baseview::WindowEvent::Resized(size)) => {
+                let width = size.physical_size().width;
+                let height = size.physical_size().height;
+
                 let surface_format = self
                     .surface_caps
                     .formats
@@ -181,13 +218,13 @@ impl WindowHandler for WgpuExample {
                     &wgpu::SurfaceConfiguration {
                         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                         format: surface_format,
-                        width: size.physical_size().width,
-                        height: size.physical_size().height,
+                        width,
+                        height,
                         present_mode: self.surface_caps.present_modes[0],
                         alpha_mode: self.surface_caps.alpha_modes[0],
                         view_formats: vec![],
                     },
-                )
+                );
             }
             _ => {}
         }
@@ -226,7 +263,7 @@ impl Vertex {
 fn main() {
     let window_open_options = WindowOpenOptions {
         title: "wgpu on baseview".into(),
-        size: Size::new(512.0, 512.0),
+        size: Size::new(WINDOW_SIZE as f64, WINDOW_SIZE as f64),
         scale: baseview::WindowScalePolicy::SystemScaleFactor,
         gl_config: None,
     };
