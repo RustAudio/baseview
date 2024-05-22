@@ -148,15 +148,9 @@ impl DropTarget {
             for i in 0..item_count {
                 let characters = DragQueryFileW(hdrop, i, null_mut(), 0);
                 let buffer_size = characters as usize + 1;
-                let mut buffer = Vec::<u16>::with_capacity(buffer_size);
+                let mut buffer = vec![0u16; buffer_size];
 
-                DragQueryFileW(
-                    hdrop,
-                    i,
-                    buffer.spare_capacity_mut().as_mut_ptr().cast(),
-                    buffer_size as u32,
-                );
-                buffer.set_len(buffer_size);
+                DragQueryFileW(hdrop, i, buffer.as_mut_ptr().cast(), buffer_size as u32);
 
                 paths.push(OsString::from_wide(&buffer[..characters as usize]).into())
             }
