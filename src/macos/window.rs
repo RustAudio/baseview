@@ -447,8 +447,13 @@ impl WindowState {
 
     fn send_deferred_events(&self, window_handler: &mut dyn WindowHandler) {
         let mut window = crate::Window::new(Window { inner: &self.window_inner });
-        while let Some(event) = self.deferred_events.borrow_mut().pop_front() {
-            window_handler.on_event(&mut window, event);
+        loop {
+            let next_event = self.deferred_events.borrow_mut().pop_front();
+            if let Some(event) = next_event {
+                window_handler.on_event(&mut window, event);
+            } else {
+                break;
+            }
         }
     }
 }
