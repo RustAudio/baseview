@@ -1,25 +1,20 @@
 use std::ffi::c_void;
-use std::marker::PhantomData;
-
-// On X11 creating the context is a two step process
-#[cfg(not(target_os = "linux"))]
-use raw_window_handle::RawWindowHandle;
+use std::rc::{Rc, Weak};
 
 #[cfg(target_os = "windows")]
-mod win;
+pub(crate) mod win;
 #[cfg(target_os = "windows")]
-use win as platform;
+pub(crate) use win as platform;
 
-// We need to use this directly within the X11 window creation to negotiate the correct visual
 #[cfg(target_os = "linux")]
 pub(crate) mod x11;
 #[cfg(target_os = "linux")]
-pub(crate) use self::x11 as platform;
+pub(crate) use x11 as platform;
 
 #[cfg(target_os = "macos")]
-mod macos;
+pub(crate) mod macos;
 #[cfg(target_os = "macos")]
-use macos as platform;
+pub(crate) use macos as platform;
 
 #[derive(Clone, Debug)]
 pub struct GlConfig {
@@ -70,46 +65,37 @@ pub enum GlError {
 }
 
 pub struct GlContext {
-    context: platform::GlContext,
-    phantom: PhantomData<*mut ()>,
+    context: Weak<platform::GlContext>,
 }
 
 impl GlContext {
-    #[cfg(not(target_os = "linux"))]
-    pub(crate) unsafe fn create(
-        parent: &RawWindowHandle, config: GlConfig,
-    ) -> Result<GlContext, GlError> {
-        platform::GlContext::create(parent, config)
-            .map(|context| GlContext { context, phantom: PhantomData })
+    pub(crate) fn new(context: Weak<platform::GlContext>) -> GlContext {
+        GlContext { context }
     }
 
-    /// The X11 version needs to be set up in a different way compared to the Windows and macOS
-    /// versions. So the platform-specific versions should be used to construct the context within
-    /// baseview, and then this object can be passed to the user.
-    #[cfg(target_os = "linux")]
-    pub(crate) fn new(context: platform::GlContext) -> GlContext {
-        GlContext { context, phantom: PhantomData }
+    fn context(&self) -> Rc<platform::GlContext> {
+        self.context.upgrade().expect("GL context has been destroyed")
     }
 
     pub unsafe fn make_current(&self) {
-        self.context.make_current();
+        self.context().make_current();
     }
 
     pub unsafe fn make_not_current(&self) {
-        self.context.make_not_current();
+        self.context().make_not_current();
     }
 
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        self.context.get_proc_address(symbol)
+        self.context().get_proc_address(symbol)
     }
 
     pub fn swap_buffers(&self) {
-        self.context.swap_buffers();
+        self.context().swap_buffers();
     }
 
     /// On macOS the `NSOpenGLView` needs to be resized separtely from our main view.
     #[cfg(target_os = "macos")]
     pub(crate) fn resize(&self, size: cocoa::foundation::NSSize) {
-        self.context.resize(size);
+        self.context().resize(size);
     }
 }
