@@ -47,6 +47,8 @@ const DROP_PTR: unsafe extern "system" fn(
     pt: POINTL,
     pdwEffect: *mut DWORD,
 ) -> HRESULT = DropTarget::drop;
+
+#[allow(clippy::missing_transmute_annotations)]
 const DROP_TARGET_VTBL: IDropTargetVtbl = IDropTargetVtbl {
     parent: IUnknownVtbl {
         QueryInterface: DropTarget::query_interface,
