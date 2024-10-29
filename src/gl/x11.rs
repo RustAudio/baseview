@@ -91,6 +91,7 @@ impl GlContext {
                 if addr.is_null() {
                     return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
                 } else {
+                    #[allow(clippy::missing_transmute_annotations)]
                     std::mem::transmute(addr)
                 }
             };
@@ -101,6 +102,7 @@ impl GlContext {
                 if addr.is_null() {
                     return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
                 } else {
+                    #[allow(clippy::missing_transmute_annotations)]
                     std::mem::transmute(addr)
                 }
             };

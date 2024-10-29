@@ -160,6 +160,7 @@ impl GlContext {
             let symbol = CString::new("wglCreateContextAttribsARB").unwrap();
             let addr = wglGetProcAddress(symbol.as_ptr());
             if !addr.is_null() {
+                #[allow(clippy::missing_transmute_annotations)]
                 Some(std::mem::transmute(addr))
             } else {
                 None
@@ -171,6 +172,7 @@ impl GlContext {
             let symbol = CString::new("wglChoosePixelFormatARB").unwrap();
             let addr = wglGetProcAddress(symbol.as_ptr());
             if !addr.is_null() {
+                #[allow(clippy::missing_transmute_annotations)]
                 Some(std::mem::transmute(addr))
             } else {
                 None
@@ -182,6 +184,7 @@ impl GlContext {
             let symbol = CString::new("wglSwapIntervalEXT").unwrap();
             let addr = wglGetProcAddress(symbol.as_ptr());
             if !addr.is_null() {
+                #[allow(clippy::missing_transmute_annotations)]
                 Some(std::mem::transmute(addr))
             } else {
                 None
