@@ -71,7 +71,6 @@ impl WindowInner {
     pub(super) fn close(&self) {
         if self.open.get() {
             self.open.set(false);
-
             unsafe {
                 // Take back ownership of the NSView's Rc<WindowState>
                 let state_ptr: *const c_void = *(*self.ns_view).get_ivar(BASEVIEW_STATE_IVAR);
@@ -86,6 +85,15 @@ impl WindowInner {
                 let notification_center: id =
                     msg_send![class!(NSNotificationCenter), defaultCenter];
                 let () = msg_send![notification_center, removeObserver:self.ns_view];
+
+                // Ensure all subviews are detached and released
+                let subviews: id = msg_send![self.ns_view, subviews];
+                let count: usize = msg_send![subviews, count];
+                for i in 0..count {
+                    let subview: id = msg_send![subviews, objectAtIndex: i];
+                    subview.removeFromSuperview();
+                    let () = msg_send![subview, release];
+                }
 
                 drop(window_state);
 
