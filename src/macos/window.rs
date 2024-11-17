@@ -86,15 +86,6 @@ impl WindowInner {
                     msg_send![class!(NSNotificationCenter), defaultCenter];
                 let () = msg_send![notification_center, removeObserver:self.ns_view];
 
-                // Ensure all subviews are detached and released
-                let subviews: id = msg_send![self.ns_view, subviews];
-                let count: usize = msg_send![subviews, count];
-                for i in 0..count {
-                    let subview: id = msg_send![subviews, objectAtIndex: i];
-                    subview.removeFromSuperview();
-                    let () = msg_send![subview, release];
-                }
-
                 drop(window_state);
 
                 // Close the window if in non-parented mode
