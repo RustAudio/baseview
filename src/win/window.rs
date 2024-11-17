@@ -75,7 +75,7 @@ impl WindowHandle {
     pub fn close(&mut self) {
         if let Some(hwnd) = self.hwnd.take() {
             unsafe {
-                PostMessageW(hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
+                // PostMessageW(hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
                 DestroyWindow(hwnd);
             }
         }
