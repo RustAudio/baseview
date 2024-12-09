@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::ptr;
 use std::rc::Rc;
@@ -267,6 +268,7 @@ impl<'a> Window<'a> {
             keyboard_state: KeyboardState::new(),
             frame_timer: Cell::new(None),
             window_info: Cell::new(window_info),
+            deferred_events: RefCell::default(),
         });
 
         let window_state_ptr = Rc::into_raw(Rc::clone(&window_state));
@@ -360,6 +362,9 @@ pub(super) struct WindowState {
     frame_timer: Cell<Option<CFRunLoopTimer>>,
     /// The last known window info for this window.
     pub window_info: Cell<WindowInfo>,
+
+    /// Events that will be triggered at the end of `window_handler`'s borrow.
+    deferred_events: RefCell<VecDeque<Event>>,
 }
 
 impl WindowState {
@@ -378,14 +383,34 @@ impl WindowState {
         state
     }
 
+    /// Trigger the event immediately and return the event status.
+    /// Will panic if `window_handler` is already borrowed (see `trigger_deferrable_event`).
     pub(super) fn trigger_event(&self, event: Event) -> EventStatus {
         let mut window = crate::Window::new(Window { inner: &self.window_inner });
-        self.window_handler.borrow_mut().on_event(&mut window, event)
+        let mut window_handler = self.window_handler.borrow_mut();
+        let status = window_handler.on_event(&mut window, event);
+        self.send_deferred_events(window_handler.as_mut());
+        status
+    }
+
+    /// Trigger the event immediately if `window_handler` can be borrowed mutably,
+    /// otherwise add the event to a queue that will be cleared once `window_handler`'s mutable borrow ends.
+    /// As this method might result in the event triggering asynchronously, it can't reliably return the event status.
+    pub(super) fn trigger_deferrable_event(&self, event: Event) {
+        if let Ok(mut window_handler) = self.window_handler.try_borrow_mut() {
+            let mut window = crate::Window::new(Window { inner: &self.window_inner });
+            window_handler.on_event(&mut window, event);
+            self.send_deferred_events(window_handler.as_mut());
+        } else {
+            self.deferred_events.borrow_mut().push_back(event);
+        }
     }
 
     pub(super) fn trigger_frame(&self) {
         let mut window = crate::Window::new(Window { inner: &self.window_inner });
-        self.window_handler.borrow_mut().on_frame(&mut window);
+        let mut window_handler = self.window_handler.borrow_mut();
+        window_handler.on_frame(&mut window);
+        self.send_deferred_events(window_handler.as_mut());
     }
 
     pub(super) fn keyboard_state(&self) -> &KeyboardState {
@@ -418,6 +443,18 @@ impl WindowState {
         CFRunLoop::get_current().add_timer(&timer, kCFRunLoopDefaultMode);
 
         (*window_state_ptr).frame_timer.set(Some(timer));
+    }
+
+    fn send_deferred_events(&self, window_handler: &mut dyn WindowHandler) {
+        let mut window = crate::Window::new(Window { inner: &self.window_inner });
+        loop {
+            let next_event = self.deferred_events.borrow_mut().pop_front();
+            if let Some(event) = next_event {
+                window_handler.on_event(&mut window, event);
+            } else {
+                break;
+            }
+        }
     }
 }
 
