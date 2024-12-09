@@ -409,8 +409,8 @@ impl WindowState {
     pub(super) fn trigger_frame(&self) {
         let mut window = crate::Window::new(Window { inner: &self.window_inner });
         let mut window_handler = self.window_handler.borrow_mut();
-        self.send_deferred_events(window_handler.as_mut());
         window_handler.on_frame(&mut window);
+        self.send_deferred_events(window_handler.as_mut());
     }
 
     pub(super) fn keyboard_state(&self) -> &KeyboardState {
