@@ -95,7 +95,6 @@ impl GlContext {
 
         view.setWantsBestResolutionOpenGLSurface_(YES);
 
-        let () = msg_send![view, retain];
         NSOpenGLView::display_(view);
         parent_view.addSubview_(view);
 

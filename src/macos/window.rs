@@ -72,7 +72,6 @@ impl WindowInner {
     pub(super) fn close(&self) {
         if self.open.get() {
             self.open.set(false);
-
             unsafe {
                 // Take back ownership of the NSView's Rc<WindowState>
                 let state_ptr: *const c_void = *(*self.ns_view).get_ivar(BASEVIEW_STATE_IVAR);
