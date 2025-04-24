@@ -19,7 +19,7 @@ use crate::{
     WindowEvent, WindowInfo, WindowOpenOptions,
 };
 
-use super::keyboard::{from_nsstring, make_modifiers};
+use super::keyboard::{from_nsstring, key_code_to_code, make_modifiers};
 use super::window::WindowState;
 use super::{
     NSDragOperationCopy, NSDragOperationGeneric, NSDragOperationLink, NSDragOperationMove,
@@ -220,7 +220,8 @@ unsafe fn create_view_class() -> &'static Class {
     add_simple_mouse_class_method!(class, mouseEntered, MouseEvent::CursorEntered);
     add_simple_mouse_class_method!(class, mouseExited, MouseEvent::CursorLeft);
 
-    add_simple_keyboard_class_method!(class, keyDown);
+    class.add_method(sel!(keyDown:), keyDown as extern "C" fn(&Object, Sel, id));
+
     add_simple_keyboard_class_method!(class, keyUp);
     add_simple_keyboard_class_method!(class, flagsChanged);
 
@@ -551,6 +552,54 @@ extern "C" fn handle_notification(this: &Object, _cmd: Sel, notification: id) {
             } else {
                 WindowEvent::Unfocused
             }));
+        }
+    }
+}
+
+/// Checks if a certain key event should be intercepted.
+/// This is useful in DAW hosts such as Logic Pro which propagate
+/// all keys globally.
+fn should_intercept_key(event: id) -> bool {
+    use keyboard_types::Code;
+    let key_code = unsafe { NSEvent::keyCode(event) };
+    let code = key_code_to_code(key_code);
+
+    matches!(
+        code,
+        // Regular number keys
+        Code::Digit0 | Code::Digit1 | Code::Digit2 | Code::Digit3 | Code::Digit4 |
+        Code::Digit5 | Code::Digit6 | Code::Digit7 | Code::Digit8 | Code::Digit9 |
+        // Numpad keys
+        Code::Numpad0 | Code::Numpad1 | Code::Numpad2 | Code::Numpad3 | Code::Numpad4 |
+        Code::Numpad5 | Code::Numpad6 | Code::Numpad7 | Code::Numpad8 | Code::Numpad9 |
+        // Period
+        Code::Period | Code::NumpadDecimal |
+        // Enter, Backspace and ESC
+        Code::Enter | Code::Backspace | Code::Escape
+    )
+}
+
+#[allow(non_snake_case)]
+extern "C" fn keyDown(this: &Object, _: Sel, event: id) {
+    let state = unsafe { WindowState::from_view(this) };
+
+    if should_intercept_key(event) {
+        // Process the key event but don't let it propagate to the parent
+        if let Some(key_event) = state.process_native_key_event(event) {
+            let _status = state.trigger_event(Event::Keyboard(key_event));
+            // We don't call super implementation - this prevents the key from reaching the host
+        }
+    } else {
+        // Normal handling for other keys
+        if let Some(key_event) = state.process_native_key_event(event) {
+            let status = state.trigger_event(Event::Keyboard(key_event));
+
+            if let EventStatus::Ignored = status {
+                unsafe {
+                    let superclass = msg_send![this, superclass];
+                    let () = msg_send![super(this, superclass), keyDown:event];
+                }
+            }
         }
     }
 }
