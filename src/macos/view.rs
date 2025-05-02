@@ -54,13 +54,18 @@ macro_rules! add_simple_mouse_class_method {
 /// Similar to [add_simple_mouse_class_method!], but this creates its own event object for the
 /// press/release event and adds the active modifier keys to that event.
 macro_rules! add_mouse_button_class_method {
-    ($class:ident, $sel:ident, $event_ty:ident, $button:expr) => {
+        ($class:ident, $sel:ident, $event_ty:ident, $button:expr, $foc:expr) => {
         #[allow(non_snake_case)]
         extern "C" fn $sel(this: &Object, _: Sel, event: id){
             let state = unsafe { WindowState::from_view(this) };
 
             let modifiers = unsafe { NSEvent::modifierFlags(event) };
-
+            if $foc {
+                unsafe {
+                    let window: id = msg_send![this, window];
+                    let _: () = msg_send![window, makeFirstResponder: this];
+                }
+            }
             state.trigger_event(Event::Mouse($event_ty {
                 button: $button,
                 modifiers: make_modifiers(modifiers),
@@ -211,12 +216,12 @@ unsafe fn create_view_class() -> &'static Class {
         handle_notification as extern "C" fn(&Object, Sel, id),
     );
 
-    add_mouse_button_class_method!(class, mouseDown, ButtonPressed, MouseButton::Left);
-    add_mouse_button_class_method!(class, mouseUp, ButtonReleased, MouseButton::Left);
-    add_mouse_button_class_method!(class, rightMouseDown, ButtonPressed, MouseButton::Right);
-    add_mouse_button_class_method!(class, rightMouseUp, ButtonReleased, MouseButton::Right);
-    add_mouse_button_class_method!(class, otherMouseDown, ButtonPressed, MouseButton::Middle);
-    add_mouse_button_class_method!(class, otherMouseUp, ButtonReleased, MouseButton::Middle);
+    add_mouse_button_class_method!(class, mouseDown, ButtonPressed, MouseButton::Left, true);
+    add_mouse_button_class_method!(class, mouseUp, ButtonReleased, MouseButton::Left, false);
+    add_mouse_button_class_method!(class, rightMouseDown, ButtonPressed, MouseButton::Right, true);
+    add_mouse_button_class_method!(class, rightMouseUp, ButtonReleased, MouseButton::Right, false);
+    add_mouse_button_class_method!(class, otherMouseDown, ButtonPressed, MouseButton::Middle, true);
+    add_mouse_button_class_method!(class, otherMouseUp, ButtonReleased, MouseButton::Middle, false);
     add_simple_mouse_class_method!(class, mouseEntered, MouseEvent::CursorEntered);
     add_simple_mouse_class_method!(class, mouseExited, MouseEvent::CursorLeft);
 
