@@ -1,3 +1,4 @@
+use crate::x11::drag_n_drop::DragNDropState;
 use crate::x11::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
 use crate::x11::{ParentHandle, Window, WindowInner};
 use crate::{
@@ -18,6 +19,8 @@ pub(super) struct EventLoop {
     new_physical_size: Option<PhySize>,
     frame_interval: Duration,
     event_loop_running: bool,
+
+    drag_n_drop: DragNDropState,
 }
 
 impl EventLoop {
@@ -32,6 +35,7 @@ impl EventLoop {
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
             new_physical_size: None,
+            drag_n_drop: DragNDropState::NoCurrentSession,
         }
     }
 
@@ -155,14 +159,60 @@ impl EventLoop {
             // window
             ////
             XEvent::ClientMessage(event) => {
-                if event.format == 32
-                    && event.data.as_data32()[0]
-                        == self.window.xcb_connection.atoms.WM_DELETE_WINDOW
-                {
+                if event.format != 32 {
+                    return;
+                }
+
+                if event.data.as_data32()[0] == self.window.xcb_connection.atoms.WM_DELETE_WINDOW {
                     self.handle_close_requested();
+                    return;
+                }
+
+                ////
+                // drag n drop
+                ////
+                if event.type_ == self.window.xcb_connection.atoms.XdndEnter {
+                    if let Err(_e) = self.drag_n_drop.handle_enter_event(
+                        &self.window,
+                        &mut *self.handler,
+                        &event,
+                    ) {
+                        // TODO: log warning
+                    }
+                } else if event.type_ == self.window.xcb_connection.atoms.XdndPosition {
+                    if let Err(_e) = self.drag_n_drop.handle_position_event(
+                        &self.window,
+                        &mut *self.handler,
+                        &event,
+                    ) {
+                        // TODO: log warning
+                    }
+                } else if event.type_ == self.window.xcb_connection.atoms.XdndDrop {
+                    if let Err(_e) =
+                        self.drag_n_drop.handle_drop_event(&self.window, &mut *self.handler, &event)
+                    {
+                        // TODO: log warning
+                    }
+                } else if event.type_ == self.window.xcb_connection.atoms.XdndLeave {
+                    self.drag_n_drop.handle_leave_event(&self.window, &mut *self.handler, &event);
                 }
             }
 
+            XEvent::SelectionNotify(event) => {
+                if event.property == self.window.xcb_connection.atoms.XdndSelection {
+                    if let Err(_e) = self.drag_n_drop.handle_selection_notify_event(
+                        &self.window,
+                        &mut *self.handler,
+                        &event,
+                    ) {
+                        // TODO: Log warning
+                    }
+                }
+            }
+
+            ////
+            // window resize
+            ////
             XEvent::ConfigureNotify(event) => {
                 let new_physical_size = PhySize::new(event.width as u32, event.height as u32);
 
