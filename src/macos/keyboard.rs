@@ -56,7 +56,7 @@ pub(crate) struct KeyboardState {
 ///
 /// It should also match up with CODE_MAP_MAC bindings in
 /// NativeKeyToDOMCodeName.h.
-fn key_code_to_code(key_code: u16) -> Code {
+pub(crate) fn key_code_to_code(key_code: u16) -> Code {
     match key_code {
         0x00 => Code::KeyA,
         0x01 => Code::KeyS,
