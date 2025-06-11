@@ -20,7 +20,7 @@ opengl = ["uuid", "x11/glx"]
 
 [dependencies]
 keyboard-types = { version = "0.6.1", default-features = false }
-raw-window-handle = "0.5"
+raw-window-handle = "0.6.2"
 
 [target.'cfg(target_os="linux")'.dependencies]
 x11rb = { version = "0.13.0", features = ["cursor", "resource_manager", "allow-unsafe-code"] }

@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::c_void;
+use std::ptr::NonNull;
 use std::ptr;
 use std::rc::Rc;
 
@@ -17,8 +18,7 @@ use keyboard_types::KeyboardEvent;
 use objc::class;
 use objc::{msg_send, runtime::Object, sel, sel_impl};
 use raw_window_handle::{
-    AppKitDisplayHandle, AppKitWindowHandle, HasRawDisplayHandle, HasRawWindowHandle,
-    RawDisplayHandle, RawWindowHandle,
+    AppKitDisplayHandle, AppKitWindowHandle, DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle, WindowHandle as RawWindowHandleType
 };
 
 use crate::{
@@ -46,10 +46,12 @@ impl WindowHandle {
     }
 }
 
-unsafe impl HasRawWindowHandle for WindowHandle {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        self.state.window_inner.raw_window_handle()
-    }
+impl HasWindowHandle for WindowHandle {
+    fn window_handle(&self) -> Result<RawWindowHandleType<'_>, HandleError> {
+        unsafe {
+            Ok(RawWindowHandleType::borrow_raw(self.state.window_inner.raw_window_handle()))
+        }
+    }   
 }
 
 pub(super) struct WindowInner {
@@ -109,16 +111,14 @@ impl WindowInner {
 
     fn raw_window_handle(&self) -> RawWindowHandle {
         if self.open.get() {
-            let ns_window = self.ns_window.get().unwrap_or(ptr::null_mut()) as *mut c_void;
+            let _ns_window = self.ns_window.get().unwrap_or(ptr::null_mut()) as *mut c_void;
 
-            let mut handle = AppKitWindowHandle::empty();
-            handle.ns_window = ns_window;
-            handle.ns_view = self.ns_view as *mut c_void;
+            let handle = AppKitWindowHandle::new(NonNull::new(self.ns_view as *mut c_void).unwrap());
 
             return RawWindowHandle::AppKit(handle);
         }
 
-        RawWindowHandle::AppKit(AppKitWindowHandle::empty())
+        RawWindowHandle::AppKit(AppKitWindowHandle::new(NonNull::new(ptr::null_mut::<c_void>()).unwrap_or(NonNull::dangling())))
     }
 }
 
@@ -129,7 +129,7 @@ pub struct Window<'a> {
 impl<'a> Window<'a> {
     pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
-        P: HasRawWindowHandle,
+        P: HasWindowHandle,
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
@@ -143,10 +143,14 @@ impl<'a> Window<'a> {
 
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
-        let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
-            handle
+        let handle = if let Ok(window_handle) = parent.window_handle() {
+            if let RawWindowHandle::AppKit(handle) = window_handle.as_raw() {
+                handle
+            } else {
+                panic!("Not a macOS window");
+            }
         } else {
-            panic!("Not a macOS window");
+            panic!("Failed to get window handle");
         };
 
         let ns_view = unsafe { create_view(&options) };
@@ -166,7 +170,7 @@ impl<'a> Window<'a> {
         let window_handle = Self::init(window_inner, window_info, build);
 
         unsafe {
-            let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
+            let _: id = msg_send![handle.ns_view.as_ptr() as *mut Object, addSubview: ns_view];
 
             let () = msg_send![pool, drain];
         }
@@ -345,9 +349,7 @@ impl<'a> Window<'a> {
 
     #[cfg(feature = "opengl")]
     fn create_gl_context(ns_window: Option<id>, ns_view: id, config: GlConfig) -> GlContext {
-        let mut handle = AppKitWindowHandle::empty();
-        handle.ns_window = ns_window.unwrap_or(ptr::null_mut()) as *mut c_void;
-        handle.ns_view = ns_view as *mut c_void;
+        let handle = AppKitWindowHandle::new(NonNull::new(ns_view as *mut c_void).unwrap());
         let handle = RawWindowHandle::AppKit(handle);
 
         unsafe { GlContext::create(&handle, config).expect("Could not create OpenGL context") }
@@ -457,15 +459,19 @@ impl WindowState {
     }
 }
 
-unsafe impl<'a> HasRawWindowHandle for Window<'a> {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        self.inner.raw_window_handle()
+impl<'a> HasWindowHandle for Window<'a> {
+    fn window_handle(&self) -> Result<RawWindowHandleType<'_>, HandleError> {
+        unsafe {
+            Ok(RawWindowHandleType::borrow_raw(self.inner.raw_window_handle()))
+        }
     }
 }
 
-unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
-    fn raw_display_handle(&self) -> RawDisplayHandle {
-        RawDisplayHandle::AppKit(AppKitDisplayHandle::empty())
+impl<'a> HasDisplayHandle for Window<'a> {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+        unsafe {
+            Ok(DisplayHandle::borrow_raw(RawDisplayHandle::AppKit(AppKitDisplayHandle::new())))
+        }
     }
 }
 
