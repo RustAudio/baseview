@@ -1,4 +1,5 @@
-use std::num::NonZeroU32;
+use std::sync::Arc;
+use std::{num::NonZeroU32};
 use std::time::Duration;
 
 use rtrb::{Consumer, RingBuffer};
@@ -17,11 +18,15 @@ enum Message {
 struct OpenWindowExample {
     rx: Consumer<Message>,
 
-    _ctx: softbuffer::Context,
-    surface: softbuffer::Surface,
+    _ctx: softbuffer::Context<Arc<Window<'static>>>,
+    surface: softbuffer::Surface<
+        Arc<Window<'static>>,
+        Arc<Window<'static>>
+    >,
     current_size: PhySize,
     damaged: bool,
 }
+
 
 impl WindowHandler for OpenWindowExample {
     fn on_frame(&mut self, _window: &mut Window) {
@@ -84,8 +89,13 @@ fn main() {
     });
 
     Window::open_blocking(window_open_options, |window| {
-        let ctx = unsafe { softbuffer::Context::new(window) }.unwrap();
-        let mut surface = unsafe { softbuffer::Surface::new(&ctx, window) }.unwrap();
+        // Create Arc from the window with 'static lifetime
+        let window_arc: Arc<Window<'static>> = Arc::new(unsafe {
+            std::mem::transmute(window)
+        });
+        
+        let ctx = softbuffer::Context::new(window_arc.clone()).unwrap();
+        let mut surface = softbuffer::Surface::new(&ctx, window_arc.clone()).unwrap();
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         OpenWindowExample {

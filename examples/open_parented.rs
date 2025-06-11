@@ -3,10 +3,11 @@ use baseview::{
     WindowScalePolicy,
 };
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
 struct ParentWindowHandler {
-    _ctx: softbuffer::Context,
-    surface: softbuffer::Surface,
+    _ctx: softbuffer::Context<Arc<Window<'static>>>,
+    surface: softbuffer::Surface<Arc<Window<'static>>, Arc<Window<'static>>>,
     current_size: PhySize,
     damaged: bool,
 
@@ -15,10 +16,6 @@ struct ParentWindowHandler {
 
 impl ParentWindowHandler {
     pub fn new(window: &mut Window) -> Self {
-        let ctx = unsafe { softbuffer::Context::new(window) }.unwrap();
-        let mut surface = unsafe { softbuffer::Surface::new(&ctx, window) }.unwrap();
-        surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
-
         let window_open_options = baseview::WindowOpenOptions {
             title: "baseview child".into(),
             size: baseview::Size::new(256.0, 256.0),
@@ -30,6 +27,14 @@ impl ParentWindowHandler {
         };
         let child_window =
             Window::open_parented(window, window_open_options, ChildWindowHandler::new);
+
+        let window_arc: Arc<Window<'static>> = Arc::new(unsafe {
+            std::mem::transmute(window)
+        });
+        
+        let ctx = softbuffer::Context::new(window_arc.clone()).unwrap();
+        let mut surface = softbuffer::Surface::new(&ctx, window_arc.clone()).unwrap();
+        surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         // TODO: no way to query physical size initially?
         Self {
@@ -76,16 +81,20 @@ impl WindowHandler for ParentWindowHandler {
 }
 
 struct ChildWindowHandler {
-    _ctx: softbuffer::Context,
-    surface: softbuffer::Surface,
+    _ctx: softbuffer::Context<Arc<Window<'static>>>,
+    surface: softbuffer::Surface<Arc<Window<'static>>, Arc<Window<'static>>>,
     current_size: PhySize,
     damaged: bool,
 }
 
 impl ChildWindowHandler {
     pub fn new(window: &mut Window) -> Self {
-        let ctx = unsafe { softbuffer::Context::new(window) }.unwrap();
-        let mut surface = unsafe { softbuffer::Surface::new(&ctx, window) }.unwrap();
+        let window_arc: Arc<Window<'static>> = Arc::new(unsafe {
+            std::mem::transmute(window)
+        });
+        
+        let ctx = softbuffer::Context::new(window_arc.clone()).unwrap();
+        let mut surface = softbuffer::Surface::new(&ctx, window_arc.clone()).unwrap();
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         // TODO: no way to query physical size initially?
