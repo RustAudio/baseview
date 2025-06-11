@@ -39,7 +39,7 @@ uuid = { version = "0.8", features = ["v4"] }
 
 [dev-dependencies]
 rtrb = "0.2"
-softbuffer = "0.3.4"
+softbuffer = "0.4.2"
 
 [workspace]
 members = ["examples/render_femtovg"]
