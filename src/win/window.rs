@@ -696,8 +696,9 @@ impl Window<'_> {
             let gl_context: Option<GlContext> = options.gl_config.map(|gl_config| {
                 let handle = Win32WindowHandle::new(hwnd as *mut c_void, std::ptr::null_mut());
                 let handle = RawWindowHandle::Win32(handle);
+                let window_handle = unsafe { RawWindowHandleType::borrow_raw(handle) };
 
-                GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
+                GlContext::create(&window_handle, gl_config).expect("Could not create OpenGL context")
             });
 
             let (parent_handle, window_handle) = ParentHandle::new(hwnd);

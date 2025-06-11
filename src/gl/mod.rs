@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 // On X11 creating the context is a two step process
 #[cfg(not(target_os = "linux"))]
-use raw_window_handle::RawWindowHandle;
+use raw_window_handle::WindowHandle;
 
 #[cfg(target_os = "windows")]
 mod win;
@@ -77,7 +77,7 @@ pub struct GlContext {
 impl GlContext {
     #[cfg(not(target_os = "linux"))]
     pub(crate) unsafe fn create(
-        parent: &RawWindowHandle, config: GlConfig,
+        parent: &WindowHandle, config: GlConfig,
     ) -> Result<GlContext, GlError> {
         platform::GlContext::create(parent, config)
             .map(|context| GlContext { context, phantom: PhantomData })

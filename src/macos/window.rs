@@ -348,11 +348,12 @@ impl<'a> Window<'a> {
     }
 
     #[cfg(feature = "opengl")]
-    fn create_gl_context(ns_window: Option<id>, ns_view: id, config: GlConfig) -> GlContext {
+    fn create_gl_context(_ns_window: Option<id>, ns_view: id, config: GlConfig) -> GlContext {
         let handle = AppKitWindowHandle::new(NonNull::new(ns_view as *mut c_void).unwrap());
         let handle = RawWindowHandle::AppKit(handle);
+        let window_handle = unsafe { RawWindowHandleType::borrow_raw(handle) };
 
-        unsafe { GlContext::create(&handle, config).expect("Could not create OpenGL context") }
+        unsafe { GlContext::create(&window_handle, config).expect("Could not create OpenGL context") }
     }
 }
 

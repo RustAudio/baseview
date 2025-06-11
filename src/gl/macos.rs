@@ -5,7 +5,7 @@
 use std::ffi::c_void;
 use std::str::FromStr;
 
-use raw_window_handle::RawWindowHandle;
+use raw_window_handle::{RawWindowHandle, WindowHandle};
 
 use cocoa::appkit::{
     NSOpenGLContext, NSOpenGLContextParameter, NSOpenGLPFAAccelerated, NSOpenGLPFAAlphaSize,
@@ -32,18 +32,14 @@ pub struct GlContext {
 }
 
 impl GlContext {
-    pub unsafe fn create(parent: &RawWindowHandle, config: GlConfig) -> Result<GlContext, GlError> {
-        let handle = if let RawWindowHandle::AppKit(handle) = parent {
+    pub unsafe fn create(parent: &WindowHandle, config: GlConfig) -> Result<GlContext, GlError> {
+        let handle = if let RawWindowHandle::AppKit(handle) = parent.as_raw() {
             handle
         } else {
             return Err(GlError::InvalidWindowHandle);
         };
 
-        if handle.ns_view.is_null() {
-            return Err(GlError::InvalidWindowHandle);
-        }
-
-        let parent_view = handle.ns_view as id;
+        let parent_view = handle.ns_view.as_ptr() as id;
 
         let version = if config.version < (3, 2) && config.profile == Profile::Compatibility {
             NSOpenGLProfileVersionLegacy
