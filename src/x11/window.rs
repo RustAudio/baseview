@@ -31,19 +31,13 @@ use crate::x11::visual_info::WindowVisualConfig;
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
-    close_requested: Arc<AtomicBool>,
+    close_requested: mpsc::SyncSender<()>,
     is_open: Arc<AtomicBool>,
 }
 
 impl WindowHandle {
     pub fn close(&mut self) {
-        if self.raw_window_handle.take().is_some() {
-            // FIXME: This will need to be changed from just setting an atomic to somehow
-            // synchronizing with the window being closed (using a synchronous channel, or
-            // by joining on the event loop thread).
-
-            self.close_requested.store(true, Ordering::Relaxed);
-        }
+        self.close_requested.send(()).ok();
     }
 
     pub fn is_open(&self) -> bool {
@@ -64,26 +58,26 @@ unsafe impl HasRawWindowHandle for WindowHandle {
 }
 
 pub(crate) struct ParentHandle {
-    close_requested: Arc<AtomicBool>,
+    close_requested: mpsc::Receiver<()>,
     is_open: Arc<AtomicBool>,
 }
 
 impl ParentHandle {
     pub fn new() -> (Self, WindowHandle) {
-        let close_requested = Arc::new(AtomicBool::new(false));
+        let (close_sender, close_receiver) = mpsc::sync_channel(0);
         let is_open = Arc::new(AtomicBool::new(true));
 
         let handle = WindowHandle {
             raw_window_handle: None,
-            close_requested: Arc::clone(&close_requested),
+            close_requested: close_sender,
             is_open: Arc::clone(&is_open),
         };
 
-        (Self { close_requested, is_open }, handle)
+        (Self { close_requested: close_receiver, is_open }, handle)
     }
 
     pub fn parent_did_drop(&self) -> bool {
-        self.close_requested.load(Ordering::Relaxed)
+        self.close_requested.try_recv().is_ok()
     }
 }
 
