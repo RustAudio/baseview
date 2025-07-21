@@ -94,6 +94,10 @@ impl Drop for ParentHandle {
 }
 
 pub(crate) struct WindowInner {
+    // GlContext should be dropped **before** XcbConnection is dropped
+    #[cfg(feature = "opengl")]
+    gl_context: Option<GlContext>,
+
     pub(crate) xcb_connection: XcbConnection,
     window_id: XWindow,
     pub(crate) window_info: WindowInfo,
@@ -101,9 +105,6 @@ pub(crate) struct WindowInner {
     mouse_cursor: Cell<MouseCursor>,
 
     pub(crate) close_requested: Cell<bool>,
-
-    #[cfg(feature = "opengl")]
-    gl_context: Option<GlContext>,
 }
 
 pub struct Window<'a> {
