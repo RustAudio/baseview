@@ -2,9 +2,9 @@ use std::cell::Cell;
 use std::error::Error;
 use std::ffi::c_void;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use raw_window_handle::{
@@ -26,7 +26,7 @@ use crate::{
 };
 
 #[cfg(feature = "opengl")]
-use crate::gl::{platform, GlContext};
+use crate::gl::{GlContext, platform};
 use crate::x11::event_loop::EventLoop;
 use crate::x11::visual_info::WindowVisualConfig;
 
@@ -177,6 +177,9 @@ impl<'a> Window<'a> {
         // FIXME: baseview error type instead of unwrap()
         let xcb_connection = XcbConnection::new()?;
 
+        // Setup xkbcommon
+        let xkb_state = crate::wrappers::xkbcommon::XkbcommonState::new(&xcb_connection);
+
         // Get screen information
         let screen = xcb_connection.screen();
         let parent_id = parent.unwrap_or(screen.root);
@@ -303,7 +306,7 @@ impl<'a> Window<'a> {
 
         let _ = tx.send(Ok(SendableRwh(window.raw_window_handle())));
 
-        EventLoop::new(inner, handler, parent_handle).run()?;
+        EventLoop::new(inner, handler, parent_handle, xkb_state).run()?;
 
         Ok(())
     }

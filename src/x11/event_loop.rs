@@ -1,4 +1,5 @@
 use crate::wrappers::connection_poller::{ConnectionPoller, PollStatus};
+use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::x11::drag_n_drop::DragNDropState;
 use crate::x11::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
 use crate::x11::{ParentHandle, Window, WindowInner};
@@ -22,12 +23,14 @@ pub(super) struct EventLoop {
     event_loop_running: bool,
 
     drag_n_drop: DragNDropState,
+
+    xkb_state: XkbcommonState,
 }
 
 impl EventLoop {
     pub fn new(
         window: WindowInner, handler: impl WindowHandler + 'static,
-        parent_handle: Option<ParentHandle>,
+        parent_handle: Option<ParentHandle>, xkb_state: XkbcommonState,
     ) -> Self {
         Self {
             window,
@@ -37,6 +40,7 @@ impl EventLoop {
             event_loop_running: false,
             new_physical_size: None,
             drag_n_drop: DragNDropState::NoCurrentSession,
+            xkb_state,
         }
     }
 
@@ -264,11 +268,13 @@ impl EventLoop {
             // keys
             ////
             XEvent::KeyPress(event) => {
-                self.handle_event(Event::Keyboard(convert_key_press_event(&event)));
+                let ev = Event::Keyboard(convert_key_press_event(&event, &mut self.xkb_state));
+                self.handle_event(ev);
             }
 
             XEvent::KeyRelease(event) => {
-                self.handle_event(Event::Keyboard(convert_key_release_event(&event)));
+                let ev = Event::Keyboard(convert_key_release_event(&event, &mut self.xkb_state));
+                self.handle_event(ev);
             }
 
             XEvent::FocusIn(_) => {
