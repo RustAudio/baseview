@@ -26,9 +26,21 @@ use crate::win::{wnd_proc_inner, WindowState};
 static HOOK: Mutex<WinKeyboardHook> = Mutex::new(WinKeyboardHook::new());
 static ONCE: Once = Once::new();
 
-pub fn init_keyboard_hook() {
+// initialize keyboard hook
+// some DAWs (particularly Ableton) intercept incoming keyboard messages,
+// but we're naughty so we intercept them right back
+//
+// this is invoked by Window::open() since Rust doesn't have runtime static ctors
+pub(crate) fn init_keyboard_hook() {
     ONCE.call_once(|| {
-        HOOK.lock().unwrap().attach_hook();
+        HOOK.lock().unwrap().hook = unsafe {
+            SetWindowsHookExA(
+                WH_GETMESSAGE,
+                Some(keyboard_hook_callback),
+                GetModuleHandleA(ptr::null()),
+                GetCurrentThreadId(),
+            )
+        };
     });
 }
 
@@ -51,19 +63,9 @@ impl WinKeyboardHook {
     const fn new() -> Self {
         Self { hook: ptr::null_mut() }
     }
-
-    fn attach_hook(&mut self) {
-        self.hook = unsafe {
-            SetWindowsHookExA(
-                WH_GETMESSAGE,
-                Some(keyboard_hook_callback),
-                GetModuleHandleA(ptr::null()),
-                GetCurrentThreadId(),
-            )
-        };
-    }
 }
 
+// SAFETY: it's a pointer behind a mutex. we'll live
 unsafe impl Send for WinKeyboardHook {}
 unsafe impl Sync for WinKeyboardHook {}
 
@@ -88,12 +90,10 @@ unsafe extern "system" fn keyboard_hook_callback(
     }
 }
 
-fn offer_message_to_baseview(msg: *mut MSG) -> bool {
-    if msg.is_null() || !msg.is_aligned() {
-        return false;
-    }
-
-    let msg = unsafe { *(msg as *const MSG) };
+// check if `msg` is a keyboard message addressed
+// to a baseview window, and intercept it if so
+unsafe fn offer_message_to_baseview(msg: *mut MSG) -> bool {
+    let msg = &*msg;
 
     // if this isn't a keyboard message, ignore it
     match msg.message {
@@ -103,27 +103,27 @@ fn offer_message_to_baseview(msg: *mut MSG) -> bool {
     }
 
     // check if this is a baseview window (gross)
-    unsafe {
-        let mut classname = [0u8; 9];
+    let mut classname = [0u8; 9];
 
-        // SAFETY: It's Probably ASCII Lmao
-        if GetClassNameA(msg.hwnd, &mut classname as *mut u8 as *mut i8, 9) != 0 {
-            if &classname[0..8] == "Baseview".as_bytes() {
-                let window_state_ptr =
-                    GetWindowLongPtrW(msg.hwnd, GWLP_USERDATA) as *mut WindowState;
+    // SAFETY: It's Probably ASCII Lmao
+    if GetClassNameA(msg.hwnd, &mut classname as *mut u8 as *mut i8, 9) != 0 {
+        if &classname[0..8] == "Baseview".as_bytes() {
+            let window_state_ptr =
+                GetWindowLongPtrW(msg.hwnd, GWLP_USERDATA) as *mut WindowState;
 
-                // should we do anything with the return value here?
-                let _ = wnd_proc_inner(
-                    msg.hwnd,
-                    msg.message,
-                    msg.wParam,
-                    msg.lParam,
-                    &*window_state_ptr,
-                );
+            // NASTY to invoke wnd_proc_inner directly like this But It Works
+            // should we do anything with the return value here?
+            let _ = wnd_proc_inner(
+                msg.hwnd,
+                msg.message,
+                msg.wParam,
+                msg.lParam,
+                &*window_state_ptr,
+            );
 
-                return true;
-            }
+            return true;
         }
     }
+
     false
 }
