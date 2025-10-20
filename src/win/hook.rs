@@ -1,6 +1,6 @@
 use std::{ffi::c_int, ptr, sync::{Mutex, Once}};
 
-use winapi::{shared::{minwindef::{LPARAM, WPARAM}, windef::{HHOOK, POINT}}, um::winuser::{CallNextHookEx, GetClassNameA, GetWindowLongPtrW, SetWindowsHookExA, UnhookWindowsHookEx, GWLP_USERDATA, HC_ACTION, MSG, PM_REMOVE, WH_GETMESSAGE, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_USER}};
+use winapi::{shared::{minwindef::{LPARAM, WPARAM}, windef::{HHOOK, POINT}}, um::{libloaderapi::GetModuleHandleA, processthreadsapi::GetCurrentThreadId, winuser::{CallNextHookEx, GetClassNameA, GetWindowLongPtrW, SetWindowsHookExA, UnhookWindowsHookEx, GWLP_USERDATA, HC_ACTION, MSG, PM_REMOVE, WH_GETMESSAGE, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_USER}}};
 
 use crate::win::{wnd_proc_inner, WindowState};
 
@@ -31,8 +31,8 @@ impl WinKeyboardHook {
 		self.hook = unsafe { SetWindowsHookExA(
 			WH_GETMESSAGE,
 			Some(keyboard_hook_callback),
-			ptr::null_mut(),
-			0
+			GetModuleHandleA(ptr::null()),
+			GetCurrentThreadId()
 		) };
 	}
 }
