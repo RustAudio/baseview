@@ -690,10 +690,12 @@ impl Window<'_> {
             hook::init_keyboard_hook();
 
             #[cfg(feature = "opengl")]
-            let gl_context: Option<GlContext> = options.gl_config.map(|gl_config| {
-                let mut handle = Win32WindowHandle::empty();
-                handle.hwnd = hwnd as *mut c_void;
-                let handle = RawWindowHandle::Win32(handle);
+            let gl_context: Option<GlContext> = options
+                .gl_config
+                .map(|gl_config| {
+                    let mut handle = Win32WindowHandle::empty();
+                    handle.hwnd = hwnd as *mut c_void;
+                    let handle = RawWindowHandle::Win32(handle);
 
                 GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
             });
