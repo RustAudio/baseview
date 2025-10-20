@@ -33,6 +33,7 @@ use raw_window_handle::{
 
 const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 
+use crate::win::hook;
 use crate::{
     Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
@@ -165,7 +166,7 @@ unsafe extern "system" fn wnd_proc(
 
 /// Our custom `wnd_proc` handler. If the result contains a value, then this is returned after
 /// handling any deferred tasks. otherwise the default window procedure is invoked.
-unsafe fn wnd_proc_inner(
+pub(crate) unsafe fn wnd_proc_inner(
     hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM, window_state: &WindowState,
 ) -> Option<LRESULT> {
     match msg {
@@ -685,6 +686,8 @@ impl Window<'_> {
                 null_mut(),
             );
             // todo: manage error ^
+
+            hook::init_keyboard_hook();
 
             #[cfg(feature = "opengl")]
             let gl_context: Option<GlContext> = options.gl_config.map(|gl_config| {
