@@ -21,7 +21,7 @@ use winapi::{
     },
 };
 
-use crate::win::{wnd_proc_inner, WindowState};
+use crate::win::{wnd_proc, WindowState};
 
 static HOOK: Mutex<WinKeyboardHook> = Mutex::new(WinKeyboardHook::new());
 static ONCE: Once = Once::new();
@@ -108,17 +108,11 @@ unsafe fn offer_message_to_baseview(msg: *mut MSG) -> bool {
     // SAFETY: It's Probably ASCII Lmao
     if GetClassNameA(msg.hwnd, &mut classname as *mut u8 as *mut i8, 9) != 0 {
         if &classname[0..8] == "Baseview".as_bytes() {
-            let window_state_ptr =
-                GetWindowLongPtrW(msg.hwnd, GWLP_USERDATA) as *mut WindowState;
-
-            // NASTY to invoke wnd_proc_inner directly like this But It Works
-            // should we do anything with the return value here?
-            let _ = wnd_proc_inner(
+            let _ = wnd_proc(
                 msg.hwnd,
                 msg.message,
                 msg.wParam,
                 msg.lParam,
-                &*window_state_ptr,
             );
 
             return true;

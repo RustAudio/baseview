@@ -119,7 +119,7 @@ impl Drop for ParentHandle {
     }
 }
 
-unsafe extern "system" fn wnd_proc(
+pub(crate) unsafe extern "system" fn wnd_proc(
     hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM,
 ) -> LRESULT {
     if msg == WM_CREATE {
@@ -166,7 +166,7 @@ unsafe extern "system" fn wnd_proc(
 
 /// Our custom `wnd_proc` handler. If the result contains a value, then this is returned after
 /// handling any deferred tasks. otherwise the default window procedure is invoked.
-pub(crate) unsafe fn wnd_proc_inner(
+unsafe fn wnd_proc_inner(
     hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM, window_state: &WindowState,
 ) -> Option<LRESULT> {
     match msg {
