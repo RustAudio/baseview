@@ -86,9 +86,13 @@ fn deinit_keyboard_hook(hwnd: HWNDWrapper) {
     windows.remove(&hwnd);
 
     if windows.is_empty() {
-        if let Ok(Some(hook)) = HOOK.lock().as_deref() {
-            unsafe {
-                UnhookWindowsHookEx(hook.0);
+        if let Ok(mut hook) = HOOK.lock() {
+            if let Some(KeyboardHook(hhook)) = &mut *hook {
+                unsafe {
+                    UnhookWindowsHookEx(*hhook);
+                }
+
+                *hook = None;
             }
         }
     }
@@ -128,7 +132,9 @@ unsafe fn offer_message_to_baseview(msg: *mut MSG) -> bool {
     }
 
     // check if this is one of our windows. if so, intercept it
-    if OPEN_WINDOWS.read().unwrap().contains(&HWNDWrapper(msg.hwnd)) {
+    let Ok(windows) = OPEN_WINDOWS.read() else { return false };
+
+    if windows.contains(&HWNDWrapper(msg.hwnd)) {
         let _ = wnd_proc(msg.hwnd, msg.message, msg.wParam, msg.lParam);
 
         return true;
