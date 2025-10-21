@@ -11,10 +11,10 @@ use winapi::{
         windef::{HHOOK, HWND, POINT},
     },
     um::{
-        libloaderapi::GetModuleHandleA,
+        libloaderapi::GetModuleHandleW,
         processthreadsapi::GetCurrentThreadId,
         winuser::{
-            CallNextHookEx, SetWindowsHookExA, UnhookWindowsHookEx, HC_ACTION, MSG, PM_REMOVE,
+            CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, MSG, PM_REMOVE,
             WH_GETMESSAGE, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
             WM_USER,
         },
@@ -66,10 +66,10 @@ pub(crate) fn init_keyboard_hook(hwnd: HWND) -> KeyboardHookHandle {
     } else {
         // keyboard hook doesn't exist (no windows open before this), create it
         let new_hook = KeyboardHook(unsafe {
-            SetWindowsHookExA(
+            SetWindowsHookExW(
                 WH_GETMESSAGE,
                 Some(keyboard_hook_callback),
-                GetModuleHandleA(ptr::null()),
+                GetModuleHandleW(ptr::null()),
                 GetCurrentThreadId(),
             )
         });
