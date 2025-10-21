@@ -1,73 +1,98 @@
 use std::{
+    collections::HashSet,
     ffi::c_int,
     ptr,
-    sync::{Mutex, Once},
+    sync::{LazyLock, Mutex, RwLock},
 };
 
-use dtor::dtor;
 use winapi::{
     shared::{
         minwindef::{LPARAM, WPARAM},
-        windef::{HHOOK, POINT},
+        windef::{HHOOK, HWND, POINT},
     },
     um::{
         libloaderapi::GetModuleHandleA,
         processthreadsapi::GetCurrentThreadId,
         winuser::{
-            CallNextHookEx, GetClassNameA, GetWindowLongPtrW, SetWindowsHookExA,
-            UnhookWindowsHookEx, GWLP_USERDATA, HC_ACTION, MSG, PM_REMOVE, WH_GETMESSAGE, WM_CHAR,
-            WM_KEYDOWN, WM_KEYUP, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_USER,
+            CallNextHookEx, SetWindowsHookExA, UnhookWindowsHookEx, HC_ACTION, MSG, PM_REMOVE,
+            WH_GETMESSAGE, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
+            WM_USER,
         },
     },
 };
 
-use crate::win::{wnd_proc, WindowState};
+use crate::win::wnd_proc;
 
-static HOOK: Mutex<WinKeyboardHook> = Mutex::new(WinKeyboardHook::new());
-static ONCE: Once = Once::new();
+static HOOK: Mutex<Option<KeyboardHook>> = Mutex::new(None);
+
+// track all windows opened by this instance of baseview
+// we use an RwLock here since the vast majority of uses (event interceptions)
+// will only need to read from the HashSet
+static OPEN_WINDOWS: LazyLock<RwLock<HashSet<HWNDWrapper>>> = LazyLock::new(|| RwLock::default());
+
+pub(crate) struct KeyboardHookHandle(HWNDWrapper);
+
+struct KeyboardHook(HHOOK);
+
+#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+struct HWNDWrapper(HWND);
+
+// SAFETY: it's a pointer behind a mutex. we'll live
+unsafe impl Send for KeyboardHook {}
+unsafe impl Sync for KeyboardHook {}
+
+// SAFETY: ditto
+unsafe impl Send for HWNDWrapper {}
+unsafe impl Sync for HWNDWrapper {}
+
+impl Drop for KeyboardHookHandle {
+    fn drop(&mut self) {
+        deinit_keyboard_hook(self.0);
+    }
+}
 
 // initialize keyboard hook
 // some DAWs (particularly Ableton) intercept incoming keyboard messages,
 // but we're naughty so we intercept them right back
-//
-// this is invoked by Window::open() since Rust doesn't have runtime static ctors
-pub(crate) fn init_keyboard_hook() {
-    ONCE.call_once(|| {
-        HOOK.lock().unwrap().hook = unsafe {
+pub(crate) fn init_keyboard_hook(hwnd: HWND) -> KeyboardHookHandle {
+    // register hwnd to global window set
+    OPEN_WINDOWS.write().unwrap().insert(HWNDWrapper(hwnd));
+
+    let hook = &mut *HOOK.lock().unwrap();
+
+    if hook.is_some() {
+        // keyboard hook already exists, just return handle
+        KeyboardHookHandle(HWNDWrapper(hwnd))
+    } else {
+        // keyboard hook doesn't exist (no windows open before this), create it
+        let new_hook = KeyboardHook(unsafe {
             SetWindowsHookExA(
                 WH_GETMESSAGE,
                 Some(keyboard_hook_callback),
                 GetModuleHandleA(ptr::null()),
                 GetCurrentThreadId(),
             )
-        };
-    });
+        });
+
+        *hook = Some(new_hook);
+
+        KeyboardHookHandle(HWNDWrapper(hwnd))
+    }
 }
 
-#[dtor]
-fn deinit_keyboard_hook() {
-    let hook = HOOK.lock().unwrap();
+fn deinit_keyboard_hook(hwnd: HWNDWrapper) {
+    let windows = &mut *OPEN_WINDOWS.write().unwrap();
 
-    if !hook.hook.is_null() {
-        unsafe {
-            UnhookWindowsHookEx(hook.hook);
+    windows.remove(&hwnd);
+
+    if windows.is_empty() {
+        if let Ok(Some(hook)) = HOOK.lock().as_deref() {
+            unsafe {
+                UnhookWindowsHookEx(hook.0);
+            }
         }
     }
 }
-
-struct WinKeyboardHook {
-    hook: HHOOK,
-}
-
-impl WinKeyboardHook {
-    const fn new() -> Self {
-        Self { hook: ptr::null_mut() }
-    }
-}
-
-// SAFETY: it's a pointer behind a mutex. we'll live
-unsafe impl Send for WinKeyboardHook {}
-unsafe impl Sync for WinKeyboardHook {}
 
 unsafe extern "system" fn keyboard_hook_callback(
     n_code: c_int, wparam: WPARAM, lparam: LPARAM,
@@ -91,7 +116,7 @@ unsafe extern "system" fn keyboard_hook_callback(
 }
 
 // check if `msg` is a keyboard message addressed
-// to a baseview window, and intercept it if so
+// to a window in OPEN_WINDOWS, and intercept it if so
 unsafe fn offer_message_to_baseview(msg: *mut MSG) -> bool {
     let msg = &*msg;
 
@@ -102,21 +127,11 @@ unsafe fn offer_message_to_baseview(msg: *mut MSG) -> bool {
         _ => return false,
     }
 
-    // check if this is a baseview window (gross)
-    let mut classname = [0u8; 9];
+    // check if this is one of our windows. if so, intercept it
+    if OPEN_WINDOWS.read().unwrap().contains(&HWNDWrapper(msg.hwnd)) {
+        let _ = wnd_proc(msg.hwnd, msg.message, msg.wParam, msg.lParam);
 
-    // SAFETY: It's Probably ASCII Lmao
-    if GetClassNameA(msg.hwnd, &mut classname as *mut u8 as *mut i8, 9) != 0 {
-        if &classname[0..8] == "Baseview".as_bytes() {
-            let _ = wnd_proc(
-                msg.hwnd,
-                msg.message,
-                msg.wParam,
-                msg.lParam,
-            );
-
-            return true;
-        }
+        return true;
     }
 
     false
