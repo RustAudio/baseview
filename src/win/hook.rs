@@ -42,7 +42,7 @@ struct HWNDWrapper(HWND);
 unsafe impl Send for KeyboardHookState {}
 unsafe impl Sync for KeyboardHookState {}
 
-// SAFETY: we never access the underlying HWND ourselves, just use it as a HashSet 
+// SAFETY: we never access the underlying HWND ourselves, just use it as a HashSet entry
 unsafe impl Send for HWNDWrapper {}
 unsafe impl Sync for HWNDWrapper {}
 
