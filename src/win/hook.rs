@@ -131,9 +131,7 @@ unsafe fn offer_message_to_baseview(msg: *mut MSG) -> bool {
     }
 
     // check if this is one of our windows. if so, intercept it
-    let state = HOOK_STATE.read().unwrap();
-
-    if state.open_windows.contains(&HWNDWrapper(msg.hwnd)) {
+    if HOOK_STATE.read().unwrap().open_windows.contains(&HWNDWrapper(msg.hwnd)) {
         let _ = wnd_proc(msg.hwnd, msg.message, msg.wParam, msg.lParam);
 
         return true;
