@@ -27,6 +27,7 @@ use super::WindowState;
 // These function pointers have to be stored in a (const) variable before they can be transmuted
 // Transmuting is needed because winapi has a bug where the pt parameter has an incorrect
 // type `*const POINTL`
+#[allow(non_snake_case)]
 const DRAG_ENTER_PTR: unsafe extern "system" fn(
     this: *mut IDropTarget,
     pDataObj: *const IDataObject,
@@ -34,12 +35,14 @@ const DRAG_ENTER_PTR: unsafe extern "system" fn(
     pt: POINTL,
     pdwEffect: *mut DWORD,
 ) -> HRESULT = DropTarget::drag_enter;
+#[allow(non_snake_case)]
 const DRAG_OVER_PTR: unsafe extern "system" fn(
     this: *mut IDropTarget,
     grfKeyState: DWORD,
     pt: POINTL,
     pdwEffect: *mut DWORD,
 ) -> HRESULT = DropTarget::drag_over;
+#[allow(non_snake_case)]
 const DROP_PTR: unsafe extern "system" fn(
     this: *mut IDropTarget,
     pDataObj: *const IDataObject,
