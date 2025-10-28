@@ -519,19 +519,19 @@ pub(super) struct WindowState {
 }
 
 impl WindowState {
-    pub(super) fn create_window(&self) -> Window {
+    pub(super) fn create_window(&self) -> Window<'_> {
         Window { state: self }
     }
 
-    pub(super) fn window_info(&self) -> Ref<WindowInfo> {
+    pub(super) fn window_info(&self) -> Ref<'_, WindowInfo> {
         self.window_info.borrow()
     }
 
-    pub(super) fn keyboard_state(&self) -> Ref<KeyboardState> {
+    pub(super) fn keyboard_state(&self) -> Ref<'_, KeyboardState> {
         self.keyboard_state.borrow()
     }
 
-    pub(super) fn handler_mut(&self) -> RefMut<Option<Box<dyn WindowHandler>>> {
+    pub(super) fn handler_mut(&self) -> RefMut<'_, Option<Box<dyn WindowHandler>>> {
         self.handler.borrow_mut()
     }
 
