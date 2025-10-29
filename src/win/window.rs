@@ -33,6 +33,7 @@ use raw_window_handle::{
 
 const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 
+use crate::win::hook::{self, KeyboardHookHandle};
 use crate::{
     Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
@@ -118,7 +119,7 @@ impl Drop for ParentHandle {
     }
 }
 
-unsafe extern "system" fn wnd_proc(
+pub(crate) unsafe extern "system" fn wnd_proc(
     hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM,
 ) -> LRESULT {
     if msg == WM_CREATE {
@@ -507,6 +508,11 @@ pub(super) struct WindowState {
     scale_policy: WindowScalePolicy,
     dw_style: u32,
 
+    // handle to the win32 keyboard hook
+    // we don't need to read from this, just carry it around so the Drop impl can run
+    #[allow(dead_code)]
+    kb_hook: KeyboardHookHandle,
+
     /// Tasks that should be executed at the end of `wnd_proc`. This is needed to avoid mutably
     /// borrowing the fields from `WindowState` more than once. For instance, when the window
     /// handler requests a resize in response to a keyboard event, the window state will already be
@@ -686,6 +692,8 @@ impl Window<'_> {
             );
             // todo: manage error ^
 
+            let kb_hook = hook::init_keyboard_hook(hwnd);
+
             #[cfg(feature = "opengl")]
             let gl_context: Option<GlContext> = options.gl_config.map(|gl_config| {
                 let mut handle = Win32WindowHandle::empty();
@@ -715,6 +723,8 @@ impl Window<'_> {
                 dw_style: flags,
 
                 deferred_tasks: RefCell::new(VecDeque::with_capacity(4)),
+
+                kb_hook,
 
                 #[cfg(feature = "opengl")]
                 gl_context,
