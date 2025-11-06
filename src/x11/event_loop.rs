@@ -9,6 +9,7 @@ use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::protocol::Event as XEvent;
+use xkbcommon::xkb as xkbc;
 
 pub(super) struct EventLoop {
     handler: Box<dyn WindowHandler>,
@@ -18,6 +19,7 @@ pub(super) struct EventLoop {
     new_physical_size: Option<PhySize>,
     frame_interval: Duration,
     event_loop_running: bool,
+    xkb_state: xkbc::State,
 }
 
 impl EventLoop {
@@ -25,6 +27,20 @@ impl EventLoop {
         window: WindowInner, handler: impl WindowHandler + 'static,
         parent_handle: Option<ParentHandle>,
     ) -> Self {
+        // Setup the xkb state
+        let xkb_state = {
+            let context = xkbc::Context::new(xkbc::CONTEXT_NO_FLAGS);
+            let conn = &window.xcb_connection.conn;
+            let device_id = xkbc::x11::get_core_keyboard_device_id(conn);
+            assert!(device_id >= 0);
+            let keymap = xkbc::x11::keymap_new_from_device(
+                &context,
+                conn,
+                device_id,
+                xkbc::KEYMAP_COMPILE_NO_FLAGS,
+            );
+            xkbc::x11::state_new_from_device(&keymap, &conn, device_id)
+        };
         Self {
             window,
             handler: Box::new(handler),
@@ -32,6 +48,7 @@ impl EventLoop {
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
             new_physical_size: None,
+            xkb_state,
         }
     }
 
@@ -261,14 +278,14 @@ impl EventLoop {
             XEvent::KeyPress(event) => {
                 self.handler.on_event(
                     &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Keyboard(convert_key_press_event(&event)),
+                    Event::Keyboard(convert_key_press_event(&event, &mut self.xkb_state)),
                 );
             }
 
             XEvent::KeyRelease(event) => {
                 self.handler.on_event(
                     &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Keyboard(convert_key_release_event(&event)),
+                    Event::Keyboard(convert_key_release_event(&event, &mut self.xkb_state)),
                 );
             }
 
