@@ -4,7 +4,7 @@ use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::thread;
+use std::thread::{self, JoinHandle};
 
 use raw_window_handle::{
     HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, XlibDisplayHandle,
@@ -31,13 +31,17 @@ use crate::x11::visual_info::WindowVisualConfig;
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
-    close_requested: mpsc::SyncSender<()>,
+    event_loop_handle: Option<JoinHandle<()>>,
+    close_requested: Arc<AtomicBool>,
     is_open: Arc<AtomicBool>,
 }
 
 impl WindowHandle {
     pub fn close(&mut self) {
-        self.close_requested.send(()).ok();
+        self.close_requested.store(true, Ordering::Relaxed);
+        if let Some(event_loop) = self.event_loop_handle.take() {
+            let _ = event_loop.join();
+        }
     }
 
     pub fn is_open(&self) -> bool {
@@ -58,26 +62,26 @@ unsafe impl HasRawWindowHandle for WindowHandle {
 }
 
 pub(crate) struct ParentHandle {
-    close_requested: mpsc::Receiver<()>,
+    close_requested: Arc<AtomicBool>,
     is_open: Arc<AtomicBool>,
 }
 
 impl ParentHandle {
     pub fn new() -> (Self, WindowHandle) {
-        let (close_sender, close_receiver) = mpsc::sync_channel(0);
+        let close_requested = Arc::new(AtomicBool::new(false));
         let is_open = Arc::new(AtomicBool::new(true));
-
         let handle = WindowHandle {
             raw_window_handle: None,
-            close_requested: close_sender,
+            event_loop_handle: None,
+            close_requested: Arc::clone(&close_requested),
             is_open: Arc::clone(&is_open),
         };
 
-        (Self { close_requested: close_receiver, is_open }, handle)
+        (Self { close_requested, is_open }, handle)
     }
 
     pub fn parent_did_drop(&self) -> bool {
-        self.close_requested.try_recv().is_ok()
+        self.close_requested.load(Ordering::Relaxed)
     }
 }
 
@@ -128,17 +132,15 @@ impl<'a> Window<'a> {
         };
 
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
-
         let (parent_handle, mut window_handle) = ParentHandle::new();
-
-        thread::spawn(move || {
+        let join_handle = thread::spawn(move || {
             Self::window_thread(Some(parent_id), options, build, tx.clone(), Some(parent_handle))
                 .unwrap();
         });
 
         let raw_window_handle = rx.recv().unwrap().unwrap();
         window_handle.raw_window_handle = Some(raw_window_handle.0);
-
+        window_handle.event_loop_handle = Some(join_handle);
         window_handle
     }
 
