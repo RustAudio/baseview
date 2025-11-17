@@ -42,7 +42,7 @@ rtrb = "0.2"
 softbuffer = "0.3.4"
 
 [workspace]
-members = ["examples/render_femtovg"]
+members = ["examples/render_femtovg", "examples/render_wgpu"]
 
 [lints.clippy]
 missing-safety-doc = "allow"
