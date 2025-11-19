@@ -38,8 +38,12 @@ pub enum ScrollDelta {
 pub enum MouseEvent {
     /// The mouse cursor was moved
     CursorMoved {
-        /// The logical coordinates of the mouse position
+        /// The logical coordinates of the mouse position (window-relative)
         position: Point,
+        /// The logical coordinates of the mouse position in screen space (absolute)
+        /// This remains constant even when the window resizes, making it suitable
+        /// for drag operations that resize the window.
+        screen_position: Point,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
     },
@@ -79,8 +83,10 @@ pub enum MouseEvent {
     CursorLeft,
 
     DragEntered {
-        /// The logical coordinates of the mouse position
+        /// The logical coordinates of the mouse position (window-relative)
         position: Point,
+        /// The logical coordinates of the mouse position in screen space (absolute)
+        screen_position: Point,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
         /// Data being dragged
@@ -88,8 +94,10 @@ pub enum MouseEvent {
     },
 
     DragMoved {
-        /// The logical coordinates of the mouse position
+        /// The logical coordinates of the mouse position (window-relative)
         position: Point,
+        /// The logical coordinates of the mouse position in screen space (absolute)
+        screen_position: Point,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
         /// Data being dragged
@@ -99,8 +107,10 @@ pub enum MouseEvent {
     DragLeft,
 
     DragDropped {
-        /// The logical coordinates of the mouse position
+        /// The logical coordinates of the mouse position (window-relative)
         position: Point,
+        /// The logical coordinates of the mouse position in screen space (absolute)
+        screen_position: Point,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
         /// Data being dragged

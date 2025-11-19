@@ -2,6 +2,7 @@
 // Eventually we should migrate to the objc2 crate and remove this.
 #![allow(unexpected_cfgs)]
 
+mod cursor;
 mod keyboard;
 mod view;
 mod window;

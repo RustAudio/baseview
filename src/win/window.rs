@@ -197,13 +197,27 @@ unsafe fn wnd_proc_inner(
                     .on_event(&mut window, enter_event);
             }
 
+            // Window-relative position (from lparam)
             let x = (lparam & 0xFFFF) as i16 as i32;
             let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
             let physical_pos = PhyPoint { x, y };
             let logical_pos = physical_pos.to_logical(&window_state.window_info.borrow());
+
+            // Screen-absolute position (using GetCursorPos)
+            let mut screen_physical_pos = POINT { x: 0, y: 0 };
+            unsafe {
+                winapi::um::winuser::GetCursorPos(&mut screen_physical_pos);
+            }
+            let screen_physical = PhyPoint {
+                x: screen_physical_pos.x,
+                y: screen_physical_pos.y
+            };
+            let screen_logical_pos = screen_physical.to_logical(&window_state.window_info.borrow());
+
             let move_event = Event::Mouse(MouseEvent::CursorMoved {
                 position: logical_pos,
+                screen_position: screen_logical_pos,
                 modifiers: window_state
                     .keyboard_state
                     .borrow()
