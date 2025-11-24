@@ -13,7 +13,7 @@ use raw_window_handle::{
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt as _, CreateGCAux,
+    AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, CreateGCAux,
     CreateWindowAux, EventMask, PropMode, Visualid, Window as XWindow, WindowClass,
 };
 use x11rb::wrapper::ConnectionExt as _;
@@ -99,7 +99,7 @@ pub(crate) struct WindowInner {
     gl_context: Option<GlContext>,
 
     pub(crate) xcb_connection: XcbConnection,
-    window_id: XWindow,
+    pub(crate) window_id: XWindow,
     pub(crate) window_info: WindowInfo,
     visual_id: Visualid,
     mouse_cursor: Cell<MouseCursor>,
@@ -252,6 +252,15 @@ impl<'a> Window<'a> {
             xcb_connection.atoms.WM_PROTOCOLS,
             AtomEnum::ATOM,
             &[xcb_connection.atoms.WM_DELETE_WINDOW],
+        )?;
+
+        // Enable drag and drop (TODO: Make this toggleable?)
+        xcb_connection.conn.change_property32(
+            PropMode::REPLACE,
+            window_id,
+            xcb_connection.atoms.XdndAware,
+            AtomEnum::ATOM,
+            &[5u32], // Latest version; hasn't changed since 2002
         )?;
 
         xcb_connection.conn.flush()?;
