@@ -73,6 +73,7 @@ pub(super) struct DropTarget {
     // These are cached since DragOver and DragLeave callbacks don't provide them,
     // and handling drag move events gets awkward on the client end otherwise
     drag_position: Point,
+    drag_screen_position: Point,
     drop_data: DropData,
 }
 
@@ -84,6 +85,7 @@ impl DropTarget {
             window_state,
 
             drag_position: Point::new(0.0, 0.0),
+            drag_screen_position: Point::new(0.0, 0.0),
             drop_data: DropData::None,
         }
     }
@@ -117,10 +119,16 @@ impl DropTarget {
         let Some(window_state) = self.window_state.upgrade() else {
             return;
         };
-        let mut pt = POINT { x: pt.x, y: pt.y };
-        unsafe { ScreenToClient(window_state.hwnd, &mut pt as *mut POINT) };
-        let phy_point = PhyPoint::new(pt.x, pt.y);
-        self.drag_position = phy_point.to_logical(&window_state.window_info());
+
+        // Screen-absolute position (pt is already in screen coordinates)
+        let screen_phy_point = PhyPoint::new(pt.x, pt.y);
+        self.drag_screen_position = screen_phy_point.to_logical(&window_state.window_info());
+
+        // Window-relative position (convert from screen to client)
+        let mut window_pt = POINT { x: pt.x, y: pt.y };
+        unsafe { ScreenToClient(window_state.hwnd, &mut window_pt as *mut POINT) };
+        let window_phy_point = PhyPoint::new(window_pt.x, window_pt.y);
+        self.drag_position = window_phy_point.to_logical(&window_state.window_info());
     }
 
     fn parse_drop_data(&mut self, data_object: &IDataObject) {
@@ -216,6 +224,7 @@ impl DropTarget {
 
         let event = MouseEvent::DragEntered {
             position: drop_target.drag_position,
+            screen_position: drop_target.drag_screen_position,
             modifiers,
             data: drop_target.drop_data.clone(),
         };
@@ -240,6 +249,7 @@ impl DropTarget {
 
         let event = MouseEvent::DragMoved {
             position: drop_target.drag_position,
+            screen_position: drop_target.drag_screen_position,
             modifiers,
             data: drop_target.drop_data.clone(),
         };
@@ -272,6 +282,7 @@ impl DropTarget {
 
         let event = MouseEvent::DragDropped {
             position: drop_target.drag_position,
+            screen_position: drop_target.drag_screen_position,
             modifiers,
             data: drop_target.drop_data.clone(),
         };
