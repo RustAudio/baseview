@@ -108,10 +108,6 @@ impl EventLoop {
 
             // Check if the parents's handle was dropped (such as when the host
             // requested the window to close)
-            //
-            // FIXME: This will need to be changed from just setting an atomic to somehow
-            // synchronizing with the window being closed (using a synchronous channel, or
-            // by joining on the event loop thread).
             if let Some(parent_handle) = &self.parent_handle {
                 if parent_handle.parent_did_drop() {
                     self.handle_must_close();
