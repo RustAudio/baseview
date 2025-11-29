@@ -4,7 +4,7 @@ use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::thread;
+use std::thread::{self, JoinHandle};
 
 use raw_window_handle::{
     HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, XlibDisplayHandle,
@@ -31,18 +31,16 @@ use crate::x11::visual_info::WindowVisualConfig;
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
+    event_loop_handle: Option<JoinHandle<()>>,
     close_requested: Arc<AtomicBool>,
     is_open: Arc<AtomicBool>,
 }
 
 impl WindowHandle {
     pub fn close(&mut self) {
-        if self.raw_window_handle.take().is_some() {
-            // FIXME: This will need to be changed from just setting an atomic to somehow
-            // synchronizing with the window being closed (using a synchronous channel, or
-            // by joining on the event loop thread).
-
-            self.close_requested.store(true, Ordering::Relaxed);
+        self.close_requested.store(true, Ordering::Relaxed);
+        if let Some(event_loop) = self.event_loop_handle.take() {
+            let _ = event_loop.join();
         }
     }
 
@@ -72,9 +70,9 @@ impl ParentHandle {
     pub fn new() -> (Self, WindowHandle) {
         let close_requested = Arc::new(AtomicBool::new(false));
         let is_open = Arc::new(AtomicBool::new(true));
-
         let handle = WindowHandle {
             raw_window_handle: None,
+            event_loop_handle: None,
             close_requested: Arc::clone(&close_requested),
             is_open: Arc::clone(&is_open),
         };
@@ -94,6 +92,10 @@ impl Drop for ParentHandle {
 }
 
 pub(crate) struct WindowInner {
+    // GlContext should be dropped **before** XcbConnection is dropped
+    #[cfg(feature = "opengl")]
+    gl_context: Option<GlContext>,
+
     pub(crate) xcb_connection: XcbConnection,
     window_id: XWindow,
     pub(crate) window_info: WindowInfo,
@@ -101,9 +103,6 @@ pub(crate) struct WindowInner {
     mouse_cursor: Cell<MouseCursor>,
 
     pub(crate) close_requested: Cell<bool>,
-
-    #[cfg(feature = "opengl")]
-    gl_context: Option<GlContext>,
 }
 
 pub struct Window<'a> {
@@ -133,17 +132,15 @@ impl<'a> Window<'a> {
         };
 
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
-
         let (parent_handle, mut window_handle) = ParentHandle::new();
-
-        thread::spawn(move || {
+        let join_handle = thread::spawn(move || {
             Self::window_thread(Some(parent_id), options, build, tx.clone(), Some(parent_handle))
                 .unwrap();
         });
 
         let raw_window_handle = rx.recv().unwrap().unwrap();
         window_handle.raw_window_handle = Some(raw_window_handle.0);
-
+        window_handle.event_loop_handle = Some(join_handle);
         window_handle
     }
 
