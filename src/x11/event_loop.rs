@@ -176,10 +176,14 @@ impl EventLoop {
                 let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
                 let logical_pos = physical_pos.to_logical(&self.window.window_info);
 
+                let screen_physical_pos = PhyPoint::new(event.root_x as i32, event.root_y as i32);
+                let screen_logical_pos = screen_physical_pos.to_logical(&self.window.window_info);
+
                 self.handler.on_event(
                     &mut crate::Window::new(Window { inner: &self.window }),
                     Event::Mouse(MouseEvent::CursorMoved {
                         position: logical_pos,
+                        screen_position: screen_logical_pos,
                         modifiers: key_mods(event.state),
                     }),
                 );
@@ -194,10 +198,13 @@ impl EventLoop {
                 // we generate a CursorMoved as well, so the mouse position from here isn't lost
                 let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
                 let logical_pos = physical_pos.to_logical(&self.window.window_info);
+                let screen_physical_pos = PhyPoint::new(event.root_x as i32, event.root_y as i32);
+                let screen_logical_pos = screen_physical_pos.to_logical(&self.window.window_info);
                 self.handler.on_event(
                     &mut crate::Window::new(Window { inner: &self.window }),
                     Event::Mouse(MouseEvent::CursorMoved {
                         position: logical_pos,
+                        screen_position: screen_logical_pos,
                         modifiers: key_mods(event.state),
                     }),
                 );

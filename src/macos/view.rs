@@ -393,17 +393,38 @@ extern "C" fn update_tracking_areas(this: &Object, _self: Sel, _: id) {
 extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: id) {
     let state = unsafe { WindowState::from_view(this) };
 
-    let point: NSPoint = unsafe {
+    // Window-relative position (existing behavior)
+    let window_point: NSPoint = unsafe {
         let point = NSEvent::locationInWindow(event);
-
         msg_send![this, convertPoint:point fromView:nil]
     };
+
+    // Screen-absolute position (new!)
+    // NSEvent::mouseLocation returns screen coordinates with Y=0 at BOTTOM
+    // We need to flip Y-axis to match Windows/X11 convention (Y=0 at TOP)
+    let screen_point: NSPoint = unsafe {
+        NSEvent::mouseLocation(event)
+    };
+
+    // Get the screen height to flip Y coordinate
+    let screen_height = unsafe {
+        let screen: id = msg_send![class!(NSScreen), mainScreen];
+        let frame: NSRect = msg_send![screen, frame];
+        frame.size.height
+    };
+
     let modifiers = unsafe { NSEvent::modifierFlags(event) };
 
-    let position = Point { x: point.x, y: point.y };
+    let position = Point { x: window_point.x, y: window_point.y };
+    // Flip Y-axis: convert from bottom-origin to top-origin
+    let screen_position = Point {
+        x: screen_point.x,
+        y: screen_height - screen_point.y
+    };
 
     state.trigger_event(Event::Mouse(MouseEvent::CursorMoved {
         position,
+        screen_position,
         modifiers: make_modifiers(modifiers),
     }));
 }
@@ -430,9 +451,29 @@ extern "C" fn scroll_wheel(this: &Object, _: Sel, event: id) {
     }));
 }
 
-fn get_drag_position(sender: id) -> Point {
-    let point: NSPoint = unsafe { msg_send![sender, draggingLocation] };
-    Point::new(point.x, point.y)
+fn get_drag_position(sender: id) -> (Point, Point) {
+    // Window-relative position
+    let window_point: NSPoint = unsafe { msg_send![sender, draggingLocation] };
+
+    // For drag events, we need to get screen position from the global mouse location
+    // since NSDraggingInfo doesn't provide it directly
+    // NSEvent::mouseLocation returns coordinates with Y=0 at BOTTOM
+    let screen_point: NSPoint = unsafe {
+        let ns_event_class: id = msg_send![class!(NSEvent), class];
+        msg_send![ns_event_class, mouseLocation]
+    };
+
+    // Get screen height to flip Y coordinate (convert from bottom-origin to top-origin)
+    let screen_height = unsafe {
+        let screen: id = msg_send![class!(NSScreen), mainScreen];
+        let frame: NSRect = msg_send![screen, frame];
+        frame.size.height
+    };
+
+    (
+        Point::new(window_point.x, window_point.y),
+        Point::new(screen_point.x, screen_height - screen_point.y)
+    )
 }
 
 fn get_drop_data(sender: id) -> DropData {
@@ -473,9 +514,11 @@ extern "C" fn dragging_entered(this: &Object, _sel: Sel, sender: id) -> NSUInteg
     let state = unsafe { WindowState::from_view(this) };
     let modifiers = state.keyboard_state().last_mods();
     let drop_data = get_drop_data(sender);
+    let (position, screen_position) = get_drag_position(sender);
 
     let event = MouseEvent::DragEntered {
-        position: get_drag_position(sender),
+        position,
+        screen_position,
         modifiers: make_modifiers(modifiers),
         data: drop_data,
     };
@@ -487,9 +530,11 @@ extern "C" fn dragging_updated(this: &Object, _sel: Sel, sender: id) -> NSUInteg
     let state = unsafe { WindowState::from_view(this) };
     let modifiers = state.keyboard_state().last_mods();
     let drop_data = get_drop_data(sender);
+    let (position, screen_position) = get_drag_position(sender);
 
     let event = MouseEvent::DragMoved {
-        position: get_drag_position(sender),
+        position,
+        screen_position,
         modifiers: make_modifiers(modifiers),
         data: drop_data,
     };
@@ -508,9 +553,11 @@ extern "C" fn perform_drag_operation(this: &Object, _sel: Sel, sender: id) -> BO
     let state = unsafe { WindowState::from_view(this) };
     let modifiers = state.keyboard_state().last_mods();
     let drop_data = get_drop_data(sender);
+    let (position, screen_position) = get_drag_position(sender);
 
     let event = MouseEvent::DragDropped {
-        position: get_drag_position(sender),
+        position,
+        screen_position,
         modifiers: make_modifiers(modifiers),
         data: drop_data,
     };

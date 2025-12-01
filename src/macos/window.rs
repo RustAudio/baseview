@@ -334,8 +334,18 @@ impl<'a> Window<'a> {
         }
     }
 
-    pub fn set_mouse_cursor(&mut self, _mouse_cursor: MouseCursor) {
-        todo!()
+    pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
+        let ns_cursor = crate::macos::cursor::mouse_cursor_to_nscursor(mouse_cursor);
+
+        unsafe {
+            if ns_cursor.is_null() {
+                // Hide cursor
+                let _: () = msg_send![class!(NSCursor), hide];
+            } else {
+                // Set the cursor
+                let _: () = msg_send![ns_cursor, set];
+            }
+        }
     }
 
     #[cfg(feature = "opengl")]
