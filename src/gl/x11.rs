@@ -241,5 +241,9 @@ impl GlContext {
 }
 
 impl Drop for GlContext {
-    fn drop(&mut self) {}
+    fn drop(&mut self) {
+        unsafe {
+            glx::glXDestroyContext(self.display, self.context);
+        }
+    }
 }
