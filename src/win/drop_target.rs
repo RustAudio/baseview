@@ -1,95 +1,49 @@
+use std::cell::{Cell, RefCell};
 use std::ffi::OsString;
-use std::mem::transmute;
 use std::os::windows::prelude::OsStringExt;
 use std::ptr::null_mut;
-use std::rc::{Rc, Weak};
+use std::rc::Weak;
 
-use winapi::shared::guiddef::{IsEqualIID, REFIID};
-use winapi::shared::minwindef::{DWORD, WPARAM};
-use winapi::shared::ntdef::{HRESULT, ULONG};
-use winapi::shared::windef::{POINT, POINTL};
-use winapi::shared::winerror::{E_NOINTERFACE, E_UNEXPECTED, S_OK};
-use winapi::shared::wtypes::DVASPECT_CONTENT;
-use winapi::um::objidl::{IDataObject, FORMATETC, STGMEDIUM, TYMED_HGLOBAL};
-use winapi::um::oleidl::{
-    IDropTarget, IDropTargetVtbl, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE,
-    DROPEFFECT_NONE, DROPEFFECT_SCROLL,
+use windows::{
+    core::implement,
+    Win32::{
+        Foundation::{E_UNEXPECTED, POINT, POINTL, WPARAM},
+        Graphics::Gdi::ScreenToClient,
+        System::{
+            Com::{IDataObject, DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL},
+            Ole::*,
+            SystemServices::MODIFIERKEYS_FLAGS,
+        },
+        UI::Shell::{DragQueryFileW, HDROP},
+    },
 };
-use winapi::um::shellapi::{DragQueryFileW, HDROP};
-use winapi::um::unknwnbase::{IUnknown, IUnknownVtbl};
-use winapi::um::winuser::{ScreenToClient, CF_HDROP};
-use winapi::Interface;
+use windows_core::Ref;
 
 use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent, PhyPoint, Point};
 
 use super::WindowState;
 
-// These function pointers have to be stored in a (const) variable before they can be transmuted
-// Transmuting is needed because winapi has a bug where the pt parameter has an incorrect
-// type `*const POINTL`
-#[allow(non_snake_case)]
-const DRAG_ENTER_PTR: unsafe extern "system" fn(
-    this: *mut IDropTarget,
-    pDataObj: *const IDataObject,
-    grfKeyState: DWORD,
-    pt: POINTL,
-    pdwEffect: *mut DWORD,
-) -> HRESULT = DropTarget::drag_enter;
-#[allow(non_snake_case)]
-const DRAG_OVER_PTR: unsafe extern "system" fn(
-    this: *mut IDropTarget,
-    grfKeyState: DWORD,
-    pt: POINTL,
-    pdwEffect: *mut DWORD,
-) -> HRESULT = DropTarget::drag_over;
-#[allow(non_snake_case)]
-const DROP_PTR: unsafe extern "system" fn(
-    this: *mut IDropTarget,
-    pDataObj: *const IDataObject,
-    grfKeyState: DWORD,
-    pt: POINTL,
-    pdwEffect: *mut DWORD,
-) -> HRESULT = DropTarget::drop;
-
-#[allow(clippy::missing_transmute_annotations)]
-const DROP_TARGET_VTBL: IDropTargetVtbl = IDropTargetVtbl {
-    parent: IUnknownVtbl {
-        QueryInterface: DropTarget::query_interface,
-        AddRef: DropTarget::add_ref,
-        Release: DropTarget::release,
-    },
-    DragEnter: unsafe { transmute(DRAG_ENTER_PTR) },
-    DragOver: unsafe { transmute(DRAG_OVER_PTR) },
-    DragLeave: DropTarget::drag_leave,
-    Drop: unsafe { transmute(DROP_PTR) },
-};
-
-#[repr(C)]
+#[implement(IDropTarget)]
 pub(super) struct DropTarget {
-    base: IDropTarget,
-
     window_state: Weak<WindowState>,
 
     // These are cached since DragOver and DragLeave callbacks don't provide them,
     // and handling drag move events gets awkward on the client end otherwise
-    drag_position: Point,
-    drop_data: DropData,
+    drag_position: Cell<Point>,
+    drop_data: RefCell<DropData>,
 }
 
 impl DropTarget {
     pub(super) fn new(window_state: Weak<WindowState>) -> Self {
         Self {
-            base: IDropTarget { lpVtbl: &DROP_TARGET_VTBL },
-
             window_state,
-
-            drag_position: Point::new(0.0, 0.0),
-            drop_data: DropData::None,
+            drag_position: Cell::new(Point::new(0.0, 0.0)),
+            drop_data: RefCell::new(DropData::None),
         }
     }
 
     #[allow(non_snake_case)]
-    fn on_event(&self, pdwEffect: Option<*mut DWORD>, event: MouseEvent) {
+    fn on_event(&self, pdwEffect: Option<*mut DROPEFFECT>, event: MouseEvent) {
         let Some(window_state) = self.window_state.upgrade() else {
             return;
         };
@@ -113,170 +67,136 @@ impl DropTarget {
         }
     }
 
-    fn parse_coordinates(&mut self, pt: POINTL) {
+    fn parse_coordinates(&self, pt: POINTL) {
         let Some(window_state) = self.window_state.upgrade() else {
             return;
         };
         let mut pt = POINT { x: pt.x, y: pt.y };
-        unsafe { ScreenToClient(window_state.hwnd, &mut pt as *mut POINT) };
+
+        #[allow(unused)]
+        unsafe {
+            ScreenToClient(window_state.hwnd, &mut pt)
+        };
         let phy_point = PhyPoint::new(pt.x, pt.y);
-        self.drag_position = phy_point.to_logical(&window_state.window_info());
+        self.drag_position.set(phy_point.to_logical(&window_state.window_info()));
     }
 
-    fn parse_drop_data(&mut self, data_object: &IDataObject) {
+    fn parse_drop_data(&self, data_object: &IDataObject) {
         let format = FORMATETC {
-            cfFormat: CF_HDROP as u16,
+            cfFormat: CF_HDROP.0,
             ptd: null_mut(),
-            dwAspect: DVASPECT_CONTENT,
+            dwAspect: DVASPECT_CONTENT.0,
             lindex: -1,
-            tymed: TYMED_HGLOBAL,
+            tymed: TYMED_HGLOBAL.0 as u32,
         };
 
-        let mut medium = STGMEDIUM { tymed: 0, u: null_mut(), pUnkForRelease: null_mut() };
-
         unsafe {
-            let hresult = data_object.GetData(&format, &mut medium);
-            if hresult != S_OK {
-                self.drop_data = DropData::None;
+            let Ok(medium) = data_object.GetData(&format) else {
+                self.drop_data.replace(DropData::None);
                 return;
-            }
+            };
 
-            let hdrop = *(*medium.u).hGlobal() as HDROP;
+            let hdrop = HDROP(medium.u.hGlobal.0);
 
-            let item_count = DragQueryFileW(hdrop, 0xFFFFFFFF, null_mut(), 0);
+            let item_count = DragQueryFileW(hdrop, 0xFFFFFFFF, None);
             if item_count == 0 {
-                self.drop_data = DropData::None;
+                self.drop_data.replace(DropData::None);
                 return;
             }
 
             let mut paths = Vec::with_capacity(item_count as usize);
 
             for i in 0..item_count {
-                let characters = DragQueryFileW(hdrop, i, null_mut(), 0);
+                let characters = DragQueryFileW(hdrop, i, None);
                 let buffer_size = characters as usize + 1;
                 let mut buffer = vec![0u16; buffer_size];
 
-                DragQueryFileW(hdrop, i, buffer.as_mut_ptr().cast(), buffer_size as u32);
+                DragQueryFileW(hdrop, i, Some(buffer.as_mut_slice()));
 
                 paths.push(OsString::from_wide(&buffer[..characters as usize]).into())
             }
 
-            self.drop_data = DropData::Files(paths);
+            self.drop_data.replace(DropData::Files(paths));
         }
     }
+}
 
-    #[allow(non_snake_case)]
-    unsafe extern "system" fn query_interface(
-        this: *mut IUnknown, riid: REFIID, ppvObject: *mut *mut winapi::ctypes::c_void,
-    ) -> HRESULT {
-        if IsEqualIID(&*riid, &IUnknown::uuidof()) || IsEqualIID(&*riid, &IDropTarget::uuidof()) {
-            Self::add_ref(this);
-            *ppvObject = this as *mut winapi::ctypes::c_void;
-            return S_OK;
-        }
-
-        E_NOINTERFACE
-    }
-
-    unsafe extern "system" fn add_ref(this: *mut IUnknown) -> ULONG {
-        let arc = Rc::from_raw(this);
-        let result = Rc::strong_count(&arc) + 1;
-        let _ = Rc::into_raw(arc);
-
-        Rc::increment_strong_count(this);
-
-        result as ULONG
-    }
-
-    unsafe extern "system" fn release(this: *mut IUnknown) -> ULONG {
-        let arc = Rc::from_raw(this);
-        let result = Rc::strong_count(&arc) - 1;
-        let _ = Rc::into_raw(arc);
-
-        Rc::decrement_strong_count(this);
-
-        result as ULONG
-    }
-
-    #[allow(non_snake_case)]
-    unsafe extern "system" fn drag_enter(
-        this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL,
-        pdwEffect: *mut DWORD,
-    ) -> HRESULT {
-        let drop_target = &mut *(this as *mut DropTarget);
-        let Some(window_state) = drop_target.window_state.upgrade() else {
-            return E_UNEXPECTED;
+impl IDropTarget_Impl for DropTarget_Impl {
+    fn DragEnter(
+        &self, pdataobj: Ref<IDataObject>, grfkeystate: MODIFIERKEYS_FLAGS, pt: &POINTL,
+        pdweffect: *mut DROPEFFECT,
+    ) -> windows_core::Result<()> {
+        let Some(window_state) = self.window_state.upgrade() else {
+            return Err(E_UNEXPECTED.into());
         };
 
-        let modifiers =
-            window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+        let modifiers = window_state
+            .keyboard_state()
+            .get_modifiers_from_mouse_wparam(WPARAM(grfkeystate.0 as usize));
 
-        drop_target.parse_coordinates(pt);
-        drop_target.parse_drop_data(&*pDataObj);
+        self.parse_coordinates(*pt);
+        self.parse_drop_data(pdataobj.unwrap());
 
         let event = MouseEvent::DragEntered {
-            position: drop_target.drag_position,
+            position: self.drag_position.get(),
             modifiers,
-            data: drop_target.drop_data.clone(),
+            data: self.drop_data.borrow().clone(),
         };
 
-        drop_target.on_event(Some(pdwEffect), event);
-        S_OK
+        self.on_event(Some(pdweffect), event);
+        Ok(())
     }
 
-    #[allow(non_snake_case)]
-    unsafe extern "system" fn drag_over(
-        this: *mut IDropTarget, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD,
-    ) -> HRESULT {
-        let drop_target = &mut *(this as *mut DropTarget);
-        let Some(window_state) = drop_target.window_state.upgrade() else {
-            return E_UNEXPECTED;
+    fn DragOver(
+        &self, grfkeystate: MODIFIERKEYS_FLAGS, pt: &POINTL, pdweffect: *mut DROPEFFECT,
+    ) -> windows_core::Result<()> {
+        let Some(window_state) = self.window_state.upgrade() else {
+            return Err(E_UNEXPECTED.into());
         };
 
-        let modifiers =
-            window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+        let modifiers = window_state
+            .keyboard_state()
+            .get_modifiers_from_mouse_wparam(WPARAM(grfkeystate.0 as usize));
 
-        drop_target.parse_coordinates(pt);
+        self.parse_coordinates(*pt);
 
         let event = MouseEvent::DragMoved {
-            position: drop_target.drag_position,
+            position: self.drag_position.get(),
             modifiers,
-            data: drop_target.drop_data.clone(),
+            data: self.drop_data.borrow().clone(),
         };
 
-        drop_target.on_event(Some(pdwEffect), event);
-        S_OK
+        self.on_event(Some(pdweffect), event);
+        Ok(())
     }
 
-    unsafe extern "system" fn drag_leave(this: *mut IDropTarget) -> HRESULT {
-        let drop_target = &mut *(this as *mut DropTarget);
-        drop_target.on_event(None, MouseEvent::DragLeft);
-        S_OK
+    fn DragLeave(&self) -> windows_core::Result<()> {
+        self.on_event(None, MouseEvent::DragLeft);
+        Ok(())
     }
 
-    #[allow(non_snake_case)]
-    unsafe extern "system" fn drop(
-        this: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL,
-        pdwEffect: *mut DWORD,
-    ) -> HRESULT {
-        let drop_target = &mut *(this as *mut DropTarget);
-        let Some(window_state) = drop_target.window_state.upgrade() else {
-            return E_UNEXPECTED;
+    fn Drop(
+        &self, pdataobj: Ref<IDataObject>, grfkeystate: MODIFIERKEYS_FLAGS, pt: &POINTL,
+        pdweffect: *mut DROPEFFECT,
+    ) -> windows_core::Result<()> {
+        let Some(window_state) = self.window_state.upgrade() else {
+            return Err(E_UNEXPECTED.into());
         };
 
-        let modifiers =
-            window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfKeyState as WPARAM);
+        let modifiers = window_state
+            .keyboard_state()
+            .get_modifiers_from_mouse_wparam(WPARAM(grfkeystate.0 as usize));
 
-        drop_target.parse_coordinates(pt);
-        drop_target.parse_drop_data(&*pDataObj);
+        self.parse_coordinates(*pt);
+        self.parse_drop_data(pdataobj.unwrap());
 
         let event = MouseEvent::DragDropped {
-            position: drop_target.drag_position,
+            position: self.drag_position.get(),
             modifiers,
-            data: drop_target.drop_data.clone(),
+            data: self.drop_data.borrow().clone(),
         };
 
-        drop_target.on_event(Some(pdwEffect), event);
-        S_OK
+        self.on_event(Some(pdweffect), event);
+        Ok(())
     }
 }
