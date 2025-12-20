@@ -20,6 +20,12 @@ use winapi::um::winuser::{
 
 use super::{GlConfig, GlError, Profile};
 
+// winapi doesn't link with opengl32.lib on all supported Windows platforms,
+// Since winapi is no longer being maintained this is unlikely to ever be fixed,
+// so we need to link it manually.
+#[link(name = "opengl32")]
+extern "system" {}
+
 // See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_create_context.txt
 
 type WglCreateContextAttribsARB = extern "system" fn(HDC, HGLRC, *const i32) -> HGLRC;
