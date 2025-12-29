@@ -149,12 +149,22 @@ impl<'a> Window<'a> {
             panic!("Not a macOS window");
         };
 
+        let parent_window = if !handle.ns_window.is_null() {
+            handle.ns_window as *mut Object
+        } else {
+            let parent_view = handle.ns_view as id;
+            unsafe {
+                let window: id = msg_send![parent_view, window];
+                window as *mut Object
+            }
+        };
+
         let ns_view = unsafe { create_view(&options) };
 
         let window_inner = WindowInner {
             open: Cell::new(true),
             ns_app: Cell::new(None),
-            ns_window: Cell::new(None),
+            ns_window: Cell::new(Some(parent_window)),
             ns_view,
 
             #[cfg(feature = "opengl")]
