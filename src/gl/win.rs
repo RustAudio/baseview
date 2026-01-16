@@ -233,6 +233,12 @@ impl GlContext {
             &mut num_formats,
         );
 
+        if num_formats <= 0 || pixel_format == 0 {
+            eprintln!("Error: Failed to find matching pixel format (sRGB requested: {})", config.srgb);
+            ReleaseDC(hwnd, hdc);
+            return Err(GlError::CreationFailed(()));
+        }
+
         let mut pfd: PIXELFORMATDESCRIPTOR = std::mem::zeroed();
         DescribePixelFormat(
             hdc,
