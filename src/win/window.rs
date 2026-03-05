@@ -13,7 +13,7 @@ use winapi::um::winuser::{
     SWP_NOZORDER, TRACKMOUSEEVENT, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED,
     WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
     WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSELEAVE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY,
-    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN,
+    WM_NCHITTEST, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE,WM_SYSCHAR, WM_SYSKEYDOWN,
     WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD,
     WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
     XBUTTON1, XBUTTON2,
@@ -451,6 +451,11 @@ unsafe fn wnd_proc_inner(
         }
         // NOTE: `WM_NCDESTROY` is handled in the outer function because this deallocates the window
         //        state
+        WM_NCHITTEST => {
+            // Always return HTCLIENT to prevent the DAW host or Windows from
+            // entering a modal resize loop when the mouse hits window borders.
+            Some(HTCLIENT as LRESULT)
+        }
         BV_WINDOW_MUST_CLOSE => {
             DestroyWindow(hwnd);
             Some(0)
