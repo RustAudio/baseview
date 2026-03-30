@@ -36,7 +36,7 @@ pub struct WindowOpenOptions {
 }
 
 impl WindowOpenOptions {
-    pub fn default_no_gl() -> Self {
+    pub fn default_no_opengl() -> Self {
         Self {
             title: String::from("baseview window"),
             size: Size { width: 500.0, height: 400.0 },
