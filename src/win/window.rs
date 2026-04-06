@@ -268,6 +268,7 @@ unsafe fn wnd_proc_inner(
                         // Capture the mouse cursor on button down
                         mouse_button_counter = mouse_button_counter.saturating_add(1);
                         SetCapture(hwnd);
+                        SetFocus(hwnd);
                         MouseEvent::ButtonPressed {
                             button,
                             modifiers: window_state
@@ -691,6 +692,10 @@ impl Window<'_> {
                 null_mut(),
             );
             // todo: manage error ^
+
+            if parented {
+                SetFocus(hwnd);
+            }
 
             let kb_hook = hook::init_keyboard_hook(hwnd);
 
