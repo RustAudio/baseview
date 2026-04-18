@@ -47,6 +47,23 @@ unsafe impl HasRawWindowHandle for WindowHandle {
 pub trait WindowHandler {
     fn on_frame(&mut self, window: &mut Window);
     fn on_event(&mut self, window: &mut Window, event: Event) -> EventStatus;
+
+    /// Return `true` when the currently focused UI element expects keyboard
+    /// input as text — for example when a text field is focused.
+    ///
+    /// On macOS, baseview uses this to route `keyDown:` through AppKit's
+    /// `NSTextInputContext` pipeline when the return value is `true`. That
+    /// lets the host's key-binding pre-check (e.g. REAPER's space-bar
+    /// transport shortcut) be bypassed for text-input keys while still
+    /// forwarding non-text keys to the host normally. It also enables IME
+    /// input (Japanese, Chinese, Korean) and the macOS accent menu on
+    /// long-press.
+    ///
+    /// Default: `false`, which preserves the previous behaviour of always
+    /// forwarding unconsumed key events up the responder chain.
+    fn has_text_focus(&mut self, _window: &mut Window) -> bool {
+        false
+    }
 }
 
 pub struct Window<'a> {

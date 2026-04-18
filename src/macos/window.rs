@@ -268,6 +268,7 @@ impl<'a> Window<'a> {
             frame_timer: Cell::new(None),
             window_info: Cell::new(window_info),
             deferred_events: RefCell::default(),
+            current_key_event: Cell::new(nil),
         });
 
         let window_state_ptr = Rc::into_raw(Rc::clone(&window_state));
@@ -364,6 +365,11 @@ pub(super) struct WindowState {
 
     /// Events that will be triggered at the end of `window_handler`'s borrow.
     deferred_events: RefCell<VecDeque<Event>>,
+
+    /// The NSEvent currently being routed through NSTextInputContext, so
+    /// that `insertText:` / `doCommandBySelector:` callbacks from AppKit
+    /// can reach back to the original event's keyCode and modifiers.
+    current_key_event: Cell<id>,
 }
 
 impl WindowState {
@@ -418,6 +424,29 @@ impl WindowState {
 
     pub(super) fn process_native_key_event(&self, event: *mut Object) -> Option<KeyboardEvent> {
         self.keyboard_state.process_native_event(event)
+    }
+
+    /// Query the `WindowHandler` for whether a text-input view currently
+    /// has focus. Used to decide whether to route `keyDown:` through
+    /// NSTextInputContext on macOS. Returns `false` if the handler is
+    /// already mutably borrowed (re-entrant call) or the handler returns
+    /// `false`.
+    pub(super) fn has_text_focus(&self) -> bool {
+        match self.window_handler.try_borrow_mut() {
+            Ok(mut handler) => {
+                let mut window = crate::Window::new(Window { inner: &self.window_inner });
+                handler.has_text_focus(&mut window)
+            }
+            Err(_) => false,
+        }
+    }
+
+    pub(super) fn set_current_key_event(&self, event: id) {
+        self.current_key_event.set(event);
+    }
+
+    pub(super) fn current_key_event(&self) -> id {
+        self.current_key_event.get()
     }
 
     unsafe fn setup_timer(window_state_ptr: *const WindowState) {

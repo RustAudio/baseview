@@ -4,12 +4,13 @@ use cocoa::appkit::{NSEvent, NSFilenamesPboardType, NSView, NSWindow};
 use cocoa::base::{id, nil, BOOL, NO, YES};
 use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize, NSUInteger};
 
+use keyboard_types::Key;
 use objc::{
     class,
     declare::ClassDecl,
     msg_send,
-    runtime::{Class, Object, Sel},
-    sel, sel_impl,
+    runtime::{Class, Object, Protocol, Sel},
+    sel, sel_impl, Encode, Encoding,
 };
 use uuid::Uuid;
 
@@ -220,13 +221,305 @@ unsafe fn create_view_class() -> &'static Class {
     add_simple_mouse_class_method!(class, mouseEntered, MouseEvent::CursorEntered);
     add_simple_mouse_class_method!(class, mouseExited, MouseEvent::CursorLeft);
 
-    add_simple_keyboard_class_method!(class, keyDown);
+    // keyDown gets a custom impl that may route through NSTextInputContext
+    // when a text-input view has focus (see `key_down` below). keyUp and
+    // flagsChanged still go through the simple dispatch macro.
+    class.add_method(sel!(keyDown:), key_down as extern "C" fn(&Object, Sel, id));
+
+    // performKeyEquivalent: runs BEFORE keyDown: in AppKit's dispatch
+    // order: AppKit offers the event to every view in the responder chain
+    // (bottom-up), then to the window, then — only if no view claimed it —
+    // falls through to keyDown:. Some plugin hosts (REAPER on macOS)
+    // install key bindings at the window-performKeyEquivalent: level
+    // (space = transport, etc). Without an override, our view returns NO
+    // by default, the host's window-level handler claims the key, and
+    // keyDown: on our view never fires — so users cannot type those
+    // characters into a focused plugin text input. Tested repro in REAPER:
+    // without this override, space cannot be typed into a focused textbox
+    // and instead toggles REAPER's transport.
+    //
+    // Route through the same NSTextInputContext path as keyDown: and
+    // claim the event when a text input has focus; return NO otherwise
+    // so host accelerators work normally.
+    class.add_method(
+        sel!(performKeyEquivalent:),
+        perform_key_equivalent as extern "C" fn(&Object, Sel, id) -> BOOL,
+    );
+
     add_simple_keyboard_class_method!(class, keyUp);
     add_simple_keyboard_class_method!(class, flagsChanged);
+
+    // NSTextInputClient protocol stubs.
+    //
+    // Cocoa text hosts (including REAPER on macOS) use protocol conformance
+    // on the first-responder NSView as a signal that the view is a text
+    // editor — if present, the host's key-binding pre-check (e.g. REAPER's
+    // space-bar-is-transport) is bypassed and the key event is dispatched to
+    // the view's NSTextInputContext instead. The methods below are mostly
+    // inert sentinels; the real work still happens in the existing
+    // `keyDown:` handler via `process_native_key_event` + `trigger_event`.
+    if let Some(proto) = Protocol::get("NSTextInputClient") {
+        class.add_protocol(proto);
+    }
+
+    class.add_method(
+        sel!(hasMarkedText),
+        has_marked_text as extern "C" fn(&Object, Sel) -> BOOL,
+    );
+    class.add_method(
+        sel!(markedRange),
+        marked_range as extern "C" fn(&Object, Sel) -> NSRange,
+    );
+    class.add_method(
+        sel!(selectedRange),
+        selected_range as extern "C" fn(&Object, Sel) -> NSRange,
+    );
+    class.add_method(
+        sel!(setMarkedText:selectedRange:replacementRange:),
+        set_marked_text as extern "C" fn(&Object, Sel, id, NSRange, NSRange),
+    );
+    class.add_method(sel!(unmarkText), unmark_text as extern "C" fn(&Object, Sel));
+    class.add_method(
+        sel!(validAttributesForMarkedText),
+        valid_attributes_for_marked_text as extern "C" fn(&Object, Sel) -> id,
+    );
+    class.add_method(
+        sel!(attributedSubstringForProposedRange:actualRange:),
+        attributed_substring_for_proposed_range
+            as extern "C" fn(&Object, Sel, NSRange, *mut c_void) -> id,
+    );
+    class.add_method(
+        sel!(insertText:replacementRange:),
+        insert_text as extern "C" fn(&Object, Sel, id, NSRange),
+    );
+    class.add_method(
+        sel!(characterIndexForPoint:),
+        character_index_for_point as extern "C" fn(&Object, Sel, NSPoint) -> NSUInteger,
+    );
+    class.add_method(
+        sel!(firstRectForCharacterRange:actualRange:),
+        first_rect_for_character_range as extern "C" fn(&Object, Sel, NSRange, *mut c_void) -> NSRect,
+    );
+    class.add_method(
+        sel!(doCommandBySelector:),
+        do_command_by_selector as extern "C" fn(&Object, Sel, Sel),
+    );
 
     class.add_ivar::<*mut c_void>(BASEVIEW_STATE_IVAR);
 
     class.register()
+}
+
+const NSNOT_FOUND: NSUInteger = NSUInteger::MAX;
+
+/// Local NSRange that implements `objc::Encode`. `cocoa::foundation::NSRange`
+/// does not implement `Encode`, so we can't use it in `add_method` signatures
+/// on the objc 0.2 API.
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct NSRange {
+    location: NSUInteger,
+    length: NSUInteger,
+}
+
+unsafe impl Encode for NSRange {
+    fn encode() -> Encoding {
+        let encoding = format!(
+            "{{_NSRange={}{}}}",
+            NSUInteger::encode().as_str(),
+            NSUInteger::encode().as_str()
+        );
+        unsafe { Encoding::from_str(&encoding) }
+    }
+}
+
+extern "C" fn has_marked_text(_this: &Object, _sel: Sel) -> BOOL {
+    NO
+}
+
+extern "C" fn marked_range(_this: &Object, _sel: Sel) -> NSRange {
+    NSRange { location: NSNOT_FOUND, length: 0 }
+}
+
+extern "C" fn selected_range(_this: &Object, _sel: Sel) -> NSRange {
+    NSRange { location: NSNOT_FOUND, length: 0 }
+}
+
+extern "C" fn set_marked_text(
+    _this: &Object,
+    _sel: Sel,
+    _text: id,
+    _selected: NSRange,
+    _replacement: NSRange,
+) {
+}
+
+extern "C" fn unmark_text(_this: &Object, _sel: Sel) {}
+
+extern "C" fn valid_attributes_for_marked_text(_this: &Object, _sel: Sel) -> id {
+    unsafe { NSArray::arrayWithObjects(nil, &[]) }
+}
+
+extern "C" fn attributed_substring_for_proposed_range(
+    _this: &Object,
+    _sel: Sel,
+    _range: NSRange,
+    _actual_range: *mut c_void,
+) -> id {
+    nil
+}
+
+extern "C" fn insert_text(this: &Object, _sel: Sel, text: id, _replacement: NSRange) {
+    // When `keyDown:` routes the event through NSTextInputContext, AppKit
+    // runs the NSEvent through the keyboard layout, dead-key composition,
+    // and any active IME, then calls back here with the finished string.
+    // Use that decoded string for `Key::Character` — re-reading
+    // `[event characters]` would miss IME-composed or dead-key-composed
+    // characters because those aren't carried on any single NSEvent.
+    //
+    // `text` is documented as `id` — NSString in the common case,
+    // NSAttributedString if the consumer set marked-text attributes.
+    // Normalize to NSString via `-string` when needed.
+    let text_str: id = unsafe {
+        let is_attributed: BOOL = msg_send![text, isKindOfClass: class!(NSAttributedString)];
+        if is_attributed == YES {
+            msg_send![text, string]
+        } else {
+            text
+        }
+    };
+    let decoded = from_nsstring(text_str);
+    if decoded.is_empty() {
+        return;
+    }
+
+    // Use the stored NSEvent for physical `Code` and `modifiers`; override
+    // `Key::Character` with what AppKit handed us in `text`.
+    let state = unsafe { WindowState::from_view(this) };
+    let event = state.current_key_event();
+    if event == nil {
+        return;
+    }
+    if let Some(mut key_event) = state.process_native_key_event(event) {
+        key_event.key = Key::Character(decoded);
+        state.trigger_event(Event::Keyboard(key_event));
+    }
+}
+
+extern "C" fn character_index_for_point(_this: &Object, _sel: Sel, _point: NSPoint) -> NSUInteger {
+    NSNOT_FOUND
+}
+
+extern "C" fn first_rect_for_character_range(
+    _this: &Object,
+    _sel: Sel,
+    _range: NSRange,
+    _actual_range: *mut c_void,
+) -> NSRect {
+    NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(0.0, 0.0))
+}
+
+extern "C" fn do_command_by_selector(this: &Object, _sel: Sel, _selector: Sel) {
+    // For non-printable commands (arrow keys, backspace, enter, escape,
+    // etc.) AppKit calls this instead of `insertText:`. The stored NSEvent
+    // already carries a mac-native keyCode that `process_native_key_event`
+    // maps to the right `Code`, so we re-use the same dispatch path.
+    let state = unsafe { WindowState::from_view(this) };
+    let event = state.current_key_event();
+    if event == nil {
+        return;
+    }
+    if let Some(key_event) = state.process_native_key_event(event) {
+        state.trigger_event(Event::Keyboard(key_event));
+    }
+}
+
+/// Handler for `keyDown:`. When a text-input view has focus, route the
+/// event through AppKit's NSTextInputContext so that:
+///
+/// - the host's key-binding pre-check (e.g. REAPER's space-bar transport
+///   shortcut) is bypassed for text-input keys,
+/// - IME input (Japanese, Chinese, Korean) and the macOS accent menu
+///   work,
+/// - dead-key composition (option+e then 'e' → 'é') works.
+///
+/// Otherwise fall back to the same dispatch as the simple keyboard
+/// macro: translate the NSEvent into a `KeyboardEvent`, report it, and
+/// forward to the superclass if the app didn't consume it.
+extern "C" fn key_down(this: &Object, _sel: Sel, event: id) {
+    let state = unsafe { WindowState::from_view(this) };
+
+    // Route through the text-input pipeline only when the app reports a
+    // text field has focus. Otherwise preserve the old behaviour so host
+    // shortcuts still work (e.g. space toggles transport in REAPER when
+    // no text field is focused).
+    if state.has_text_focus() {
+        state.set_current_key_event(event);
+        let handled: BOOL = unsafe {
+            let input_context: id = msg_send![this, inputContext];
+            if input_context != nil {
+                msg_send![input_context, handleEvent: event]
+            } else {
+                NO
+            }
+        };
+        state.set_current_key_event(nil);
+
+        if handled == YES {
+            // NSTextInputContext dispatched via insertText: or
+            // doCommandBySelector:, which already called trigger_event.
+            // Do not call super — swallow the event so it does not bubble
+            // up to the host window.
+            return;
+        }
+        // Fall through. inputContext declined the event (e.g. a Cmd-modified
+        // key), let the usual path handle it.
+    }
+
+    if let Some(key_event) = state.process_native_key_event(event) {
+        let status = state.trigger_event(Event::Keyboard(key_event));
+
+        if let EventStatus::Ignored = status {
+            unsafe {
+                let superclass = msg_send![this, superclass];
+                let () = msg_send![super(this, superclass), keyDown: event];
+            }
+        }
+    }
+}
+
+/// Handler for `performKeyEquivalent:`. See the comment on the
+/// `add_method` registration above for why this override exists; in
+/// short: hosts install window-level key bindings at this dispatch
+/// stage, so without an override `keyDown:` never fires for keys the
+/// host claims (e.g. space → REAPER transport), and users cannot type
+/// them into a focused plugin text input.
+///
+/// When no text input is focused, return NO so AppKit continues to the
+/// host's window-performKeyEquivalent: (host accelerators work
+/// normally). When a text input is focused, route through
+/// NSTextInputContext — same pipeline as `keyDown:` — and return
+/// `handleEvent:`'s result so AppKit stops dispatch at our view when
+/// the input context claimed the event.
+extern "C" fn perform_key_equivalent(this: &Object, _sel: Sel, event: id) -> BOOL {
+    let state = unsafe { WindowState::from_view(this) };
+
+    if !state.has_text_focus() {
+        return NO;
+    }
+
+    state.set_current_key_event(event);
+    let handled: BOOL = unsafe {
+        let input_context: id = msg_send![this, inputContext];
+        if input_context != nil {
+            msg_send![input_context, handleEvent: event]
+        } else {
+            NO
+        }
+    };
+    state.set_current_key_event(nil);
+
+    handled
 }
 
 extern "C" fn property_yes(_this: &Object, _sel: Sel) -> BOOL {
@@ -255,12 +548,36 @@ extern "C" fn become_first_responder(this: &Object, _sel: Sel) -> BOOL {
     if is_key_window {
         state.trigger_deferrable_event(Event::Window(WindowEvent::Focused));
     }
+
+    // Mark our NSTextInputContext as the globally-active input context
+    // while this view has focus. Required for REAPER's "Send all
+    // keyboard input to plug-in" path: with that toggle enabled, REAPER
+    // delivers modifier-combined keys (Cmd shortcuts, Cmd held alone)
+    // to the active input context rather than routing them directly to
+    // the NSView. Without `activate` here, those keys get dispatched
+    // into an inactive context and are either dropped or misinterpreted
+    // (Cmd held alone was observed firing `deleteBackward:` in practice).
+    unsafe {
+        let input_context: id = msg_send![this, inputContext];
+        if input_context != nil {
+            let _: () = msg_send![input_context, activate];
+        }
+    }
+
     YES
 }
 
 extern "C" fn resign_first_responder(this: &Object, _sel: Sel) -> BOOL {
     let state = unsafe { WindowState::from_view(this) };
     state.trigger_deferrable_event(Event::Window(WindowEvent::Unfocused));
+
+    unsafe {
+        let input_context: id = msg_send![this, inputContext];
+        if input_context != nil {
+            let _: () = msg_send![input_context, deactivate];
+        }
+    }
+
     YES
 }
 
