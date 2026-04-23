@@ -138,6 +138,14 @@ impl GlContext {
             let _: () = msg_send![self.view, setNeedsDisplay: YES];
         }
     }
+
+    /// Pointer to the `NSOpenGLView` this context renders into. Used by
+    /// the parent `NSView`'s `hitTest:` override to collapse hits on the
+    /// render subview to the parent, so AppKit routes `mouseDown:` on
+    /// first click in non-key windows.
+    pub(crate) fn ns_view(&self) -> id {
+        self.view
+    }
 }
 
 impl Drop for GlContext {
