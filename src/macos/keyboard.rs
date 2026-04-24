@@ -311,7 +311,18 @@ impl KeyboardState {
                         return None;
                     }
                 }
-                _ => unreachable!(),
+                // AppKit occasionally dispatches non-key events into
+                // `keyDown:` / `keyUp:` / `flagsChanged:` selectors
+                // (e.g. `NSAppKitDefined`, `NSSystemDefined`, or sync
+                // events around Cmd-Tab and input-source switches).
+                // Panicking here crosses the `extern "C"` boundary as
+                // `panic_cannot_unwind` and aborts the hosting process,
+                // which has been observed crashing plug-in hosts when
+                // the focused view is a baseview `NSView`. Drop the
+                // event silently instead; the handler has nothing
+                // meaningful to synthesize from an event that isn't
+                // a key or flags-changed.
+                _ => return None,
             };
             let is_composing = false;
             let repeat: bool = event_type == NSEventType::NSKeyDown && msg_send![event, isARepeat];
