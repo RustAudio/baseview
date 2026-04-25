@@ -1,7 +1,3 @@
-// This is required because the objc crate is causing a lot of warnings: https://github.com/SSheldon/rust-objc/issues/125
-// Eventually we should migrate to the objc2 crate and remove this.
-#![allow(unexpected_cfgs)]
-
 use std::ffi::c_void;
 use std::str::FromStr;
 
@@ -21,7 +17,8 @@ use core_foundation::base::TCFType;
 use core_foundation::bundle::{CFBundleGetBundleWithIdentifier, CFBundleGetFunctionPointerForName};
 use core_foundation::string::CFString;
 
-use objc::{msg_send, sel, sel_impl};
+use objc2::msg_send;
+use objc2::runtime::AnyObject;
 
 use super::{GlConfig, GlError, Profile};
 
@@ -98,15 +95,16 @@ impl GlContext {
         NSOpenGLView::display_(view);
         parent_view.addSubview_(view);
 
-        let context: id = msg_send![view, openGLContext];
-        let () = msg_send![context, retain];
+        let context_any: *mut AnyObject = msg_send![view as *mut AnyObject, openGLContext];
+        let _: *mut AnyObject = msg_send![context_any, retain];
+        let context: id = context_any as id;
 
         context.setValues_forParameter_(
             &(config.vsync as i32),
             NSOpenGLContextParameter::NSOpenGLCPSwapInterval,
         );
 
-        let () = msg_send![pixel_format, release];
+        let () = msg_send![pixel_format as *mut AnyObject, release];
 
         Ok(GlContext { view, context })
     }
@@ -131,7 +129,7 @@ impl GlContext {
     pub fn swap_buffers(&self) {
         unsafe {
             self.context.flushBuffer();
-            let () = msg_send![self.view, setNeedsDisplay: YES];
+            let () = msg_send![self.view as *mut AnyObject, setNeedsDisplay: YES];
         }
     }
 
@@ -139,7 +137,7 @@ impl GlContext {
     pub(crate) fn resize(&self, size: NSSize) {
         unsafe { NSView::setFrameSize(self.view, size) };
         unsafe {
-            let _: () = msg_send![self.view, setNeedsDisplay: YES];
+            let _: () = msg_send![self.view as *mut AnyObject, setNeedsDisplay: YES];
         }
     }
 }
@@ -147,8 +145,8 @@ impl GlContext {
 impl Drop for GlContext {
     fn drop(&mut self) {
         unsafe {
-            let () = msg_send![self.context, release];
-            let () = msg_send![self.view, release];
+            let () = msg_send![self.context as *mut AnyObject, release];
+            let () = msg_send![self.view as *mut AnyObject, release];
         }
     }
 }

@@ -8,14 +8,15 @@ use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
     NSPasteboard, NSView, NSWindow, NSWindowStyleMask,
 };
-use cocoa::base::{id, nil, BOOL, NO, YES};
+use cocoa::base::{id, nil, NO, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use core_foundation::runloop::{
-    CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer, kCFRunLoopDefaultMode,
+    __CFRunLoopTimer, kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext,
 };
 use keyboard_types::KeyboardEvent;
-use objc::class;
-use objc::{msg_send, runtime::Object, sel, sel_impl};
+use objc2::class;
+use objc2::msg_send;
+use objc2::runtime::{AnyObject, Bool as ObjcBool};
 use raw_window_handle::{
     AppKitDisplayHandle, AppKitWindowHandle, HasRawDisplayHandle, HasRawWindowHandle,
     RawDisplayHandle, RawWindowHandle,
@@ -74,7 +75,9 @@ impl WindowInner {
             self.open.set(false);
             unsafe {
                 // Take back ownership of the NSView's Rc<WindowState>
-                let state_ptr: *const c_void = *(*self.ns_view).get_ivar(BASEVIEW_STATE_IVAR);
+                let ns_view_any = &*(self.ns_view as *mut AnyObject);
+                #[allow(deprecated)]
+                let state_ptr: *const c_void = *ns_view_any.get_ivar(BASEVIEW_STATE_IVAR);
                 let window_state = Rc::from_raw(state_ptr as *mut WindowState);
 
                 // Cancel the frame timer
@@ -83,9 +86,10 @@ impl WindowInner {
                 }
 
                 // Deregister NSView from NotificationCenter.
-                let notification_center: id =
+                let notification_center: *mut AnyObject =
                     msg_send![class!(NSNotificationCenter), defaultCenter];
-                let () = msg_send![notification_center, removeObserver:self.ns_view];
+                let () =
+                    msg_send![notification_center, removeObserver: self.ns_view as *mut AnyObject];
 
                 drop(window_state);
 
@@ -96,7 +100,7 @@ impl WindowInner {
 
                 // Ensure that the NSView is detached from the parent window
                 self.ns_view.removeFromSuperview();
-                let () = msg_send![self.ns_view as id, release];
+                let () = msg_send![self.ns_view as *mut AnyObject, release];
 
                 // If in non-parented mode, we want to also quit the app altogether
                 let app = self.ns_app.take();
@@ -166,9 +170,12 @@ impl<'a> Window<'a> {
         let window_handle = Self::init(window_inner, window_info, build);
 
         unsafe {
-            let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
+            let _: () = msg_send![
+                handle.ns_view as *mut AnyObject,
+                addSubview: ns_view as *mut AnyObject
+            ];
 
-            let () = msg_send![pool, drain];
+            let () = msg_send![pool as *mut AnyObject, drain];
         }
 
         window_handle
@@ -244,7 +251,7 @@ impl<'a> Window<'a> {
             ns_window.setContentView_(ns_view);
             ns_window.setDelegate_(ns_view);
 
-            let () = msg_send![pool, drain];
+            let () = msg_send![pool as *mut AnyObject, drain];
 
             app.run();
         }
@@ -273,7 +280,12 @@ impl<'a> Window<'a> {
         let window_state_ptr = Rc::into_raw(Rc::clone(&window_state));
 
         unsafe {
-            (*ns_view).set_ivar(BASEVIEW_STATE_IVAR, window_state_ptr as *const c_void);
+            let ns_view_any = &mut *(ns_view as *mut AnyObject);
+            #[allow(deprecated)]
+            {
+                *ns_view_any.get_mut_ivar::<*const c_void>(BASEVIEW_STATE_IVAR) =
+                    window_state_ptr as *const c_void;
+            }
 
             WindowState::setup_timer(window_state_ptr);
         }
@@ -287,24 +299,24 @@ impl<'a> Window<'a> {
 
     pub fn has_focus(&mut self) -> bool {
         unsafe {
-            let view = self.inner.ns_view.as_mut().unwrap();
-            let window: id = msg_send![view, window];
-            if window == nil {
+            let view = self.inner.ns_view as *mut AnyObject;
+            let window: *mut AnyObject = msg_send![view, window];
+            if window.is_null() {
                 return false;
             };
-            let first_responder: id = msg_send![window, firstResponder];
-            let is_key_window: BOOL = msg_send![window, isKeyWindow];
-            let is_focused: BOOL = msg_send![view, isEqual: first_responder];
-            is_key_window == YES && is_focused == YES
+            let first_responder: *mut AnyObject = msg_send![window, firstResponder];
+            let is_key_window: ObjcBool = msg_send![window, isKeyWindow];
+            let is_focused: ObjcBool = msg_send![view, isEqual: first_responder];
+            is_key_window.as_bool() && is_focused.as_bool()
         }
     }
 
     pub fn focus(&mut self) {
         unsafe {
-            let view = self.inner.ns_view.as_mut().unwrap();
-            let window: id = msg_send![view, window];
-            if window != nil {
-                msg_send![window, makeFirstResponder:view]
+            let view = self.inner.ns_view as *mut AnyObject;
+            let window: *mut AnyObject = msg_send![view, window];
+            if !window.is_null() {
+                let _: ObjcBool = msg_send![window, makeFirstResponder: view];
             }
         }
     }
@@ -317,7 +329,7 @@ impl<'a> Window<'a> {
 
             unsafe { NSView::setFrameSize(self.inner.ns_view, size) };
             unsafe {
-                let _: () = msg_send![self.inner.ns_view, setNeedsDisplay: YES];
+                let _: () = msg_send![self.inner.ns_view as *mut AnyObject, setNeedsDisplay: YES];
             }
 
             // When using OpenGL the `NSOpenGLView` needs to be resized separately? Why? Because
@@ -372,7 +384,8 @@ impl WindowState {
     /// This method returns a cloned `Rc<WindowState>` rather than just a `&WindowState`, since the
     /// original `Rc<WindowState>` owned by the `NSView` can be dropped at any time
     /// (including during an event handler).
-    pub(super) unsafe fn from_view(view: &Object) -> Rc<WindowState> {
+    pub(super) unsafe fn from_view(view: &AnyObject) -> Rc<WindowState> {
+        #[allow(deprecated)]
         let state_ptr: *const c_void = *view.get_ivar(BASEVIEW_STATE_IVAR);
 
         let state_rc = Rc::from_raw(state_ptr as *const WindowState);
@@ -416,8 +429,8 @@ impl WindowState {
         &self.keyboard_state
     }
 
-    pub(super) fn process_native_key_event(&self, event: *mut Object) -> Option<KeyboardEvent> {
-        self.keyboard_state.process_native_event(event)
+    pub(super) fn process_native_key_event(&self, event: *mut AnyObject) -> Option<KeyboardEvent> {
+        self.keyboard_state.process_native_event(event as id)
     }
 
     unsafe fn setup_timer(window_state_ptr: *const WindowState) {

@@ -34,7 +34,7 @@ uuid = { version = "0.8", features = ["v4"], optional = true }
 [target.'cfg(target_os="macos")'.dependencies]
 cocoa = "0.24.0"
 core-foundation = "0.9.1"
-objc = "0.2.7"
+objc2 = "0.6"
 uuid = { version = "0.8", features = ["v4"] }
 
 [dev-dependencies]

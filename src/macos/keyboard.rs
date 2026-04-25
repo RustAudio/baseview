@@ -24,7 +24,8 @@ use cocoa::appkit::{NSEvent, NSEventModifierFlags, NSEventType};
 use cocoa::base::id;
 use cocoa::foundation::NSString;
 use keyboard_types::{Code, Key, KeyState, KeyboardEvent, Modifiers};
-use objc::{msg_send, sel, sel_impl};
+use objc2::msg_send;
+use objc2::runtime::AnyObject;
 
 use crate::keyboard::code_to_location;
 
@@ -282,10 +283,23 @@ impl KeyboardState {
     pub(crate) fn process_native_event(&self, event: id) -> Option<KeyboardEvent> {
         unsafe {
             let event_type = event.eventType();
-            let key_code = event.keyCode();
+            let raw_mods = event.modifierFlags();
+            // `-[NSEvent keyCode]` is documented to raise
+            // `NSInternalInconsistencyException` when sent to non-key events.
+            // AppKit occasionally dispatches non-key events into
+            // `keyDown:` / `keyUp:` / `flagsChanged:` selectors
+            // (e.g. `NSAppKitDefined`, `NSSystemDefined`, or sync events
+            // around Cmd-Tab / input-source switches), so gate the call.
+            // Without this gate, the exception unwinds out of the
+            // `extern "C-unwind"` callback and silently swallows the event.
+            let key_code = match event_type {
+                NSEventType::NSKeyDown | NSEventType::NSKeyUp | NSEventType::NSFlagsChanged => {
+                    event.keyCode()
+                }
+                _ => return None,
+            };
             let code = key_code_to_code(key_code);
             let location = code_to_location(code);
-            let raw_mods = event.modifierFlags();
             let modifiers = make_modifiers(raw_mods);
             let state = match event_type {
                 NSEventType::NSKeyDown => KeyState::Down,
@@ -311,10 +325,24 @@ impl KeyboardState {
                         return None;
                     }
                 }
+                // Already filtered above; reachable only via newly-introduced
+                // event types we haven't taught the layer above about.
                 _ => unreachable!(),
             };
             let is_composing = false;
-            let repeat: bool = event_type == NSEventType::NSKeyDown && msg_send![event, isARepeat];
+            // `-[NSEvent isARepeat]` is documented to raise
+            // `NSInternalInconsistencyException` when sent to anything other
+            // than keyDown/keyUp. Gate the query on the event types that
+            // actually carry a meaningful repeat flag — without this gate,
+            // the exception unwinds out of the `extern "C-unwind"` callback
+            // on every `flagsChanged:` press, dropping the modifier-state
+            // KeyboardEvent that downstream layers (e.g. baseview consumers
+            // that track Alt/Cmd/Shift via flagsChanged) rely on.
+            let repeat: bool = if event_type == NSEventType::NSKeyDown {
+                msg_send![event as *mut AnyObject, isARepeat]
+            } else {
+                false
+            };
             let key = if let Some(key) = code_to_key(code) {
                 key
             } else {
