@@ -18,7 +18,7 @@ pub enum WindowScalePolicy {
 pub struct WindowOpenOptions {
     pub title: String,
 
-    /// The logical size of the window.
+    /// The logical size of the window
     ///
     /// These dimensions will be scaled by the scaling policy specified in `scale`. Mouse
     /// position will be passed back as logical coordinates.
@@ -30,21 +30,9 @@ pub struct WindowOpenOptions {
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
     /// access this context through [crate::Window::gl_context].
     ///
-    /// By default this is set to `Some(GlConfig::default())`.
+    /// By default this is set to `None`.
     #[cfg(feature = "opengl")]
     pub gl_config: Option<GlConfig>,
-}
-
-impl WindowOpenOptions {
-    pub fn default_no_opengl() -> Self {
-        Self {
-            title: String::from("baseview window"),
-            size: Size { width: 500.0, height: 400.0 },
-            scale: WindowScalePolicy::default(),
-            #[cfg(feature = "opengl")]
-            gl_config: None,
-        }
-    }
 }
 
 impl Default for WindowOpenOptions {
@@ -54,7 +42,7 @@ impl Default for WindowOpenOptions {
             size: Size { width: 500.0, height: 400.0 },
             scale: WindowScalePolicy::default(),
             #[cfg(feature = "opengl")]
-            gl_config: Some(GlConfig::default()),
+            gl_config: None,
         }
     }
 }
