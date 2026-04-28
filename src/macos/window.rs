@@ -65,7 +65,7 @@ pub(super) struct WindowInner {
     ns_view: id,
 
     #[cfg(feature = "opengl")]
-    gl_context: Option<GlContext>,
+    pub(super) gl_context: Option<GlContext>,
 }
 
 impl WindowInner {

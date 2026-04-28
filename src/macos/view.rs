@@ -172,6 +172,7 @@ unsafe fn create_view_class() -> &'static Class {
         sel!(viewWillMoveToWindow:),
         view_will_move_to_window as extern "C" fn(&Object, Sel, id),
     );
+    class.add_method(sel!(hitTest:), hit_test as extern "C" fn(&Object, Sel, NSPoint) -> id);
     class.add_method(
         sel!(updateTrackingAreas:),
         update_tracking_areas as extern "C" fn(&Object, Sel, id),
@@ -344,6 +345,51 @@ unsafe fn reinit_tracking_area(this: &Object, tracking_area: *mut Object) {
         owner:this
         userInfo:nil
     ];
+}
+
+/// `hitTest:` override that collapses hits on baseview's internal
+/// OpenGL render subview to this NSView.
+///
+/// `src/gl/macos.rs` attaches an `NSOpenGLView` as a subview of this
+/// view so the GL context is isolated from event handling. The side
+/// effect is that `[NSView hitTest:]` returns the GL subview for
+/// every click inside our frame — `NSOpenGLView` inherits the
+/// default `acceptsFirstMouse:` which returns `NO`, so AppKit treats
+/// the first click in a non-key window as an activation click and
+/// never dispatches `mouseDown:`. That's the "first click dead zone"
+/// symptom reported in baseview#129 / #202 / #169.
+///
+/// Fix: if the hit lands on our own GL render subview (pointer
+/// equality against the `NSOpenGLView` stored in `GlContext`),
+/// collapse the result to `self`. AppKit then asks US about
+/// `acceptsFirstMouse:` (we return `YES`), and `mouseDown:` is
+/// dispatched on the first click. Hits on any other subview pass
+/// through unchanged — we only redirect our own render child, not
+/// anything the consumer may add.
+///
+/// No-op without the `opengl` feature: there's no GL subview to
+/// collapse, so the override pass-through is equivalent to the
+/// default implementation.
+extern "C" fn hit_test(this: &Object, _sel: Sel, point: NSPoint) -> id {
+    let super_result: id = unsafe {
+        let superclass = msg_send![this, superclass];
+        msg_send![super(this, superclass), hitTest: point]
+    };
+    if super_result == nil {
+        return nil;
+    }
+
+    #[cfg(feature = "opengl")]
+    unsafe {
+        let state = WindowState::from_view(this);
+        if let Some(gl_context) = state.window_inner.gl_context.as_ref() {
+            if super_result == gl_context.ns_view() {
+                return this as *const _ as id;
+            }
+        }
+    }
+
+    super_result
 }
 
 extern "C" fn view_will_move_to_window(this: &Object, _self: Sel, new_window: id) {
