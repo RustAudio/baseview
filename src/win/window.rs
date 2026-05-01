@@ -201,7 +201,7 @@ unsafe fn wnd_proc_inner(
             let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
             let physical_pos = PhyPoint { x, y };
-            let logical_pos = physical_pos.to_logical(&window_state.window_info.borrow());
+            let logical_pos = physical_pos.to_logical(&window_state.window_info());
             let move_event = Event::Mouse(MouseEvent::CursorMoved {
                 position: logical_pos,
                 modifiers: window_state
@@ -363,18 +363,17 @@ unsafe fn wnd_proc_inner(
             let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
 
             let new_window_info = {
-                let mut window_info = window_state.window_info.borrow_mut();
-                let new_window_info =
-                    WindowInfo::from_physical_size(PhySize { width, height }, window_info.scale());
+                let new_size = PhySize { width, height };
+                let current_size = window_state.current_size.get();
 
                 // Only send the event if anything changed
-                if window_info.physical_size() == new_window_info.physical_size() {
+                if current_size == new_size {
                     return None;
                 }
 
-                *window_info = new_window_info;
+                window_state.current_size.set(new_size);
 
-                new_window_info
+                WindowInfo::from_physical_size(new_size, window_state.current_scale_factor.get())
             };
 
             window_state
@@ -393,17 +392,16 @@ unsafe fn wnd_proc_inner(
                     let dpi = (wparam & 0xFFFF) as u16 as u32;
                     let scale_factor = dpi as f64 / 96.0;
 
-                    let mut window_info = window_state.window_info.borrow_mut();
-                    *window_info =
-                        WindowInfo::from_logical_size(window_info.logical_size(), scale_factor);
+                    window_state.current_scale_factor.set(scale_factor);
+                    let current_size = window_state.current_size.get();
 
                     Some((
                         RECT {
                             left: 0,
                             top: 0,
                             // todo: check if usize fits into i32
-                            right: window_info.physical_size().width as i32,
-                            bottom: window_info.physical_size().height as i32,
+                            right: current_size.width as i32,
+                            bottom: current_size.height as i32,
                         },
                         window_state.dw_style,
                     ))
@@ -496,7 +494,8 @@ pub(super) struct WindowState {
     /// GWLP_USERDATA) } as *const WindowState`.
     pub hwnd: HWND,
     window_class: ATOM,
-    window_info: RefCell<WindowInfo>,
+    current_size: Cell<PhySize>,
+    current_scale_factor: Cell<f64>,
     _parent_handle: Option<ParentHandle>,
     keyboard_state: RefCell<KeyboardState>,
     mouse_button_counter: Cell<usize>,
@@ -529,8 +528,8 @@ impl WindowState {
         Window { state: self }
     }
 
-    pub(super) fn window_info(&self) -> Ref<'_, WindowInfo> {
-        self.window_info.borrow()
+    pub(super) fn window_info(&self) -> WindowInfo {
+        WindowInfo::from_physical_size(self.current_size.get(), self.current_scale_factor.get())
     }
 
     pub(super) fn keyboard_state(&self) -> Ref<'_, KeyboardState> {
@@ -547,7 +546,7 @@ impl WindowState {
             WindowTask::Resize(size) => {
                 // `self.window_info` will be modified in response to the `WM_SIZE` event that
                 // follows the `SetWindowPos()` call
-                let scaling = self.window_info.borrow().scale();
+                let scaling = self.current_scale_factor.get();
                 let window_info = WindowInfo::from_logical_size(size, scaling);
 
                 // If the window is a standalone window then the size needs to include the window
@@ -650,14 +649,14 @@ impl Window<'_> {
                 WindowScalePolicy::ScaleFactor(scale) => scale,
             };
 
-            let window_info = WindowInfo::from_logical_size(options.size, scaling);
+            let current_size = WindowInfo::from_logical_size(options.size, scaling).physical_size();
 
             let mut rect = RECT {
                 left: 0,
                 top: 0,
                 // todo: check if usize fits into i32
-                right: window_info.physical_size().width as i32,
-                bottom: window_info.physical_size().height as i32,
+                right: current_size.width as i32,
+                bottom: current_size.height as i32,
             };
 
             let flags = if parented {
@@ -709,7 +708,8 @@ impl Window<'_> {
             let window_state = Rc::new(WindowState {
                 hwnd,
                 window_class,
-                window_info: RefCell::new(window_info),
+                current_scale_factor: scaling.into(),
+                current_size: current_size.into(),
                 _parent_handle: parent_handle,
                 keyboard_state: RefCell::new(KeyboardState::new()),
                 mouse_button_counter: Cell::new(0),
@@ -748,17 +748,19 @@ impl Window<'_> {
                 let dpi = GetDpiForWindow(hwnd);
                 let scale_factor = dpi as f64 / 96.0;
 
-                let mut window_info = window_state.window_info.borrow_mut();
-                if window_info.scale() != scale_factor {
-                    *window_info =
-                        WindowInfo::from_logical_size(window_info.logical_size(), scale_factor);
+                let current_scale_factor = window_state.current_scale_factor.get();
+
+                if current_scale_factor != scale_factor {
+                    window_state.current_scale_factor.set(scale_factor);
+
+                    let current_size = window_state.current_size.get();
 
                     Some(RECT {
                         left: 0,
                         top: 0,
                         // todo: check if usize fits into i32
-                        right: window_info.physical_size().width as i32,
-                        bottom: window_info.physical_size().height as i32,
+                        right: current_size.width as i32,
+                        bottom: current_size.height as i32,
                     })
                 } else {
                     None
