@@ -29,6 +29,16 @@ Install dependencies, e.g.:
 sudo apt-get install libx11-dev libxcb1-dev libx11-xcb-dev libgl1-mesa-dev
 ```
 
+## Contributing
+
+Contributions are very much welcomed! As long as they comply to the policy and licensing requirements
+below.
+
+### AI policy
+
+The general [AI policy of the RustAudio Community](https://rust.audio/community/ai/) applies to this repository. Please
+ensure compliance to these rules before submitting your contribution to this project.
+
 ## License
 
 Licensed under either of <a href="LICENSE-APACHE">Apache License, Version
