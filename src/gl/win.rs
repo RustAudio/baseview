@@ -203,6 +203,7 @@ impl GlContext {
 
         let hdc = GetDC(hwnd);
 
+        // Try to choose pixel format with requested config
         #[rustfmt::skip]
         let pixel_format_attribs = [
             WGL_DRAW_TO_WINDOW_ARB, 1,
@@ -232,6 +233,44 @@ impl GlContext {
             &mut pixel_format,
             &mut num_formats,
         );
+
+        // If no matching format found and sRGB was requested, try again without sRGB
+        if num_formats == 0 && config.srgb {
+            eprintln!("Warning: sRGB framebuffer not supported, falling back to non-sRGB");
+
+            #[rustfmt::skip]
+            let pixel_format_attribs_fallback = [
+                WGL_DRAW_TO_WINDOW_ARB, 1,
+                WGL_ACCELERATION_ARB, WGL_FULL_ACCELERATION_ARB,
+                WGL_SUPPORT_OPENGL_ARB, 1,
+                WGL_DOUBLE_BUFFER_ARB, config.double_buffer as i32,
+                WGL_PIXEL_TYPE_ARB, WGL_TYPE_RGBA_ARB,
+                WGL_RED_BITS_ARB, config.red_bits as i32,
+                WGL_GREEN_BITS_ARB, config.green_bits as i32,
+                WGL_BLUE_BITS_ARB, config.blue_bits as i32,
+                WGL_ALPHA_BITS_ARB, config.alpha_bits as i32,
+                WGL_DEPTH_BITS_ARB, config.depth_bits as i32,
+                WGL_STENCIL_BITS_ARB, config.stencil_bits as i32,
+                WGL_SAMPLE_BUFFERS_ARB, config.samples.is_some() as i32,
+                WGL_SAMPLES_ARB, config.samples.unwrap_or(0) as i32,
+                // WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB omitted
+                0,
+            ];
+
+            wglChoosePixelFormatARB.unwrap()(
+                hdc,
+                pixel_format_attribs_fallback.as_ptr(),
+                std::ptr::null(),
+                1,
+                &mut pixel_format,
+                &mut num_formats,
+            );
+        }
+
+        if num_formats == 0 {
+            ReleaseDC(hwnd, hdc);
+            return Err(GlError::CreationFailed(()));
+        }
 
         let mut pfd: PIXELFORMATDESCRIPTOR = std::mem::zeroed();
         DescribePixelFormat(
