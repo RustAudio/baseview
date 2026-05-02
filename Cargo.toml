@@ -26,6 +26,8 @@ raw-window-handle = "0.5"
 x11rb = { version = "0.13.0", features = ["cursor", "resource_manager", "allow-unsafe-code"] }
 x11 = { version = "2.21", features = ["xlib", "xlib_xcb"] }
 nix = "0.22.0"
+percent-encoding = "2.3.1"
+bytemuck = "1.15.0"
 
 [target.'cfg(target_os="windows")'.dependencies]
 winapi = { version = "0.3.8", features = ["libloaderapi", "winuser", "windef", "minwindef", "guiddef", "combaseapi", "wingdi", "errhandlingapi", "ole2", "oleidl", "shellapi", "winerror"] }
