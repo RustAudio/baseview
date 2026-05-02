@@ -1,23 +1,16 @@
 use std::{
     collections::HashSet,
-    ffi::c_int,
-    ptr,
+    hash::Hash,
     sync::{LazyLock, RwLock},
 };
 
-use winapi::{
-    shared::{
-        minwindef::{LPARAM, WPARAM},
-        windef::{HHOOK, HWND, POINT},
-    },
-    um::{
-        libloaderapi::GetModuleHandleW,
-        processthreadsapi::GetCurrentThreadId,
-        winuser::{
-            CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, MSG, PM_REMOVE,
-            WH_GETMESSAGE, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
-            WM_USER,
-        },
+use windows::Win32::{
+    Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM},
+    System::{LibraryLoader::GetModuleHandleW, Threading::GetCurrentThreadId},
+    UI::WindowsAndMessaging::{
+        CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, HHOOK, MSG, PM_REMOVE,
+        WH_GETMESSAGE, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
+        WM_USER,
     },
 };
 
@@ -26,7 +19,7 @@ use crate::win::wnd_proc;
 // track all windows opened by this instance of baseview
 // we use an RwLock here since the vast majority of uses (event interceptions)
 // will only need to read from the HashSet
-static HOOK_STATE: LazyLock<RwLock<KeyboardHookState>> = LazyLock::new(|| RwLock::default());
+static HOOK_STATE: LazyLock<RwLock<KeyboardHookState>> = LazyLock::new(RwLock::default);
 
 pub(crate) struct KeyboardHookHandle(HWNDWrapper);
 
@@ -36,8 +29,14 @@ struct KeyboardHookState {
     open_windows: HashSet<HWNDWrapper>,
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 struct HWNDWrapper(HWND);
+
+impl Hash for HWNDWrapper {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (self.0 .0 as usize).hash(state);
+    }
+}
 
 // SAFETY: it's a pointer behind an RwLock. we'll live
 unsafe impl Send for KeyboardHookState {}
@@ -71,12 +70,12 @@ pub(crate) fn init_keyboard_hook(hwnd: HWND) -> KeyboardHookHandle {
             SetWindowsHookExW(
                 WH_GETMESSAGE,
                 Some(keyboard_hook_callback),
-                GetModuleHandleW(ptr::null()),
+                GetModuleHandleW(None).ok().map(|h| HINSTANCE(h.0)),
                 GetCurrentThreadId(),
             )
         };
 
-        state.hook = Some(new_hook);
+        state.hook = new_hook.ok();
 
         KeyboardHookHandle(HWNDWrapper(hwnd))
     }
@@ -89,6 +88,7 @@ fn deinit_keyboard_hook(hwnd: HWNDWrapper) {
 
     if state.open_windows.is_empty() {
         if let Some(hhook) = state.hook {
+            #[allow(unused)]
             unsafe {
                 UnhookWindowsHookEx(hhook);
             }
@@ -99,23 +99,19 @@ fn deinit_keyboard_hook(hwnd: HWNDWrapper) {
 }
 
 unsafe extern "system" fn keyboard_hook_callback(
-    n_code: c_int, wparam: WPARAM, lparam: LPARAM,
-) -> isize {
-    let msg = lparam as *mut MSG;
+    n_code: i32, wparam: WPARAM, lparam: LPARAM,
+) -> LRESULT {
+    let msg = lparam.0 as *mut MSG;
 
-    if n_code == HC_ACTION && wparam == PM_REMOVE as usize && offer_message_to_baseview(msg) {
-        *msg = MSG {
-            hwnd: ptr::null_mut(),
-            message: WM_USER,
-            wParam: 0,
-            lParam: 0,
-            time: 0,
-            pt: POINT { x: 0, y: 0 },
-        };
+    if n_code == HC_ACTION as i32
+        && wparam.0 == PM_REMOVE.0 as usize
+        && offer_message_to_baseview(msg)
+    {
+        *msg = MSG { message: WM_USER, ..Default::default() };
 
-        0
+        LRESULT::default()
     } else {
-        CallNextHookEx(ptr::null_mut(), n_code, wparam, lparam)
+        CallNextHookEx(None, n_code, wparam, lparam)
     }
 }
 
