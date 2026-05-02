@@ -9,14 +9,14 @@ use winapi::um::winuser::{
     GetDpiForWindow, GetFocus, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW,
     RegisterClassW, ReleaseCapture, SetCapture, SetCursor, SetFocus, SetProcessDpiAwarenessContext,
     SetTimer, SetWindowLongPtrW, SetWindowPos, TrackMouseEvent, TranslateMessage, UnregisterClassW,
-    CS_OWNDC, GET_XBUTTON_WPARAM, GWLP_USERDATA, HTCLIENT, IDC_ARROW, MSG, SWP_NOMOVE,
-    SWP_NOZORDER, TRACKMOUSEEVENT, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED,
-    WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-    WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSELEAVE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY,
-    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN,
-    WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD,
-    WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
-    XBUTTON1, XBUTTON2,
+    CS_OWNDC, GET_XBUTTON_WPARAM, GWLP_USERDATA, HTCLIENT, IDC_ARROW, MSG, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOZORDER, TRACKMOUSEEVENT, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE,
+    WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSELEAVE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_NCDESTROY, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR,
+    WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW,
+    WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW,
+    WS_SIZEBOX, WS_VISIBLE, XBUTTON1, XBUTTON2,
 };
 
 use std::cell::{Cell, Ref, RefCell, RefMut};
@@ -201,7 +201,7 @@ unsafe fn wnd_proc_inner(
             let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
             let physical_pos = PhyPoint { x, y };
-            let logical_pos = physical_pos.to_logical(&window_state.window_info.borrow());
+            let logical_pos = physical_pos.to_logical(&window_state.window_info());
             let move_event = Event::Mouse(MouseEvent::CursorMoved {
                 position: logical_pos,
                 modifiers: window_state
@@ -363,18 +363,17 @@ unsafe fn wnd_proc_inner(
             let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
 
             let new_window_info = {
-                let mut window_info = window_state.window_info.borrow_mut();
-                let new_window_info =
-                    WindowInfo::from_physical_size(PhySize { width, height }, window_info.scale());
+                let new_size = PhySize { width, height };
+                let current_size = window_state.current_size.get();
 
                 // Only send the event if anything changed
-                if window_info.physical_size() == new_window_info.physical_size() {
+                if current_size == new_size {
                     return None;
                 }
 
-                *window_info = new_window_info;
+                window_state.current_size.set(new_size);
 
-                new_window_info
+                WindowInfo::from_physical_size(new_size, window_state.current_scale_factor.get())
             };
 
             window_state
@@ -387,46 +386,52 @@ unsafe fn wnd_proc_inner(
             None
         }
         WM_DPICHANGED => {
-            // To avoid weirdness with the realtime borrow checker.
-            let new_rect = {
-                if let WindowScalePolicy::SystemScaleFactor = window_state.scale_policy {
-                    let dpi = (wparam & 0xFFFF) as u16 as u32;
-                    let scale_factor = dpi as f64 / 96.0;
+            let new_rect = (lparam as *const RECT).read();
 
-                    let mut window_info = window_state.window_info.borrow_mut();
-                    *window_info =
-                        WindowInfo::from_logical_size(window_info.logical_size(), scale_factor);
-
-                    Some((
-                        RECT {
-                            left: 0,
-                            top: 0,
-                            // todo: check if usize fits into i32
-                            right: window_info.physical_size().width as i32,
-                            bottom: window_info.physical_size().height as i32,
-                        },
-                        window_state.dw_style,
-                    ))
-                } else {
-                    None
-                }
+            let current_size = window_state.current_size.get();
+            let new_size = PhySize {
+                width: (new_rect.right - new_rect.left) as u32,
+                height: (new_rect.bottom - new_rect.top) as u32,
             };
-            if let Some((mut new_rect, dw_style)) = new_rect {
-                // Convert this desired "client rectangle" size to the actual "window rectangle"
-                // size (Because of course you have to do that).
-                AdjustWindowRectEx(&mut new_rect, dw_style, 0, 0);
 
-                // Windows makes us resize the window manually. This will trigger another `WM_SIZE` event,
-                // which we can then send the user the new scale factor.
-                SetWindowPos(
-                    hwnd,
-                    hwnd,
-                    new_rect.left,
-                    new_rect.top,
-                    new_rect.right - new_rect.left,
-                    new_rect.bottom - new_rect.top,
-                    SWP_NOZORDER | SWP_NOMOVE,
+            let mut changed = current_size != new_size;
+
+            if let WindowScalePolicy::SystemScaleFactor = window_state.scale_policy {
+                let dpi = (wparam & 0xFFFF) as u16 as u32;
+                let scale_factor = dpi as f64 / 96.0;
+
+                changed |= window_state.current_scale_factor.get() != scale_factor;
+
+                window_state.current_scale_factor.set(scale_factor);
+            }
+
+            // Windows makes us resize the window manually. This however will not send a WM_SIZE event,
+            // hence why we are notifying the window handler manually below.
+            SetWindowPos(
+                hwnd,
+                null_mut(),
+                new_rect.left,
+                new_rect.top,
+                new_rect.right - new_rect.left,
+                new_rect.bottom - new_rect.top,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+
+            if changed {
+                window_state.current_size.set(new_size);
+
+                let mut window = crate::Window::new(window_state.create_window());
+                let new_window_info = WindowInfo::from_physical_size(
+                    new_size,
+                    window_state.current_scale_factor.get(),
                 );
+
+                window_state
+                    .handler
+                    .borrow_mut()
+                    .as_mut()
+                    .unwrap()
+                    .on_event(&mut window, Event::Window(WindowEvent::Resized(new_window_info)));
             }
 
             None
@@ -496,7 +501,8 @@ pub(super) struct WindowState {
     /// GWLP_USERDATA) } as *const WindowState`.
     pub hwnd: HWND,
     window_class: ATOM,
-    window_info: RefCell<WindowInfo>,
+    current_size: Cell<PhySize>,
+    current_scale_factor: Cell<f64>,
     _parent_handle: Option<ParentHandle>,
     keyboard_state: RefCell<KeyboardState>,
     mouse_button_counter: Cell<usize>,
@@ -529,8 +535,8 @@ impl WindowState {
         Window { state: self }
     }
 
-    pub(super) fn window_info(&self) -> Ref<'_, WindowInfo> {
-        self.window_info.borrow()
+    pub(super) fn window_info(&self) -> WindowInfo {
+        WindowInfo::from_physical_size(self.current_size.get(), self.current_scale_factor.get())
     }
 
     pub(super) fn keyboard_state(&self) -> Ref<'_, KeyboardState> {
@@ -547,7 +553,7 @@ impl WindowState {
             WindowTask::Resize(size) => {
                 // `self.window_info` will be modified in response to the `WM_SIZE` event that
                 // follows the `SetWindowPos()` call
-                let scaling = self.window_info.borrow().scale();
+                let scaling = self.current_scale_factor.get();
                 let window_info = WindowInfo::from_logical_size(size, scaling);
 
                 // If the window is a standalone window then the size needs to include the window
@@ -650,14 +656,14 @@ impl Window<'_> {
                 WindowScalePolicy::ScaleFactor(scale) => scale,
             };
 
-            let window_info = WindowInfo::from_logical_size(options.size, scaling);
+            let current_size = WindowInfo::from_logical_size(options.size, scaling).physical_size();
 
             let mut rect = RECT {
                 left: 0,
                 top: 0,
                 // todo: check if usize fits into i32
-                right: window_info.physical_size().width as i32,
-                bottom: window_info.physical_size().height as i32,
+                right: current_size.width as i32,
+                bottom: current_size.height as i32,
             };
 
             let flags = if parented {
@@ -709,7 +715,8 @@ impl Window<'_> {
             let window_state = Rc::new(WindowState {
                 hwnd,
                 window_class,
-                window_info: RefCell::new(window_info),
+                current_scale_factor: scaling.into(),
+                current_size: current_size.into(),
                 _parent_handle: parent_handle,
                 keyboard_state: RefCell::new(KeyboardState::new()),
                 mouse_button_counter: Cell::new(0),
@@ -748,17 +755,19 @@ impl Window<'_> {
                 let dpi = GetDpiForWindow(hwnd);
                 let scale_factor = dpi as f64 / 96.0;
 
-                let mut window_info = window_state.window_info.borrow_mut();
-                if window_info.scale() != scale_factor {
-                    *window_info =
-                        WindowInfo::from_logical_size(window_info.logical_size(), scale_factor);
+                let current_scale_factor = window_state.current_scale_factor.get();
+
+                if current_scale_factor != scale_factor {
+                    window_state.current_scale_factor.set(scale_factor);
+
+                    let current_size = window_state.current_size.get();
 
                     Some(RECT {
                         left: 0,
                         top: 0,
                         // todo: check if usize fits into i32
-                        right: window_info.physical_size().width as i32,
-                        bottom: window_info.physical_size().height as i32,
+                        right: current_size.width as i32,
+                        bottom: current_size.height as i32,
                     })
                 } else {
                     None
