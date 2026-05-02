@@ -121,6 +121,15 @@ pub(super) unsafe fn create_view(window_options: &WindowOpenOptions) -> id {
 
     view.initWithFrame_(NSRect::new(NSPoint::new(0., 0.), NSSize::new(size.width, size.height)));
 
+    // Make the view layer-backed and attach a CAMetalLayer so Metal surfaces can be created.
+    let _: () = msg_send![view, setWantsLayer: YES];
+    let metal_layer: id = msg_send![class!(CAMetalLayer), layer];
+    let scale: f64 = msg_send![view, backingScaleFactor];
+    let bounds: NSRect = msg_send![view, bounds];
+    let _: () = msg_send![metal_layer, setContentsScale: scale];
+    let _: () = msg_send![metal_layer, setFrame: bounds];
+    let _: () = msg_send![view, setLayer: metal_layer];
+
     register_notification(view, NSWindowDidBecomeKeyNotification, nil);
     register_notification(view, NSWindowDidResignKeyNotification, nil);
 
@@ -173,6 +182,10 @@ unsafe fn create_view_class() -> &'static Class {
         view_will_move_to_window as extern "C" fn(&Object, Sel, id),
     );
     class.add_method(sel!(hitTest:), hit_test as extern "C" fn(&Object, Sel, NSPoint) -> id);
+    class.add_method(
+        sel!(setFrameSize:),
+        set_frame_size as extern "C" fn(&Object, Sel, NSSize),
+    );
     class.add_method(
         sel!(updateTrackingAreas:),
         update_tracking_areas as extern "C" fn(&Object, Sel, id),
@@ -310,6 +323,30 @@ extern "C" fn view_did_change_backing_properties(this: &Object, _: Sel, _: id) {
         if new_window_info.physical_size() != window_info.physical_size() {
             state.window_info.set(new_window_info);
             state.trigger_event(Event::Window(WindowEvent::Resized(new_window_info)));
+        }
+
+        // Keep the metal layer in sync with scale and bounds changes.
+        let layer: id = msg_send![this, layer];
+        if layer != nil {
+            let _: () = msg_send![layer, setContentsScale: scale_factor];
+            let _: () = msg_send![layer, setFrame: bounds];
+        }
+    }
+}
+
+extern "C" fn set_frame_size(this: &Object, _sel: Sel, size: NSSize) {
+    unsafe {
+        // Call through to super to maintain default behavior
+        let superclass = msg_send![this, superclass];
+        let () = msg_send![super(this, superclass), setFrameSize: size];
+
+        // Keep the attached CAMetalLayer in sync with the view's new bounds/scale
+        let layer: id = msg_send![this, layer];
+        if layer != nil {
+            let bounds: NSRect = msg_send![this, bounds];
+            let scale: f64 = msg_send![this, backingScaleFactor];
+            let _: () = msg_send![layer, setFrame: bounds];
+            let _: () = msg_send![layer, setContentsScale: scale];
         }
     }
 }
