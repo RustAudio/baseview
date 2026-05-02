@@ -406,7 +406,7 @@ unsafe fn wnd_proc_inner(
             }
 
             // Windows makes us resize the window manually. This however will not send a WM_SIZE event,
-            // hence why we are notifying the window handler manually above.
+            // hence why we are notifying the window handler manually below.
             SetWindowPos(
                 hwnd,
                 null_mut(),
