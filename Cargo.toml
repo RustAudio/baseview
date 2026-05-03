@@ -10,6 +10,7 @@ authors = [
     "Anton Lazarev <https://antonok.com>",
     "Joakim Frostegård <joakim.frostegard@gmail.com>",
     "Robbert van der Helm <mail@robbertvanderhelm.nl>",
+    "Adrien Prokopowicz <prokopylmc@gmail.com>"
 ]
 edition = "2018"
 license = "MIT OR Apache-2.0"
