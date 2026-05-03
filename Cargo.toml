@@ -13,6 +13,12 @@ authors = [
 ]
 edition = "2018"
 license = "MIT OR Apache-2.0"
+description = "Low-level windowing system geared towards making audio plugin UIs."
+keywords = ["windowing", "audio", "plugin"]
+categories = ["gui"]
+repository = "https://github.com/RustAudio/baseview"
+
+exclude = [".github"]
 
 [features]
 default = []
