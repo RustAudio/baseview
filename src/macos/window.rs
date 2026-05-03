@@ -113,9 +113,9 @@ impl WindowInner {
 
     fn raw_window_handle(&self) -> RawWindowHandle {
         if self.open.get() {
-            let ns_window = self.ns_window.get()
-                .or(self.parent_ns_window)
-                .unwrap_or(ptr::null_mut()) as *mut c_void;
+            let ns_window =
+                self.ns_window.get().or(self.parent_ns_window).unwrap_or(ptr::null_mut())
+                    as *mut c_void;
 
             let mut handle = AppKitWindowHandle::empty();
             handle.ns_window = ns_window;
