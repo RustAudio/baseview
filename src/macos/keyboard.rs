@@ -267,7 +267,7 @@ impl KeyboardState {
     }
 
     pub(crate) fn process_native_event(&self, event: &NSEvent) -> Option<KeyboardEvent> {
-        let event_type = event.eventType();
+        let event_type = event.r#type();
         let key_code = event.keyCode();
         let code = key_code_to_code(key_code);
         let location = code_to_location(code);
@@ -283,7 +283,11 @@ impl KeyboardState {
                 let any_down = raw_mods.bits() & !self.last_mods.get().bits();
                 self.last_mods.set(raw_mods);
                 if is_modifier_code(code) {
-                    if any_down == 0 { KeyState::Up } else { KeyState::Down }
+                    if any_down == 0 {
+                        KeyState::Up
+                    } else {
+                        KeyState::Down
+                    }
                 } else {
                     // HandleFlagsChanged has some logic for this; it might
                     // happen when an app is deactivated by Command-Tab. In
@@ -301,11 +305,12 @@ impl KeyboardState {
         let key = if let Some(key) = code_to_key(code) {
             key
         } else {
-            let characters = event.characters().map(|c| c.to_string());
-            if is_valid_key(&event.characters()) {
+            let characters = event.characters().map(|c| c.to_string()).unwrap_or_default();
+            if is_valid_key(&characters) {
                 Key::Character(characters)
             } else {
-                let chars_ignoring = event.charactersIgnoringModifiers().map(|c| c.to_string());
+                let chars_ignoring =
+                    event.charactersIgnoringModifiers().map(|c| c.to_string()).unwrap_or_default();
                 if is_valid_key(&chars_ignoring) {
                     Key::Character(chars_ignoring)
                 } else {

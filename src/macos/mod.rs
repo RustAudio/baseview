@@ -31,9 +31,9 @@ impl<T> RetainedCell<T> {
 
 impl<T: Message> RetainedCell<T> {
     pub fn get(&self) -> Option<Retained<T>> {
-        match &self.inner.borrow() {
+        match &*self.inner.borrow() {
             None => None,
-            Some(inner) => inner.retain(),
+            Some(inner) => Some(inner.retain()),
         }
     }
 

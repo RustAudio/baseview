@@ -44,7 +44,7 @@ uuid = { version = "0.8", features = ["v4"] }
 objc2 = "0.6.4"
 objc2-core-foundation = "0.3.2"
 objc2-foundation = "0.3.2"
-objc2-app-kit = "0.3.2"
+objc2-app-kit = { version = "0.3.2", features = ["objc2-open-gl"] }
 
 [dev-dependencies]
 rtrb = "0.2"

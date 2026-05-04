@@ -6,15 +6,14 @@ use std::rc::Rc;
 
 use keyboard_types::KeyboardEvent;
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, Ivar, NSObjectProtocol};
+use objc2::runtime::NSObjectProtocol;
 use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSEvent, NSPasteboard,
     NSPasteboardTypeString, NSView, NSWindow, NSWindowStyleMask,
 };
 use objc2_core_foundation::{
-    kCFAllocatorDefault, kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopMode, CFRunLoopTimer,
-    CFRunLoopTimerContext,
+    kCFAllocatorDefault, kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext,
 };
 use objc2_foundation::{NSNotificationCenter, NSPoint, NSRect, NSSize, NSString};
 use raw_window_handle::{
@@ -84,12 +83,19 @@ impl WindowInner {
 
             unsafe {
                 // Take back ownership of the NSView's Rc<WindowState>
-                let state_ptr: *const c_void = *(*self.ns_view).get_ivar(BASEVIEW_STATE_IVAR);
+                let state_ptr: *const c_void = *ns_view
+                    .class()
+                    .instance_variable(BASEVIEW_STATE_IVAR)
+                    .unwrap()
+                    .load::<*const c_void>(&ns_view);
+
                 let window_state = Rc::from_raw(state_ptr as *mut WindowState);
 
                 // Cancel the frame timer
                 if let Some(frame_timer) = window_state.frame_timer.take() {
-                    CFRunLoop::current()?.remove_timer(&frame_timer, Some(kCFRunLoopDefaultMode));
+                    if let Some(run_loop) = CFRunLoop::current() {
+                        run_loop.remove_timer(Some(&frame_timer), kCFRunLoopDefaultMode);
+                    }
                 }
 
                 // Deregister NSView from NotificationCenter.
@@ -110,7 +116,7 @@ impl WindowInner {
                 // If in non-parented mode, we want to also quit the app altogether
                 let app = self.ns_app.take();
                 if let Some(app) = app {
-                    app.stop(app);
+                    app.stop(Some(&app));
                 }
             }
         }
@@ -162,7 +168,7 @@ impl<'a> Window<'a> {
             panic!("Not a macOS window");
         };
 
-        let ns_view = unsafe { create_view(&options) };
+        let ns_view = create_view(&options);
         let parent_window = unsafe { Retained::retain(handle.ns_window as *mut NSWindow) };
         let parent_view = unsafe { Retained::retain(handle.ns_view as *mut NSView) };
 
@@ -238,7 +244,7 @@ impl<'a> Window<'a> {
 
         ns_window.makeKeyAndOrderFront(None);
 
-        let ns_view = unsafe { create_view(&options) };
+        let ns_view = create_view(&options);
         let window_inner = WindowInner {
             open: Cell::new(true),
             ns_app: RetainedCell::new(app.clone()),
@@ -256,7 +262,8 @@ impl<'a> Window<'a> {
         let _ = Self::init(window_inner, window_info, build);
 
         ns_window.setContentView(Some(&ns_view));
-        ns_window.setDelegate(Some(&ns_view));
+        // TODO: this was here before, but couldn't have worked??
+        //ns_window.setDelegate(Some(&ns_view));
 
         app.run();
     }
@@ -285,7 +292,12 @@ impl<'a> Window<'a> {
 
         unsafe {
             // TODO: Pretty certain this is a cyclic reference (aaaa)
-            (*ns_view).set_ivar(BASEVIEW_STATE_IVAR, window_state_ptr as *const c_void);
+            ns_view
+                .class()
+                .instance_variable(BASEVIEW_STATE_IVAR)
+                .unwrap()
+                .load_ptr::<*const c_void>(&ns_view)
+                .write(window_state_ptr as *const c_void);
 
             WindowState::setup_timer(window_state_ptr);
         }
@@ -390,10 +402,14 @@ impl WindowState {
     /// original `Rc<WindowState>` owned by the `NSView` can be dropped at any time
     /// (including during an event handler).
     pub(super) unsafe fn from_view(view: &NSView) -> Rc<WindowState> {
-        let state_ptr: *const c_void =
-            view.class().instance_variable(BASEVIEW_STATE_IVAR).unwrap().load(view);
+        let state_ptr = view
+            .class()
+            .instance_variable(BASEVIEW_STATE_IVAR)
+            .unwrap()
+            .load::<*const c_void>(view)
+            .cast::<WindowState>();
 
-        let state_rc = Rc::from_raw(state_ptr as *const WindowState);
+        let state_rc = Rc::from_raw(state_ptr);
         let state = Rc::clone(&state_rc);
         let _ = Rc::into_raw(state_rc);
 
@@ -439,7 +455,9 @@ impl WindowState {
     }
 
     unsafe fn setup_timer(window_state_ptr: *const WindowState) {
-        extern "C" fn timer_callback(_: *mut CFRunLoopTimer, window_state_ptr: *mut c_void) {
+        unsafe extern "C-unwind" fn timer_callback(
+            _: *mut CFRunLoopTimer, window_state_ptr: *mut c_void,
+        ) {
             unsafe {
                 let window_state = &*(window_state_ptr as *const WindowState);
 

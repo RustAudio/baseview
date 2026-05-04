@@ -3,6 +3,7 @@
 use super::{GlConfig, GlError, Profile};
 use objc2::rc::Retained;
 use objc2::AllocAnyThread;
+use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSOpenGLContext, NSOpenGLContextParameter, NSOpenGLPFAAccelerated, NSOpenGLPFAAlphaSize,
     NSOpenGLPFAColorSize, NSOpenGLPFADepthSize, NSOpenGLPFADoubleBuffer, NSOpenGLPFAMultisample,
@@ -15,7 +16,6 @@ use objc2_foundation::NSSize;
 use raw_window_handle::RawWindowHandle;
 use std::ffi::c_void;
 use std::ptr::NonNull;
-use std::str::FromStr;
 
 pub type CreationFailedError = ();
 pub struct GlContext {
@@ -78,7 +78,7 @@ impl GlContext {
         .ok_or(GlError::CreationFailed(()))?;
 
         let view = NSOpenGLView::initWithFrame_pixelFormat(
-            NSOpenGLView::alloc(),
+            NSOpenGLView::alloc(MainThreadMarker::new().unwrap()),
             parent_view.frame(),
             Some(&pixel_format),
         )
@@ -103,7 +103,7 @@ impl GlContext {
     }
 
     pub unsafe fn make_not_current(&self) {
-        if Some(self.context) == NSOpenGLContext::currentContext() {
+        if Some(&self.context) == NSOpenGLContext::currentContext().as_ref() {
             NSOpenGLContext::clearCurrentContext();
         }
     }
