@@ -1,53 +1,40 @@
-use std::ffi::c_void;
-
-use cocoa::appkit::{NSEvent, NSFilenamesPboardType, NSView, NSWindow};
-use cocoa::base::{id, nil, BOOL, NO, YES};
-use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize, NSUInteger};
-
-use objc::{
-    class,
-    declare::ClassDecl,
-    msg_send,
-    runtime::{Class, Object, Sel},
-    sel, sel_impl,
+use objc2::__framework_prelude::Retained;
+use objc2::ffi::{id, objc_disposeClassPair};
+use objc2::rc::Allocated;
+use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, ProtocolObject, Sel};
+use objc2::{AllocAnyThread, ClassType, Message, msg_send, sel};
+use objc2_app_kit::{
+    NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
+    NSTrackingAreaOptions, NSView, NSWindow, NSWindowDidBecomeKeyNotification,
+    NSWindowDidResignKeyNotification,
 };
+use objc2_foundation::{
+    NSArray, NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize, NSString,
+};
+use std::ffi::{CStr, CString, c_void};
 use uuid::Uuid;
 
+use super::keyboard::make_modifiers;
+use super::window::WindowState;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
     DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, Point, ScrollDelta, Size,
     WindowEvent, WindowInfo, WindowOpenOptions,
 };
 
-use super::keyboard::{from_nsstring, make_modifiers};
-use super::window::WindowState;
-use super::{
-    NSDragOperationCopy, NSDragOperationGeneric, NSDragOperationLink, NSDragOperationMove,
-    NSDragOperationNone,
-};
-
 /// Name of the field used to store the `WindowState` pointer.
-pub(super) const BASEVIEW_STATE_IVAR: &str = "baseview_state";
-
-#[link(name = "AppKit", kind = "framework")]
-extern "C" {
-    static NSWindowDidBecomeKeyNotification: id;
-    static NSWindowDidResignKeyNotification: id;
-}
+pub(super) const BASEVIEW_STATE_IVAR: &CStr = c"baseview_state";
 
 macro_rules! add_simple_mouse_class_method {
     ($class:ident, $sel:ident, $event:expr) => {
         #[allow(non_snake_case)]
-        extern "C" fn $sel(this: &Object, _: Sel, _: id){
+        extern "C" fn $sel(this: &NSView, _: Sel, _: id){
             let state = unsafe { WindowState::from_view(this) };
 
             state.trigger_event(Event::Mouse($event));
         }
 
-        $class.add_method(
-            sel!($sel:),
-            $sel as extern "C" fn(&Object, Sel, id),
-        );
+        $class.add_method(sel!($sel:), $sel,);
     };
 }
 
@@ -56,28 +43,23 @@ macro_rules! add_simple_mouse_class_method {
 macro_rules! add_mouse_button_class_method {
     ($class:ident, $sel:ident, $event_ty:ident, $button:expr) => {
         #[allow(non_snake_case)]
-        extern "C" fn $sel(this: &Object, _: Sel, event: id){
+        extern "C" fn $sel(this: &NSView, _: Sel, event: &NSEvent){
             let state = unsafe { WindowState::from_view(this) };
-
-            let modifiers = unsafe { NSEvent::modifierFlags(event) };
 
             state.trigger_event(Event::Mouse($event_ty {
                 button: $button,
-                modifiers: make_modifiers(modifiers),
+                modifiers: make_modifiers(event.modifierFlags()),
             }));
         }
 
-        $class.add_method(
-            sel!($sel:),
-            $sel as extern "C" fn(&Object, Sel, id),
-        );
+        $class.add_method(sel!($sel:),$sel);
     };
 }
 
 macro_rules! add_simple_keyboard_class_method {
     ($class:ident, $sel:ident) => {
         #[allow(non_snake_case)]
-        extern "C" fn $sel(this: &Object, _: Sel, event: id){
+        extern "C" fn $sel(this: &NSView, _: Sel, event: id){
             let state = unsafe { WindowState::from_view(this) };
 
             if let Some(key_event) = state.process_native_key_event(event){
@@ -93,208 +75,169 @@ macro_rules! add_simple_keyboard_class_method {
             }
         }
 
-        $class.add_method(
-            sel!($sel:),
-            $sel as extern "C" fn(&Object, Sel, id),
-        );
+        $class.add_method(sel!($sel:),$sel);
     };
 }
 
-unsafe fn register_notification(observer: id, notification_name: id, object: id) {
-    let notification_center: id = msg_send![class!(NSNotificationCenter), defaultCenter];
-
-    let _: () = msg_send![
-        notification_center,
-        addObserver:observer
-        selector:sel!(handleNotification:)
-        name:notification_name
-        object:object
-    ];
-}
-
-pub(super) unsafe fn create_view(window_options: &WindowOpenOptions) -> id {
+pub(super) fn create_view(window_options: &WindowOpenOptions) -> Retained<NSView> {
     let class = create_view_class();
 
-    let view: id = msg_send![class, alloc];
+    let view: Allocated<NSView> = msg_send![class, alloc];
 
     let size = window_options.size;
-
-    view.initWithFrame_(NSRect::new(NSPoint::new(0., 0.), NSSize::new(size.width, size.height)));
-
-    register_notification(view, NSWindowDidBecomeKeyNotification, nil);
-    register_notification(view, NSWindowDidResignKeyNotification, nil);
-
-    let _: id = msg_send![
+    let view = NSView::initWithFrame(
         view,
-        registerForDraggedTypes: NSArray::arrayWithObjects(nil, &[NSFilenamesPboardType])
-    ];
+        NSRect::new(NSPoint::ZERO, NSSize::new(size.width, size.height)),
+    );
+
+    let notification_center = NSNotificationCenter::defaultCenter();
+
+    // SAFETY: TODO
+    unsafe {
+        notification_center.addObserver_selector_name_object(
+            &view,
+            sel!(handleNotification:),
+            Some(NSWindowDidBecomeKeyNotification),
+            None,
+        );
+        notification_center.addObserver_selector_name_object(
+            &view,
+            sel!(handleNotification:),
+            Some(NSWindowDidResignKeyNotification),
+            None,
+        );
+    }
+
+    // SAFETY: TODO
+    let ns_filenames_pboard_type = unsafe { NSFilenamesPboardType };
+    view.registerForDraggedTypes(&NSArray::from_slice(&[ns_filenames_pboard_type]));
 
     view
 }
 
-unsafe fn create_view_class() -> &'static Class {
+fn create_view_class() -> &'static AnyClass {
     // Use unique class names so that there are no conflicts between different
     // instances. The class is deleted when the view is released. Previously,
     // the class was stored in a OnceCell after creation. This way, we didn't
     // have to recreate it each time a view was opened, but now we don't leave
     // any class definitions lying around when the plugin is closed.
-    let class_name = format!("BaseviewNSView_{}", Uuid::new_v4().to_simple());
-    let mut class = ClassDecl::new(&class_name, class!(NSView)).unwrap();
+    let class_name = CString::new(format!("BaseviewNSView_{}", Uuid::new_v4().to_simple()))
+        // PANIC: This cannot have any NULL bytes
+        .unwrap();
 
-    class.add_method(
-        sel!(acceptsFirstResponder),
-        property_yes as extern "C" fn(&Object, Sel) -> BOOL,
-    );
-    class.add_method(
-        sel!(becomeFirstResponder),
-        become_first_responder as extern "C" fn(&Object, Sel) -> BOOL,
-    );
-    class.add_method(
-        sel!(resignFirstResponder),
-        resign_first_responder as extern "C" fn(&Object, Sel) -> BOOL,
-    );
-    class.add_method(sel!(isFlipped), property_yes as extern "C" fn(&Object, Sel) -> BOOL);
-    class.add_method(
-        sel!(preservesContentInLiveResize),
-        property_no as extern "C" fn(&Object, Sel) -> BOOL,
-    );
-    class.add_method(
-        sel!(acceptsFirstMouse:),
-        accepts_first_mouse as extern "C" fn(&Object, Sel, id) -> BOOL,
-    );
+    let mut class = ClassBuilder::new(&class_name, NSView::class()).unwrap();
 
-    class.add_method(
-        sel!(windowShouldClose:),
-        window_should_close as extern "C" fn(&Object, Sel, id) -> BOOL,
-    );
-    class.add_method(sel!(dealloc), dealloc as extern "C" fn(&mut Object, Sel));
-    class.add_method(
-        sel!(viewWillMoveToWindow:),
-        view_will_move_to_window as extern "C" fn(&Object, Sel, id),
-    );
-    class.add_method(sel!(hitTest:), hit_test as extern "C" fn(&Object, Sel, NSPoint) -> id);
-    class.add_method(
-        sel!(updateTrackingAreas:),
-        update_tracking_areas as extern "C" fn(&Object, Sel, id),
-    );
+    // SAFETY: All of these function signatures are correct
+    unsafe {
+        class.add_method(sel!(acceptsFirstResponder), property_yes);
+        class.add_method(sel!(becomeFirstResponder), become_first_responder);
+        class.add_method(sel!(resignFirstResponder), resign_first_responder);
+        class.add_method(sel!(isFlipped), property_yes);
+        class.add_method(sel!(preservesContentInLiveResize), property_no);
+        class.add_method(sel!(acceptsFirstMouse:), accepts_first_mouse);
 
-    class.add_method(sel!(mouseMoved:), mouse_moved as extern "C" fn(&Object, Sel, id));
-    class.add_method(sel!(mouseDragged:), mouse_moved as extern "C" fn(&Object, Sel, id));
-    class.add_method(sel!(rightMouseDragged:), mouse_moved as extern "C" fn(&Object, Sel, id));
-    class.add_method(sel!(otherMouseDragged:), mouse_moved as extern "C" fn(&Object, Sel, id));
+        class.add_method(sel!(windowShouldClose:), window_should_close);
+        class.add_method(sel!(dealloc), dealloc);
+        class.add_method(sel!(viewWillMoveToWindow:), view_will_move_to_window);
+        class.add_method(sel!(hitTest:), hit_test);
+        class.add_method(sel!(updateTrackingAreas:), update_tracking_areas);
 
-    class.add_method(sel!(scrollWheel:), scroll_wheel as extern "C" fn(&Object, Sel, id));
+        class.add_method(sel!(mouseMoved:), mouse_moved);
+        class.add_method(sel!(mouseDragged:), mouse_moved);
+        class.add_method(sel!(rightMouseDragged:), mouse_moved);
+        class.add_method(sel!(otherMouseDragged:), mouse_moved);
 
-    class.add_method(
-        sel!(viewDidChangeBackingProperties:),
-        view_did_change_backing_properties as extern "C" fn(&Object, Sel, id),
-    );
+        class.add_method(sel!(scrollWheel:), scroll_wheel);
 
-    class.add_method(
-        sel!(draggingEntered:),
-        dragging_entered as extern "C" fn(&Object, Sel, id) -> NSUInteger,
-    );
-    class.add_method(
-        sel!(prepareForDragOperation:),
-        prepare_for_drag_operation as extern "C" fn(&Object, Sel, id) -> BOOL,
-    );
-    class.add_method(
-        sel!(performDragOperation:),
-        perform_drag_operation as extern "C" fn(&Object, Sel, id) -> BOOL,
-    );
-    class.add_method(
-        sel!(draggingUpdated:),
-        dragging_updated as extern "C" fn(&Object, Sel, id) -> NSUInteger,
-    );
-    class.add_method(sel!(draggingExited:), dragging_exited as extern "C" fn(&Object, Sel, id));
-    class.add_method(
-        sel!(handleNotification:),
-        handle_notification as extern "C" fn(&Object, Sel, id),
-    );
+        class.add_method(sel!(viewDidChangeBackingProperties:), view_did_change_backing_properties);
 
-    add_mouse_button_class_method!(class, mouseDown, ButtonPressed, MouseButton::Left);
-    add_mouse_button_class_method!(class, mouseUp, ButtonReleased, MouseButton::Left);
-    add_mouse_button_class_method!(class, rightMouseDown, ButtonPressed, MouseButton::Right);
-    add_mouse_button_class_method!(class, rightMouseUp, ButtonReleased, MouseButton::Right);
-    add_mouse_button_class_method!(class, otherMouseDown, ButtonPressed, MouseButton::Middle);
-    add_mouse_button_class_method!(class, otherMouseUp, ButtonReleased, MouseButton::Middle);
-    add_simple_mouse_class_method!(class, mouseEntered, MouseEvent::CursorEntered);
-    add_simple_mouse_class_method!(class, mouseExited, MouseEvent::CursorLeft);
+        class.add_method(sel!(draggingEntered:), dragging_entered);
+        class.add_method(sel!(prepareForDragOperation:), prepare_for_drag_operation);
+        class.add_method(sel!(performDragOperation:), perform_drag_operation);
+        class.add_method(sel!(draggingUpdated:), dragging_updated);
+        class.add_method(sel!(draggingExited:), dragging_exited);
+        class.add_method(sel!(handleNotification:), handle_notification);
 
-    add_simple_keyboard_class_method!(class, keyDown);
-    add_simple_keyboard_class_method!(class, keyUp);
-    add_simple_keyboard_class_method!(class, flagsChanged);
+        add_mouse_button_class_method!(class, mouseDown, ButtonPressed, MouseButton::Left);
+        add_mouse_button_class_method!(class, mouseUp, ButtonReleased, MouseButton::Left);
+        add_mouse_button_class_method!(class, rightMouseDown, ButtonPressed, MouseButton::Right);
+        add_mouse_button_class_method!(class, rightMouseUp, ButtonReleased, MouseButton::Right);
+        add_mouse_button_class_method!(class, otherMouseDown, ButtonPressed, MouseButton::Middle);
+        add_mouse_button_class_method!(class, otherMouseUp, ButtonReleased, MouseButton::Middle);
+        add_simple_mouse_class_method!(class, mouseEntered, MouseEvent::CursorEntered);
+        add_simple_mouse_class_method!(class, mouseExited, MouseEvent::CursorLeft);
+
+        add_simple_keyboard_class_method!(class, keyDown);
+        add_simple_keyboard_class_method!(class, keyUp);
+        add_simple_keyboard_class_method!(class, flagsChanged);
+    }
 
     class.add_ivar::<*mut c_void>(BASEVIEW_STATE_IVAR);
 
     class.register()
 }
 
-extern "C" fn property_yes(_this: &Object, _sel: Sel) -> BOOL {
-    YES
+extern "C" fn property_yes(_this: &NSView, _sel: Sel) -> Bool {
+    Bool::YES
 }
 
-extern "C" fn property_no(_this: &Object, _sel: Sel) -> BOOL {
-    NO
+extern "C" fn property_no(_this: &NSView, _sel: Sel) -> Bool {
+    Bool::NO
 }
 
-extern "C" fn accepts_first_mouse(_this: &Object, _sel: Sel, _event: id) -> BOOL {
-    YES
+extern "C" fn accepts_first_mouse(_this: &NSView, _sel: Sel, _event: id) -> Bool {
+    Bool::YES
 }
 
-extern "C" fn become_first_responder(this: &Object, _sel: Sel) -> BOOL {
-    let state = unsafe { WindowState::from_view(this) };
-    let is_key_window = unsafe {
-        let window: id = msg_send![this, window];
-        if window != nil {
-            let is_key_window: BOOL = msg_send![window, isKeyWindow];
-            is_key_window == YES
-        } else {
-            false
-        }
+extern "C" fn become_first_responder(this: &NSView, _sel: Sel) -> Bool {
+    let Some(window) = this.window() else {
+        return Bool::YES;
     };
-    if is_key_window {
+
+    if window.isKeyWindow() {
+        let state = unsafe { WindowState::from_view(this) };
         state.trigger_deferrable_event(Event::Window(WindowEvent::Focused));
     }
-    YES
+
+    Bool::YES
 }
 
-extern "C" fn resign_first_responder(this: &Object, _sel: Sel) -> BOOL {
+extern "C" fn resign_first_responder(this: &NSView, _sel: Sel) -> Bool {
     let state = unsafe { WindowState::from_view(this) };
     state.trigger_deferrable_event(Event::Window(WindowEvent::Unfocused));
-    YES
+    Bool::YES
 }
 
-extern "C" fn window_should_close(this: &Object, _: Sel, _sender: id) -> BOOL {
+extern "C" fn window_should_close(this: &NSView, _: Sel, _sender: &AnyObject) -> Bool {
     let state = unsafe { WindowState::from_view(this) };
 
     state.trigger_event(Event::Window(WindowEvent::WillClose));
 
     state.window_inner.close();
 
-    NO
+    Bool::NO
 }
 
-extern "C" fn dealloc(this: &mut Object, _sel: Sel) {
-    unsafe {
-        let class = msg_send![this, class];
+extern "C" fn dealloc(this: &mut NSView, _sel: Sel) {
+    let class = this.class();
 
-        let superclass = msg_send![this, superclass];
+    if let Some(superclass) = class.superclass() {
         let () = msg_send![super(this, superclass), dealloc];
-
-        // Delete class
-        ::objc::runtime::objc_disposeClassPair(class);
     }
+
+    // Delete class
+    // SAFETY: TODO: nope, this is NOT sound, as this invalidates any &AnyClass
+    unsafe { objc_disposeClassPair(class as *const _ as *mut _) }
 }
 
-extern "C" fn view_did_change_backing_properties(this: &Object, _: Sel, _: id) {
+extern "C" fn view_did_change_backing_properties(this: &NSView, _: Sel, _: &AnyObject) {
     unsafe {
-        let ns_window: *mut Object = msg_send![this, window];
+        let ns_window = this.window();
 
-        let scale_factor: f64 =
-            if ns_window.is_null() { 1.0 } else { NSWindow::backingScaleFactor(ns_window) };
+        let scale_factor: f64 = ns_window.map(|w| w.backingScaleFactor()).unwrap_or(1.0);
 
-        let state = WindowState::from_view(this);
+        // SAFETY: TODO
+        let state = unsafe { WindowState::from_view(this) };
 
         let bounds: NSRect = msg_send![this, bounds];
 
@@ -314,37 +257,28 @@ extern "C" fn view_did_change_backing_properties(this: &Object, _: Sel, _: id) {
     }
 }
 
-/// Init/reinit tracking area
-///
 /// Info:
 /// https://developer.apple.com/documentation/appkit/nstrackingarea
 /// https://developer.apple.com/documentation/appkit/nstrackingarea/options
 /// https://developer.apple.com/documentation/appkit/nstrackingareaoptions
-unsafe fn reinit_tracking_area(this: &Object, tracking_area: *mut Object) {
-    let options: usize = {
-        let mouse_entered_and_exited = 0x01;
-        let tracking_mouse_moved = 0x02;
-        let tracking_cursor_update = 0x04;
-        let tracking_active_in_active_app = 0x40;
-        let tracking_in_visible_rect = 0x200;
-        let tracking_enabled_during_mouse_drag = 0x400;
+fn new_tracking_area(this: &NSView) -> Retained<NSTrackingArea> {
+    let options = NSTrackingAreaOptions::MouseEnteredAndExited
+        | NSTrackingAreaOptions::MouseMoved
+        | NSTrackingAreaOptions::CursorUpdate
+        | NSTrackingAreaOptions::ActiveInActiveApp
+        | NSTrackingAreaOptions::InVisibleRect
+        | NSTrackingAreaOptions::EnabledDuringMouseDrag;
 
-        mouse_entered_and_exited
-            | tracking_mouse_moved
-            | tracking_cursor_update
-            | tracking_active_in_active_app
-            | tracking_in_visible_rect
-            | tracking_enabled_during_mouse_drag
-    };
-
-    let bounds: NSRect = msg_send![this, bounds];
-
-    *tracking_area = msg_send![tracking_area,
-        initWithRect:bounds
-        options:options
-        owner:this
-        userInfo:nil
-    ];
+    // SAFETY: `this` is of the correct type (NSView)
+    unsafe {
+        NSTrackingArea::initWithRect_options_owner_userInfo(
+            NSTrackingArea::alloc(),
+            this.bounds(),
+            options,
+            Some(this),
+            None,
+        )
+    }
 }
 
 /// `hitTest:` override that collapses hits on baseview's internal
@@ -370,53 +304,42 @@ unsafe fn reinit_tracking_area(this: &Object, tracking_area: *mut Object) {
 /// No-op without the `opengl` feature: there's no GL subview to
 /// collapse, so the override pass-through is equivalent to the
 /// default implementation.
-extern "C" fn hit_test(this: &Object, _sel: Sel, point: NSPoint) -> id {
-    let super_result: id = unsafe {
-        let superclass = msg_send![this, superclass];
-        msg_send![super(this, superclass), hitTest: point]
-    };
-    if super_result == nil {
-        return nil;
-    }
+extern "C" fn hit_test(this: &NSView, _sel: Sel, point: NSPoint) -> Option<Retained<NSView>> {
+    // SAFETY: TODO
+    let super_result: Option<Retained<NSView>> = unsafe { msg_send![super(this), hitTest: point] };
+    let super_result = super_result?;
 
     #[cfg(feature = "opengl")]
-    unsafe {
-        let state = WindowState::from_view(this);
+    {
+        let state = unsafe { WindowState::from_view(this) };
         if let Some(gl_context) = state.window_inner.gl_context.as_ref() {
-            if super_result == gl_context.ns_view() {
-                return this as *const _ as id;
+            if &*super_result == gl_context.ns_view() {
+                return Some(this.retain());
             }
         }
     }
 
-    super_result
+    Some(super_result)
 }
 
-extern "C" fn view_will_move_to_window(this: &Object, _self: Sel, new_window: id) {
-    unsafe {
-        let tracking_areas: *mut Object = msg_send![this, trackingAreas];
-        let tracking_area_count = NSArray::count(tracking_areas);
+extern "C" fn view_will_move_to_window(this: &NSView, _self: Sel, new_window: Option<&NSWindow>) {
+    let tracking_areas = this.trackingAreas();
 
-        if new_window == nil {
-            if tracking_area_count != 0 {
-                let tracking_area = NSArray::objectAtIndex(tracking_areas, 0);
-
-                let _: () = msg_send![this, removeTrackingArea: tracking_area];
-                let _: () = msg_send![tracking_area, release];
+    match new_window {
+        None => {
+            if tracking_areas.count() > 0 {
+                let tracking_area = tracking_areas.objectAtIndex(0);
+                this.removeTrackingArea(&tracking_area);
             }
-        } else {
-            if tracking_area_count == 0 {
-                let class = Class::get("NSTrackingArea").unwrap();
-
-                let tracking_area: *mut Object = msg_send![class, alloc];
-
-                reinit_tracking_area(this, tracking_area);
-
-                let _: () = msg_send![this, addTrackingArea: tracking_area];
+        }
+        Some(new_window) => {
+            if tracking_areas.is_empty() {
+                let tracking_area = new_tracking_area(this);
+                this.addTrackingArea(&tracking_area);
             }
 
-            let _: () = msg_send![new_window, setAcceptsMouseMovedEvents: YES];
-            let _: () = msg_send![new_window, makeFirstResponder: this];
+            new_window.setAcceptsMouseMovedEvents(true);
+            new_window.makeFirstResponder(Some(this));
         }
     }
 
@@ -427,95 +350,94 @@ extern "C" fn view_will_move_to_window(this: &Object, _self: Sel, new_window: id
     }
 }
 
-extern "C" fn update_tracking_areas(this: &Object, _self: Sel, _: id) {
-    unsafe {
-        let tracking_areas: *mut Object = msg_send![this, trackingAreas];
-        let tracking_area = NSArray::objectAtIndex(tracking_areas, 0);
-
-        reinit_tracking_area(this, tracking_area);
+extern "C" fn update_tracking_areas(this: &NSView, _self: Sel, _: &AnyObject) {
+    let tracking_areas = this.trackingAreas();
+    if tracking_areas.count() > 0 {
+        let tracking_area = tracking_areas.objectAtIndex(0);
+        this.removeTrackingArea(&tracking_area);
     }
+
+    let tracking_area = new_tracking_area(this);
+
+    this.addTrackingArea(&tracking_area);
 }
 
-extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: id) {
+extern "C" fn mouse_moved(this: &NSView, _sel: Sel, event: &NSEvent) {
     let state = unsafe { WindowState::from_view(this) };
-
-    let point: NSPoint = unsafe {
-        let point = NSEvent::locationInWindow(event);
-
-        msg_send![this, convertPoint:point fromView:nil]
-    };
-    let modifiers = unsafe { NSEvent::modifierFlags(event) };
+    let point = this.convertPoint_fromView(event.locationInWindow(), None);
 
     let position = Point { x: point.x, y: point.y };
 
     state.trigger_event(Event::Mouse(MouseEvent::CursorMoved {
         position,
-        modifiers: make_modifiers(modifiers),
+        modifiers: make_modifiers(event.modifierFlags()),
     }));
 }
 
-extern "C" fn scroll_wheel(this: &Object, _: Sel, event: id) {
+extern "C" fn scroll_wheel(this: &NSView, _: Sel, event: &NSEvent) {
     let state = unsafe { WindowState::from_view(this) };
 
-    let delta = unsafe {
-        let x = NSEvent::scrollingDeltaX(event) as f32;
-        let y = NSEvent::scrollingDeltaY(event) as f32;
+    let x = event.scrollingDeltaX() as f32;
+    let y = event.scrollingDeltaY() as f32;
 
-        if NSEvent::hasPreciseScrollingDeltas(event) != NO {
-            ScrollDelta::Pixels { x, y }
-        } else {
-            ScrollDelta::Lines { x, y }
-        }
+    let delta = if event.hasPreciseScrollingDeltas() {
+        ScrollDelta::Pixels { x, y }
+    } else {
+        ScrollDelta::Lines { x, y }
     };
-
-    let modifiers = unsafe { NSEvent::modifierFlags(event) };
 
     state.trigger_event(Event::Mouse(MouseEvent::WheelScrolled {
         delta,
-        modifiers: make_modifiers(modifiers),
+        modifiers: make_modifiers(event.modifierFlags()),
     }));
 }
 
-fn get_drag_position(sender: id) -> Point {
-    let point: NSPoint = unsafe { msg_send![sender, draggingLocation] };
+fn get_drag_position(sender: Option<&ProtocolObject<dyn NSDraggingInfo>>) -> Point {
+    let point = match sender {
+        Some(sender) => sender.draggingLocation(),
+        None => NSPoint::ZERO,
+    };
+
     Point::new(point.x, point.y)
 }
 
-fn get_drop_data(sender: id) -> DropData {
-    if sender == nil {
+fn get_drop_data(sender: Option<&ProtocolObject<dyn NSDraggingInfo>>) -> DropData {
+    let Some(sender) = sender else {
         return DropData::None;
-    }
+    };
 
-    unsafe {
-        let pasteboard: id = msg_send![sender, draggingPasteboard];
-        let file_list: id = msg_send![pasteboard, propertyListForType: NSFilenamesPboardType];
+    let pasteboard = sender.draggingPasteboard();
+    let Some(file_list) = pasteboard.propertyListForType(unsafe { NSFilenamesPboardType }) else {
+        return DropData::None;
+    };
 
-        if file_list == nil {
-            return DropData::None;
-        }
+    let Ok(file_list) = file_list.downcast::<NSArray>() else {
+        return DropData::None;
+    };
 
-        let mut files = vec![];
-        for i in 0..NSArray::count(file_list) {
-            let data = NSArray::objectAtIndex(file_list, i);
-            files.push(from_nsstring(data).into());
-        }
+    let files = file_list
+        .into_iter()
+        .filter_map(|i| i.downcast::<NSString>().ok())
+        .map(|s| s.to_string().into())
+        .collect();
 
-        DropData::Files(files)
-    }
+    DropData::Files(files)
 }
 
-fn on_event(window_state: &WindowState, event: MouseEvent) -> NSUInteger {
+fn on_event(window_state: &WindowState, event: MouseEvent) -> NSDragOperation {
     let event_status = window_state.trigger_event(Event::Mouse(event));
     match event_status {
-        EventStatus::AcceptDrop(DropEffect::Copy) => NSDragOperationCopy,
-        EventStatus::AcceptDrop(DropEffect::Move) => NSDragOperationMove,
-        EventStatus::AcceptDrop(DropEffect::Link) => NSDragOperationLink,
-        EventStatus::AcceptDrop(DropEffect::Scroll) => NSDragOperationGeneric,
-        _ => NSDragOperationNone,
+        EventStatus::AcceptDrop(DropEffect::Copy) => NSDragOperation::Copy,
+        EventStatus::AcceptDrop(DropEffect::Move) => NSDragOperation::Move,
+        EventStatus::AcceptDrop(DropEffect::Link) => NSDragOperation::Link,
+        EventStatus::AcceptDrop(DropEffect::Scroll) => NSDragOperation::Generic,
+        _ => NSDragOperation::None,
     }
 }
 
-extern "C" fn dragging_entered(this: &Object, _sel: Sel, sender: id) -> NSUInteger {
+extern "C" fn dragging_entered(
+    this: &NSView, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
+) -> NSDragOperation {
     let state = unsafe { WindowState::from_view(this) };
     let modifiers = state.keyboard_state().last_mods();
     let drop_data = get_drop_data(sender);
@@ -529,7 +451,9 @@ extern "C" fn dragging_entered(this: &Object, _sel: Sel, sender: id) -> NSUInteg
     on_event(&state, event)
 }
 
-extern "C" fn dragging_updated(this: &Object, _sel: Sel, sender: id) -> NSUInteger {
+extern "C" fn dragging_updated(
+    this: &NSView, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
+) -> NSDragOperation {
     let state = unsafe { WindowState::from_view(this) };
     let modifiers = state.keyboard_state().last_mods();
     let drop_data = get_drop_data(sender);
@@ -543,14 +467,18 @@ extern "C" fn dragging_updated(this: &Object, _sel: Sel, sender: id) -> NSUInteg
     on_event(&state, event)
 }
 
-extern "C" fn prepare_for_drag_operation(_this: &Object, _sel: Sel, _sender: id) -> BOOL {
+extern "C" fn prepare_for_drag_operation(
+    _this: &NSView, _sel: Sel, _sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
+) -> Bool {
     // Always accept drag operation if we get this far
     // This function won't be called unless dragging_entered/updated
     // has returned an acceptable operation
-    YES
+    Bool::YES
 }
 
-extern "C" fn perform_drag_operation(this: &Object, _sel: Sel, sender: id) -> BOOL {
+extern "C" fn perform_drag_operation(
+    this: &NSView, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
+) -> Bool {
     let state = unsafe { WindowState::from_view(this) };
     let modifiers = state.keyboard_state().last_mods();
     let drop_data = get_drop_data(sender);
@@ -562,41 +490,47 @@ extern "C" fn perform_drag_operation(this: &Object, _sel: Sel, sender: id) -> BO
     };
 
     let event_status = state.trigger_event(Event::Mouse(event));
+
     match event_status {
-        EventStatus::AcceptDrop(_) => YES,
-        _ => NO,
+        EventStatus::AcceptDrop(_) => Bool::YES,
+        _ => Bool::NO,
     }
 }
 
-extern "C" fn dragging_exited(this: &Object, _sel: Sel, _sender: id) {
+extern "C" fn dragging_exited(
+    this: &NSView, _sel: Sel, _sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
+) {
     let state = unsafe { WindowState::from_view(this) };
 
     on_event(&state, MouseEvent::DragLeft);
 }
 
-extern "C" fn handle_notification(this: &Object, _cmd: Sel, notification: id) {
-    unsafe {
-        let state = WindowState::from_view(this);
+extern "C" fn handle_notification(this: &NSView, _cmd: Sel, notification: &NSNotification) {
+    let state = unsafe { WindowState::from_view(this) };
 
-        // The subject of the notication, in this case an NSWindow object.
-        let notification_object: id = msg_send![notification, object];
+    let Some(window) = this.window() else { return };
+    // The subject of the notification, in this case an NSWindow object.
+    let Some(notification_object) = notification.object().and_then(|o| o.downcast().ok()) else {
+        return;
+    };
 
-        // The NSWindow object associated with our NSView.
-        let window: id = msg_send![this, window];
-
-        let first_responder: id = msg_send![window, firstResponder];
-
-        // Only trigger focus events if the NSWindow that's being notified about is our window,
-        // and if the window's first responder is our NSView.
-        // If the first responder isn't our NSView, the focus events will instead be triggered
-        // by the becomeFirstResponder and resignFirstResponder methods on the NSView itself.
-        if notification_object == window && first_responder == this as *const Object as id {
-            let is_key_window: BOOL = msg_send![window, isKeyWindow];
-            state.trigger_event(Event::Window(if is_key_window == YES {
-                WindowEvent::Focused
-            } else {
-                WindowEvent::Unfocused
-            }));
-        }
+    // Only trigger focus events if the NSWindow that's being notified about is our window,
+    // and if the window's first responder is our NSView.
+    if window != notification_object {
+        return;
     }
+
+    let Some(first_responder) = window.firstResponder() else { return };
+
+    // If the first responder isn't our NSView, the focus events will instead be triggered
+    // by the becomeFirstResponder and resignFirstResponder methods on the NSView itself.
+    if first_responder.as_ref() != this {
+        return;
+    }
+
+    state.trigger_event(Event::Window(if window.isKeyWindow() {
+        WindowEvent::Focused
+    } else {
+        WindowEvent::Unfocused
+    }));
 }

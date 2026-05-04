@@ -18,23 +18,10 @@
 
 //! Conversion of platform keyboard event into cross-platform event.
 
-use std::cell::Cell;
-
-use cocoa::appkit::{NSEvent, NSEventModifierFlags, NSEventType};
-use cocoa::base::id;
-use cocoa::foundation::NSString;
-use keyboard_types::{Code, Key, KeyState, KeyboardEvent, Modifiers};
-use objc::{msg_send, sel, sel_impl};
-
 use crate::keyboard::code_to_location;
-
-pub(crate) fn from_nsstring(s: id) -> String {
-    unsafe {
-        let slice = std::slice::from_raw_parts(s.UTF8String() as *const _, s.len());
-        let result = std::str::from_utf8_unchecked(slice);
-        result.into()
-    }
-}
+use keyboard_types::{Code, Key, KeyState, KeyboardEvent, Modifiers};
+use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
+use std::cell::Cell;
 
 /// State for processing of keyboard events.
 ///
@@ -279,72 +266,65 @@ impl KeyboardState {
         self.last_mods.get()
     }
 
-    pub(crate) fn process_native_event(&self, event: id) -> Option<KeyboardEvent> {
-        unsafe {
-            let event_type = event.eventType();
-            let key_code = event.keyCode();
-            let code = key_code_to_code(key_code);
-            let location = code_to_location(code);
-            let raw_mods = event.modifierFlags();
-            let modifiers = make_modifiers(raw_mods);
-            let state = match event_type {
-                NSEventType::NSKeyDown => KeyState::Down,
-                NSEventType::NSKeyUp => KeyState::Up,
-                NSEventType::NSFlagsChanged => {
-                    // We use `bits` here because we want to distinguish the
-                    // device dependent bits (when both left and right keys
-                    // may be pressed, for example).
-                    let any_down = raw_mods.bits() & !self.last_mods.get().bits();
-                    self.last_mods.set(raw_mods);
-                    if is_modifier_code(code) {
-                        if any_down == 0 {
-                            KeyState::Up
-                        } else {
-                            KeyState::Down
-                        }
-                    } else {
-                        // HandleFlagsChanged has some logic for this; it might
-                        // happen when an app is deactivated by Command-Tab. In
-                        // that case, the best thing to do is synthesize the event
-                        // from the modifiers. But a challenge there is that we
-                        // might get multiple events.
-                        return None;
-                    }
-                }
-                // In case another event type ends up here, do not produce any kind of keyboard event.
-                _ => return None,
-            };
-            let is_composing = false;
-            let repeat: bool = event_type == NSEventType::NSKeyDown && msg_send![event, isARepeat];
-            let key = if let Some(key) = code_to_key(code) {
-                key
-            } else {
-                let characters = from_nsstring(event.characters());
-                if is_valid_key(&characters) {
-                    Key::Character(characters)
+    pub(crate) fn process_native_event(&self, event: &NSEvent) -> Option<KeyboardEvent> {
+        let event_type = event.eventType();
+        let key_code = event.keyCode();
+        let code = key_code_to_code(key_code);
+        let location = code_to_location(code);
+        let raw_mods = event.modifierFlags();
+        let modifiers = make_modifiers(raw_mods);
+        let state = match event_type {
+            NSEventType::KeyDown => KeyState::Down,
+            NSEventType::KeyUp => KeyState::Up,
+            NSEventType::FlagsChanged => {
+                // We use `bits` here because we want to distinguish the
+                // device dependent bits (when both left and right keys
+                // may be pressed, for example).
+                let any_down = raw_mods.bits() & !self.last_mods.get().bits();
+                self.last_mods.set(raw_mods);
+                if is_modifier_code(code) {
+                    if any_down == 0 { KeyState::Up } else { KeyState::Down }
                 } else {
-                    let chars_ignoring = from_nsstring(event.charactersIgnoringModifiers());
-                    if is_valid_key(&chars_ignoring) {
-                        Key::Character(chars_ignoring)
-                    } else {
-                        // There may be more heroic things we can do here.
-                        Key::Unidentified
-                    }
+                    // HandleFlagsChanged has some logic for this; it might
+                    // happen when an app is deactivated by Command-Tab. In
+                    // that case, the best thing to do is synthesize the event
+                    // from the modifiers. But a challenge there is that we
+                    // might get multiple events.
+                    return None;
                 }
-            };
-            let event =
-                KeyboardEvent { code, key, location, modifiers, state, is_composing, repeat };
-            Some(event)
-        }
+            }
+            // In case another event type ends up here, do not produce any kind of keyboard event.
+            _ => return None,
+        };
+        let is_composing = false;
+        let repeat: bool = event_type == NSEventType::KeyDown && event.isARepeat();
+        let key = if let Some(key) = code_to_key(code) {
+            key
+        } else {
+            let characters = event.characters().map(|c| c.to_string());
+            if is_valid_key(&event.characters()) {
+                Key::Character(characters)
+            } else {
+                let chars_ignoring = event.charactersIgnoringModifiers().map(|c| c.to_string());
+                if is_valid_key(&chars_ignoring) {
+                    Key::Character(chars_ignoring)
+                } else {
+                    // There may be more heroic things we can do here.
+                    Key::Unidentified
+                }
+            }
+        };
+        let event = KeyboardEvent { code, key, location, modifiers, state, is_composing, repeat };
+        Some(event)
     }
 }
 
 const MODIFIER_MAP: &[(NSEventModifierFlags, Modifiers)] = &[
-    (NSEventModifierFlags::NSShiftKeyMask, Modifiers::SHIFT),
-    (NSEventModifierFlags::NSAlternateKeyMask, Modifiers::ALT),
-    (NSEventModifierFlags::NSControlKeyMask, Modifiers::CONTROL),
-    (NSEventModifierFlags::NSCommandKeyMask, Modifiers::META),
-    (NSEventModifierFlags::NSAlphaShiftKeyMask, Modifiers::CAPS_LOCK),
+    (NSEventModifierFlags::Shift, Modifiers::SHIFT),
+    (NSEventModifierFlags::Option, Modifiers::ALT),
+    (NSEventModifierFlags::Control, Modifiers::CONTROL),
+    (NSEventModifierFlags::Command, Modifiers::META),
+    (NSEventModifierFlags::CapsLock, Modifiers::CAPS_LOCK),
 ];
 
 pub(crate) fn make_modifiers(raw: NSEventModifierFlags) -> Modifiers {

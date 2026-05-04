@@ -12,7 +12,7 @@ authors = [
     "Robbert van der Helm <mail@robbertvanderhelm.nl>",
     "Adrien Prokopowicz <prokopylmc@gmail.com>"
 ]
-edition = "2018"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Low-level windowing system geared towards making audio plugin UIs."
 keywords = ["windowing", "audio", "plugin"]
@@ -39,10 +39,12 @@ winapi = { version = "0.3.8", features = ["libloaderapi", "winuser", "windef", "
 uuid = { version = "0.8", features = ["v4"], optional = true }
 
 [target.'cfg(target_os="macos")'.dependencies]
-cocoa = "0.24.0"
-core-foundation = "0.9.1"
-objc = "0.2.7"
 uuid = { version = "0.8", features = ["v4"] }
+# TODO: only enable needed features
+objc2 = "0.6.4"
+objc2-core-foundation = "0.3.2"
+objc2-foundation = "0.3.2"
+objc2-app-kit = "0.3.2"
 
 [dev-dependencies]
 rtrb = "0.2"
