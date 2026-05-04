@@ -1,9 +1,8 @@
 #![allow(deprecated)] // OpenGL is deprecated on macOS
 
 use super::{GlConfig, GlError, Profile};
-use objc2::ffi::{id, nil};
 use objc2::rc::Retained;
-use objc2::{AllocAnyThread, msg_send};
+use objc2::AllocAnyThread;
 use objc2_app_kit::{
     NSOpenGLContext, NSOpenGLContextParameter, NSOpenGLPFAAccelerated, NSOpenGLPFAAlphaSize,
     NSOpenGLPFAColorSize, NSOpenGLPFADepthSize, NSOpenGLPFADoubleBuffer, NSOpenGLPFAMultisample,
@@ -12,7 +11,7 @@ use objc2_app_kit::{
     NSOpenGLProfileVersionLegacy, NSOpenGLView, NSView,
 };
 use objc2_core_foundation::{CFBundle, CFString};
-use objc2_foundation::{NSBundle, NSSize, ns_string};
+use objc2_foundation::NSSize;
 use raw_window_handle::RawWindowHandle;
 use std::ffi::c_void;
 use std::ptr::NonNull;

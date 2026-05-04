@@ -2,7 +2,7 @@ use objc2::__framework_prelude::Retained;
 use objc2::ffi::{id, objc_disposeClassPair};
 use objc2::rc::Allocated;
 use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, ProtocolObject, Sel};
-use objc2::{AllocAnyThread, ClassType, Message, msg_send, sel};
+use objc2::{msg_send, sel, AllocAnyThread, ClassType, Message};
 use objc2_app_kit::{
     NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
     NSTrackingAreaOptions, NSView, NSWindow, NSWindowDidBecomeKeyNotification,
@@ -11,7 +11,7 @@ use objc2_app_kit::{
 use objc2_foundation::{
     NSArray, NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize, NSString,
 };
-use std::ffi::{CStr, CString, c_void};
+use std::ffi::{c_void, CStr, CString};
 use uuid::Uuid;
 
 use super::keyboard::make_modifiers;
@@ -59,7 +59,7 @@ macro_rules! add_mouse_button_class_method {
 macro_rules! add_simple_keyboard_class_method {
     ($class:ident, $sel:ident) => {
         #[allow(non_snake_case)]
-        extern "C" fn $sel(this: &NSView, _: Sel, event: id){
+        extern "C" fn $sel(this: &NSView, _: Sel, event: &NSEvent){
             let state = unsafe { WindowState::from_view(this) };
 
             if let Some(key_event) = state.process_native_key_event(event){
