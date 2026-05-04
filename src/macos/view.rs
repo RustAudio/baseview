@@ -124,7 +124,7 @@ fn create_view_class() -> &'static AnyClass {
     // the class was stored in a OnceCell after creation. This way, we didn't
     // have to recreate it each time a view was opened, but now we don't leave
     // any class definitions lying around when the plugin is closed.
-    let class_name = CString::new(format!("BaseviewNSView_{}", Uuid::new_v4().to_simple()))
+    let class_name = CString::new(format!("BaseviewNSView_{}", Uuid::new_v4().simple()))
         // PANIC: This cannot have any NULL bytes
         .unwrap();
 
