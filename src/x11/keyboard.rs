@@ -19,16 +19,14 @@
 //! X11 keyboard handling
 
 use x11rb::protocol::xproto::{KeyButMask, KeyPressEvent, KeyReleaseEvent};
+use xkbcommon::xkb as xkbc;
 
 use keyboard_types::*;
 
 use crate::keyboard::code_to_location;
 
 /// Convert a hardware scan code to a key.
-///
-/// Note: this is a hardcoded layout. We need to detect the user's
-/// layout from the system and apply it.
-fn code_to_key(code: Code, m: Modifiers) -> Key {
+fn code_to_key(code: Code, m: Modifiers, hw_code: xkbc::Keycode, xkb_state: &xkbc::State) -> Key {
     fn a(s: &str) -> Key {
         Key::Character(s.into())
     }
@@ -39,6 +37,15 @@ fn code_to_key(code: Code, m: Modifiers) -> Key {
             Key::Character(base.into())
         }
     }
+    fn k(mods: Modifiers, base: &str, code: xkbc::Keycode, state: &xkbc::State) -> Key {
+        if mods.contains(Modifiers::CONTROL) {
+            // When ctrl is set, then state.key_get_utf8 return control sequence like \x1e.
+            // TODO: handle this better?
+            Key::Character(base.into())
+        } else {
+            Key::Character(state.key_get_utf8(code))
+        }
+    }
     fn n(mods: Modifiers, base: Key, num: &str) -> Key {
         if mods.contains(Modifiers::NUM_LOCK) != mods.contains(Modifiers::SHIFT) {
             Key::Character(num.into())
@@ -47,55 +54,55 @@ fn code_to_key(code: Code, m: Modifiers) -> Key {
         }
     }
     match code {
-        Code::KeyA => s(m, "a", "A"),
-        Code::KeyB => s(m, "b", "B"),
-        Code::KeyC => s(m, "c", "C"),
-        Code::KeyD => s(m, "d", "D"),
-        Code::KeyE => s(m, "e", "E"),
-        Code::KeyF => s(m, "f", "F"),
-        Code::KeyG => s(m, "g", "G"),
-        Code::KeyH => s(m, "h", "H"),
-        Code::KeyI => s(m, "i", "I"),
-        Code::KeyJ => s(m, "j", "J"),
-        Code::KeyK => s(m, "k", "K"),
-        Code::KeyL => s(m, "l", "L"),
-        Code::KeyM => s(m, "m", "M"),
-        Code::KeyN => s(m, "n", "N"),
-        Code::KeyO => s(m, "o", "O"),
-        Code::KeyP => s(m, "p", "P"),
-        Code::KeyQ => s(m, "q", "Q"),
-        Code::KeyR => s(m, "r", "R"),
-        Code::KeyS => s(m, "s", "S"),
-        Code::KeyT => s(m, "t", "T"),
-        Code::KeyU => s(m, "u", "U"),
-        Code::KeyV => s(m, "v", "V"),
-        Code::KeyW => s(m, "w", "W"),
-        Code::KeyX => s(m, "x", "X"),
-        Code::KeyY => s(m, "y", "Y"),
-        Code::KeyZ => s(m, "z", "Z"),
+        Code::KeyA => k(m, "a", hw_code, xkb_state),
+        Code::KeyB => k(m, "b", hw_code, xkb_state),
+        Code::KeyC => k(m, "c", hw_code, xkb_state),
+        Code::KeyD => k(m, "d", hw_code, xkb_state),
+        Code::KeyE => k(m, "e", hw_code, xkb_state),
+        Code::KeyF => k(m, "f", hw_code, xkb_state),
+        Code::KeyG => k(m, "g", hw_code, xkb_state),
+        Code::KeyH => k(m, "h", hw_code, xkb_state),
+        Code::KeyI => k(m, "i", hw_code, xkb_state),
+        Code::KeyJ => k(m, "j", hw_code, xkb_state),
+        Code::KeyK => k(m, "k", hw_code, xkb_state),
+        Code::KeyL => k(m, "l", hw_code, xkb_state),
+        Code::KeyM => k(m, "m", hw_code, xkb_state),
+        Code::KeyN => k(m, "n", hw_code, xkb_state),
+        Code::KeyO => k(m, "o", hw_code, xkb_state),
+        Code::KeyP => k(m, "p", hw_code, xkb_state),
+        Code::KeyQ => k(m, "q", hw_code, xkb_state),
+        Code::KeyR => k(m, "r", hw_code, xkb_state),
+        Code::KeyS => k(m, "s", hw_code, xkb_state),
+        Code::KeyT => k(m, "t", hw_code, xkb_state),
+        Code::KeyU => k(m, "u", hw_code, xkb_state),
+        Code::KeyV => k(m, "v", hw_code, xkb_state),
+        Code::KeyW => k(m, "w", hw_code, xkb_state),
+        Code::KeyX => k(m, "x", hw_code, xkb_state),
+        Code::KeyY => k(m, "y", hw_code, xkb_state),
+        Code::KeyZ => k(m, "z", hw_code, xkb_state),
 
-        Code::Digit0 => s(m, "0", ")"),
-        Code::Digit1 => s(m, "1", "!"),
-        Code::Digit2 => s(m, "2", "@"),
-        Code::Digit3 => s(m, "3", "#"),
-        Code::Digit4 => s(m, "4", "$"),
-        Code::Digit5 => s(m, "5", "%"),
-        Code::Digit6 => s(m, "6", "^"),
-        Code::Digit7 => s(m, "7", "&"),
-        Code::Digit8 => s(m, "8", "*"),
-        Code::Digit9 => s(m, "9", "("),
+        Code::Digit0 => k(m, "0", hw_code, xkb_state),
+        Code::Digit1 => k(m, "1", hw_code, xkb_state),
+        Code::Digit2 => k(m, "2", hw_code, xkb_state),
+        Code::Digit3 => k(m, "3", hw_code, xkb_state),
+        Code::Digit4 => k(m, "4", hw_code, xkb_state),
+        Code::Digit5 => k(m, "5", hw_code, xkb_state),
+        Code::Digit6 => k(m, "6", hw_code, xkb_state),
+        Code::Digit7 => k(m, "7", hw_code, xkb_state),
+        Code::Digit8 => k(m, "8", hw_code, xkb_state),
+        Code::Digit9 => k(m, "9", hw_code, xkb_state),
 
-        Code::Backquote => s(m, "`", "~"),
-        Code::Minus => s(m, "-", "_"),
-        Code::Equal => s(m, "=", "+"),
-        Code::BracketLeft => s(m, "[", "{"),
-        Code::BracketRight => s(m, "]", "}"),
-        Code::Backslash => s(m, "\\", "|"),
-        Code::Semicolon => s(m, ";", ":"),
-        Code::Quote => s(m, "'", "\""),
-        Code::Comma => s(m, ",", "<"),
-        Code::Period => s(m, ".", ">"),
-        Code::Slash => s(m, "/", "?"),
+        Code::Backquote => k(m, "`", hw_code, xkb_state),
+        Code::Minus => k(m, "-", hw_code, xkb_state),
+        Code::Equal => k(m, "=", hw_code, xkb_state),
+        Code::BracketLeft => k(m, "[", hw_code, xkb_state),
+        Code::BracketRight => k(m, "]", hw_code, xkb_state),
+        Code::Backslash => k(m, "\\", hw_code, xkb_state),
+        Code::Semicolon => k(m, ";", hw_code, xkb_state),
+        Code::Quote => k(m, "'", hw_code, xkb_state),
+        Code::Comma => k(m, ",", hw_code, xkb_state),
+        Code::Period => k(m, ".", hw_code, xkb_state),
+        Code::Slash => k(m, "/", hw_code, xkb_state),
 
         Code::Space => a(" "),
 
@@ -383,22 +390,36 @@ pub(super) fn key_mods(mods: KeyButMask) -> Modifiers {
     ret
 }
 
-pub(super) fn convert_key_press_event(key_press: &KeyPressEvent) -> KeyboardEvent {
+pub(super) fn convert_key_press_event(
+    key_press: &KeyPressEvent, state: &mut xkbc::State,
+) -> KeyboardEvent {
     let hw_keycode = key_press.detail;
+
+    // Update the xkbc state
+    let hw_code = hw_keycode.into();
+    state.update_key(hw_code, xkbc::KeyDirection::Down);
+
     let code = hardware_keycode_to_code(hw_keycode.into());
     let modifiers = key_mods(key_press.state);
-    let key = code_to_key(code, modifiers);
+    let key = code_to_key(code, modifiers, hw_code, state);
     let location = code_to_location(code);
     let state = KeyState::Down;
 
     KeyboardEvent { code, key, modifiers, location, state, repeat: false, is_composing: false }
 }
 
-pub(super) fn convert_key_release_event(key_release: &KeyReleaseEvent) -> KeyboardEvent {
+pub(super) fn convert_key_release_event(
+    key_release: &KeyReleaseEvent, state: &mut xkbc::State,
+) -> KeyboardEvent {
     let hw_keycode = key_release.detail;
+
+    // Update the xkbc state
+    let hw_code = hw_keycode.into();
+    state.update_key(hw_code, xkbc::KeyDirection::Up);
+
     let code = hardware_keycode_to_code(hw_keycode.into());
     let modifiers = key_mods(key_release.state);
-    let key = code_to_key(code, modifiers);
+    let key = code_to_key(code, modifiers, hw_code, state);
     let location = code_to_location(code);
     let state = KeyState::Up;
 
