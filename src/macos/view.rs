@@ -357,8 +357,10 @@ fn new_tracking_area(this: &NSView) -> Retained<NSTrackingArea> {
 /// collapse, so the override pass-through is equivalent to the
 /// default implementation.
 extern "C-unwind" fn hit_test(this: &NSView, _sel: Sel, point: NSPoint) -> Option<&NSView> {
+    let superclass = this.class().superclass().unwrap();
     // SAFETY: TODO
-    let super_result: Option<&NSView> = unsafe { msg_send![super(this), hitTest: point] };
+    let super_result: Option<&NSView> =
+        unsafe { msg_send![super(this, superclass), hitTest: point] };
     let super_result = super_result?;
 
     #[cfg(feature = "opengl")]
