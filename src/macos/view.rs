@@ -32,13 +32,13 @@ pub(super) const BASEVIEW_STATE_IVAR: &CStr = c"baseview_state";
 macro_rules! add_simple_mouse_class_method {
     ($class:ident, $sel:ident, $event:expr) => {
         #[allow(non_snake_case)]
-        extern "C" fn $sel(this: &NSView, _: Sel, _: &AnyObject){
+        extern "C-unwind" fn $sel(this: &NSView, _: Sel, _: &AnyObject){
             let state = unsafe { WindowState::from_view(this) };
 
             state.trigger_event(Event::Mouse($event));
         }
 
-        $class.add_method(sel!($sel:), $sel as extern "C" fn(_, _, _) -> _,);
+        $class.add_method(sel!($sel:), $sel as extern "C-unwind" fn(_, _, _) -> _,);
     };
 }
 
@@ -47,7 +47,7 @@ macro_rules! add_simple_mouse_class_method {
 macro_rules! add_mouse_button_class_method {
     ($class:ident, $sel:ident, $event_ty:ident, $button:expr) => {
         #[allow(non_snake_case)]
-        extern "C" fn $sel(this: &NSView, _: Sel, event: &NSEvent){
+        extern "C-unwind" fn $sel(this: &NSView, _: Sel, event: &NSEvent){
             let state = unsafe { WindowState::from_view(this) };
 
             state.trigger_event(Event::Mouse($event_ty {
@@ -56,14 +56,14 @@ macro_rules! add_mouse_button_class_method {
             }));
         }
 
-        $class.add_method(sel!($sel:),$sel as extern "C" fn(_, _, _) -> _);
+        $class.add_method(sel!($sel:),$sel as extern "C-unwind" fn(_, _, _) -> _);
     };
 }
 
 macro_rules! add_simple_keyboard_class_method {
     ($class:ident, $sel:ident) => {
         #[allow(non_snake_case)]
-        extern "C" fn $sel(this: &NSView, _: Sel, event: &NSEvent){
+        extern "C-unwind" fn $sel(this: &NSView, _: Sel, event: &NSEvent){
             let state = unsafe { WindowState::from_view(this) };
 
             if let Some(key_event) = state.process_native_key_event(event){
@@ -79,7 +79,7 @@ macro_rules! add_simple_keyboard_class_method {
             }
         }
 
-        $class.add_method(sel!($sel:),$sel as extern "C" fn(_, _, _) -> _);
+        $class.add_method(sel!($sel:),$sel as extern "C-unwind" fn(_, _, _) -> _);
     };
 }
 
@@ -132,66 +132,84 @@ fn create_view_class() -> &'static AnyClass {
 
     // SAFETY: All of these function signatures are correct
     unsafe {
-        class.add_method(sel!(acceptsFirstResponder), property_yes as extern "C" fn(_, _) -> _);
+        class.add_method(
+            sel!(acceptsFirstResponder),
+            property_yes as extern "C-unwind" fn(_, _) -> _,
+        );
         class.add_method(
             sel!(becomeFirstResponder),
-            become_first_responder as extern "C" fn(_, _) -> _,
+            become_first_responder as extern "C-unwind" fn(_, _) -> _,
         );
         class.add_method(
             sel!(resignFirstResponder),
-            resign_first_responder as extern "C" fn(_, _) -> _,
+            resign_first_responder as extern "C-unwind" fn(_, _) -> _,
         );
-        class.add_method(sel!(isFlipped), property_yes as extern "C" fn(_, _) -> _);
+        class.add_method(sel!(isFlipped), property_yes as extern "C-unwind" fn(_, _) -> _);
         class.add_method(
             sel!(preservesContentInLiveResize),
-            property_no as extern "C" fn(_, _) -> _,
+            property_no as extern "C-unwind" fn(_, _) -> _,
         );
         class.add_method(
             sel!(acceptsFirstMouse:),
-            accepts_first_mouse as extern "C" fn(_, _, _) -> _,
+            accepts_first_mouse as extern "C-unwind" fn(_, _, _) -> _,
         );
 
         class.add_method(
             sel!(windowShouldClose:),
-            window_should_close as extern "C" fn(_, _, _) -> _,
+            window_should_close as extern "C-unwind" fn(_, _, _) -> _,
         );
-        class.add_method(sel!(dealloc), dealloc as extern "C" fn(_, _));
+        class.add_method(sel!(dealloc), dealloc as extern "C-unwind" fn(_, _));
         class.add_method(
             sel!(viewWillMoveToWindow:),
-            view_will_move_to_window as extern "C" fn(_, _, _) -> _,
+            view_will_move_to_window as extern "C-unwind" fn(_, _, _) -> _,
         );
-        class.add_method(sel!(hitTest:), hit_test as extern "C" fn(_, _, _) -> _);
+        class.add_method(sel!(hitTest:), hit_test as extern "C-unwind" fn(_, _, _) -> _);
         class.add_method(
             sel!(updateTrackingAreas:),
-            update_tracking_areas as extern "C" fn(_, _, _) -> _,
+            update_tracking_areas as extern "C-unwind" fn(_, _, _) -> _,
         );
 
-        class.add_method(sel!(mouseMoved:), mouse_moved as extern "C" fn(_, _, _) -> _);
-        class.add_method(sel!(mouseDragged:), mouse_moved as extern "C" fn(_, _, _) -> _);
-        class.add_method(sel!(rightMouseDragged:), mouse_moved as extern "C" fn(_, _, _) -> _);
-        class.add_method(sel!(otherMouseDragged:), mouse_moved as extern "C" fn(_, _, _) -> _);
+        class.add_method(sel!(mouseMoved:), mouse_moved as extern "C-unwind" fn(_, _, _) -> _);
+        class.add_method(sel!(mouseDragged:), mouse_moved as extern "C-unwind" fn(_, _, _) -> _);
+        class.add_method(
+            sel!(rightMouseDragged:),
+            mouse_moved as extern "C-unwind" fn(_, _, _) -> _,
+        );
+        class.add_method(
+            sel!(otherMouseDragged:),
+            mouse_moved as extern "C-unwind" fn(_, _, _) -> _,
+        );
 
-        class.add_method(sel!(scrollWheel:), scroll_wheel as extern "C" fn(_, _, _) -> _);
+        class.add_method(sel!(scrollWheel:), scroll_wheel as extern "C-unwind" fn(_, _, _) -> _);
 
         class.add_method(
             sel!(viewDidChangeBackingProperties:),
-            view_did_change_backing_properties as extern "C" fn(_, _, _) -> _,
+            view_did_change_backing_properties as extern "C-unwind" fn(_, _, _) -> _,
         );
 
-        class.add_method(sel!(draggingEntered:), dragging_entered as extern "C" fn(_, _, _) -> _);
+        class.add_method(
+            sel!(draggingEntered:),
+            dragging_entered as extern "C-unwind" fn(_, _, _) -> _,
+        );
         class.add_method(
             sel!(prepareForDragOperation:),
-            prepare_for_drag_operation as extern "C" fn(_, _, _) -> _,
+            prepare_for_drag_operation as extern "C-unwind" fn(_, _, _) -> _,
         );
         class.add_method(
             sel!(performDragOperation:),
-            perform_drag_operation as extern "C" fn(_, _, _) -> _,
+            perform_drag_operation as extern "C-unwind" fn(_, _, _) -> _,
         );
-        class.add_method(sel!(draggingUpdated:), dragging_updated as extern "C" fn(_, _, _) -> _);
-        class.add_method(sel!(draggingExited:), dragging_exited as extern "C" fn(_, _, _) -> _);
+        class.add_method(
+            sel!(draggingUpdated:),
+            dragging_updated as extern "C-unwind" fn(_, _, _) -> _,
+        );
+        class.add_method(
+            sel!(draggingExited:),
+            dragging_exited as extern "C-unwind" fn(_, _, _) -> _,
+        );
         class.add_method(
             sel!(handleNotification:),
-            handle_notification as extern "C" fn(_, _, _) -> _,
+            handle_notification as extern "C-unwind" fn(_, _, _) -> _,
         );
 
         add_mouse_button_class_method!(class, mouseDown, ButtonPressed, MouseButton::Left);
@@ -213,19 +231,19 @@ fn create_view_class() -> &'static AnyClass {
     class.register()
 }
 
-extern "C" fn property_yes(_this: &NSView, _sel: Sel) -> Bool {
+extern "C-unwind" fn property_yes(_this: &NSView, _sel: Sel) -> Bool {
     Bool::YES
 }
 
-extern "C" fn property_no(_this: &NSView, _sel: Sel) -> Bool {
+extern "C-unwind" fn property_no(_this: &NSView, _sel: Sel) -> Bool {
     Bool::NO
 }
 
-extern "C" fn accepts_first_mouse(_this: &NSView, _sel: Sel, _event: &NSEvent) -> Bool {
+extern "C-unwind" fn accepts_first_mouse(_this: &NSView, _sel: Sel, _event: &NSEvent) -> Bool {
     Bool::YES
 }
 
-extern "C" fn become_first_responder(this: &NSView, _sel: Sel) -> Bool {
+extern "C-unwind" fn become_first_responder(this: &NSView, _sel: Sel) -> Bool {
     let Some(window) = this.window() else {
         return Bool::YES;
     };
@@ -238,13 +256,13 @@ extern "C" fn become_first_responder(this: &NSView, _sel: Sel) -> Bool {
     Bool::YES
 }
 
-extern "C" fn resign_first_responder(this: &NSView, _sel: Sel) -> Bool {
+extern "C-unwind" fn resign_first_responder(this: &NSView, _sel: Sel) -> Bool {
     let state = unsafe { WindowState::from_view(this) };
     state.trigger_deferrable_event(Event::Window(WindowEvent::Unfocused));
     Bool::YES
 }
 
-extern "C" fn window_should_close(this: &NSView, _: Sel, _sender: &AnyObject) -> Bool {
+extern "C-unwind" fn window_should_close(this: &NSView, _: Sel, _sender: &AnyObject) -> Bool {
     let state = unsafe { WindowState::from_view(this) };
 
     state.trigger_event(Event::Window(WindowEvent::WillClose));
@@ -254,7 +272,7 @@ extern "C" fn window_should_close(this: &NSView, _: Sel, _sender: &AnyObject) ->
     Bool::NO
 }
 
-extern "C" fn dealloc(this: &mut AnyObject, _sel: Sel) {
+extern "C-unwind" fn dealloc(this: &mut AnyObject, _sel: Sel) {
     let class = this.class();
 
     if let Some(superclass) = class.superclass() {
@@ -266,7 +284,7 @@ extern "C" fn dealloc(this: &mut AnyObject, _sel: Sel) {
     unsafe { objc_disposeClassPair(class as *const _ as *mut _) }
 }
 
-extern "C" fn view_did_change_backing_properties(this: &NSView, _: Sel, _: &AnyObject) {
+extern "C-unwind" fn view_did_change_backing_properties(this: &NSView, _: Sel, _: &AnyObject) {
     let ns_window = this.window();
 
     let scale_factor: f64 = ns_window.map(|w| w.backingScaleFactor()).unwrap_or(1.0);
@@ -338,7 +356,7 @@ fn new_tracking_area(this: &NSView) -> Retained<NSTrackingArea> {
 /// No-op without the `opengl` feature: there's no GL subview to
 /// collapse, so the override pass-through is equivalent to the
 /// default implementation.
-extern "C" fn hit_test(this: &NSView, _sel: Sel, point: NSPoint) -> Option<&NSView> {
+extern "C-unwind" fn hit_test(this: &NSView, _sel: Sel, point: NSPoint) -> Option<&NSView> {
     // SAFETY: TODO
     let super_result: Option<&NSView> = unsafe { msg_send![super(this), hitTest: point] };
     let super_result = super_result?;
@@ -356,7 +374,9 @@ extern "C" fn hit_test(this: &NSView, _sel: Sel, point: NSPoint) -> Option<&NSVi
     Some(super_result)
 }
 
-extern "C" fn view_will_move_to_window(this: &NSView, _self: Sel, new_window: Option<&NSWindow>) {
+extern "C-unwind" fn view_will_move_to_window(
+    this: &NSView, _self: Sel, new_window: Option<&NSWindow>,
+) {
     let tracking_areas = this.trackingAreas();
 
     match new_window {
@@ -384,7 +404,7 @@ extern "C" fn view_will_move_to_window(this: &NSView, _self: Sel, new_window: Op
     }
 }
 
-extern "C" fn update_tracking_areas(this: &NSView, _self: Sel, _: &AnyObject) {
+extern "C-unwind" fn update_tracking_areas(this: &NSView, _self: Sel, _: &AnyObject) {
     let tracking_areas = this.trackingAreas();
     if tracking_areas.count() > 0 {
         let tracking_area = tracking_areas.objectAtIndex(0);
@@ -396,7 +416,7 @@ extern "C" fn update_tracking_areas(this: &NSView, _self: Sel, _: &AnyObject) {
     this.addTrackingArea(&tracking_area);
 }
 
-extern "C" fn mouse_moved(this: &NSView, _sel: Sel, event: &NSEvent) {
+extern "C-unwind" fn mouse_moved(this: &NSView, _sel: Sel, event: &NSEvent) {
     let state = unsafe { WindowState::from_view(this) };
     let point = this.convertPoint_fromView(event.locationInWindow(), None);
 
@@ -408,7 +428,7 @@ extern "C" fn mouse_moved(this: &NSView, _sel: Sel, event: &NSEvent) {
     }));
 }
 
-extern "C" fn scroll_wheel(this: &NSView, _: Sel, event: &NSEvent) {
+extern "C-unwind" fn scroll_wheel(this: &NSView, _: Sel, event: &NSEvent) {
     let state = unsafe { WindowState::from_view(this) };
 
     let x = event.scrollingDeltaX() as f32;
@@ -469,7 +489,7 @@ fn on_event(window_state: &WindowState, event: MouseEvent) -> NSDragOperation {
     }
 }
 
-extern "C" fn dragging_entered(
+extern "C-unwind" fn dragging_entered(
     this: &NSView, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) -> NSDragOperation {
     let state = unsafe { WindowState::from_view(this) };
@@ -485,7 +505,7 @@ extern "C" fn dragging_entered(
     on_event(&state, event)
 }
 
-extern "C" fn dragging_updated(
+extern "C-unwind" fn dragging_updated(
     this: &NSView, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) -> NSDragOperation {
     let state = unsafe { WindowState::from_view(this) };
@@ -501,7 +521,7 @@ extern "C" fn dragging_updated(
     on_event(&state, event)
 }
 
-extern "C" fn prepare_for_drag_operation(
+extern "C-unwind" fn prepare_for_drag_operation(
     _this: &NSView, _sel: Sel, _sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) -> Bool {
     // Always accept drag operation if we get this far
@@ -510,7 +530,7 @@ extern "C" fn prepare_for_drag_operation(
     Bool::YES
 }
 
-extern "C" fn perform_drag_operation(
+extern "C-unwind" fn perform_drag_operation(
     this: &NSView, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) -> Bool {
     let state = unsafe { WindowState::from_view(this) };
@@ -531,7 +551,7 @@ extern "C" fn perform_drag_operation(
     }
 }
 
-extern "C" fn dragging_exited(
+extern "C-unwind" fn dragging_exited(
     this: &NSView, _sel: Sel, _sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) {
     let state = unsafe { WindowState::from_view(this) };
@@ -539,7 +559,7 @@ extern "C" fn dragging_exited(
     on_event(&state, MouseEvent::DragLeft);
 }
 
-extern "C" fn handle_notification(this: &NSView, _cmd: Sel, notification: &NSNotification) {
+extern "C-unwind" fn handle_notification(this: &NSView, _cmd: Sel, notification: &NSNotification) {
     let state = unsafe { WindowState::from_view(this) };
 
     let Some(window) = this.window() else { return };
