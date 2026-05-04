@@ -23,7 +23,13 @@ exclude = [".github"]
 
 [features]
 default = []
-opengl = ["uuid"]
+opengl = [
+    "uuid",
+    "objc2-core-foundation/CFBundle",
+    "objc2-app-kit/NSOpenGL",
+    "objc2-app-kit/NSOpenGLView",
+    "objc2-app-kit/objc2-open-gl"
+]
 
 [dependencies]
 keyboard-types = { version = "0.6.1", default-features = false }
@@ -41,7 +47,7 @@ uuid = { version = "0.8", features = ["v4"], optional = true }
 [target.'cfg(target_os="macos")'.dependencies]
 uuid = { version = "1.23.1", features = ["v4"] }
 objc2 = "0.6.4"
-objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSEnumerator"] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSApplication",
@@ -54,7 +60,6 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSTrackingArea",
     "NSView",
     "NSWindow",
-    "objc2-open-gl",
     "objc2-core-foundation"
 ] }
 
