@@ -7,7 +7,7 @@ use std::rc::Rc;
 use keyboard_types::KeyboardEvent;
 use objc2::rc::Retained;
 use objc2::runtime::NSObjectProtocol;
-use objc2::{MainThreadMarker, MainThreadOnly};
+use objc2::{msg_send, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSEvent, NSPasteboard,
     NSPasteboardTypeString, NSView, NSWindow, NSWindowStyleMask,
@@ -262,8 +262,7 @@ impl<'a> Window<'a> {
         let _ = Self::init(window_inner, window_info, build);
 
         ns_window.setContentView(Some(&ns_view));
-        // TODO: this was here before, but couldn't have worked??
-        //ns_window.setDelegate(Some(&ns_view));
+        let () = unsafe { msg_send![&*ns_window, setDelegate: &*ns_view] };
 
         app.run();
     }
