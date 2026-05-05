@@ -3,21 +3,15 @@ use std::ffi::OsString;
 use std::os::windows::prelude::OsStringExt;
 use std::ptr::null_mut;
 use std::rc::Weak;
-
-use windows::{
-    core::implement,
-    Win32::{
-        Foundation::{E_UNEXPECTED, POINT, POINTL, WPARAM},
-        Graphics::Gdi::ScreenToClient,
-        System::{
-            Com::{IDataObject, DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL},
-            Ole::*,
-            SystemServices::MODIFIERKEYS_FLAGS,
-        },
-        UI::Shell::{DragQueryFileW, HDROP},
-    },
-};
+use windows::core::implement;
+use windows::Win32::Foundation::{E_UNEXPECTED, POINTL};
+use windows::Win32::System::Com::{IDataObject, DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL};
+use windows::Win32::System::Ole::*;
+use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows_core::Ref;
+use windows_sys::Win32::{
+    Foundation::POINT, Graphics::Gdi::ScreenToClient, UI::Shell::DragQueryFileW,
+};
 
 use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent, PhyPoint, Point};
 
@@ -73,10 +67,7 @@ impl DropTarget {
         };
         let mut pt = POINT { x: pt.x, y: pt.y };
 
-        #[allow(unused)]
-        unsafe {
-            ScreenToClient(window_state.hwnd, &mut pt)
-        };
+        unsafe { ScreenToClient(window_state.hwnd, &mut pt) };
         let phy_point = PhyPoint::new(pt.x, pt.y);
         self.drag_position.set(phy_point.to_logical(&window_state.window_info()));
     }
@@ -96,9 +87,9 @@ impl DropTarget {
                 return;
             };
 
-            let hdrop = HDROP(medium.u.hGlobal.0);
+            let hdrop = medium.u.hGlobal.0;
 
-            let item_count = DragQueryFileW(hdrop, 0xFFFFFFFF, None);
+            let item_count = DragQueryFileW(hdrop, 0xFFFFFFFF, null_mut(), 0);
             if item_count == 0 {
                 self.drop_data.replace(DropData::None);
                 return;
@@ -107,11 +98,11 @@ impl DropTarget {
             let mut paths = Vec::with_capacity(item_count as usize);
 
             for i in 0..item_count {
-                let characters = DragQueryFileW(hdrop, i, None);
+                let characters = DragQueryFileW(hdrop, i, null_mut(), 0);
                 let buffer_size = characters as usize + 1;
                 let mut buffer = vec![0u16; buffer_size];
 
-                DragQueryFileW(hdrop, i, Some(buffer.as_mut_slice()));
+                DragQueryFileW(hdrop, i, buffer.as_mut_ptr().cast(), buffer_size as u32);
 
                 paths.push(OsString::from_wide(&buffer[..characters as usize]).into())
             }
@@ -121,6 +112,7 @@ impl DropTarget {
     }
 }
 
+#[allow(non_snake_case)]
 impl IDropTarget_Impl for DropTarget_Impl {
     fn DragEnter(
         &self, pdataobj: Ref<IDataObject>, grfkeystate: MODIFIERKEYS_FLAGS, pt: &POINTL,
@@ -130,9 +122,8 @@ impl IDropTarget_Impl for DropTarget_Impl {
             return Err(E_UNEXPECTED.into());
         };
 
-        let modifiers = window_state
-            .keyboard_state()
-            .get_modifiers_from_mouse_wparam(WPARAM(grfkeystate.0 as usize));
+        let modifiers =
+            window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfkeystate.0 as usize);
 
         self.parse_coordinates(*pt);
         self.parse_drop_data(pdataobj.unwrap());
@@ -154,9 +145,8 @@ impl IDropTarget_Impl for DropTarget_Impl {
             return Err(E_UNEXPECTED.into());
         };
 
-        let modifiers = window_state
-            .keyboard_state()
-            .get_modifiers_from_mouse_wparam(WPARAM(grfkeystate.0 as usize));
+        let modifiers =
+            window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfkeystate.0 as usize);
 
         self.parse_coordinates(*pt);
 
@@ -183,9 +173,8 @@ impl IDropTarget_Impl for DropTarget_Impl {
             return Err(E_UNEXPECTED.into());
         };
 
-        let modifiers = window_state
-            .keyboard_state()
-            .get_modifiers_from_mouse_wparam(WPARAM(grfkeystate.0 as usize));
+        let modifiers =
+            window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfkeystate.0 as usize);
 
         self.parse_coordinates(*pt);
         self.parse_drop_data(pdataobj.unwrap());

@@ -1,8 +1,9 @@
-use windows::Win32::{
+use windows_core::{ComObject, Interface};
+use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     System::{
         Com::CoCreateGuid,
-        Ole::{OleInitialize, RegisterDragDrop, RevokeDragDrop},
+        Ole::{OleInitialize, RevokeDragDrop},
     },
     UI::{
         Controls::{HOVER_DEFAULT, WM_MOUSELEAVE},
@@ -17,8 +18,8 @@ use windows::Win32::{
             AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
             GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW, SetCursor,
             SetTimer, SetWindowLongPtrW, SetWindowPos, TranslateMessage, UnregisterClassW,
-            CS_OWNDC, GWLP_USERDATA, HTCLIENT, IDC_ARROW, MSG, SWP_NOMOVE, SWP_NOZORDER,
-            WHEEL_DELTA, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CHAR, WM_CLOSE, WM_CREATE,
+            CS_OWNDC, GWLP_USERDATA, HTCLIENT, IDC_ARROW, MSG, SWP_NOACTIVATE, SWP_NOMOVE,
+            SWP_NOZORDER, WHEEL_DELTA, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CHAR, WM_CLOSE, WM_CREATE,
             WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
             WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
             WM_NCDESTROY, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE,
@@ -28,19 +29,21 @@ use windows::Win32::{
         },
     },
 };
-use windows_core::{ComObject, PCWSTR};
 
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::VecDeque;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
+use std::ptr::null_mut;
 use std::rc::Rc;
 
 use raw_window_handle::{
     HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, Win32WindowHandle,
     WindowsDisplayHandle,
 };
-use windows::Win32::UI::WindowsAndMessaging::SWP_NOACTIVATE;
+use windows::Win32::System::Ole::IDropTarget;
+use windows_sys::core::GUID;
+use windows_sys::Win32::System::Ole::RegisterDragDrop;
 
 const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
@@ -58,7 +61,8 @@ use super::keyboard::KeyboardState;
 use crate::gl::GlContext;
 
 unsafe fn generate_guid() -> String {
-    let guid = CoCreateGuid().ok().unwrap();
+    let mut guid: GUID = std::mem::zeroed();
+    CoCreateGuid(&mut guid);
     format!(
         "{:0X}-{:0X}-{:0X}-{:0X}{:0X}-{:0X}{:0X}{:0X}{:0X}{:0X}{:0X}\0",
         guid.data1,
@@ -77,12 +81,12 @@ unsafe fn generate_guid() -> String {
 
 #[allow(non_snake_case)]
 fn HIWORD(wparam: WPARAM) -> u16 {
-    ((wparam.0 >> 16) & 0xffff) as u16
+    ((wparam >> 16) & 0xffff) as u16
 }
 
 #[allow(non_snake_case)]
 fn LOWORD(lparam: LPARAM) -> u16 {
-    (lparam.0 & 0xffff) as u16
+    (lparam & 0xffff) as u16
 }
 
 const WIN_FRAME_TIMER: usize = 4242;
@@ -94,15 +98,9 @@ pub struct WindowHandle {
 
 impl WindowHandle {
     pub fn close(&mut self) {
-        if self.hwnd.is_some() {
-            #[allow(unused)]
+        if let Some(hwnd) = self.hwnd.take() {
             unsafe {
-                PostMessageW(
-                    self.hwnd.take(),
-                    BV_WINDOW_MUST_CLOSE,
-                    WPARAM::default(),
-                    LPARAM::default(),
-                );
+                PostMessageW(hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
             }
         }
     }
@@ -116,7 +114,7 @@ unsafe impl HasRawWindowHandle for WindowHandle {
     fn raw_window_handle(&self) -> RawWindowHandle {
         if let Some(hwnd) = self.hwnd {
             let mut handle = Win32WindowHandle::empty();
-            handle.hwnd = hwnd.0;
+            handle.hwnd = hwnd;
 
             RawWindowHandle::Win32(handle)
         } else {
@@ -145,13 +143,12 @@ impl Drop for ParentHandle {
     }
 }
 
-#[allow(unused)]
 pub(crate) unsafe extern "system" fn wnd_proc(
     hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM,
 ) -> LRESULT {
     if msg == WM_CREATE {
-        PostMessageW(Some(hwnd), WM_SHOWWINDOW, WPARAM::default(), LPARAM::default());
-        return LRESULT(0);
+        PostMessageW(hwnd, WM_SHOWWINDOW, WPARAM::default(), LPARAM::default());
+        return 0;
     }
 
     let window_state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut WindowState;
@@ -193,7 +190,6 @@ pub(crate) unsafe extern "system" fn wnd_proc(
 
 /// Our custom `wnd_proc` handler. If the result contains a value, then this is returned after
 /// handling any deferred tasks. otherwise the default window procedure is invoked.
-#[allow(unused)]
 unsafe fn wnd_proc_inner(
     hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, window_state: &WindowState,
 ) -> Option<LRESULT> {
@@ -206,7 +202,7 @@ unsafe fn wnd_proc_inner(
                 // this makes Windows track whether the mouse leaves the window.
                 // When the mouse leaves it results in a `WM_MOUSELEAVE` event.
                 let mut track_mouse = TRACKMOUSEEVENT {
-                    cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                    cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
                     dwFlags: TME_LEAVE,
                     hwndTrack: hwnd,
                     dwHoverTime: HOVER_DEFAULT,
@@ -225,8 +221,8 @@ unsafe fn wnd_proc_inner(
                     .on_event(&mut window, enter_event);
             }
 
-            let x = (lparam.0 & 0xFFFF) as i16 as i32;
-            let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+            let x = (lparam & 0xFFFF) as i16 as i32;
+            let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
             let physical_pos = PhyPoint { x, y };
             let logical_pos = physical_pos.to_logical(&window_state.window_info());
@@ -238,7 +234,7 @@ unsafe fn wnd_proc_inner(
                     .get_modifiers_from_mouse_wparam(wparam),
             });
             window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, move_event);
-            Some(LRESULT(0))
+            Some(0)
         }
 
         WM_MOUSELEAVE => {
@@ -247,12 +243,12 @@ unsafe fn wnd_proc_inner(
             window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
 
             *window_state.mouse_was_outside_window.borrow_mut() = true;
-            Some(LRESULT(0))
+            Some(0)
         }
         WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
             let mut window = crate::Window::new(window_state.create_window());
 
-            let value = (wparam.0 >> 16) as i16;
+            let value = (wparam >> 16) as i16;
             let value = value as i32;
             let value = value as f32 / WHEEL_DELTA as f32;
 
@@ -270,7 +266,7 @@ unsafe fn wnd_proc_inner(
 
             window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
 
-            Some(LRESULT(0))
+            Some(0)
         }
         WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
         | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
@@ -347,11 +343,11 @@ unsafe fn wnd_proc_inner(
         WM_TIMER => {
             let mut window = crate::Window::new(window_state.create_window());
 
-            if wparam.0 == WIN_FRAME_TIMER {
+            if wparam == WIN_FRAME_TIMER {
                 window_state.handler.borrow_mut().as_mut().unwrap().on_frame(&mut window);
             }
 
-            Some(LRESULT(0))
+            Some(0)
         }
         WM_CLOSE => {
             // Make sure to release the borrow before the DefWindowProc call
@@ -387,7 +383,7 @@ unsafe fn wnd_proc_inner(
             }
 
             if msg != WM_SYSKEYDOWN {
-                Some(LRESULT(0))
+                Some(0)
             } else {
                 None
             }
@@ -395,8 +391,8 @@ unsafe fn wnd_proc_inner(
         WM_SIZE => {
             let mut window = crate::Window::new(window_state.create_window());
 
-            let width = (lparam.0 & 0xFFFF) as u16 as u32;
-            let height = ((lparam.0 >> 16) & 0xFFFF) as u16 as u32;
+            let width = (lparam & 0xFFFF) as u16 as u32;
+            let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
 
             let new_window_info = {
                 let new_size = PhySize { width, height };
@@ -422,7 +418,7 @@ unsafe fn wnd_proc_inner(
             None
         }
         WM_DPICHANGED => {
-            let new_rect = (lparam.0 as *const RECT).read();
+            let new_rect = (lparam as *const RECT).read();
 
             let current_size = window_state.current_size.get();
             let new_size = PhySize {
@@ -433,7 +429,7 @@ unsafe fn wnd_proc_inner(
             let mut changed = current_size != new_size;
 
             if let WindowScalePolicy::SystemScaleFactor = window_state.scale_policy {
-                let dpi = (wparam.0 & 0xFFFF) as u16 as u32;
+                let dpi = (wparam & 0xFFFF) as u16 as u32;
                 let scale_factor = dpi as f64 / 96.0;
 
                 changed |= window_state.current_scale_factor.get() != scale_factor;
@@ -445,7 +441,7 @@ unsafe fn wnd_proc_inner(
             // hence why we are notifying the window handler manually below.
             SetWindowPos(
                 hwnd,
-                None,
+                null_mut(),
                 new_rect.left,
                 new_rect.top,
                 new_rect.right - new_rect.left,
@@ -479,9 +475,10 @@ unsafe fn wnd_proc_inner(
             let mouse_in_window = low_word == HTCLIENT as isize;
             if mouse_in_window {
                 // Here we need to set the cursor back to what the state says, since it can have changed when outside the window
-                let cursor = LoadCursorW(None, cursor_to_lpcwstr(window_state.cursor_icon.get()));
-                SetCursor(cursor.ok());
-                Some(LRESULT(1))
+                let cursor =
+                    LoadCursorW(null_mut(), cursor_to_lpcwstr(window_state.cursor_icon.get()));
+                SetCursor(cursor);
+                Some(1)
             } else {
                 // Cursor is being changed by some other window, e.g. when having mouse on the borders to resize it
                 None
@@ -491,7 +488,7 @@ unsafe fn wnd_proc_inner(
         //        state
         BV_WINDOW_MUST_CLOSE => {
             DestroyWindow(hwnd);
-            Some(LRESULT(0))
+            Some(0)
         }
         _ => None,
     }
@@ -509,17 +506,16 @@ unsafe fn register_wnd_class() -> ATOM {
     let wnd_class = WNDCLASSW {
         style: CS_OWNDC,
         lpfnWndProc: Some(wnd_proc),
-        lpszClassName: PCWSTR(class_name.as_ptr()),
-        hCursor: LoadCursorW(None, IDC_ARROW).unwrap(),
+        lpszClassName: class_name.as_ptr(),
+        hCursor: LoadCursorW(null_mut(), IDC_ARROW),
         ..Default::default()
     };
 
     RegisterClassW(&wnd_class)
 }
 
-#[allow(unused)]
 unsafe fn unregister_wnd_class(wnd_class: ATOM) {
-    UnregisterClassW(PCWSTR(wnd_class as _), None);
+    UnregisterClassW(wnd_class as _, null_mut());
 }
 
 /// All data associated with the window. This uses internal mutability so the outer struct doesn't
@@ -596,12 +592,12 @@ impl WindowState {
                     right: window_info.physical_size().width as i32,
                     bottom: window_info.physical_size().height as i32,
                 };
-                #[allow(unused)]
+
                 unsafe {
-                    AdjustWindowRectEx(&mut rect, self.dw_style, false, WINDOW_EX_STYLE::default());
+                    AdjustWindowRectEx(&mut rect, self.dw_style, 0, 0);
                     SetWindowPos(
                         self.hwnd,
-                        Some(self.hwnd),
+                        self.hwnd,
                         0,
                         0,
                         rect.right - rect.left,
@@ -636,11 +632,11 @@ impl Window<'_> {
         B: Send + 'static,
     {
         let parent = match parent.raw_window_handle() {
-            RawWindowHandle::Win32(h) => HWND(h.hwnd),
+            RawWindowHandle::Win32(h) => h.hwnd,
             h => panic!("unsupported parent handle {:?}", h),
         };
 
-        let (window_handle, _) = Self::open(true, Some(parent), options, build);
+        let (window_handle, _) = Self::open(true, parent, options, build);
 
         window_handle
     }
@@ -651,16 +647,15 @@ impl Window<'_> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let (_, hwnd) = Self::open(false, None, options, build);
+        let (_, hwnd) = Self::open(false, null_mut(), options, build);
 
         unsafe {
             let mut msg: MSG = std::mem::zeroed();
 
-            #[allow(unused)]
             loop {
-                let status = GetMessageW(&mut msg, Some(hwnd), 0, 0);
+                let status = GetMessageW(&mut msg, hwnd, 0, 0);
 
-                if status.0 == -1 {
+                if status == -1 {
                     break;
                 }
 
@@ -671,14 +666,13 @@ impl Window<'_> {
     }
 
     fn open<H, B>(
-        parented: bool, parent: Option<HWND>, options: WindowOpenOptions, build: B,
+        parented: bool, parent: HWND, options: WindowOpenOptions, build: B,
     ) -> (WindowHandle, HWND)
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        #[allow(unused)]
         unsafe {
             let mut title: Vec<u16> = OsStr::new(&options.title[..]).encode_wide().collect();
             title.push(0);
@@ -714,24 +708,23 @@ impl Window<'_> {
             };
 
             if !parented {
-                AdjustWindowRectEx(&mut rect, flags, false, WINDOW_EX_STYLE::default());
+                AdjustWindowRectEx(&mut rect, flags, 0, 0);
             }
 
             let hwnd = CreateWindowExW(
-                WINDOW_EX_STYLE::default(),
-                PCWSTR(window_class as _),
-                PCWSTR(title.as_ptr()),
+                0,
+                window_class as _,
+                title.as_ptr(),
                 flags,
                 0,
                 0,
                 rect.right - rect.left,
                 rect.bottom - rect.top,
-                parent,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
+                parent as *mut _,
+                null_mut(),
+                null_mut(),
+                null_mut(),
+            );
             // todo: manage error ^
 
             let kb_hook = hook::init_keyboard_hook(hwnd);
@@ -739,7 +732,7 @@ impl Window<'_> {
             #[cfg(feature = "opengl")]
             let gl_context: Option<GlContext> = options.gl_config.map(|gl_config| {
                 let mut handle = Win32WindowHandle::empty();
-                handle.hwnd = hwnd.0;
+                handle.hwnd = hwnd;
                 let handle = RawWindowHandle::Win32(handle);
 
                 GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
@@ -813,23 +806,23 @@ impl Window<'_> {
             let drop_target = ComObject::new(DropTarget::new(Rc::downgrade(&window_state)));
             *window_state._drop_target.borrow_mut() = Some(drop_target.clone());
 
-            OleInitialize(None);
+            OleInitialize(null_mut());
 
-            RegisterDragDrop(hwnd, drop_target.as_interface());
+            RegisterDragDrop(hwnd, drop_target.as_interface::<IDropTarget>().as_raw());
 
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Rc::into_raw(window_state) as *const _ as _);
-            SetTimer(Some(hwnd), WIN_FRAME_TIMER, 15, None);
+            SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
 
             if let Some(mut new_rect) = new_rect {
-                // Convert this desired"client rectangle" size to the actual "window rectangle"
+                // Convert this desired "client rectangle" size to the actual "window rectangle"
                 // size (Because of course you have to do that).
-                AdjustWindowRectEx(&mut new_rect, flags, false, WINDOW_EX_STYLE::default());
+                AdjustWindowRectEx(&mut new_rect, flags, 0, WINDOW_EX_STYLE::default());
 
                 // Windows makes us resize the window manually. This will trigger another `WM_SIZE` event,
                 // which we can then send the user the new scale factor.
                 SetWindowPos(
                     hwnd,
-                    Some(hwnd),
+                    hwnd,
                     new_rect.left,
                     new_rect.top,
                     new_rect.right - new_rect.left,
@@ -843,9 +836,8 @@ impl Window<'_> {
     }
 
     pub fn close(&mut self) {
-        #[allow(unused)]
         unsafe {
-            PostMessageW(Some(self.state.hwnd), BV_WINDOW_MUST_CLOSE, WPARAM(0), LPARAM(0));
+            PostMessageW(self.state.hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
         }
     }
 
@@ -855,10 +847,7 @@ impl Window<'_> {
     }
 
     pub fn focus(&mut self) {
-        #[allow(unused)]
-        unsafe {
-            SetFocus(Some(self.state.hwnd));
-        }
+        unsafe { SetFocus(self.state.hwnd) };
     }
 
     pub fn resize(&mut self, size: Size) {
@@ -871,7 +860,7 @@ impl Window<'_> {
     pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
         self.state.cursor_icon.set(mouse_cursor);
         unsafe {
-            let cursor = LoadCursorW(None, cursor_to_lpcwstr(mouse_cursor)).ok();
+            let cursor = LoadCursorW(null_mut(), cursor_to_lpcwstr(mouse_cursor));
             SetCursor(cursor);
         }
     }
@@ -885,7 +874,7 @@ impl Window<'_> {
 unsafe impl HasRawWindowHandle for Window<'_> {
     fn raw_window_handle(&self) -> RawWindowHandle {
         let mut handle = Win32WindowHandle::empty();
-        handle.hwnd = self.state.hwnd.0;
+        handle.hwnd = self.state.hwnd;
 
         RawWindowHandle::Win32(handle)
     }

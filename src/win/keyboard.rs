@@ -19,12 +19,11 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::ffi::c_void;
 use std::mem;
 use std::ops::RangeInclusive;
 
 use keyboard_types::{Code, Key, KeyState, KeyboardEvent, Location, Modifiers};
-use windows::Win32::{
+use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, WPARAM},
     System::SystemServices::{MK_CONTROL, MK_SHIFT},
     UI::{
@@ -86,8 +85,8 @@ unsafe fn is_last_message(hwnd: HWND, msg: u32, lparam: LPARAM) -> bool {
         _ => unreachable!(),
     };
     let mut msg = mem::zeroed();
-    let avail = PeekMessageW(&mut msg, Some(hwnd), expected_msg, expected_msg, PM_NOREMOVE);
-    avail.as_bool() || msg.lParam.0 & SCAN_MASK != lparam.0 & SCAN_MASK
+    let avail = PeekMessageW(&mut msg, hwnd, expected_msg, expected_msg, PM_NOREMOVE);
+    avail == 0 || msg.lParam & SCAN_MASK != lparam & SCAN_MASK
 }
 
 const MODIFIER_MAP: &[(VIRTUAL_KEY, Modifiers, u16)] = &[
@@ -247,7 +246,7 @@ fn scan_to_code(scan_code: u32) -> Code {
 }
 
 fn vk_to_key(vk: VkCode) -> Option<Key> {
-    Some(match VIRTUAL_KEY(vk as u16) {
+    Some(match vk as u16 {
         VK_CANCEL => Key::Cancel,
         VK_BACK => Key::Backspace,
         VK_TAB => Key::Tab,
@@ -353,7 +352,7 @@ fn code_unit_to_key(code_unit: u32) -> Key {
 ///
 /// This logic is based on NativeKey::GetKeyLocation from Mozilla.
 fn vk_to_location(vk: VkCode, is_extended: bool) -> Location {
-    match VIRTUAL_KEY(vk as u16) {
+    match vk as u16 {
         VK_LSHIFT | VK_LCONTROL | VK_LMENU | VK_LWIN => Location::Left,
         VK_RSHIFT | VK_RCONTROL | VK_RMENU | VK_RWIN => Location::Right,
         VK_RETURN if is_extended => Location::Numpad,
@@ -430,14 +429,14 @@ impl KeyboardState {
         match msg {
             WM_KEYDOWN | WM_SYSKEYDOWN => {
                 //println!("keydown wparam {:x} lparam {:x}", wparam, lparam);
-                let scan_code = ((lparam.0 & SCAN_MASK) >> 16) as u32;
-                let vk = self.refine_vk(wparam.0 as u8, scan_code);
+                let scan_code = ((lparam & SCAN_MASK) >> 16) as u32;
+                let vk = self.refine_vk(wparam as u8, scan_code);
                 if is_last_message(hwnd, msg, lparam) {
                     let modifiers = self.get_modifiers();
                     let code = scan_to_code(scan_code);
                     let key = vk_to_key(vk).unwrap_or_else(|| self.get_base_key(vk, modifiers));
-                    let repeat = (lparam.0 & 0x4000_0000) != 0;
-                    let is_extended = (lparam.0 & 0x100_0000) != 0;
+                    let repeat = (lparam & 0x4000_0000) != 0;
+                    let is_extended = (lparam & 0x100_0000) != 0;
                     let location = vk_to_location(vk, is_extended);
                     let state = KeyState::Down;
                     let event = KeyboardEvent {
@@ -456,13 +455,13 @@ impl KeyboardState {
                 }
             }
             WM_KEYUP | WM_SYSKEYUP => {
-                let scan_code = ((lparam.0 & SCAN_MASK) >> 16) as u32;
-                let vk = self.refine_vk(wparam.0 as u8, scan_code);
+                let scan_code = ((lparam & SCAN_MASK) >> 16) as u32;
+                let vk = self.refine_vk(wparam as u8, scan_code);
                 let modifiers = self.get_modifiers();
                 let code = scan_to_code(scan_code);
                 let key = vk_to_key(vk).unwrap_or_else(|| self.get_base_key(vk, modifiers));
                 let repeat = false;
-                let is_extended = (lparam.0 & 0x100_0000) != 0;
+                let is_extended = (lparam & 0x100_0000) != 0;
                 let location = vk_to_location(vk, is_extended);
                 let state = KeyState::Up;
                 let event = KeyboardEvent {
@@ -481,13 +480,13 @@ impl KeyboardState {
                 if is_last_message(hwnd, msg, lparam) {
                     let stash_vk = self.stash_vk.take();
                     let modifiers = self.get_modifiers();
-                    let scan_code = ((lparam.0 & SCAN_MASK) >> 16) as u32;
+                    let scan_code = ((lparam & SCAN_MASK) >> 16) as u32;
                     let vk = self.refine_vk(stash_vk.unwrap_or(0), scan_code);
                     let code = scan_to_code(scan_code);
-                    let key = if self.stash_utf16.is_empty() && wparam.0 < 0x20 {
+                    let key = if self.stash_utf16.is_empty() && wparam < 0x20 {
                         vk_to_key(vk).unwrap_or_else(|| self.get_base_key(vk, modifiers))
                     } else {
-                        self.stash_utf16.push(wparam.0 as u16);
+                        self.stash_utf16.push(wparam as u16);
                         if let Ok(s) = String::from_utf16(&self.stash_utf16) {
                             Key::Character(s)
                         } else {
@@ -495,8 +494,8 @@ impl KeyboardState {
                         }
                     };
                     self.stash_utf16.clear();
-                    let repeat = (lparam.0 & 0x4000_0000) != 0;
-                    let is_extended = (lparam.0 & 0x100_0000) != 0;
+                    let repeat = (lparam & 0x4000_0000) != 0;
+                    let is_extended = (lparam & 0x100_0000) != 0;
                     let location = vk_to_location(vk, is_extended);
                     let state = KeyState::Down;
                     let event = KeyboardEvent {
@@ -510,12 +509,12 @@ impl KeyboardState {
                     };
                     Some(event)
                 } else {
-                    self.stash_utf16.push(wparam.0 as u16);
+                    self.stash_utf16.push(wparam as u16);
                     None
                 }
             }
             WM_INPUTLANGCHANGE => {
-                self.hkl = HKL(lparam.0 as *mut c_void);
+                self.hkl = lparam as HKL;
                 self.load_keyboard_layout();
                 None
             }
@@ -538,11 +537,11 @@ impl KeyboardState {
         unsafe {
             let mut modifiers = Modifiers::empty();
             for &(vk, modifier, mask) in MODIFIER_MAP {
-                if GetKeyState(vk.0.into()) as u16 & mask != 0 {
+                if GetKeyState(vk.into()) as u16 & mask != 0 {
                     modifiers |= modifier;
                 }
             }
-            if self.has_altgr && GetKeyState(VK_RMENU.0.into()) & 0x80 != 0 {
+            if self.has_altgr && GetKeyState(VK_RMENU.into()) & 0x80 != 0 {
                 modifiers |= Modifiers::ALT_GRAPH;
                 modifiers &= !(Modifiers::CONTROL | Modifiers::ALT);
             }
@@ -557,16 +556,16 @@ impl KeyboardState {
             let mut modifiers = Modifiers::empty();
             for &(vk, modifier, mask) in MODIFIER_MAP {
                 let modifier_active = match modifier {
-                    Modifiers::CONTROL => wparam.0 & MK_CONTROL.0 as usize != 0,
-                    Modifiers::SHIFT => wparam.0 & MK_SHIFT.0 as usize != 0,
-                    _ => GetKeyState(vk.0.into()) as u16 & mask != 0,
+                    Modifiers::CONTROL => wparam & MK_CONTROL as usize != 0,
+                    Modifiers::SHIFT => wparam & MK_SHIFT as usize != 0,
+                    _ => GetKeyState(vk.into()) as u16 & mask != 0,
                 };
 
                 if modifier_active {
                     modifiers |= modifier;
                 }
             }
-            if self.has_altgr && GetKeyState(VK_RMENU.0.into()) & 0x80 != 0 {
+            if self.has_altgr && GetKeyState(VK_RMENU.into()) & 0x80 != 0 {
                 modifiers |= Modifiers::ALT_GRAPH;
                 modifiers &= !(Modifiers::CONTROL | Modifiers::ALT);
             }
@@ -594,15 +593,22 @@ impl KeyboardState {
             for shift_state in 0..N_SHIFT_STATE {
                 let has_shift = shift_state & SHIFT_STATE_SHIFT != 0;
                 let has_altgr = shift_state & SHIFT_STATE_ALTGR != 0;
-                key_state[VK_SHIFT.0 as usize] = if has_shift { 0x80 } else { 0 };
-                key_state[VK_CONTROL.0 as usize] = if has_altgr { 0x80 } else { 0 };
-                key_state[VK_LCONTROL.0 as usize] = if has_altgr { 0x80 } else { 0 };
-                key_state[VK_MENU.0 as usize] = if has_altgr { 0x80 } else { 0 };
-                key_state[VK_RMENU.0 as usize] = if has_altgr { 0x80 } else { 0 };
+                key_state[VK_SHIFT as usize] = if has_shift { 0x80 } else { 0 };
+                key_state[VK_CONTROL as usize] = if has_altgr { 0x80 } else { 0 };
+                key_state[VK_LCONTROL as usize] = if has_altgr { 0x80 } else { 0 };
+                key_state[VK_MENU as usize] = if has_altgr { 0x80 } else { 0 };
+                key_state[VK_RMENU as usize] = if has_altgr { 0x80 } else { 0 };
                 #[allow(clippy::iter_overeager_cloned)]
                 for vk in PRINTABLE_VKS.iter().cloned().flatten() {
-                    let ret =
-                        ToUnicodeEx(vk as u32, 0, &key_state, &mut uni_chars, 0, Some(self.hkl));
+                    let ret = ToUnicodeEx(
+                        vk.into(),
+                        0,
+                        key_state.as_ptr(),
+                        uni_chars.as_mut_ptr(),
+                        uni_chars.len() as _,
+                        0,
+                        self.hkl,
+                    );
                     match ret.cmp(&0) {
                         Ordering::Greater => {
                             let utf16_slice = &uni_chars[..ret as usize];
@@ -624,12 +630,13 @@ impl KeyboardState {
                             // It's a dead key, press it again to reset the state.
                             self.dead_keys.insert((vk, shift_state));
                             let _ = ToUnicodeEx(
-                                vk as u32,
+                                vk.into(),
                                 0,
-                                &key_state,
-                                &mut uni_chars,
+                                key_state.as_ptr(),
+                                uni_chars.as_mut_ptr(),
+                                uni_chars.len() as _,
                                 0,
-                                Some(self.hkl),
+                                self.hkl,
                             );
                         }
                         _ => (),
@@ -663,7 +670,7 @@ impl KeyboardState {
     ///
     /// Bit 31 is set if the mapping is to a dead key. The bottom bits contain the code unit.
     fn map_vk(&self, vk: VkCode) -> u32 {
-        unsafe { MapVirtualKeyExW(vk as _, MAPVK_VK_TO_CHAR, Some(self.hkl)) }
+        unsafe { MapVirtualKeyExW(vk as _, MAPVK_VK_TO_CHAR, self.hkl) }
     }
 
     /// Refine a virtual key code to distinguish left and right.
@@ -671,12 +678,12 @@ impl KeyboardState {
     /// This only does the mapping if the original code is ambiguous, as otherwise the
     /// virtual key code reported in `wparam` is more reliable.
     fn refine_vk(&self, vk: VkCode, mut scan_code: u32) -> VkCode {
-        match VIRTUAL_KEY(vk as u16) {
-            VIRTUAL_KEY(0) | VK_SHIFT | VK_CONTROL | VK_MENU => {
+        match vk.into() {
+            0 | VK_SHIFT | VK_CONTROL | VK_MENU => {
                 if scan_code >= 0x100 {
                     scan_code += 0xE000 - 0x100;
                 }
-                unsafe { MapVirtualKeyExW(scan_code, MAPVK_VSC_TO_VK_EX, Some(self.hkl)) as u8 }
+                unsafe { MapVirtualKeyExW(scan_code, MAPVK_VSC_TO_VK_EX, self.hkl) as u8 }
             }
             _ => vk,
         }

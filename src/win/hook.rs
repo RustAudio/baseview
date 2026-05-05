@@ -1,11 +1,12 @@
 use std::{
     collections::HashSet,
     hash::Hash,
+    ptr,
     sync::{LazyLock, RwLock},
 };
 
-use windows::Win32::{
-    Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM},
+use windows_sys::Win32::{
+    Foundation::{HWND, LPARAM, LRESULT, WPARAM},
     System::{LibraryLoader::GetModuleHandleW, Threading::GetCurrentThreadId},
     UI::WindowsAndMessaging::{
         CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, HHOOK, MSG, PM_REMOVE,
@@ -34,7 +35,7 @@ struct HWNDWrapper(HWND);
 
 impl Hash for HWNDWrapper {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        (self.0 .0 as usize).hash(state);
+        (self.0 as usize).hash(state);
     }
 }
 
@@ -70,12 +71,12 @@ pub(crate) fn init_keyboard_hook(hwnd: HWND) -> KeyboardHookHandle {
             SetWindowsHookExW(
                 WH_GETMESSAGE,
                 Some(keyboard_hook_callback),
-                GetModuleHandleW(None).ok().map(|h| HINSTANCE(h.0)),
+                GetModuleHandleW(ptr::null()),
                 GetCurrentThreadId(),
             )
         };
 
-        state.hook = new_hook.ok();
+        state.hook = Some(new_hook);
 
         KeyboardHookHandle(HWNDWrapper(hwnd))
     }
@@ -88,7 +89,6 @@ fn deinit_keyboard_hook(hwnd: HWNDWrapper) {
 
     if state.open_windows.is_empty() {
         if let Some(hhook) = state.hook {
-            #[allow(unused)]
             unsafe {
                 UnhookWindowsHookEx(hhook);
             }
@@ -101,17 +101,15 @@ fn deinit_keyboard_hook(hwnd: HWNDWrapper) {
 unsafe extern "system" fn keyboard_hook_callback(
     n_code: i32, wparam: WPARAM, lparam: LPARAM,
 ) -> LRESULT {
-    let msg = lparam.0 as *mut MSG;
+    let msg = lparam as *mut MSG;
 
-    if n_code == HC_ACTION as i32
-        && wparam.0 == PM_REMOVE.0 as usize
-        && offer_message_to_baseview(msg)
+    if n_code == HC_ACTION as i32 && wparam == PM_REMOVE as usize && offer_message_to_baseview(msg)
     {
         *msg = MSG { message: WM_USER, ..Default::default() };
 
         LRESULT::default()
     } else {
-        CallNextHookEx(None, n_code, wparam, lparam)
+        CallNextHookEx(ptr::null_mut(), n_code, wparam, lparam)
     }
 }
 

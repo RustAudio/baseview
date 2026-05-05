@@ -1,10 +1,10 @@
 use std::ffi::{c_void, CString, OsStr};
 use std::os::windows::ffi::OsStrExt;
 
-use windows::{
-    core::{s, PCSTR, PCWSTR},
+use windows_sys::{
+    core::s,
     Win32::{
-        Foundation::{FreeLibrary, HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, WPARAM},
+        Foundation::{FreeLibrary, HINSTANCE, HMODULE, HWND},
         Graphics::{
             Gdi::{GetDC, ReleaseDC, HDC},
             OpenGL::{
@@ -20,7 +20,7 @@ use windows::{
         },
         UI::WindowsAndMessaging::{
             CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, UnregisterClassW,
-            CS_OWNDC, CW_USEDEFAULT, WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSW,
+            CS_OWNDC, CW_USEDEFAULT, WNDCLASSW,
         },
     },
 };
@@ -86,7 +86,6 @@ extern "C" {
 }
 
 impl GlContext {
-    #[allow(unused)]
     pub unsafe fn create(parent: &RawWindowHandle, config: GlConfig) -> Result<GlContext, GlError> {
         let handle = if let RawWindowHandle::Win32(handle) = parent {
             handle
@@ -104,21 +103,13 @@ impl GlContext {
         let mut class_name: Vec<u16> = OsStr::new(&class_name_str).encode_wide().collect();
         class_name.push(0);
 
-        let pcw_class_name = PCWSTR(class_name.as_ptr());
-
-        let hinstance = HINSTANCE(&__ImageBase as *const IMAGE_DOS_HEADER as *mut c_void);
-
-        extern "system" fn wndproc(
-            hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM,
-        ) -> LRESULT {
-            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
-        }
+        let hinstance = &__ImageBase as *const IMAGE_DOS_HEADER as HINSTANCE;
 
         let wnd_class = WNDCLASSW {
             style: CS_OWNDC,
-            lpfnWndProc: Some(wndproc),
+            lpfnWndProc: Some(DefWindowProcW),
             hInstance: hinstance,
-            lpszClassName: pcw_class_name,
+            lpszClassName: class_name.as_ptr(),
             ..std::mem::zeroed()
         };
 
@@ -128,24 +119,23 @@ impl GlContext {
         }
 
         let hwnd_tmp = CreateWindowExW(
-            WINDOW_EX_STYLE(0),
-            pcw_class_name,
-            None,
-            WINDOW_STYLE(0),
+            0,
+            class as *const _,
+            [0].as_ptr(),
+            0,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            None,
-            None,
-            Some(hinstance),
-            None,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            hinstance,
+            std::ptr::null_mut(),
         );
 
-        if hwnd_tmp.is_err() {
+        if hwnd_tmp.is_null() {
             return Err(GlError::CreationFailed(()));
         }
-        let hwnd_tmp = hwnd_tmp.ok();
 
         let hdc_tmp = GetDC(hwnd_tmp);
 
@@ -158,20 +148,19 @@ impl GlContext {
             cAlphaBits: 8,
             cDepthBits: 24,
             cStencilBits: 8,
-            iLayerType: PFD_MAIN_PLANE.0 as u8,
+            iLayerType: PFD_MAIN_PLANE as u8,
             ..std::mem::zeroed()
         };
 
         SetPixelFormat(hdc_tmp, ChoosePixelFormat(hdc_tmp, &pfd_tmp), &pfd_tmp);
 
         let hglrc_tmp = wglCreateContext(hdc_tmp);
-        if hglrc_tmp.is_err() {
+        if hglrc_tmp.is_null() {
             ReleaseDC(hwnd_tmp, hdc_tmp);
-            UnregisterClassW(pcw_class_name, Some(hinstance));
-            DestroyWindow(hwnd_tmp.unwrap());
+            UnregisterClassW(class as *const _, hinstance);
+            DestroyWindow(hwnd_tmp);
             return Err(GlError::CreationFailed(()));
         }
-        let hglrc_tmp = hglrc_tmp.unwrap();
 
         wglMakeCurrent(hdc_tmp, hglrc_tmp);
 
@@ -193,14 +182,14 @@ impl GlContext {
         wglMakeCurrent(hdc_tmp, HGLRC::default());
         wglDeleteContext(hglrc_tmp);
         ReleaseDC(hwnd_tmp, hdc_tmp);
-        UnregisterClassW(wnd_class.lpszClassName, Some(hinstance));
-        DestroyWindow(hwnd_tmp.unwrap());
+        UnregisterClassW(class as *const _, hinstance);
+        DestroyWindow(hwnd_tmp);
 
         // Create actual context
 
-        let hwnd = HWND(handle.hwnd);
+        let hwnd = handle.hwnd;
 
-        let hdc = GetDC(Some(hwnd));
+        let hdc = GetDC(hwnd);
 
         // Try to choose pixel format with requested config
         #[rustfmt::skip]
@@ -267,7 +256,7 @@ impl GlContext {
         }
 
         if num_formats == 0 {
-            ReleaseDC(Some(hwnd), hdc);
+            ReleaseDC(hwnd, hdc);
             return Err(GlError::CreationFailed(()));
         }
 
@@ -276,7 +265,7 @@ impl GlContext {
             hdc,
             pixel_format,
             std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u32,
-            Some(&mut pfd),
+            &mut pfd,
         );
         SetPixelFormat(hdc, pixel_format, &pfd);
 
@@ -295,11 +284,11 @@ impl GlContext {
 
         let hglrc =
             wglCreateContextAttribsARB.unwrap()(hdc, HGLRC::default(), ctx_attribs.as_ptr());
-        if hglrc.is_invalid() {
+        if hglrc.is_null() {
             return Err(GlError::CreationFailed(()));
         }
 
-        let gl_library = LoadLibraryA(s!("opengl32.dll")).unwrap_or_default();
+        let gl_library = LoadLibraryA(s!("opengl32.dll"));
 
         wglMakeCurrent(hdc, hglrc);
         wglSwapIntervalEXT.unwrap()(config.vsync as i32);
@@ -308,12 +297,10 @@ impl GlContext {
         Ok(GlContext { hwnd, hdc, hglrc, gl_library })
     }
 
-    #[allow(unused)]
     pub unsafe fn make_current(&self) {
         wglMakeCurrent(self.hdc, self.hglrc);
     }
 
-    #[allow(unused)]
     pub unsafe fn make_not_current(&self) {
         wglMakeCurrent(self.hdc, HGLRC::default());
     }
@@ -321,10 +308,10 @@ impl GlContext {
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
         let symbol = CString::new(symbol).unwrap();
         unsafe {
-            wglGetProcAddress(PCSTR(symbol.as_ptr() as *const u8))
+            wglGetProcAddress(symbol.as_ptr() as *const u8)
                 .map(|p| p as *const c_void)
                 .or_else(|| {
-                    GetProcAddress(self.gl_library, PCSTR(symbol.as_ptr() as *const u8))
+                    GetProcAddress(self.gl_library, symbol.as_ptr() as *const u8)
                         .map(|p| p as *const c_void)
                 })
                 .unwrap_or_default()
@@ -332,7 +319,6 @@ impl GlContext {
     }
 
     pub fn swap_buffers(&self) {
-        #[allow(unused)]
         unsafe {
             SwapBuffers(self.hdc);
         }
@@ -341,11 +327,10 @@ impl GlContext {
 
 impl Drop for GlContext {
     fn drop(&mut self) {
-        #[allow(unused)]
         unsafe {
             wglMakeCurrent(HDC::default(), HGLRC::default());
             wglDeleteContext(self.hglrc);
-            ReleaseDC(Some(self.hwnd), self.hdc);
+            ReleaseDC(self.hwnd, self.hdc);
             FreeLibrary(self.gl_library);
         }
     }
