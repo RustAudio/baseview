@@ -1,9 +1,11 @@
 use std::cell::RefCell;
 use std::collections::hash_map::{Entry, HashMap};
 use std::error::Error;
-
-use x11::{xlib, xlib::Display, xlib_xcb};
-
+use std::ffi::c_int;
+use std::sync::Arc;
+use x11_dl::xlib::Xlib;
+use x11_dl::xlib_xcb::Xlib_xcb;
+use x11_dl::{xlib::Display, xlib_xcb};
 use x11rb::connection::Connection;
 use x11rb::cursor::Handle as CursorHandle;
 use x11rb::protocol::xproto::{Cursor, Screen};
@@ -25,9 +27,10 @@ x11rb::atom_manager! {
 ///
 /// Keeps track of the xcb connection itself and the xlib display ID that was used to connect.
 pub struct XcbConnection {
+    pub(crate) xlib: Arc<Xlib>,
     pub(crate) dpy: *mut Display,
     pub(crate) conn: XCBConnection,
-    pub(crate) screen: usize,
+    pub(crate) screen: c_int,
     pub(crate) atoms: Atoms,
     pub(crate) resources: resource_manager::Database,
     pub(crate) cursor_handle: CursorHandle,
@@ -36,21 +39,24 @@ pub struct XcbConnection {
 
 impl XcbConnection {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let dpy = unsafe { xlib::XOpenDisplay(std::ptr::null()) };
+        let xlib = Xlib::open()?;
+        let dpy = unsafe { (xlib.XOpenDisplay)(std::ptr::null()) };
         assert!(!dpy.is_null());
-        let xcb_connection = unsafe { xlib_xcb::XGetXCBConnection(dpy) };
+        let xlib_xcb = Xlib_xcb::open()?;
+        let xcb_connection = unsafe { (xlib_xcb.XGetXCBConnection)(dpy) };
         assert!(!xcb_connection.is_null());
-        let screen = unsafe { xlib::XDefaultScreen(dpy) } as usize;
+        let screen = unsafe { (xlib.XDefaultScreen)(dpy) };
         let conn = unsafe { XCBConnection::from_raw_xcb_connection(xcb_connection, false)? };
         unsafe {
-            xlib_xcb::XSetEventQueueOwner(dpy, xlib_xcb::XEventQueueOwner::XCBOwnsEventQueue)
+            (xlib_xcb.XSetEventQueueOwner)(dpy, xlib_xcb::XEventQueueOwner::XCBOwnsEventQueue)
         };
 
         let atoms = Atoms::new(&conn)?.reply()?;
         let resources = resource_manager::new_from_default(&conn)?;
-        let cursor_handle = CursorHandle::new(&conn, screen, &resources)?.reply()?;
+        let cursor_handle = CursorHandle::new(&conn, screen as usize, &resources)?.reply()?;
 
         Ok(Self {
+            xlib: Arc::new(xlib),
             dpy,
             conn,
             screen,
@@ -110,8 +116,12 @@ impl XcbConnection {
         match cursor_cache.entry(cursor) {
             Entry::Occupied(entry) => Ok(*entry.get()),
             Entry::Vacant(entry) => {
-                let cursor =
-                    cursor::get_xcursor(&self.conn, self.screen, &self.cursor_handle, cursor)?;
+                let cursor = cursor::get_xcursor(
+                    &self.conn,
+                    self.screen as usize,
+                    &self.cursor_handle,
+                    cursor,
+                )?;
                 entry.insert(cursor);
                 Ok(cursor)
             }
@@ -119,14 +129,14 @@ impl XcbConnection {
     }
 
     pub fn screen(&self) -> &Screen {
-        &self.conn.setup().roots[self.screen]
+        &self.conn.setup().roots[self.screen as usize]
     }
 }
 
 impl Drop for XcbConnection {
     fn drop(&mut self) {
         unsafe {
-            xlib::XCloseDisplay(self.dpy);
+            (self.xlib.XCloseDisplay)(self.dpy);
         }
     }
 }

@@ -23,11 +23,9 @@ impl WindowVisualConfig {
     ) -> Result<Self, Box<dyn Error>> {
         let Some(gl_config) = gl_config else { return Self::find_best_visual_config(connection) };
 
-        // SAFETY: TODO
-        let (fb_config, window_config) = unsafe {
-            crate::gl::platform::GlContext::get_fb_config_and_visual(connection.dpy, gl_config)
-        }
-        .expect("Could not fetch framebuffer config");
+        let (fb_config, window_config) =
+            crate::gl::platform::GlContext::get_fb_config_and_visual(connection, gl_config)
+                .expect("Could not fetch framebuffer config");
 
         Ok(Self {
             fb_config: Some(fb_config),

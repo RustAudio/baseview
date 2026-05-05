@@ -7,7 +7,7 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod win;
 #[cfg(target_os = "linux")]
-mod x11;
+pub(crate) mod x11;
 
 mod clipboard;
 mod event;
