@@ -290,7 +290,10 @@ impl<'a> Window<'a> {
         let window_state_ptr = Rc::into_raw(Rc::clone(&window_state));
 
         unsafe {
-            // TODO: Pretty certain this is a cyclic reference (aaaa)
+            // This creates a cyclic reference: WindowState > WindowInner > NSView > WindowState.
+            // This cycle gets broken in WindowInner::close and everything is released properly.
+            // However, this means the cycle holds and the whole leaks if close() is not called. (e.g. if simply dropped)
+            // This should be refactored at some point to fix this issue.
             ns_view
                 .class()
                 .instance_variable(BASEVIEW_STATE_IVAR)
