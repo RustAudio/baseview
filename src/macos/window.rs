@@ -400,6 +400,10 @@ impl WindowState {
     /// This method returns a cloned `Rc<WindowState>` rather than just a `&WindowState`, since the
     /// original `Rc<WindowState>` owned by the `NSView` can be dropped at any time
     /// (including during an event handler).
+    ///
+    /// # Safety
+    ///
+    /// `view` MUST be our own NSView, as created by `create_view`
     pub(super) unsafe fn from_view(view: &NSView) -> Rc<WindowState> {
         let state_ptr = view
             .class()

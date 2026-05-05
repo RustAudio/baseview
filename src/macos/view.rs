@@ -84,8 +84,13 @@ macro_rules! add_simple_keyboard_class_method {
 }
 
 pub(super) fn create_view(window_options: &WindowOpenOptions) -> Retained<NSView> {
-    let class = create_view_class();
-    let view: Allocated<NSView> = unsafe { msg_send![class, alloc] };
+    let view: Allocated<NSView> = {
+        // SAFETY: We don't access this reference after calling alloc
+        let class = unsafe { create_view_class() };
+        // SAFETY: This function is valid to call, and Allocated<NSView> is the correct type for the
+        // returned pointer
+        unsafe { msg_send![class, alloc] }
+    };
 
     let size = window_options.size;
     let view = NSView::initWithFrame(
@@ -95,7 +100,7 @@ pub(super) fn create_view(window_options: &WindowOpenOptions) -> Retained<NSView
 
     let notification_center = NSNotificationCenter::defaultCenter();
 
-    // SAFETY: TODO
+    // SAFETY: Our NSView class does have a handleNotification: method with the matching signature.
     unsafe {
         notification_center.addObserver_selector_name_object(
             &view,
@@ -111,14 +116,19 @@ pub(super) fn create_view(window_options: &WindowOpenOptions) -> Retained<NSView
         );
     }
 
-    // SAFETY: TODO
+    // SAFETY: This static is a read-only constant
     let ns_filenames_pboard_type = unsafe { NSFilenamesPboardType };
     view.registerForDraggedTypes(&NSArray::from_slice(&[ns_filenames_pboard_type]));
 
     view
 }
 
-fn create_view_class() -> &'static AnyClass {
+/// # Safety
+///
+/// This class is going to be destroyed when its first instance gets deallocated.
+///
+/// The returned reference must NOT be used after that point.
+unsafe fn create_view_class() -> &'static AnyClass {
     // Use unique class names so that there are no conflicts between different
     // instances. The class is deleted when the view is released. Previously,
     // the class was stored in a OnceCell after creation. This way, we didn't
@@ -249,6 +259,7 @@ extern "C-unwind" fn become_first_responder(this: &NSView, _sel: Sel) -> Bool {
     };
 
     if window.isKeyWindow() {
+        // SAFETY: This is our own view instance
         let state = unsafe { WindowState::from_view(this) };
         state.trigger_deferrable_event(Event::Window(WindowEvent::Focused));
     }
@@ -257,12 +268,14 @@ extern "C-unwind" fn become_first_responder(this: &NSView, _sel: Sel) -> Bool {
 }
 
 extern "C-unwind" fn resign_first_responder(this: &NSView, _sel: Sel) -> Bool {
+    // SAFETY: This is our own view instance
     let state = unsafe { WindowState::from_view(this) };
     state.trigger_deferrable_event(Event::Window(WindowEvent::Unfocused));
     Bool::YES
 }
 
 extern "C-unwind" fn window_should_close(this: &NSView, _: Sel, _sender: &AnyObject) -> Bool {
+    // SAFETY: This is our own view instance
     let state = unsafe { WindowState::from_view(this) };
 
     state.trigger_event(Event::Window(WindowEvent::WillClose));
@@ -279,8 +292,8 @@ extern "C-unwind" fn dealloc(this: &mut AnyObject, _sel: Sel) {
         let () = unsafe { msg_send![super(this, superclass), dealloc] };
     }
 
-    // Delete class
-    // SAFETY: TODO: nope, this is NOT sound, as this invalidates any &AnyClass
+    // SAFETY: This is safe as long as nobody holds a reference to this class.
+    // On the Baseview side, this is enforced by the safety contract in `create_view_class`
     unsafe { objc_disposeClassPair(class as *const _ as *mut _) }
 }
 
@@ -289,7 +302,7 @@ extern "C-unwind" fn view_did_change_backing_properties(this: &NSView, _: Sel, _
 
     let scale_factor: f64 = ns_window.map(|w| w.backingScaleFactor()).unwrap_or(1.0);
 
-    // SAFETY: TODO
+    // SAFETY: This is our own view instance
     let state = unsafe { WindowState::from_view(this) };
 
     let bounds = this.bounds();
@@ -358,7 +371,7 @@ fn new_tracking_area(this: &NSView) -> Retained<NSTrackingArea> {
 /// default implementation.
 extern "C-unwind" fn hit_test(this: &NSView, _sel: Sel, point: NSPoint) -> Option<&NSView> {
     let superclass = this.class().superclass().unwrap();
-    // SAFETY: TODO
+    // SAFETY: Our superclass is NSView
     let super_result: Option<&NSView> =
         unsafe { msg_send![super(this, superclass), hitTest: point] };
     let super_result = super_result?;
