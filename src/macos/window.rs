@@ -221,7 +221,7 @@ impl<'a> Window<'a> {
 
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
-        // SAFETY: TODO
+        // SAFETY: This is safe because of the setReleasedWhenClosed(false) below
         let ns_window = unsafe {
             NSWindow::initWithContentRect_styleMask_backing_defer(
                 NSWindow::alloc(mtm),
@@ -234,7 +234,7 @@ impl<'a> Window<'a> {
             )
         };
 
-        // SAFETY: TODO
+        // SAFETY: setReleasedWhenClosed is always safe to call with `false` (worst case is a memory leak)
         unsafe { ns_window.setReleasedWhenClosed(false) };
 
         ns_window.center();
