@@ -307,14 +307,15 @@ impl GlContext {
 
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
         let symbol = CString::new(symbol).unwrap();
-        unsafe {
-            wglGetProcAddress(symbol.as_ptr() as *const u8)
-                .map(|p| p as *const c_void)
-                .or_else(|| {
-                    GetProcAddress(self.gl_library, symbol.as_ptr() as *const u8)
-                        .map(|p| p as *const c_void)
-                })
-                .unwrap_or_default()
+        let symbol_ptr = symbol.as_ptr().cast();
+
+        let addr = unsafe {
+            wglGetProcAddress(symbol_ptr).or_else(|| GetProcAddress(self.gl_library, symbol_ptr))
+        };
+
+        match addr {
+            Some(addr) => addr as *const c_void,
+            None => std::ptr::null(),
         }
     }
 
