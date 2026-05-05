@@ -1,6 +1,5 @@
 use std::{
     collections::HashSet,
-    hash::Hash,
     ptr,
     sync::{LazyLock, RwLock},
 };
