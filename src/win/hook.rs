@@ -30,14 +30,8 @@ struct KeyboardHookState {
     open_windows: HashSet<HWNDWrapper>,
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy)]
 struct HWNDWrapper(HWND);
-
-impl Hash for HWNDWrapper {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        (self.0 as usize).hash(state);
-    }
-}
 
 // SAFETY: it's a pointer behind an RwLock. we'll live
 unsafe impl Send for KeyboardHookState {}
