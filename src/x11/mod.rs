@@ -1,5 +1,5 @@
 mod xcb_connection;
-use xcb_connection::XcbConnection;
+pub(crate) use xcb_connection::XcbConnection;
 
 mod window;
 pub use window::*;

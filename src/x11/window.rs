@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::error::Error;
 use std::ffi::c_void;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -96,7 +97,7 @@ pub(crate) struct WindowInner {
     #[cfg(feature = "opengl")]
     gl_context: Option<GlContext>,
 
-    pub(crate) xcb_connection: XcbConnection,
+    pub(crate) xcb_connection: Rc<XcbConnection>,
     window_id: XWindow,
     pub(crate) window_info: WindowInfo,
     visual_id: Visualid,
@@ -251,6 +252,7 @@ impl<'a> Window<'a> {
         )?;
 
         xcb_connection.conn.flush()?;
+        let xcb_connection = Rc::new(xcb_connection);
 
         // TODO: These APIs could use a couple tweaks now that everything is internal and there is
         //       no error handling anymore at this point. Everything is more or less unchanged
@@ -260,11 +262,12 @@ impl<'a> Window<'a> {
             use std::ffi::c_ulong;
 
             let window = window_id as c_ulong;
-            let display = xcb_connection.dpy;
 
             // Because of the visual negotation we had to take some extra steps to create this context
-            let context = unsafe { platform::GlContext::create(window, display, fb_config) }
-                .expect("Could not create OpenGL context");
+            let context = unsafe {
+                platform::GlContext::create(window, Rc::clone(&xcb_connection), fb_config)
+            }
+            .expect("Could not create OpenGL context");
             GlContext::new(context)
         });
 
@@ -365,7 +368,7 @@ unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
         let mut handle = XlibDisplayHandle::empty();
 
         handle.display = display as *mut c_void;
-        handle.screen = unsafe { x11::xlib::XDefaultScreen(display) };
+        handle.screen = self.inner.xcb_connection.screen;
 
         RawDisplayHandle::Xlib(handle)
     }

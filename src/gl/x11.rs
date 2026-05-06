@@ -1,10 +1,12 @@
+use super::{GlConfig, GlError, Profile};
+use crate::x11::XcbConnection;
 use std::ffi::{c_void, CString};
 use std::os::raw::{c_int, c_ulong};
-
-use x11::glx;
-use x11::xlib;
-
-use super::{GlConfig, GlError, Profile};
+use std::rc::Rc;
+use x11_dl::error::OpenError;
+use x11_dl::glx;
+use x11_dl::glx::Glx;
+use x11_dl::xlib;
 
 mod errors;
 
@@ -16,11 +18,18 @@ pub enum CreationFailedError {
     MakeCurrentFailed,
     ContextCreationFailed,
     X11Error(errors::XLibError),
+    OpenError(OpenError),
 }
 
 impl From<errors::XLibError> for GlError {
     fn from(e: errors::XLibError) -> Self {
         GlError::CreationFailed(CreationFailedError::X11Error(e))
+    }
+}
+
+impl From<OpenError> for GlError {
+    fn from(e: OpenError) -> Self {
+        GlError::CreationFailed(CreationFailedError::OpenError(e))
     }
 }
 
@@ -43,14 +52,15 @@ type GlXSwapIntervalEXT =
 
 const GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB: i32 = 0x20B2;
 
-fn get_proc_address(symbol: &str) -> *const c_void {
+fn get_proc_address(glx: &Glx, symbol: &str) -> *const c_void {
     let symbol = CString::new(symbol).unwrap();
-    unsafe { glx::glXGetProcAddress(symbol.as_ptr() as *const u8).unwrap() as *const c_void }
+    unsafe { (glx.glXGetProcAddress)(symbol.as_ptr() as *const u8).unwrap() as *const c_void }
 }
 
 pub struct GlContext {
+    glx: Glx,
     window: c_ulong,
-    display: *mut xlib::_XDisplay,
+    connection: Rc<XcbConnection>,
     context: glx::GLXContext,
 }
 
@@ -78,16 +88,14 @@ impl GlContext {
     ///
     /// Use [Self::get_fb_config_and_visual] to create both of these things.
     pub unsafe fn create(
-        window: c_ulong, display: *mut xlib::_XDisplay, config: FbConfig,
+        window: c_ulong, connection: Rc<XcbConnection>, config: FbConfig,
     ) -> Result<GlContext, GlError> {
-        if display.is_null() {
-            return Err(GlError::InvalidWindowHandle);
-        }
+        let glx = Glx::open()?;
 
-        errors::XErrorHandler::handle(display, |error_handler| {
+        let context = errors::XErrorHandler::handle(&connection, |error_handler| {
             #[allow(non_snake_case)]
             let glXCreateContextAttribsARB: GlXCreateContextAttribsARB = {
-                let addr = get_proc_address("glXCreateContextAttribsARB");
+                let addr = get_proc_address(&glx, "glXCreateContextAttribsARB");
                 if addr.is_null() {
                     return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
                 } else {
@@ -98,7 +106,7 @@ impl GlContext {
 
             #[allow(non_snake_case)]
             let glXSwapIntervalEXT: GlXSwapIntervalEXT = {
-                let addr = get_proc_address("glXSwapIntervalEXT");
+                let addr = get_proc_address(&glx, "glXSwapIntervalEXT");
                 if addr.is_null() {
                     return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
                 } else {
@@ -123,7 +131,7 @@ impl GlContext {
             ];
 
             let context = glXCreateContextAttribsARB(
-                display,
+                connection.dpy,
                 config.fb_config,
                 std::ptr::null_mut(),
                 1,
@@ -136,32 +144,36 @@ impl GlContext {
                 return Err(GlError::CreationFailed(CreationFailedError::ContextCreationFailed));
             }
 
-            let res = glx::glXMakeCurrent(display, window, context);
+            let res = (glx.glXMakeCurrent)(connection.dpy, window, context);
             error_handler.check()?;
             if res == 0 {
                 return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
             }
 
-            glXSwapIntervalEXT(display, window, config.gl_config.vsync as i32);
+            glXSwapIntervalEXT(connection.dpy, window, config.gl_config.vsync as i32);
             error_handler.check()?;
 
-            if glx::glXMakeCurrent(display, 0, std::ptr::null_mut()) == 0 {
+            if (glx.glXMakeCurrent)(connection.dpy, 0, std::ptr::null_mut()) == 0 {
                 error_handler.check()?;
                 return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
             }
 
-            Ok(GlContext { window, display, context })
-        })
+            Ok(context)
+        })?;
+
+        Ok(GlContext { glx, window, connection, context })
     }
 
     /// Find a matching framebuffer config and window visual for the given OpenGL configuration.
     /// This needs to be passed to [Self::create] along with a handle to a window that was created
     /// using the visual also returned from this function.
-    pub unsafe fn get_fb_config_and_visual(
-        display: *mut xlib::_XDisplay, config: GlConfig,
+    pub fn get_fb_config_and_visual(
+        conn: &XcbConnection, config: GlConfig,
     ) -> Result<(FbConfig, WindowConfig), GlError> {
-        errors::XErrorHandler::handle(display, |error_handler| {
-            let screen = xlib::XDefaultScreen(display);
+        let glx = Glx::open()?;
+
+        errors::XErrorHandler::handle(conn, |error_handler| {
+            let screen = conn.screen;
 
             #[rustfmt::skip]
                 let fb_attribs = [
@@ -183,8 +195,9 @@ impl GlContext {
             ];
 
             let mut n_configs = 0;
-            let fb_config =
-                glx::glXChooseFBConfig(display, screen, fb_attribs.as_ptr(), &mut n_configs);
+            let fb_config = unsafe {
+                (glx.glXChooseFBConfig)(conn.dpy, screen, fb_attribs.as_ptr(), &mut n_configs)
+            };
 
             error_handler.check()?;
             if n_configs <= 0 || fb_config.is_null() {
@@ -193,22 +206,23 @@ impl GlContext {
 
             // Now that we have a matching framebuffer config, we need to know which visual matches
             // thsi config so the window is compatible with the OpenGL context we're about to create
-            let fb_config = *fb_config;
-            let visual = glx::glXGetVisualFromFBConfig(display, fb_config);
+            let fb_config = unsafe { fb_config.read() };
+            let visual = unsafe { (glx.glXGetVisualFromFBConfig)(conn.dpy, fb_config) };
             if visual.is_null() {
                 return Err(GlError::CreationFailed(CreationFailedError::NoVisual));
             }
+            let visual = unsafe { visual.read() };
 
             Ok((
                 FbConfig { fb_config, gl_config: config },
-                WindowConfig { depth: (*visual).depth as u8, visual: (*visual).visualid as u32 },
+                WindowConfig { depth: visual.depth as u8, visual: visual.visualid as u32 },
             ))
         })
     }
 
     pub unsafe fn make_current(&self) {
-        errors::XErrorHandler::handle(self.display, |error_handler| {
-            let res = glx::glXMakeCurrent(self.display, self.window, self.context);
+        errors::XErrorHandler::handle(&self.connection, |error_handler| {
+            let res = (self.glx.glXMakeCurrent)(self.connection.dpy, self.window, self.context);
             error_handler.check().unwrap();
             if res == 0 {
                 panic!("make_current failed")
@@ -217,8 +231,8 @@ impl GlContext {
     }
 
     pub unsafe fn make_not_current(&self) {
-        errors::XErrorHandler::handle(self.display, |error_handler| {
-            let res = glx::glXMakeCurrent(self.display, 0, std::ptr::null_mut());
+        errors::XErrorHandler::handle(&self.connection, |error_handler| {
+            let res = (self.glx.glXMakeCurrent)(self.connection.dpy, 0, std::ptr::null_mut());
             error_handler.check().unwrap();
             if res == 0 {
                 panic!("make_not_current failed")
@@ -227,13 +241,13 @@ impl GlContext {
     }
 
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        get_proc_address(symbol)
+        get_proc_address(&self.glx, symbol)
     }
 
     pub fn swap_buffers(&self) {
         unsafe {
-            errors::XErrorHandler::handle(self.display, |error_handler| {
-                glx::glXSwapBuffers(self.display, self.window);
+            errors::XErrorHandler::handle(&self.connection, |error_handler| {
+                (self.glx.glXSwapBuffers)(self.connection.dpy, self.window);
                 error_handler.check().unwrap();
             })
         }
@@ -243,7 +257,7 @@ impl GlContext {
 impl Drop for GlContext {
     fn drop(&mut self) {
         unsafe {
-            glx::glXDestroyContext(self.display, self.context);
+            (self.glx.glXDestroyContext)(self.connection.dpy, self.context);
         }
     }
 }
