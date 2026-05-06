@@ -3,31 +3,31 @@ use std::fmt::{Debug, Display, Formatter};
 use x11_dl::xlib;
 
 use crate::x11::XcbConnection;
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::error::Error;
 use std::os::raw::{c_int, c_uchar, c_ulong};
 use std::panic::AssertUnwindSafe;
 
 thread_local! {
     /// Used as part of [`XErrorHandler::handle()`]. When an X11 error occurs during this function,
-    /// the error gets copied to this RefCell after which the program is allowed to resume. The
+    /// the error gets copied to this Cell after which the program is allowed to resume. The
     /// error can then be converted to a regular Rust Result value afterward.
-    static CURRENT_X11_ERROR: RefCell<Option<CaughtXLibError>> = const { RefCell::new(None) };
+    static CURRENT_X11_ERROR: Cell<Option<CaughtXLibError>> = const { Cell::new(None) };
 }
 
 /// A helper struct for safe X11 error handling
 pub struct XErrorHandler<'a> {
     conn: &'a XcbConnection,
-    error: &'a RefCell<Option<CaughtXLibError>>,
+    error: &'a Cell<Option<CaughtXLibError>>,
 }
 
 impl<'a> XErrorHandler<'a> {
     /// Syncs and checks if any previous X11 calls from the given display returned an error
-    pub fn check(&mut self) -> Result<(), XLibError> {
+    pub fn check(&self) -> Result<(), XLibError> {
         // Flush all possible previous errors
         unsafe { (self.conn.xlib.XSync)(self.conn.dpy, 0) };
 
-        let error = self.error.borrow_mut().take();
+        let error = self.error.take();
 
         match error {
             None => Ok(()),
@@ -43,17 +43,16 @@ impl<'a> XErrorHandler<'a> {
         unsafe extern "C" fn error_handler(
             _dpy: *mut xlib::Display, err: *mut xlib::XErrorEvent,
         ) -> i32 {
-            // SAFETY: the error pointer should be safe to access
-            let err = &*err;
+            // SAFETY: the error pointer should always be valid for reads
+            let err = unsafe { err.read() };
 
             CURRENT_X11_ERROR.with(|error| {
-                let mut error = error.borrow_mut();
-                match error.as_mut() {
+                match error.get() {
                     // If multiple errors occur, keep the first one since that's likely going to be the
                     // cause of the other errors
                     Some(_) => 1,
                     None => {
-                        *error = Some(CaughtXLibError::from_event(err));
+                        error.set(Some(CaughtXLibError::from_event(err)));
                         0
                     }
                 }
@@ -65,9 +64,7 @@ impl<'a> XErrorHandler<'a> {
 
         CURRENT_X11_ERROR.with(|error| {
             // Make sure to clear any errors from the last call to this function
-            {
-                *error.borrow_mut() = None;
-            }
+            error.set(None);
 
             let old_handler = unsafe { (conn.xlib.XSetErrorHandler)(Some(error_handler)) };
             let panic_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
@@ -85,6 +82,7 @@ impl<'a> XErrorHandler<'a> {
     }
 }
 
+#[derive(Copy, Clone)]
 struct CaughtXLibError {
     type_: c_int,
     resourceid: xlib::XID,
@@ -95,7 +93,7 @@ struct CaughtXLibError {
 }
 
 impl CaughtXLibError {
-    fn from_event(error: &xlib::XErrorEvent) -> CaughtXLibError {
+    fn from_event(error: xlib::XErrorEvent) -> CaughtXLibError {
         Self {
             type_: error.type_,
             resourceid: error.resourceid,

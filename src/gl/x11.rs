@@ -1,18 +1,18 @@
 use super::{GlConfig, GlError, Profile};
 use crate::x11::XcbConnection;
 use std::ffi::{c_void, CString};
-use std::os::raw::{c_int, c_ulong};
+use std::os::raw::c_ulong;
 use std::rc::Rc;
 use x11_dl::error::OpenError;
-use x11_dl::glx;
-use x11_dl::glx::Glx;
-use x11_dl::xlib;
+use x11_dl::glx::{__GLXFBConfigRec, GLXContext};
 
 mod errors;
+mod glx;
+use glx::Glx;
 
 #[derive(Debug)]
 pub enum CreationFailedError {
-    InvalidFBConfig,
+    NoValidFBConfig,
     NoVisual,
     GetProcAddressFailed,
     MakeCurrentFailed,
@@ -33,42 +33,27 @@ impl From<OpenError> for GlError {
     }
 }
 
-// See https://www.khronos.org/registry/OpenGL/extensions/ARB/GLX_ARB_create_context.txt
-
-type GlXCreateContextAttribsARB = unsafe extern "C" fn(
-    dpy: *mut xlib::Display,
-    fbc: glx::GLXFBConfig,
-    share_context: glx::GLXContext,
-    direct: xlib::Bool,
-    attribs: *const c_int,
-) -> glx::GLXContext;
-
-// See https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_swap_control.txt
-
-type GlXSwapIntervalEXT =
-    unsafe extern "C" fn(dpy: *mut xlib::Display, drawable: glx::GLXDrawable, interval: i32);
-
-// See https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_framebuffer_sRGB.txt
-
-const GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB: i32 = 0x20B2;
-
 fn get_proc_address(glx: &Glx, symbol: &str) -> *const c_void {
     let symbol = CString::new(symbol).unwrap();
-    unsafe { (glx.glXGetProcAddress)(symbol.as_ptr() as *const u8).unwrap() as *const c_void }
+
+    match glx.get_proc_address(&symbol) {
+        Some(ptr) => ptr.as_ptr(),
+        None => std::ptr::null(),
+    }
 }
 
 pub struct GlContext {
     glx: Glx,
     window: c_ulong,
     connection: Rc<XcbConnection>,
-    context: glx::GLXContext,
+    context: GLXContext,
 }
 
 /// The frame buffer configuration along with the general OpenGL configuration to somewhat minimize
 /// misuse.
 pub struct FbConfig {
     gl_config: GlConfig,
-    fb_config: *mut glx::__GLXFBConfigRec,
+    fb_config: *mut __GLXFBConfigRec,
 }
 
 /// The configuration a window should be created with after calling
@@ -93,70 +78,21 @@ impl GlContext {
         let glx = Glx::open()?;
 
         let context = errors::XErrorHandler::handle(&connection, |error_handler| {
-            #[allow(non_snake_case)]
-            let glXCreateContextAttribsARB: GlXCreateContextAttribsARB = {
-                let addr = get_proc_address(&glx, "glXCreateContextAttribsARB");
-                if addr.is_null() {
-                    return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
-                } else {
-                    #[allow(clippy::missing_transmute_annotations)]
-                    std::mem::transmute(addr)
-                }
+            let Some(create_context) = glx.get_glx_create_context_attribs_arb() else {
+                return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
             };
 
-            #[allow(non_snake_case)]
-            let glXSwapIntervalEXT: GlXSwapIntervalEXT = {
-                let addr = get_proc_address(&glx, "glXSwapIntervalEXT");
-                if addr.is_null() {
-                    return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
-                } else {
-                    #[allow(clippy::missing_transmute_annotations)]
-                    std::mem::transmute(addr)
-                }
+            let Some(swap_interval) = glx.get_glx_swap_interval_ext() else {
+                return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
             };
 
-            error_handler.check()?;
+            let context = create_context.call(&connection, &config, error_handler)?;
 
-            let profile_mask = match config.gl_config.profile {
-                Profile::Core => glx::arb::GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
-                Profile::Compatibility => glx::arb::GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
-            };
-
-            #[rustfmt::skip]
-                let ctx_attribs = [
-                glx::arb::GLX_CONTEXT_MAJOR_VERSION_ARB, config.gl_config.version.0 as i32,
-                glx::arb::GLX_CONTEXT_MINOR_VERSION_ARB, config.gl_config.version.1 as i32,
-                glx::arb::GLX_CONTEXT_PROFILE_MASK_ARB, profile_mask,
-                0,
-            ];
-
-            let context = glXCreateContextAttribsARB(
-                connection.dpy,
-                config.fb_config,
-                std::ptr::null_mut(),
-                1,
-                ctx_attribs.as_ptr(),
-            );
-
-            error_handler.check()?;
-
-            if context.is_null() {
-                return Err(GlError::CreationFailed(CreationFailedError::ContextCreationFailed));
-            }
-
-            let res = (glx.glXMakeCurrent)(connection.dpy, window, context);
-            error_handler.check()?;
-            if res == 0 {
-                return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
-            }
-
-            glXSwapIntervalEXT(connection.dpy, window, config.gl_config.vsync as i32);
-            error_handler.check()?;
-
-            if (glx.glXMakeCurrent)(connection.dpy, 0, std::ptr::null_mut()) == 0 {
-                error_handler.check()?;
-                return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
-            }
+            // TODO: handle errors here leaking the context
+            glx.with_current_context(&connection, window, context, error_handler, || {
+                swap_interval(connection.dpy, window, config.gl_config.vsync as i32);
+                error_handler.check()
+            })??;
 
             Ok(context)
         })?;
@@ -173,45 +109,11 @@ impl GlContext {
         let glx = Glx::open()?;
 
         errors::XErrorHandler::handle(conn, |error_handler| {
-            let screen = conn.screen;
-
-            #[rustfmt::skip]
-                let fb_attribs = [
-                glx::GLX_X_RENDERABLE, 1,
-                glx::GLX_X_VISUAL_TYPE, glx::GLX_TRUE_COLOR,
-                glx::GLX_DRAWABLE_TYPE, glx::GLX_WINDOW_BIT,
-                glx::GLX_RENDER_TYPE, glx::GLX_RGBA_BIT,
-                glx::GLX_RED_SIZE, config.red_bits as i32,
-                glx::GLX_GREEN_SIZE, config.green_bits as i32,
-                glx::GLX_BLUE_SIZE, config.blue_bits as i32,
-                glx::GLX_ALPHA_SIZE, config.alpha_bits as i32,
-                glx::GLX_DEPTH_SIZE, config.depth_bits as i32,
-                glx::GLX_STENCIL_SIZE, config.stencil_bits as i32,
-                glx::GLX_DOUBLEBUFFER, config.double_buffer as i32,
-                glx::GLX_SAMPLE_BUFFERS, config.samples.is_some() as i32,
-                glx::GLX_SAMPLES, config.samples.unwrap_or(0) as i32,
-                GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB, config.srgb as i32,
-                0,
-            ];
-
-            let mut n_configs = 0;
-            let fb_config = unsafe {
-                (glx.glXChooseFBConfig)(conn.dpy, screen, fb_attribs.as_ptr(), &mut n_configs)
-            };
-
-            error_handler.check()?;
-            if n_configs <= 0 || fb_config.is_null() {
-                return Err(GlError::CreationFailed(CreationFailedError::InvalidFBConfig));
-            }
+            let fb_config = glx.choose_best_fb_config(conn, &config, error_handler)?;
 
             // Now that we have a matching framebuffer config, we need to know which visual matches
             // thsi config so the window is compatible with the OpenGL context we're about to create
-            let fb_config = unsafe { fb_config.read() };
-            let visual = unsafe { (glx.glXGetVisualFromFBConfig)(conn.dpy, fb_config) };
-            if visual.is_null() {
-                return Err(GlError::CreationFailed(CreationFailedError::NoVisual));
-            }
-            let visual = unsafe { visual.read() };
+            let visual = glx.get_visual_from_fb_config(conn, fb_config, error_handler)?;
 
             Ok((
                 FbConfig { fb_config, gl_config: config },
@@ -222,21 +124,15 @@ impl GlContext {
 
     pub unsafe fn make_current(&self) {
         errors::XErrorHandler::handle(&self.connection, |error_handler| {
-            let res = (self.glx.glXMakeCurrent)(self.connection.dpy, self.window, self.context);
-            error_handler.check().unwrap();
-            if res == 0 {
-                panic!("make_current failed")
-            }
+            self.glx
+                .make_current(&self.connection, self.window, self.context, error_handler)
+                .unwrap();
         })
     }
 
     pub unsafe fn make_not_current(&self) {
         errors::XErrorHandler::handle(&self.connection, |error_handler| {
-            let res = (self.glx.glXMakeCurrent)(self.connection.dpy, 0, std::ptr::null_mut());
-            error_handler.check().unwrap();
-            if res == 0 {
-                panic!("make_not_current failed")
-            }
+            self.glx.clear_current(&self.connection, error_handler).unwrap();
         })
     }
 
@@ -245,12 +141,9 @@ impl GlContext {
     }
 
     pub fn swap_buffers(&self) {
-        unsafe {
-            errors::XErrorHandler::handle(&self.connection, |error_handler| {
-                (self.glx.glXSwapBuffers)(self.connection.dpy, self.window);
-                error_handler.check().unwrap();
-            })
-        }
+        errors::XErrorHandler::handle(&self.connection, |error_handler| {
+            self.glx.swap_buffers(&self.connection, self.window, error_handler).unwrap()
+        })
     }
 }
 
