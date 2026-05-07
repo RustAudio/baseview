@@ -143,6 +143,11 @@ impl Glx {
         Some(GlxCreateContextAttribsARB(unsafe { core::mem::transmute(ptr) }))
     }
 
+    pub unsafe fn destroy_context(&self, connection: &XcbConnection, context: GLXContext) {
+        // SAFETY:
+        unsafe { (self.inner.glXDestroyContext)(connection.dpy, context) };
+    }
+
     pub unsafe fn make_current(
         &self, connection: &XcbConnection, window_id: c_ulong, context: GLXContext,
         error_handler: &XErrorHandler,

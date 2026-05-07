@@ -1,4 +1,4 @@
-use super::{GlConfig, GlError, Profile};
+use super::{GlConfig, GlError};
 use crate::x11::XcbConnection;
 use std::ffi::{c_void, CString};
 use std::os::raw::c_ulong;
@@ -77,7 +77,7 @@ impl GlContext {
     ) -> Result<GlContext, GlError> {
         let glx = Glx::open()?;
 
-        let context = errors::XErrorHandler::handle(&connection, |error_handler| {
+        errors::XErrorHandler::handle(&connection, |error_handler| {
             let Some(create_context) = glx.get_glx_create_context_attribs_arb() else {
                 return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
             };
@@ -88,16 +88,22 @@ impl GlContext {
 
             let context = create_context.call(&connection, &config, error_handler)?;
 
-            // TODO: handle errors here leaking the context
-            glx.with_current_context(&connection, window, context, error_handler, || {
-                swap_interval(connection.dpy, window, config.gl_config.vsync as i32);
-                error_handler.check()
-            })??;
+            // Create context object here so that error or panic will properly free the context
+            let context = GlContext { glx, window, connection: Rc::clone(&connection), context };
+
+            context.glx.with_current_context(
+                &connection,
+                window,
+                context.context,
+                error_handler,
+                || {
+                    swap_interval(connection.dpy, window, config.gl_config.vsync as i32);
+                    error_handler.check()
+                },
+            )??;
 
             Ok(context)
-        })?;
-
-        Ok(GlContext { glx, window, connection, context })
+        })
     }
 
     /// Find a matching framebuffer config and window visual for the given OpenGL configuration.
@@ -149,8 +155,6 @@ impl GlContext {
 
 impl Drop for GlContext {
     fn drop(&mut self) {
-        unsafe {
-            (self.glx.glXDestroyContext)(self.connection.dpy, self.context);
-        }
+        unsafe { self.glx.destroy_context(&self.connection, self.context) }
     }
 }
