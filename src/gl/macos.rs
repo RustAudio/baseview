@@ -103,9 +103,7 @@ impl GlContext {
     }
 
     pub unsafe fn make_not_current(&self) {
-        if Some(&self.context) == NSOpenGLContext::currentContext().as_ref() {
-            NSOpenGLContext::clearCurrentContext();
-        }
+        NSOpenGLContext::clearCurrentContext();
     }
 
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
