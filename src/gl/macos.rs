@@ -13,7 +13,6 @@ use objc2_app_kit::{
 };
 use objc2_core_foundation::{CFBundle, CFString};
 use objc2_foundation::NSSize;
-use raw_window_handle::RawWindowHandle;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 
@@ -24,18 +23,7 @@ pub struct GlContext {
 }
 
 impl GlContext {
-    pub unsafe fn create(parent: &RawWindowHandle, config: GlConfig) -> Result<GlContext, GlError> {
-        let handle = if let RawWindowHandle::AppKit(handle) = parent {
-            handle
-        } else {
-            return Err(GlError::InvalidWindowHandle);
-        };
-
-        let parent_view = handle.ns_view.cast::<NSView>();
-        let Some(parent_view) = parent_view.as_ref() else {
-            return Err(GlError::InvalidWindowHandle);
-        };
-
+    pub(crate) fn create(parent_view: &NSView, config: GlConfig) -> Result<GlContext, GlError> {
         let version = if config.version < (3, 2) && config.profile == Profile::Compatibility {
             NSOpenGLProfileVersionLegacy
         } else if config.version == (3, 2) && config.profile == Profile::Core {
@@ -56,12 +44,12 @@ impl GlContext {
             NSOpenGLPFAAccelerated as u32,
         ];
 
-        if config.samples.is_some() {
+        if let Some(samples) = config.samples {
             #[rustfmt::skip]
             attrs.extend_from_slice(&[
                 NSOpenGLPFAMultisample as u32,
                 NSOpenGLPFASampleBuffers as u32, 1,
-                NSOpenGLPFASamples as u32, config.samples.unwrap() as u32,
+                NSOpenGLPFASamples as u32, samples as u32,
             ]);
         }
 
@@ -71,13 +59,18 @@ impl GlContext {
 
         attrs.push(0);
 
-        let pixel_format = NSOpenGLPixelFormat::initWithAttributes(
-            NSOpenGLPixelFormat::alloc(),
-            NonNull::new(attrs.as_mut_ptr()).unwrap(),
-        )
+        // SAFETY: Attribs pointer is valid (coming from the above vec) and null-terminated
+        let pixel_format = unsafe {
+            NSOpenGLPixelFormat::initWithAttributes(
+                NSOpenGLPixelFormat::alloc(),
+                // PANIC: This cannot panic, as the pointer comes from the vec
+                NonNull::new(attrs.as_mut_ptr()).unwrap(),
+            )
+        }
         .ok_or(GlError::CreationFailed(()))?;
 
         let view = NSOpenGLView::initWithFrame_pixelFormat(
+            // PANIC: This cannot panic, as the pointer comes from the vec
             NSOpenGLView::alloc(MainThreadMarker::new().unwrap()),
             parent_view.frame(),
             Some(&pixel_format),
@@ -93,7 +86,10 @@ impl GlContext {
 
         let value = config.vsync as i32;
 
-        context.setValues_forParameter((&value).into(), NSOpenGLContextParameter::SwapInterval);
+        // SAFETY: pointer is a valid &i32, and is valid for SwapInterval
+        unsafe {
+            context.setValues_forParameter((&value).into(), NSOpenGLContextParameter::SwapInterval);
+        }
 
         Ok(GlContext { view, context })
     }

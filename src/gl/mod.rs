@@ -1,10 +1,6 @@
 use std::ffi::c_void;
 use std::marker::PhantomData;
 
-// On X11 creating the context is a two step process
-#[cfg(not(target_os = "linux"))]
-use raw_window_handle::RawWindowHandle;
-
 #[cfg(target_os = "windows")]
 mod win;
 #[cfg(target_os = "windows")]
@@ -75,9 +71,17 @@ pub struct GlContext {
 }
 
 impl GlContext {
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
     pub(crate) unsafe fn create(
-        parent: &RawWindowHandle, config: GlConfig,
+        parent: &raw_window_handle::RawWindowHandle, config: GlConfig,
+    ) -> Result<GlContext, GlError> {
+        platform::GlContext::create(parent, config)
+            .map(|context| GlContext { context, phantom: PhantomData })
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn create(
+        parent: &objc2_app_kit::NSView, config: GlConfig,
     ) -> Result<GlContext, GlError> {
         platform::GlContext::create(parent, config)
             .map(|context| GlContext { context, phantom: PhantomData })
