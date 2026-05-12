@@ -6,16 +6,18 @@ use objc2::rc::Allocated;
 use objc2::runtime::{
     AnyClass, AnyObject, Bool, ClassBuilder, NSObjectProtocol, ProtocolObject, Sel,
 };
-use objc2::{msg_send, sel, AllocAnyThread, ClassType};
+use objc2::{msg_send, sel, AllocAnyThread, ClassType, Encoding, Message, RefEncode};
 use objc2_app_kit::{
     NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
     NSTrackingAreaOptions, NSView, NSWindow, NSWindowDidBecomeKeyNotification,
     NSWindowDidResignKeyNotification,
 };
+use objc2_core_foundation::CGRect;
 use objc2_foundation::{
     NSArray, NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize, NSString,
 };
 use std::ffi::{c_void, CStr, CString};
+use std::ops::Deref;
 use uuid::Uuid;
 
 use super::keyboard::make_modifiers;
@@ -28,6 +30,52 @@ use crate::{
 
 /// Name of the field used to store the `WindowState` pointer.
 pub(super) const BASEVIEW_STATE_IVAR: &CStr = c"baseview_state";
+
+#[repr(C)]
+pub struct View {
+    parent: NSView,
+}
+
+// SAFETY: TODO
+unsafe impl RefEncode for View {
+    const ENCODING_REF: Encoding = NSView::ENCODING_REF;
+}
+
+// SAFETY: TODO
+unsafe impl Message for View {}
+
+impl Deref for View {
+    type Target = NSView;
+
+    fn deref(&self) -> &Self::Target {
+        &self.parent
+    }
+}
+
+impl View {
+    pub fn new(frame: CGRect) -> Retained<View> {
+        // SAFETY: We don't access this reference after this function
+        let class = unsafe { create_view_class() };
+
+        // SAFETY: This function is valid to call, and Allocated<View> is the correct type for the
+        // returned pointer
+        let view: Allocated<View> = unsafe { msg_send![class, alloc] };
+        Self::set_inner(&view, class, ViewInner {});
+
+        let view: Retained<View> = unsafe { msg_send![view, initWithFrame: frame] };
+        view
+    }
+
+    fn set_inner(view: &Allocated<View>, class: &AnyClass, inner: ViewInner) {
+        let inner = Box::new(inner);
+        let ivar = class.instance_variable(BASEVIEW_STATE_IVAR).unwrap();
+        let ivar_target = unsafe { &*Allocated::as_ptr(&view).cast() };
+        let ivar = unsafe { ivar.load_ptr::<*mut c_void>(ivar_target) };
+        unsafe { ivar.write(Box::into_raw(inner).cast()) };
+    }
+}
+
+pub struct ViewInner {}
 
 macro_rules! add_simple_mouse_class_method {
     ($class:ident, $sel:ident, $event:expr) => {
@@ -83,20 +131,9 @@ macro_rules! add_simple_keyboard_class_method {
     };
 }
 
-pub(super) fn create_view(window_options: &WindowOpenOptions) -> Retained<NSView> {
-    let view: Allocated<NSView> = {
-        // SAFETY: We don't access this reference after calling alloc
-        let class = unsafe { create_view_class() };
-        // SAFETY: This function is valid to call, and Allocated<NSView> is the correct type for the
-        // returned pointer
-        unsafe { msg_send![class, alloc] }
-    };
-
+pub(super) fn create_view(window_options: &WindowOpenOptions) -> Retained<View> {
     let size = window_options.size;
-    let view = NSView::initWithFrame(
-        view,
-        NSRect::new(NSPoint::ZERO, NSSize::new(size.width, size.height)),
-    );
+    let view = View::new(NSRect::new(NSPoint::ZERO, NSSize::new(size.width, size.height)));
 
     let notification_center = NSNotificationCenter::defaultCenter();
 
