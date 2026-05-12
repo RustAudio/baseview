@@ -27,7 +27,7 @@ use crate::{
 };
 
 use super::keyboard::KeyboardState;
-use super::view::{create_view, BASEVIEW_STATE_IVAR};
+use super::view::{create_view, View, BASEVIEW_STATE_IVAR};
 
 #[cfg(feature = "opengl")]
 use crate::gl::{GlConfig, GlContext};
@@ -67,7 +67,7 @@ pub(super) struct WindowInner {
     parent_ns_window: RetainedCell<NSWindow>,
 
     /// Our subclassed NSView
-    ns_view: RetainedCell<NSView>,
+    ns_view: RetainedCell<View>,
 
     #[cfg(feature = "opengl")]
     pub(super) gl_context: Option<GlContext>,
@@ -135,7 +135,7 @@ impl WindowInner {
 
             handle.ns_view = match self.ns_view.get() {
                 None => ptr::null_mut(),
-                Some(view) => (&*view as *const NSView) as *mut _,
+                Some(view) => (&*view as *const _) as *mut _,
             };
         }
 
@@ -401,7 +401,7 @@ impl WindowState {
     /// # Safety
     ///
     /// `view` MUST be our own NSView, as created by `create_view`
-    pub(super) unsafe fn from_view(view: &NSView) -> Rc<WindowState> {
+    pub(super) unsafe fn from_view(view: &View) -> Rc<WindowState> {
         let state_ptr = view
             .class()
             .instance_variable(BASEVIEW_STATE_IVAR)
