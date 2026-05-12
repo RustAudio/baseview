@@ -135,7 +135,7 @@ impl WindowInner {
 
             handle.ns_view = match self.ns_view.get() {
                 None => ptr::null_mut(),
-                Some(view) => (&*view as *const NSView) as *mut _,
+                Some(view) => (&*view as *const _) as *mut _,
             };
         }
 
@@ -388,30 +388,6 @@ pub(super) struct WindowState {
 }
 
 impl WindowState {
-    /// Gets the `WindowState` held by a given `NSView`.
-    ///
-    /// This method returns a cloned `Rc<WindowState>` rather than just a `&WindowState`, since the
-    /// original `Rc<WindowState>` owned by the `NSView` can be dropped at any time
-    /// (including during an event handler).
-    ///
-    /// # Safety
-    ///
-    /// `view` MUST be our own NSView, as created by `create_view`
-    pub(super) unsafe fn from_view(view: &View) -> Rc<WindowState> {
-        let state_ptr = view
-            .class()
-            .instance_variable(BASEVIEW_STATE_IVAR)
-            .unwrap()
-            .load::<*const c_void>(view)
-            .cast::<WindowState>();
-
-        let state_rc = Rc::from_raw(state_ptr);
-        let state = Rc::clone(&state_rc);
-        let _ = Rc::into_raw(state_rc);
-
-        state
-    }
-
     /// Trigger the event immediately and return the event status.
     /// Will panic if `window_handler` is already borrowed (see `trigger_deferrable_event`).
     pub(super) fn trigger_event(&self, event: Event) -> EventStatus {

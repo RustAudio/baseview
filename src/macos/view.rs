@@ -18,6 +18,7 @@ use objc2_foundation::{
 };
 use std::ffi::{c_void, CStr, CString};
 use std::ops::Deref;
+use std::rc::Rc;
 use uuid::Uuid;
 
 use super::keyboard::make_modifiers;
@@ -73,6 +74,23 @@ impl View {
         let ivar = unsafe { ivar.load_ptr::<*mut c_void>(ivar_target) };
         unsafe { ivar.write(Box::into_raw(inner).cast()) };
     }
+
+    /// Gets the `WindowState` held by this view.
+    ///
+    /// This method returns a cloned `Rc<WindowState>` rather than just a `&WindowState`, since the
+    /// original `Rc<WindowState>` owned by the `NSView` can be dropped at any time
+    /// (including during an event handler).
+    pub fn state(&self) -> Rc<WindowState> {
+        let ivar = self.class().instance_variable(BASEVIEW_STATE_IVAR).unwrap();
+        // SAFETY: TODO
+        let state_ptr = unsafe { ivar.load::<*const c_void>(self) }.cast::<WindowState>();
+
+        let state_rc = unsafe { Rc::from_raw(state_ptr) };
+        let state = Rc::clone(&state_rc);
+        let _ = Rc::into_raw(state_rc);
+
+        state
+    }
 }
 
 pub struct ViewInner {}
@@ -80,10 +98,8 @@ pub struct ViewInner {}
 macro_rules! add_simple_mouse_class_method {
     ($class:ident, $sel:ident, $event:expr) => {
         #[allow(non_snake_case)]
-        extern "C-unwind" fn $sel(this: &NSView, _: Sel, _: &AnyObject){
-            let state = unsafe { WindowState::from_view(this) };
-
-            state.trigger_event(Event::Mouse($event));
+        extern "C-unwind" fn $sel(this: &View, _: Sel, _: &AnyObject){
+            this.state().trigger_event(Event::Mouse($event));
         }
 
         $class.add_method(sel!($sel:), $sel as extern "C-unwind" fn(_, _, _) -> _,);
@@ -95,10 +111,8 @@ macro_rules! add_simple_mouse_class_method {
 macro_rules! add_mouse_button_class_method {
     ($class:ident, $sel:ident, $event_ty:ident, $button:expr) => {
         #[allow(non_snake_case)]
-        extern "C-unwind" fn $sel(this: &NSView, _: Sel, event: &NSEvent){
-            let state = unsafe { WindowState::from_view(this) };
-
-            state.trigger_event(Event::Mouse($event_ty {
+        extern "C-unwind" fn $sel(this: &View, _: Sel, event: &NSEvent){
+            this.state().trigger_event(Event::Mouse($event_ty {
                 button: $button,
                 modifiers: make_modifiers(event.modifierFlags()),
             }));
@@ -111,8 +125,8 @@ macro_rules! add_mouse_button_class_method {
 macro_rules! add_simple_keyboard_class_method {
     ($class:ident, $sel:ident) => {
         #[allow(non_snake_case)]
-        extern "C-unwind" fn $sel(this: &NSView, _: Sel, event: &NSEvent){
-            let state = unsafe { WindowState::from_view(this) };
+        extern "C-unwind" fn $sel(this: &View, _: Sel, event: &NSEvent){
+            let state = this.state();
 
             if let Some(key_event) = state.process_native_key_event(event){
                 let status = state.trigger_event(Event::Keyboard(key_event));
@@ -278,42 +292,38 @@ unsafe fn create_view_class() -> &'static AnyClass {
     class.register()
 }
 
-extern "C-unwind" fn property_yes(_this: &NSView, _sel: Sel) -> Bool {
+extern "C-unwind" fn property_yes(_this: &View, _sel: Sel) -> Bool {
     Bool::YES
 }
 
-extern "C-unwind" fn property_no(_this: &NSView, _sel: Sel) -> Bool {
+extern "C-unwind" fn property_no(_this: &View, _sel: Sel) -> Bool {
     Bool::NO
 }
 
-extern "C-unwind" fn accepts_first_mouse(_this: &NSView, _sel: Sel, _event: &NSEvent) -> Bool {
+extern "C-unwind" fn accepts_first_mouse(_this: &View, _sel: Sel, _event: &NSEvent) -> Bool {
     Bool::YES
 }
 
-extern "C-unwind" fn become_first_responder(this: &NSView, _sel: Sel) -> Bool {
+extern "C-unwind" fn become_first_responder(this: &View, _sel: Sel) -> Bool {
     let Some(window) = this.window() else {
         return Bool::YES;
     };
 
     if window.isKeyWindow() {
-        // SAFETY: This is our own view instance
-        let state = unsafe { WindowState::from_view(this) };
-        state.trigger_deferrable_event(Event::Window(WindowEvent::Focused));
+        this.state().trigger_deferrable_event(Event::Window(WindowEvent::Focused));
     }
 
     Bool::YES
 }
 
-extern "C-unwind" fn resign_first_responder(this: &NSView, _sel: Sel) -> Bool {
-    // SAFETY: This is our own view instance
-    let state = unsafe { WindowState::from_view(this) };
+extern "C-unwind" fn resign_first_responder(this: &View, _sel: Sel) -> Bool {
+    let state = this.state();
     state.trigger_deferrable_event(Event::Window(WindowEvent::Unfocused));
     Bool::YES
 }
 
-extern "C-unwind" fn window_should_close(this: &NSView, _: Sel, _sender: &AnyObject) -> Bool {
-    // SAFETY: This is our own view instance
-    let state = unsafe { WindowState::from_view(this) };
+extern "C-unwind" fn window_should_close(this: &View, _: Sel, _sender: &AnyObject) -> Bool {
+    let state = this.state();
 
     state.trigger_event(Event::Window(WindowEvent::WillClose));
 
@@ -334,13 +344,12 @@ extern "C-unwind" fn dealloc(this: &mut AnyObject, _sel: Sel) {
     unsafe { objc_disposeClassPair(class as *const _ as *mut _) }
 }
 
-extern "C-unwind" fn view_did_change_backing_properties(this: &NSView, _: Sel, _: &AnyObject) {
+extern "C-unwind" fn view_did_change_backing_properties(this: &View, _: Sel, _: &AnyObject) {
     let ns_window = this.window();
 
     let scale_factor: f64 = ns_window.map(|w| w.backingScaleFactor()).unwrap_or(1.0);
 
-    // SAFETY: This is our own view instance
-    let state = unsafe { WindowState::from_view(this) };
+    let state = this.state();
 
     let bounds = this.bounds();
 
@@ -406,7 +415,7 @@ fn new_tracking_area(this: &NSView) -> Retained<NSTrackingArea> {
 /// No-op without the `opengl` feature: there's no GL subview to
 /// collapse, so the override pass-through is equivalent to the
 /// default implementation.
-extern "C-unwind" fn hit_test(this: &NSView, _sel: Sel, point: NSPoint) -> Option<&NSView> {
+extern "C-unwind" fn hit_test(this: &View, _sel: Sel, point: NSPoint) -> Option<&NSView> {
     let superclass = this.class().superclass().unwrap();
     // SAFETY: Our superclass is NSView
     let super_result: Option<&NSView> =
@@ -415,7 +424,7 @@ extern "C-unwind" fn hit_test(this: &NSView, _sel: Sel, point: NSPoint) -> Optio
 
     #[cfg(feature = "opengl")]
     {
-        let state = unsafe { WindowState::from_view(this) };
+        let state = this.state();
         if let Some(gl_context) = state.window_inner.gl_context.as_ref() {
             if super_result == gl_context.ns_view() {
                 return Some(this);
@@ -427,7 +436,7 @@ extern "C-unwind" fn hit_test(this: &NSView, _sel: Sel, point: NSPoint) -> Optio
 }
 
 extern "C-unwind" fn view_will_move_to_window(
-    this: &NSView, _self: Sel, new_window: Option<&NSWindow>,
+    this: &View, _self: Sel, new_window: Option<&NSWindow>,
 ) {
     let tracking_areas = this.trackingAreas();
 
@@ -456,7 +465,7 @@ extern "C-unwind" fn view_will_move_to_window(
     }
 }
 
-extern "C-unwind" fn update_tracking_areas(this: &NSView, _self: Sel, _: &AnyObject) {
+extern "C-unwind" fn update_tracking_areas(this: &View, _self: Sel, _: &AnyObject) {
     let tracking_areas = this.trackingAreas();
     if tracking_areas.count() > 0 {
         let tracking_area = tracking_areas.objectAtIndex(0);
@@ -468,8 +477,8 @@ extern "C-unwind" fn update_tracking_areas(this: &NSView, _self: Sel, _: &AnyObj
     this.addTrackingArea(&tracking_area);
 }
 
-extern "C-unwind" fn mouse_moved(this: &NSView, _sel: Sel, event: &NSEvent) {
-    let state = unsafe { WindowState::from_view(this) };
+extern "C-unwind" fn mouse_moved(this: &View, _sel: Sel, event: &NSEvent) {
+    let state = this.state();
     let point = this.convertPoint_fromView(event.locationInWindow(), None);
 
     let position = Point { x: point.x, y: point.y };
@@ -480,8 +489,8 @@ extern "C-unwind" fn mouse_moved(this: &NSView, _sel: Sel, event: &NSEvent) {
     }));
 }
 
-extern "C-unwind" fn scroll_wheel(this: &NSView, _: Sel, event: &NSEvent) {
-    let state = unsafe { WindowState::from_view(this) };
+extern "C-unwind" fn scroll_wheel(this: &View, _: Sel, event: &NSEvent) {
+    let state = this.state();
 
     let x = event.scrollingDeltaX() as f32;
     let y = event.scrollingDeltaY() as f32;
@@ -542,9 +551,9 @@ fn on_event(window_state: &WindowState, event: MouseEvent) -> NSDragOperation {
 }
 
 extern "C-unwind" fn dragging_entered(
-    this: &NSView, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
+    this: &View, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) -> NSDragOperation {
-    let state = unsafe { WindowState::from_view(this) };
+    let state = this.state();
     let modifiers = state.keyboard_state().last_mods();
     let drop_data = get_drop_data(sender);
 
@@ -558,9 +567,9 @@ extern "C-unwind" fn dragging_entered(
 }
 
 extern "C-unwind" fn dragging_updated(
-    this: &NSView, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
+    this: &View, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) -> NSDragOperation {
-    let state = unsafe { WindowState::from_view(this) };
+    let state = this.state();
     let modifiers = state.keyboard_state().last_mods();
     let drop_data = get_drop_data(sender);
 
@@ -574,7 +583,7 @@ extern "C-unwind" fn dragging_updated(
 }
 
 extern "C-unwind" fn prepare_for_drag_operation(
-    _this: &NSView, _sel: Sel, _sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
+    _this: &View, _sel: Sel, _sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) -> Bool {
     // Always accept drag operation if we get this far
     // This function won't be called unless dragging_entered/updated
@@ -583,9 +592,9 @@ extern "C-unwind" fn prepare_for_drag_operation(
 }
 
 extern "C-unwind" fn perform_drag_operation(
-    this: &NSView, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
+    this: &View, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) -> Bool {
-    let state = unsafe { WindowState::from_view(this) };
+    let state = this.state();
     let modifiers = state.keyboard_state().last_mods();
     let drop_data = get_drop_data(sender);
 
@@ -604,16 +613,12 @@ extern "C-unwind" fn perform_drag_operation(
 }
 
 extern "C-unwind" fn dragging_exited(
-    this: &NSView, _sel: Sel, _sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
+    this: &View, _sel: Sel, _sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) {
-    let state = unsafe { WindowState::from_view(this) };
-
-    on_event(&state, MouseEvent::DragLeft);
+    on_event(&this.state(), MouseEvent::DragLeft);
 }
 
-extern "C-unwind" fn handle_notification(this: &NSView, _cmd: Sel, notification: &NSNotification) {
-    let state = unsafe { WindowState::from_view(this) };
-
+extern "C-unwind" fn handle_notification(this: &View, _cmd: Sel, notification: &NSNotification) {
     let Some(window) = this.window() else { return };
     // The subject of the notification, in this case an NSWindow object.
     let Some(notification_object) = notification.object().and_then(|o| o.downcast().ok()) else {
@@ -634,7 +639,7 @@ extern "C-unwind" fn handle_notification(this: &NSView, _cmd: Sel, notification:
         return;
     }
 
-    state.trigger_event(Event::Window(if window.isKeyWindow() {
+    this.state().trigger_event(Event::Window(if window.isKeyWindow() {
         WindowEvent::Focused
     } else {
         WindowEvent::Unfocused
