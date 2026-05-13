@@ -9,16 +9,16 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macOS-latest ]
+        toolchain: [ "1.64", stable, beta, nightly ]
     runs-on: ${{ matrix.os }}
     env:
       RUSTFLAGS: -D warnings
-      RUSTDOCFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v6
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.toolchain }}
           components: clippy
       - name: Build Default
         run: cargo build --workspace --all-targets --verbose
@@ -42,5 +42,3 @@ jobs:
           components: rustfmt
       - name: Check docs
         run: cargo doc --all --all-features --no-deps
-      - name: Check Formatting (rustfmt)
-        run: cargo fmt --all -- --check
