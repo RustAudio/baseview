@@ -9,7 +9,7 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macOS-latest ]
-        toolchain: [ "1.71", stable ]
+        toolchain: [ "1.80", stable ]
     runs-on: ${{ matrix.os }}
     env:
       RUSTFLAGS: -D warnings
@@ -27,7 +27,7 @@ jobs:
       - name: Run tests
         run: cargo test -p baseview --all-features --verbose
       - name: Build examples
-        if: matrix.toolchain != '1.71'
+        if: matrix.toolchain != '1.80'
         run: cargo build --workspace --all-targets --verbose
       - name: Clippy
         run: cargo clippy --all --all-features -- -D warnings
