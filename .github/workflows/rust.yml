@@ -15,9 +15,6 @@ jobs:
       RUSTDOCFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v6
-      - name: Install XCB and GL dependencies
-        if: contains(matrix.os, 'ubuntu')
-        run: sudo apt-get install libx11-dev libxcb1-dev libx11-xcb-dev libgl1-mesa-dev
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
