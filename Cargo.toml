@@ -82,3 +82,6 @@ doctest = true
 name = "open_parented"
 test = true
 doctest = true
+
+[package.metadata.docs.rs]
+all-features = true
