@@ -71,7 +71,7 @@ const PRINTABLE_VKS: &[RangeInclusive<VkCode>] = &[
 ];
 
 /// Bits of lparam indicating scan code, including extended bit.
-const SCAN_MASK: isize = 0x1ff_0000;
+const SCAN_MASK: LPARAM = 0x1ff_0000;
 
 /// Determine whether there are more messages in the queue for this key event.
 ///
