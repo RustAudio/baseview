@@ -109,7 +109,7 @@ impl GlContext {
 
     /// On macOS the `NSOpenGLView` needs to be resized separtely from our main view.
     #[cfg(target_os = "macos")]
-    pub(crate) fn resize(&self, size: cocoa::foundation::NSSize) {
+    pub(crate) fn resize(&self, size: objc2_foundation::NSSize) {
         self.context.resize(size);
     }
 
@@ -118,7 +118,7 @@ impl GlContext {
     /// render subview to the parent, so AppKit routes `mouseDown:` on
     /// first click in non-key windows.
     #[cfg(target_os = "macos")]
-    pub(crate) fn ns_view(&self) -> cocoa::base::id {
+    pub(crate) fn ns_view(&self) -> &objc2_app_kit::NSView {
         self.context.ns_view()
     }
 }

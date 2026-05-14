@@ -4,18 +4,18 @@ use std::ffi::c_void;
 use std::ptr;
 use std::rc::Rc;
 
-use cocoa::appkit::{
-    NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
-    NSPasteboard, NSView, NSWindow, NSWindowStyleMask,
-};
-use cocoa::base::{id, nil, BOOL, NO, YES};
-use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
-use core_foundation::runloop::{
-    __CFRunLoopTimer, kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext,
-};
 use keyboard_types::KeyboardEvent;
-use objc::class;
-use objc::{msg_send, runtime::Object, sel, sel_impl};
+use objc2::rc::{autoreleasepool, Retained};
+use objc2::runtime::NSObjectProtocol;
+use objc2::{msg_send, MainThreadMarker, MainThreadOnly};
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSEvent, NSPasteboard,
+    NSPasteboardTypeString, NSView, NSWindow, NSWindowStyleMask,
+};
+use objc2_core_foundation::{
+    kCFAllocatorDefault, kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext,
+};
+use objc2_foundation::{NSNotificationCenter, NSPoint, NSRect, NSSize, NSString};
 use raw_window_handle::{
     AppKitDisplayHandle, AppKitWindowHandle, HasRawDisplayHandle, HasRawWindowHandle,
     RawDisplayHandle, RawWindowHandle,
@@ -31,6 +31,7 @@ use super::view::{create_view, BASEVIEW_STATE_IVAR};
 
 #[cfg(feature = "opengl")]
 use crate::gl::{GlConfig, GlContext};
+use crate::macos::RetainedCell;
 
 pub struct WindowHandle {
     state: Rc<WindowState>,
@@ -57,16 +58,16 @@ pub(super) struct WindowInner {
 
     /// Only set if we created the parent window, i.e. we are running in
     /// parentless mode
-    ns_app: Cell<Option<id>>,
+    ns_app: RetainedCell<NSApplication>,
     /// Only set if we created the parent window, i.e. we are running in
     /// parentless mode
-    ns_window: Cell<Option<id>>,
+    ns_window: RetainedCell<NSWindow>,
 
     /// Only set when running in parented mode.
-    parent_ns_window: Option<id>,
+    parent_ns_window: RetainedCell<NSWindow>,
 
     /// Our subclassed NSView
-    ns_view: id,
+    ns_view: RetainedCell<NSView>,
 
     #[cfg(feature = "opengl")]
     pub(super) gl_context: Option<GlContext>,
@@ -76,20 +77,30 @@ impl WindowInner {
     pub(super) fn close(&self) {
         if self.open.get() {
             self.open.set(false);
+            let Some(ns_view) = self.ns_view.take() else {
+                return;
+            };
+
             unsafe {
                 // Take back ownership of the NSView's Rc<WindowState>
-                let state_ptr: *const c_void = *(*self.ns_view).get_ivar(BASEVIEW_STATE_IVAR);
+                let state_ptr: *const c_void = *ns_view
+                    .class()
+                    .instance_variable(BASEVIEW_STATE_IVAR)
+                    .unwrap()
+                    .load::<*const c_void>(&ns_view);
+
                 let window_state = Rc::from_raw(state_ptr as *mut WindowState);
 
                 // Cancel the frame timer
                 if let Some(frame_timer) = window_state.frame_timer.take() {
-                    CFRunLoop::get_current().remove_timer(&frame_timer, kCFRunLoopDefaultMode);
+                    if let Some(run_loop) = CFRunLoop::current() {
+                        run_loop.remove_timer(Some(&frame_timer), kCFRunLoopDefaultMode);
+                    }
                 }
 
                 // Deregister NSView from NotificationCenter.
-                let notification_center: id =
-                    msg_send![class!(NSNotificationCenter), defaultCenter];
-                let () = msg_send![notification_center, removeObserver:self.ns_view];
+                let notification_center = NSNotificationCenter::defaultCenter();
+                notification_center.removeObserver(&ns_view);
 
                 drop(window_state);
 
@@ -99,32 +110,36 @@ impl WindowInner {
                 }
 
                 // Ensure that the NSView is detached from the parent window
-                self.ns_view.removeFromSuperview();
-                let () = msg_send![self.ns_view as id, release];
+                ns_view.removeFromSuperview();
+                drop(ns_view);
 
                 // If in non-parented mode, we want to also quit the app altogether
                 let app = self.ns_app.take();
                 if let Some(app) = app {
-                    app.stop_(app);
+                    app.stop(Some(&app));
                 }
             }
         }
     }
 
     fn raw_window_handle(&self) -> RawWindowHandle {
+        let mut handle = AppKitWindowHandle::empty();
+
         if self.open.get() {
-            let ns_window =
-                self.ns_window.get().or(self.parent_ns_window).unwrap_or(ptr::null_mut())
-                    as *mut c_void;
+            let ns_window = self.ns_window.get().or(self.parent_ns_window.get());
 
-            let mut handle = AppKitWindowHandle::empty();
-            handle.ns_window = ns_window;
-            handle.ns_view = self.ns_view as *mut c_void;
+            handle.ns_window = match ns_window {
+                None => ptr::null_mut(),
+                Some(view) => (&*view as *const NSWindow) as *mut _,
+            };
 
-            return RawWindowHandle::AppKit(handle);
+            handle.ns_view = match self.ns_view.get() {
+                None => ptr::null_mut(),
+                Some(view) => (&*view as *const NSView) as *mut _,
+            };
         }
 
-        RawWindowHandle::AppKit(AppKitWindowHandle::empty())
+        handle.into()
     }
 }
 
@@ -140,49 +155,45 @@ impl<'a> Window<'a> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let pool = unsafe { NSAutoreleasePool::new(nil) };
+        autoreleasepool(|_| {
+            let scaling = match options.scale {
+                WindowScalePolicy::ScaleFactor(scale) => scale,
+                WindowScalePolicy::SystemScaleFactor => 1.0,
+            };
 
-        let scaling = match options.scale {
-            WindowScalePolicy::ScaleFactor(scale) => scale,
-            WindowScalePolicy::SystemScaleFactor => 1.0,
-        };
+            let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
-        let window_info = WindowInfo::from_logical_size(options.size, scaling);
-
-        let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
-            handle
-        } else {
-            panic!("Not a macOS window");
-        };
-
-        let ns_view = unsafe { create_view(&options) };
-
-        let window_inner = WindowInner {
-            open: Cell::new(true),
-            ns_app: Cell::new(None),
-            ns_window: Cell::new(None),
-            parent_ns_window: if handle.ns_window.is_null() {
-                None
+            let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
+                handle
             } else {
-                Some(handle.ns_window.cast())
-            },
-            ns_view,
+                panic!("Not a macOS window");
+            };
 
-            #[cfg(feature = "opengl")]
-            gl_context: options
-                .gl_config
-                .map(|gl_config| Self::create_gl_context(None, ns_view, gl_config)),
-        };
+            let ns_view = create_view(&options);
+            let parent_window = unsafe { Retained::retain(handle.ns_window as *mut NSWindow) };
+            let parent_view = unsafe { Retained::retain(handle.ns_view as *mut NSView) };
 
-        let window_handle = Self::init(window_inner, window_info, build);
+            let window_inner = WindowInner {
+                open: Cell::new(true),
+                ns_app: RetainedCell::empty(),
+                ns_window: RetainedCell::empty(),
+                parent_ns_window: RetainedCell::with(parent_window.clone()),
+                ns_view: RetainedCell::new(ns_view.clone()),
 
-        unsafe {
-            let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
+                #[cfg(feature = "opengl")]
+                gl_context: options
+                    .gl_config
+                    .map(|gl_config| Self::create_gl_context(None, &ns_view, gl_config)),
+            };
 
-            let () = msg_send![pool, drain];
-        }
+            let window_handle = Self::init(window_inner, window_info, build);
 
-        window_handle
+            if let Some(parent_view) = parent_view {
+                parent_view.addSubview(&ns_view);
+            }
+
+            window_handle
+        })
     }
 
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
@@ -191,75 +202,73 @@ impl<'a> Window<'a> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let pool = unsafe { NSAutoreleasePool::new(nil) };
+        autoreleasepool(|_| {
+            let Some(mtm) = MainThreadMarker::new() else {
+                panic!("macOS: open_blocking can only be called on the main thread!")
+            };
 
-        // It seems prudent to run NSApp() here before doing other
-        // work. It runs [NSApplication sharedApplication], which is
-        // what is run at the very start of the Xcode-generated main
-        // function of a cocoa app according to:
-        // https://developer.apple.com/documentation/appkit/nsapplication
-        let app = unsafe { NSApp() };
+            // Creates the global NSApplication instance, if it doesn't exist yet
+            let app = NSApplication::sharedApplication(mtm);
 
-        unsafe {
-            app.setActivationPolicy_(NSApplicationActivationPolicyRegular);
-        }
+            let _ = app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
 
-        let scaling = match options.scale {
-            WindowScalePolicy::ScaleFactor(scale) => scale,
-            WindowScalePolicy::SystemScaleFactor => 1.0,
-        };
+            let scaling = match options.scale {
+                WindowScalePolicy::ScaleFactor(scale) => scale,
+                WindowScalePolicy::SystemScaleFactor => 1.0,
+            };
 
-        let window_info = WindowInfo::from_logical_size(options.size, scaling);
-
-        let rect = NSRect::new(
-            NSPoint::new(0.0, 0.0),
-            NSSize::new(window_info.logical_size().width, window_info.logical_size().height),
-        );
-
-        let ns_window = unsafe {
-            let ns_window = NSWindow::alloc(nil).initWithContentRect_styleMask_backing_defer_(
-                rect,
-                NSWindowStyleMask::NSTitledWindowMask
-                    | NSWindowStyleMask::NSClosableWindowMask
-                    | NSWindowStyleMask::NSMiniaturizableWindowMask,
-                NSBackingStoreBuffered,
-                NO,
+            let rect = NSRect::new(
+                NSPoint::ZERO,
+                NSSize { width: options.size.width, height: options.size.height },
             );
+
+            let window_info = WindowInfo::from_logical_size(options.size, scaling);
+
+            // SAFETY: This is safe because of the setReleasedWhenClosed(false) below
+            let ns_window = unsafe {
+                NSWindow::initWithContentRect_styleMask_backing_defer(
+                    NSWindow::alloc(mtm),
+                    rect,
+                    NSWindowStyleMask::Titled
+                        | NSWindowStyleMask::Closable
+                        | NSWindowStyleMask::Miniaturizable,
+                    NSBackingStoreType::Buffered,
+                    false,
+                )
+            };
+
+            // SAFETY: setReleasedWhenClosed is always safe to call with `false` (worst case is a memory leak)
+            unsafe { ns_window.setReleasedWhenClosed(false) };
+
             ns_window.center();
 
-            let title = NSString::alloc(nil).init_str(&options.title).autorelease();
-            ns_window.setTitle_(title);
+            let title = NSString::from_str(&options.title);
+            ns_window.setTitle(&title);
 
-            ns_window.makeKeyAndOrderFront_(nil);
+            ns_window.makeKeyAndOrderFront(None);
 
-            ns_window
-        };
+            let ns_view = create_view(&options);
+            let window_inner = WindowInner {
+                open: Cell::new(true),
+                ns_app: RetainedCell::new(app.clone()),
+                parent_ns_window: RetainedCell::empty(),
+                ns_view: RetainedCell::new(ns_view.clone()),
 
-        let ns_view = unsafe { create_view(&options) };
+                #[cfg(feature = "opengl")]
+                gl_context: options.gl_config.map(|gl_config| {
+                    Self::create_gl_context(Some(&ns_window), &ns_view, gl_config)
+                }),
 
-        let window_inner = WindowInner {
-            open: Cell::new(true),
-            ns_app: Cell::new(Some(app)),
-            ns_window: Cell::new(Some(ns_window)),
-            parent_ns_window: None,
-            ns_view,
+                ns_window: RetainedCell::new(ns_window.clone()),
+            };
 
-            #[cfg(feature = "opengl")]
-            gl_context: options
-                .gl_config
-                .map(|gl_config| Self::create_gl_context(Some(ns_window), ns_view, gl_config)),
-        };
+            let _ = Self::init(window_inner, window_info, build);
 
-        let _ = Self::init(window_inner, window_info, build);
-
-        unsafe {
-            ns_window.setContentView_(ns_view);
-            ns_window.setDelegate_(ns_view);
-
-            let () = msg_send![pool, drain];
+            ns_window.setContentView(Some(&ns_view));
+            let () = unsafe { msg_send![&*ns_window, setDelegate: &*ns_view] };
 
             app.run();
-        }
+        })
     }
 
     fn init<H, B>(window_inner: WindowInner, window_info: WindowInfo, build: B) -> WindowHandle
@@ -271,13 +280,13 @@ impl<'a> Window<'a> {
         let mut window = crate::Window::new(Window { inner: &window_inner });
         let window_handler = Box::new(build(&mut window));
 
-        let ns_view = window_inner.ns_view;
+        let ns_view = window_inner.ns_view.get().unwrap();
 
         let window_state = Rc::new(WindowState {
             window_inner,
             window_handler: RefCell::new(window_handler),
             keyboard_state: KeyboardState::new(),
-            frame_timer: Cell::new(None),
+            frame_timer: RetainedCell::empty(),
             window_info: Cell::new(window_info),
             deferred_events: RefCell::default(),
         });
@@ -285,7 +294,16 @@ impl<'a> Window<'a> {
         let window_state_ptr = Rc::into_raw(Rc::clone(&window_state));
 
         unsafe {
-            (*ns_view).set_ivar(BASEVIEW_STATE_IVAR, window_state_ptr as *const c_void);
+            // This creates a cyclic reference: WindowState > WindowInner > NSView > WindowState.
+            // This cycle gets broken in WindowInner::close and everything is released properly.
+            // However, this means the cycle holds and the whole leaks if close() is not called. (e.g. if simply dropped)
+            // This should be refactored at some point to fix this issue.
+            ns_view
+                .class()
+                .instance_variable(BASEVIEW_STATE_IVAR)
+                .unwrap()
+                .load_ptr::<*const c_void>(&ns_view)
+                .write(window_state_ptr as *const c_void);
 
             WindowState::setup_timer(window_state_ptr);
         }
@@ -298,26 +316,26 @@ impl<'a> Window<'a> {
     }
 
     pub fn has_focus(&mut self) -> bool {
-        unsafe {
-            let view = self.inner.ns_view.as_mut().unwrap();
-            let window: id = msg_send![view, window];
-            if window == nil {
-                return false;
-            };
-            let first_responder: id = msg_send![window, firstResponder];
-            let is_key_window: BOOL = msg_send![window, isKeyWindow];
-            let is_focused: BOOL = msg_send![view, isEqual: first_responder];
-            is_key_window == YES && is_focused == YES
+        let view = self.inner.ns_view.get().unwrap();
+        let Some(window) = view.window() else {
+            return false;
+        };
+
+        if !window.isKeyWindow() {
+            return false;
         }
+
+        let Some(first_responder) = window.firstResponder() else {
+            return false;
+        };
+
+        view.isEqual(Some(&*first_responder))
     }
 
     pub fn focus(&mut self) {
-        unsafe {
-            let view = self.inner.ns_view.as_mut().unwrap();
-            let window: id = msg_send![view, window];
-            if window != nil {
-                msg_send![window, makeFirstResponder:view]
-            }
+        let view = self.inner.ns_view.get().unwrap();
+        if let Some(window) = view.window() {
+            window.makeFirstResponder(Some(&view));
         }
     }
 
@@ -327,9 +345,9 @@ impl<'a> Window<'a> {
             // though the size is in fractional pixels.
             let size = NSSize::new(size.width.round(), size.height.round());
 
-            unsafe { NSView::setFrameSize(self.inner.ns_view, size) };
-            unsafe {
-                let _: () = msg_send![self.inner.ns_view, setNeedsDisplay: YES];
+            if let Some(view) = self.inner.ns_view.get() {
+                view.setFrameSize(size);
+                view.setNeedsDisplay(true);
             }
 
             // When using OpenGL the `NSOpenGLView` needs to be resized separately? Why? Because
@@ -341,7 +359,7 @@ impl<'a> Window<'a> {
 
             // If this is a standalone window then we'll also need to resize the window itself
             if let Some(ns_window) = self.inner.ns_window.get() {
-                unsafe { NSWindow::setContentSize_(ns_window, size) };
+                ns_window.setContentSize(size);
             }
         }
     }
@@ -356,10 +374,15 @@ impl<'a> Window<'a> {
     }
 
     #[cfg(feature = "opengl")]
-    fn create_gl_context(ns_window: Option<id>, ns_view: id, config: GlConfig) -> GlContext {
+    fn create_gl_context(
+        ns_window: Option<&NSWindow>, ns_view: &NSView, config: GlConfig,
+    ) -> GlContext {
         let mut handle = AppKitWindowHandle::empty();
-        handle.ns_window = ns_window.unwrap_or(ptr::null_mut()) as *mut c_void;
-        handle.ns_view = ns_view as *mut c_void;
+        handle.ns_window = match ns_window {
+            Some(ns_window) => ns_window as *const NSWindow as *mut c_void,
+            None => ptr::null_mut(),
+        };
+        handle.ns_view = ns_view as *const NSView as *mut c_void;
         let handle = RawWindowHandle::AppKit(handle);
 
         unsafe { GlContext::create(&handle, config).expect("Could not create OpenGL context") }
@@ -370,7 +393,7 @@ pub(super) struct WindowState {
     pub(super) window_inner: WindowInner,
     window_handler: RefCell<Box<dyn WindowHandler>>,
     keyboard_state: KeyboardState,
-    frame_timer: Cell<Option<CFRunLoopTimer>>,
+    frame_timer: RetainedCell<CFRunLoopTimer>,
     /// The last known window info for this window.
     pub window_info: Cell<WindowInfo>,
 
@@ -384,10 +407,19 @@ impl WindowState {
     /// This method returns a cloned `Rc<WindowState>` rather than just a `&WindowState`, since the
     /// original `Rc<WindowState>` owned by the `NSView` can be dropped at any time
     /// (including during an event handler).
-    pub(super) unsafe fn from_view(view: &Object) -> Rc<WindowState> {
-        let state_ptr: *const c_void = *view.get_ivar(BASEVIEW_STATE_IVAR);
+    ///
+    /// # Safety
+    ///
+    /// `view` MUST be our own NSView, as created by `create_view`
+    pub(super) unsafe fn from_view(view: &NSView) -> Rc<WindowState> {
+        let state_ptr = view
+            .class()
+            .instance_variable(BASEVIEW_STATE_IVAR)
+            .unwrap()
+            .load::<*const c_void>(view)
+            .cast::<WindowState>();
 
-        let state_rc = Rc::from_raw(state_ptr as *const WindowState);
+        let state_rc = Rc::from_raw(state_ptr);
         let state = Rc::clone(&state_rc);
         let _ = Rc::into_raw(state_rc);
 
@@ -428,18 +460,24 @@ impl WindowState {
         &self.keyboard_state
     }
 
-    pub(super) fn process_native_key_event(&self, event: *mut Object) -> Option<KeyboardEvent> {
+    pub(super) fn process_native_key_event(&self, event: &NSEvent) -> Option<KeyboardEvent> {
         self.keyboard_state.process_native_event(event)
     }
 
     unsafe fn setup_timer(window_state_ptr: *const WindowState) {
-        extern "C" fn timer_callback(_: *mut __CFRunLoopTimer, window_state_ptr: *mut c_void) {
+        unsafe extern "C-unwind" fn timer_callback(
+            _: *mut CFRunLoopTimer, window_state_ptr: *mut c_void,
+        ) {
             unsafe {
                 let window_state = &*(window_state_ptr as *const WindowState);
 
                 window_state.trigger_frame();
             }
         }
+
+        let Some(current_loop) = CFRunLoop::current() else {
+            return;
+        };
 
         let mut timer_context = CFRunLoopTimerContext {
             version: 0,
@@ -449,11 +487,21 @@ impl WindowState {
             copyDescription: None,
         };
 
-        let timer = CFRunLoopTimer::new(0.0, 0.015, 0, 0, timer_callback, &mut timer_context);
+        let Some(timer) = CFRunLoopTimer::new(
+            kCFAllocatorDefault,
+            0.0,
+            0.015,
+            0,
+            0,
+            Some(timer_callback),
+            &mut timer_context,
+        ) else {
+            return;
+        };
 
-        CFRunLoop::get_current().add_timer(&timer, kCFRunLoopDefaultMode);
+        current_loop.add_timer(Some(&timer), kCFRunLoopDefaultMode);
 
-        (*window_state_ptr).frame_timer.set(Some(timer));
+        (*window_state_ptr).frame_timer.set(timer.into());
     }
 
     fn send_deferred_events(&self, window_handler: &mut dyn WindowHandler) {
@@ -482,12 +530,9 @@ unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
 }
 
 pub fn copy_to_clipboard(string: &str) {
-    unsafe {
-        let pb = NSPasteboard::generalPasteboard(nil);
+    let pb = NSPasteboard::generalPasteboard();
+    let ns_str = NSString::from_str(string);
 
-        let ns_str = NSString::alloc(nil).init_str(string);
-
-        pb.clearContents();
-        pb.setString_forType(ns_str, cocoa::appkit::NSPasteboardTypeString);
-    }
+    pb.clearContents();
+    pb.setString_forType(&ns_str, unsafe { NSPasteboardTypeString });
 }

@@ -12,7 +12,7 @@ authors = [
     "Robbert van der Helm <mail@robbertvanderhelm.nl>",
     "Adrien Prokopowicz <prokopylmc@gmail.com>"
 ]
-edition = "2018"
+edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Low-level windowing system geared towards making audio plugin UIs."
 keywords = ["windowing", "audio", "plugin"]
@@ -23,7 +23,13 @@ exclude = [".github"]
 
 [features]
 default = []
-opengl = ["uuid"]
+opengl = [
+    "uuid",
+    "objc2-core-foundation/CFBundle",
+    "objc2-app-kit/NSOpenGL",
+    "objc2-app-kit/NSOpenGLView",
+    "objc2-app-kit/objc2-open-gl"
+]
 
 [dependencies]
 keyboard-types = { version = "0.6.1", default-features = false }
@@ -39,10 +45,23 @@ winapi = { version = "0.3.8", features = ["libloaderapi", "winuser", "windef", "
 uuid = { version = "0.8", features = ["v4"], optional = true }
 
 [target.'cfg(target_os="macos")'.dependencies]
-cocoa = "0.24.0"
-core-foundation = "0.9.1"
-objc = "0.2.7"
-uuid = { version = "0.8", features = ["v4"] }
+uuid = { version = "1.23.1", features = ["v4"] }
+objc2 = "0.6.4"
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSEnumerator"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "NSApplication",
+    "NSDragging",
+    "NSEvent",
+    "NSGraphics",
+    "NSPasteboard",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSTrackingArea",
+    "NSView",
+    "NSWindow",
+    "objc2-core-foundation"
+] }
 
 [dev-dependencies]
 rtrb = "0.2"
