@@ -1,11 +1,12 @@
 use std::{
     collections::HashSet,
+    ffi::c_int,
     ptr,
     sync::{LazyLock, RwLock},
 };
 
 use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM, LRESULT, WPARAM},
+    Foundation::{HWND, LPARAM, POINT, WPARAM},
     System::{LibraryLoader::GetModuleHandleW, Threading::GetCurrentThreadId},
     UI::WindowsAndMessaging::{
         CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, HHOOK, MSG, PM_REMOVE,
@@ -19,7 +20,7 @@ use crate::win::wnd_proc;
 // track all windows opened by this instance of baseview
 // we use an RwLock here since the vast majority of uses (event interceptions)
 // will only need to read from the HashSet
-static HOOK_STATE: LazyLock<RwLock<KeyboardHookState>> = LazyLock::new(RwLock::default);
+static HOOK_STATE: LazyLock<RwLock<KeyboardHookState>> = LazyLock::new(|| RwLock::default());
 
 pub(crate) struct KeyboardHookHandle(HWNDWrapper);
 
@@ -92,15 +93,22 @@ fn deinit_keyboard_hook(hwnd: HWNDWrapper) {
 }
 
 unsafe extern "system" fn keyboard_hook_callback(
-    n_code: i32, wparam: WPARAM, lparam: LPARAM,
-) -> LRESULT {
+    n_code: c_int, wparam: WPARAM, lparam: LPARAM,
+) -> isize {
     let msg = lparam as *mut MSG;
 
     if n_code == HC_ACTION as i32 && wparam == PM_REMOVE as usize && offer_message_to_baseview(msg)
     {
-        *msg = MSG { message: WM_USER, ..Default::default() };
+        *msg = MSG {
+            hwnd: ptr::null_mut(),
+            message: WM_USER,
+            wParam: 0,
+            lParam: 0,
+            time: 0,
+            pt: POINT { x: 0, y: 0 },
+        };
 
-        LRESULT::default()
+        0
     } else {
         CallNextHookEx(ptr::null_mut(), n_code, wparam, lparam)
     }

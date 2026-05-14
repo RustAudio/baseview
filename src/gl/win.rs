@@ -179,7 +179,7 @@ impl GlContext {
         let wglSwapIntervalEXT: Option<WglSwapIntervalEXT> =
             { wglGetProcAddress(s!("wglSwapIntervalEXT")).map(|addr| std::mem::transmute(addr)) };
 
-        wglMakeCurrent(hdc_tmp, HGLRC::default());
+        wglMakeCurrent(hdc_tmp, std::ptr::null_mut());
         wglDeleteContext(hglrc_tmp);
         ReleaseDC(hwnd_tmp, hdc_tmp);
         UnregisterClassW(class as *const _, hinstance);
@@ -283,7 +283,7 @@ impl GlContext {
         ];
 
         let hglrc =
-            wglCreateContextAttribsARB.unwrap()(hdc, HGLRC::default(), ctx_attribs.as_ptr());
+            wglCreateContextAttribsARB.unwrap()(hdc, std::ptr::null_mut(), ctx_attribs.as_ptr());
         if hglrc.is_null() {
             return Err(GlError::CreationFailed(()));
         }
@@ -292,7 +292,7 @@ impl GlContext {
 
         wglMakeCurrent(hdc, hglrc);
         wglSwapIntervalEXT.unwrap()(config.vsync as i32);
-        wglMakeCurrent(hdc, HGLRC::default());
+        wglMakeCurrent(hdc, std::ptr::null_mut());
 
         Ok(GlContext { hwnd, hdc, hglrc, gl_library })
     }
@@ -302,7 +302,7 @@ impl GlContext {
     }
 
     pub unsafe fn make_not_current(&self) {
-        wglMakeCurrent(self.hdc, HGLRC::default());
+        wglMakeCurrent(self.hdc, std::ptr::null_mut());
     }
 
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
@@ -329,7 +329,7 @@ impl GlContext {
 impl Drop for GlContext {
     fn drop(&mut self) {
         unsafe {
-            wglMakeCurrent(HDC::default(), HGLRC::default());
+            wglMakeCurrent(HDC::default(), std::ptr::null_mut());
             wglDeleteContext(self.hglrc);
             ReleaseDC(self.hwnd, self.hdc);
             FreeLibrary(self.gl_library);

@@ -19,13 +19,13 @@ use windows_sys::Win32::{
             GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW, SetCursor,
             SetTimer, SetWindowLongPtrW, SetWindowPos, TranslateMessage, UnregisterClassW,
             CS_OWNDC, GWLP_USERDATA, HTCLIENT, IDC_ARROW, MSG, SWP_NOACTIVATE, SWP_NOMOVE,
-            SWP_NOZORDER, WHEEL_DELTA, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CHAR, WM_CLOSE, WM_CREATE,
-            WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
-            WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-            WM_NCDESTROY, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE,
-            WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN,
-            WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX,
-            WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+            SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED,
+            WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+            WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY,
+            WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR,
+            WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW,
+            WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW,
+            WS_SIZEBOX, WS_VISIBLE,
         },
     },
 };
@@ -43,6 +43,7 @@ use raw_window_handle::{
 };
 use windows::Win32::System::Ole::IDropTarget;
 use windows_sys::core::GUID;
+use windows_sys::Win32::Foundation::FALSE;
 use windows_sys::Win32::System::Ole::RegisterDragDrop;
 
 const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
@@ -147,7 +148,7 @@ pub(crate) unsafe extern "system" fn wnd_proc(
     hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM,
 ) -> LRESULT {
     if msg == WM_CREATE {
-        PostMessageW(hwnd, WM_SHOWWINDOW, WPARAM::default(), LPARAM::default());
+        PostMessageW(hwnd, WM_SHOWWINDOW, 0, 0);
         return 0;
     }
 
@@ -471,13 +472,15 @@ unsafe fn wnd_proc_inner(
         // If WM_SETCURSOR returns `None`, WM_SETCURSOR continues to get handled by the outer window(s),
         // If it returns `Some(1)`, the current window decides what the cursor is
         WM_SETCURSOR => {
-            let low_word = LOWORD(lparam) as isize;
-            let mouse_in_window = low_word == HTCLIENT as isize;
+            let low_word = LOWORD(lparam) as u32;
+            let mouse_in_window = low_word == HTCLIENT;
             if mouse_in_window {
                 // Here we need to set the cursor back to what the state says, since it can have changed when outside the window
                 let cursor =
                     LoadCursorW(null_mut(), cursor_to_lpcwstr(window_state.cursor_icon.get()));
-                SetCursor(cursor);
+                unsafe {
+                    SetCursor(cursor);
+                }
                 Some(1)
             } else {
                 // Cursor is being changed by some other window, e.g. when having mouse on the borders to resize it
@@ -506,9 +509,14 @@ unsafe fn register_wnd_class() -> ATOM {
     let wnd_class = WNDCLASSW {
         style: CS_OWNDC,
         lpfnWndProc: Some(wnd_proc),
+        hInstance: null_mut(),
         lpszClassName: class_name.as_ptr(),
+        cbClsExtra: 0,
+        cbWndExtra: 0,
+        hIcon: null_mut(),
         hCursor: LoadCursorW(null_mut(), IDC_ARROW),
-        ..Default::default()
+        hbrBackground: null_mut(),
+        lpszMenuName: null_mut(),
     };
 
     RegisterClassW(&wnd_class)
@@ -540,7 +548,7 @@ pub(super) struct WindowState {
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
     _drop_target: RefCell<Option<ComObject<DropTarget>>>,
     scale_policy: WindowScalePolicy,
-    dw_style: WINDOW_STYLE,
+    dw_style: u32,
 
     // handle to the win32 keyboard hook
     // we don't need to read from this, just carry it around so the Drop impl can run
@@ -592,7 +600,6 @@ impl WindowState {
                     right: window_info.physical_size().width as i32,
                     bottom: window_info.physical_size().height as i32,
                 };
-
                 unsafe {
                     AdjustWindowRectEx(&mut rect, self.dw_style, 0, 0);
                     SetWindowPos(
@@ -708,7 +715,7 @@ impl Window<'_> {
             };
 
             if !parented {
-                AdjustWindowRectEx(&mut rect, flags, 0, 0);
+                AdjustWindowRectEx(&mut rect, flags, FALSE, 0);
             }
 
             let hwnd = CreateWindowExW(
@@ -814,9 +821,9 @@ impl Window<'_> {
             SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
 
             if let Some(mut new_rect) = new_rect {
-                // Convert this desired "client rectangle" size to the actual "window rectangle"
+                // Convert this desired"client rectangle" size to the actual "window rectangle"
                 // size (Because of course you have to do that).
-                AdjustWindowRectEx(&mut new_rect, flags, 0, WINDOW_EX_STYLE::default());
+                AdjustWindowRectEx(&mut new_rect, flags, 0, 0);
 
                 // Windows makes us resize the window manually. This will trigger another `WM_SIZE` event,
                 // which we can then send the user the new scale factor.
@@ -847,7 +854,9 @@ impl Window<'_> {
     }
 
     pub fn focus(&mut self) {
-        unsafe { SetFocus(self.state.hwnd) };
+        unsafe {
+            SetFocus(self.state.hwnd);
+        }
     }
 
     pub fn resize(&mut self, size: Size) {
