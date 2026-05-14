@@ -5,7 +5,7 @@ use std::ptr;
 use std::rc::Rc;
 
 use keyboard_types::KeyboardEvent;
-use objc2::rc::Retained;
+use objc2::rc::{autoreleasepool, Retained};
 use objc2::runtime::NSObjectProtocol;
 use objc2::{msg_send, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
@@ -155,43 +155,45 @@ impl<'a> Window<'a> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let scaling = match options.scale {
-            WindowScalePolicy::ScaleFactor(scale) => scale,
-            WindowScalePolicy::SystemScaleFactor => 1.0,
-        };
+        autoreleasepool(|_| {
+            let scaling = match options.scale {
+                WindowScalePolicy::ScaleFactor(scale) => scale,
+                WindowScalePolicy::SystemScaleFactor => 1.0,
+            };
 
-        let window_info = WindowInfo::from_logical_size(options.size, scaling);
+            let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
-        let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
-            handle
-        } else {
-            panic!("Not a macOS window");
-        };
+            let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
+                handle
+            } else {
+                panic!("Not a macOS window");
+            };
 
-        let ns_view = create_view(&options);
-        let parent_window = unsafe { Retained::retain(handle.ns_window as *mut NSWindow) };
-        let parent_view = unsafe { Retained::retain(handle.ns_view as *mut NSView) };
+            let ns_view = create_view(&options);
+            let parent_window = unsafe { Retained::retain(handle.ns_window as *mut NSWindow) };
+            let parent_view = unsafe { Retained::retain(handle.ns_view as *mut NSView) };
 
-        let window_inner = WindowInner {
-            open: Cell::new(true),
-            ns_app: RetainedCell::empty(),
-            ns_window: RetainedCell::empty(),
-            parent_ns_window: RetainedCell::with(parent_window.clone()),
-            ns_view: RetainedCell::new(ns_view.clone()),
+            let window_inner = WindowInner {
+                open: Cell::new(true),
+                ns_app: RetainedCell::empty(),
+                ns_window: RetainedCell::empty(),
+                parent_ns_window: RetainedCell::with(parent_window.clone()),
+                ns_view: RetainedCell::new(ns_view.clone()),
 
-            #[cfg(feature = "opengl")]
-            gl_context: options
-                .gl_config
-                .map(|gl_config| Self::create_gl_context(None, &ns_view, gl_config)),
-        };
+                #[cfg(feature = "opengl")]
+                gl_context: options
+                    .gl_config
+                    .map(|gl_config| Self::create_gl_context(None, &ns_view, gl_config)),
+            };
 
-        let window_handle = Self::init(window_inner, window_info, build);
+            let window_handle = Self::init(window_inner, window_info, build);
 
-        if let Some(parent_view) = parent_view {
-            parent_view.addSubview(&ns_view);
-        }
+            if let Some(parent_view) = parent_view {
+                parent_view.addSubview(&ns_view);
+            }
 
-        window_handle
+            window_handle
+        })
     }
 
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
@@ -200,71 +202,73 @@ impl<'a> Window<'a> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let Some(mtm) = MainThreadMarker::new() else {
-            panic!("macOS: open_blocking can only be called on the main thread!")
-        };
+        autoreleasepool(|_| {
+            let Some(mtm) = MainThreadMarker::new() else {
+                panic!("macOS: open_blocking can only be called on the main thread!")
+            };
 
-        // Creates the global NSApplication instance, if it doesn't exist yet
-        let app = NSApplication::sharedApplication(mtm);
+            // Creates the global NSApplication instance, if it doesn't exist yet
+            let app = NSApplication::sharedApplication(mtm);
 
-        let _ = app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+            let _ = app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
 
-        let scaling = match options.scale {
-            WindowScalePolicy::ScaleFactor(scale) => scale,
-            WindowScalePolicy::SystemScaleFactor => 1.0,
-        };
+            let scaling = match options.scale {
+                WindowScalePolicy::ScaleFactor(scale) => scale,
+                WindowScalePolicy::SystemScaleFactor => 1.0,
+            };
 
-        let rect = NSRect::new(
-            NSPoint::ZERO,
-            NSSize { width: options.size.width, height: options.size.height },
-        );
+            let rect = NSRect::new(
+                NSPoint::ZERO,
+                NSSize { width: options.size.width, height: options.size.height },
+            );
 
-        let window_info = WindowInfo::from_logical_size(options.size, scaling);
+            let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
-        // SAFETY: This is safe because of the setReleasedWhenClosed(false) below
-        let ns_window = unsafe {
-            NSWindow::initWithContentRect_styleMask_backing_defer(
-                NSWindow::alloc(mtm),
-                rect,
-                NSWindowStyleMask::Titled
-                    | NSWindowStyleMask::Closable
-                    | NSWindowStyleMask::Miniaturizable,
-                NSBackingStoreType::Buffered,
-                false,
-            )
-        };
+            // SAFETY: This is safe because of the setReleasedWhenClosed(false) below
+            let ns_window = unsafe {
+                NSWindow::initWithContentRect_styleMask_backing_defer(
+                    NSWindow::alloc(mtm),
+                    rect,
+                    NSWindowStyleMask::Titled
+                        | NSWindowStyleMask::Closable
+                        | NSWindowStyleMask::Miniaturizable,
+                    NSBackingStoreType::Buffered,
+                    false,
+                )
+            };
 
-        // SAFETY: setReleasedWhenClosed is always safe to call with `false` (worst case is a memory leak)
-        unsafe { ns_window.setReleasedWhenClosed(false) };
+            // SAFETY: setReleasedWhenClosed is always safe to call with `false` (worst case is a memory leak)
+            unsafe { ns_window.setReleasedWhenClosed(false) };
 
-        ns_window.center();
+            ns_window.center();
 
-        let title = NSString::from_str(&options.title);
-        ns_window.setTitle(&title);
+            let title = NSString::from_str(&options.title);
+            ns_window.setTitle(&title);
 
-        ns_window.makeKeyAndOrderFront(None);
+            ns_window.makeKeyAndOrderFront(None);
 
-        let ns_view = create_view(&options);
-        let window_inner = WindowInner {
-            open: Cell::new(true),
-            ns_app: RetainedCell::new(app.clone()),
-            parent_ns_window: RetainedCell::empty(),
-            ns_view: RetainedCell::new(ns_view.clone()),
+            let ns_view = create_view(&options);
+            let window_inner = WindowInner {
+                open: Cell::new(true),
+                ns_app: RetainedCell::new(app.clone()),
+                parent_ns_window: RetainedCell::empty(),
+                ns_view: RetainedCell::new(ns_view.clone()),
 
-            #[cfg(feature = "opengl")]
-            gl_context: options
-                .gl_config
-                .map(|gl_config| Self::create_gl_context(Some(&ns_window), &ns_view, gl_config)),
+                #[cfg(feature = "opengl")]
+                gl_context: options.gl_config.map(|gl_config| {
+                    Self::create_gl_context(Some(&ns_window), &ns_view, gl_config)
+                }),
 
-            ns_window: RetainedCell::new(ns_window.clone()),
-        };
+                ns_window: RetainedCell::new(ns_window.clone()),
+            };
 
-        let _ = Self::init(window_inner, window_info, build);
+            let _ = Self::init(window_inner, window_info, build);
 
-        ns_window.setContentView(Some(&ns_view));
-        let () = unsafe { msg_send![&*ns_window, setDelegate: &*ns_view] };
+            ns_window.setContentView(Some(&ns_view));
+            let () = unsafe { msg_send![&*ns_window, setDelegate: &*ns_view] };
 
-        app.run();
+            app.run();
+        })
     }
 
     fn init<H, B>(window_inner: WindowInner, window_info: WindowInfo, build: B) -> WindowHandle
