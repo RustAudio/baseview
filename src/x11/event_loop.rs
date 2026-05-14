@@ -150,14 +150,13 @@ impl EventLoop {
             ////
             // window
             ////
-            XEvent::ClientMessage(event) => {
+            XEvent::ClientMessage(event)
                 if event.format == 32
                     && event.data.as_data32()[0]
                         == self.window.xcb_connection.atoms.WM_DELETE_WINDOW
-                {
+                => {
                     self.handle_close_requested();
                 }
-            }
 
             XEvent::ConfigureNotify(event) => {
                 let new_physical_size = PhySize::new(event.width as u32, event.height as u32);
@@ -238,8 +237,8 @@ impl EventLoop {
                 }
             },
 
-            XEvent::ButtonRelease(event) => {
-                if !(4..=7).contains(&event.detail) {
+            XEvent::ButtonRelease(event)
+                if !(4..=7).contains(&event.detail) => {
                     let button_id = mouse_id(event.detail);
                     self.handler.on_event(
                         &mut crate::Window::new(Window { inner: &self.window }),
@@ -249,7 +248,6 @@ impl EventLoop {
                         }),
                     );
                 }
-            }
 
             ////
             // keys
