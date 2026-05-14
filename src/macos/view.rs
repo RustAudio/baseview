@@ -12,11 +12,11 @@ use objc2_app_kit::{
     NSTrackingAreaOptions, NSView, NSWindow, NSWindowDidBecomeKeyNotification,
     NSWindowDidResignKeyNotification,
 };
+use objc2_core_foundation::CFUUID;
 use objc2_foundation::{
     NSArray, NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize, NSString,
 };
 use std::ffi::{c_void, CStr, CString};
-use uuid::Uuid;
 
 use super::keyboard::make_modifiers;
 use super::window::WindowState;
@@ -123,6 +123,17 @@ pub(super) fn create_view(window_options: &WindowOpenOptions) -> Retained<NSView
     view
 }
 
+fn new_class_name() -> CString {
+    // PANIC: CFUUIDCreate is not documented to return NULL.
+    let uuid = CFUUID::new(None).unwrap();
+    // PANIC: CFUUIDCreateString is not documented to return NULL.
+    let uuid_str = CFUUID::new_string(None, Some(&uuid)).unwrap();
+
+    let class_name = format!("BaseviewNSView_{uuid_str}");
+    // PANIC: This cannot have any NULL bytes
+    CString::new(class_name).unwrap()
+}
+
 /// # Safety
 ///
 /// This class is going to be destroyed when its first instance gets deallocated.
@@ -134,9 +145,7 @@ unsafe fn create_view_class() -> &'static AnyClass {
     // the class was stored in a OnceCell after creation. This way, we didn't
     // have to recreate it each time a view was opened, but now we don't leave
     // any class definitions lying around when the plugin is closed.
-    let class_name = CString::new(format!("BaseviewNSView_{}", Uuid::new_v4().simple()))
-        // PANIC: This cannot have any NULL bytes
-        .unwrap();
+    let class_name = new_class_name();
 
     let mut class = ClassBuilder::new(&class_name, NSView::class()).unwrap();
 
