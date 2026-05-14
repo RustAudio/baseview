@@ -486,7 +486,7 @@ fn get_drop_data(sender: Option<&ProtocolObject<dyn NSDraggingInfo>>) -> DropDat
 
     let files = file_list
         .into_iter()
-        .filter_map(|i| i.downcast::<NSString>().ok())
+        .filter_map(|s| s.downcast::<NSString>().ok())
         .map(|s| s.to_string().into())
         .collect();
 
