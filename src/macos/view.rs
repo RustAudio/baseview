@@ -124,7 +124,9 @@ pub(super) fn create_view(window_options: &WindowOpenOptions) -> Retained<NSView
 }
 
 fn new_class_name() -> CString {
+    // PANIC: CFUUIDCreate is not documented to return NULL.
     let uuid = CFUUID::new(None).unwrap();
+    // PANIC: CFUUIDCreateString is not documented to return NULL.
     let uuid_str = CFUUID::new_string(None, Some(&uuid)).unwrap();
 
     let class_name = format!("BaseviewNSView_{uuid_str}");
