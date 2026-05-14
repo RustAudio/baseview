@@ -56,7 +56,7 @@ macro_rules! add_mouse_button_class_method {
             }));
         }
 
-        $class.add_method(sel!($sel:),$sel as extern "C-unwind" fn(_, _, _) -> _);
+        $class.add_method(sel!($sel:), $sel as extern "C-unwind" fn(_, _, _) -> _);
     };
 }
 
@@ -79,7 +79,7 @@ macro_rules! add_simple_keyboard_class_method {
             }
         }
 
-        $class.add_method(sel!($sel:),$sel as extern "C-unwind" fn(_, _, _) -> _);
+        $class.add_method(sel!($sel:), $sel as extern "C-unwind" fn(_, _, _) -> _);
     };
 }
 
