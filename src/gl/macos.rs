@@ -48,25 +48,25 @@ impl GlContext {
 
         #[rustfmt::skip]
         let mut attrs = vec![
-            NSOpenGLPFAOpenGLProfile as u32, version as u32,
-            NSOpenGLPFAColorSize as u32, (config.red_bits + config.blue_bits + config.green_bits) as u32,
-            NSOpenGLPFAAlphaSize as u32, config.alpha_bits as u32,
-            NSOpenGLPFADepthSize as u32, config.depth_bits as u32,
-            NSOpenGLPFAStencilSize as u32, config.stencil_bits as u32,
-            NSOpenGLPFAAccelerated as u32,
+            NSOpenGLPFAOpenGLProfile, version,
+            NSOpenGLPFAColorSize, (config.red_bits + config.blue_bits + config.green_bits) as u32,
+            NSOpenGLPFAAlphaSize, config.alpha_bits as u32,
+            NSOpenGLPFADepthSize, config.depth_bits as u32,
+            NSOpenGLPFAStencilSize, config.stencil_bits as u32,
+            NSOpenGLPFAAccelerated,
         ];
 
-        if config.samples.is_some() {
+        if let Some(samples) = config.samples {
             #[rustfmt::skip]
             attrs.extend_from_slice(&[
-                NSOpenGLPFAMultisample as u32,
-                NSOpenGLPFASampleBuffers as u32, 1,
-                NSOpenGLPFASamples as u32, config.samples.unwrap() as u32,
+                NSOpenGLPFAMultisample,
+                NSOpenGLPFASampleBuffers, 1,
+                NSOpenGLPFASamples, samples as u32,
             ]);
         }
 
         if config.double_buffer {
-            attrs.push(NSOpenGLPFADoubleBuffer as u32);
+            attrs.push(NSOpenGLPFADoubleBuffer);
         }
 
         attrs.push(0);
