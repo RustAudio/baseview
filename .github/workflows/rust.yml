@@ -19,14 +19,28 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          components: rustfmt, clippy
+          components: clippy
       - name: Build Default
         run: cargo build --workspace --all-targets --verbose
       - name: Build All Features
         run: cargo build --workspace --all-targets --all-features --verbose
       - name: Run tests
         run: cargo test --workspace --all-targets --all-features --verbose
+      - name: Clippy
+        run: cargo clippy --all --all-features -- -D warnings
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt
       - name: Check docs
-        run: cargo doc --examples --all-features --no-deps
+        run: cargo doc --all --all-features --no-deps
       - name: Check Formatting (rustfmt)
         run: cargo fmt --all -- --check
