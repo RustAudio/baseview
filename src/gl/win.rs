@@ -329,7 +329,7 @@ impl GlContext {
 impl Drop for GlContext {
     fn drop(&mut self) {
         unsafe {
-            wglMakeCurrent(HDC::default(), std::ptr::null_mut());
+            wglMakeCurrent(std::ptr::null_mut(), std::ptr::null_mut());
             wglDeleteContext(self.hglrc);
             ReleaseDC(self.hwnd, self.hdc);
             FreeLibrary(self.gl_library);
