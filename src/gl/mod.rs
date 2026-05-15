@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 use std::marker::PhantomData;
-
+use std::panic::AssertUnwindSafe;
 // On X11 creating the context is a two step process
 #[cfg(not(target_os = "linux"))]
 use raw_window_handle::RawWindowHandle;
@@ -70,7 +70,9 @@ pub enum GlError {
 }
 
 pub struct GlContext {
-    context: platform::GlContext,
+    // AssertUnwindSafe should *not* be here, but this is needed for now to keep semver compatibility
+    // Remove this in 0.2
+    context: AssertUnwindSafe<platform::GlContext>,
     phantom: PhantomData<*mut ()>,
 }
 
@@ -80,7 +82,7 @@ impl GlContext {
         parent: &RawWindowHandle, config: GlConfig,
     ) -> Result<GlContext, GlError> {
         platform::GlContext::create(parent, config)
-            .map(|context| GlContext { context, phantom: PhantomData })
+            .map(|context| GlContext { context: AssertUnwindSafe(context), phantom: PhantomData })
     }
 
     /// The X11 version needs to be set up in a different way compared to the Windows and macOS
@@ -88,7 +90,7 @@ impl GlContext {
     /// baseview, and then this object can be passed to the user.
     #[cfg(target_os = "linux")]
     pub(crate) fn new(context: platform::GlContext) -> GlContext {
-        GlContext { context, phantom: PhantomData }
+        GlContext { context: AssertUnwindSafe(context), phantom: PhantomData }
     }
 
     pub unsafe fn make_current(&self) {
