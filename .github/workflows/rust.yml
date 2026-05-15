@@ -30,6 +30,7 @@ jobs:
         if: matrix.toolchain != '1.80'
         run: cargo build --workspace --all-targets --verbose
       - name: Clippy
+        if: matrix.toolchain != '1.80'
         run: cargo clippy --all --all-features -- -D warnings
   checks:
     runs-on: ubuntu-latest
