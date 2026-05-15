@@ -5,19 +5,13 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
-use winapi::{
-    shared::{
-        minwindef::{LPARAM, WPARAM},
-        windef::{HHOOK, HWND, POINT},
-    },
-    um::{
-        libloaderapi::GetModuleHandleW,
-        processthreadsapi::GetCurrentThreadId,
-        winuser::{
-            CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, MSG, PM_REMOVE,
-            WH_GETMESSAGE, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
-            WM_USER,
-        },
+use windows_sys::Win32::{
+    Foundation::{HWND, LPARAM, POINT, WPARAM},
+    System::{LibraryLoader::GetModuleHandleW, Threading::GetCurrentThreadId},
+    UI::WindowsAndMessaging::{
+        CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, HHOOK, MSG, PM_REMOVE,
+        WH_GETMESSAGE, WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
+        WM_USER,
     },
 };
 
@@ -103,7 +97,8 @@ unsafe extern "system" fn keyboard_hook_callback(
 ) -> isize {
     let msg = lparam as *mut MSG;
 
-    if n_code == HC_ACTION && wparam == PM_REMOVE as usize && offer_message_to_baseview(msg) {
+    if n_code == HC_ACTION as i32 && wparam == PM_REMOVE as usize && offer_message_to_baseview(msg)
+    {
         *msg = MSG {
             hwnd: ptr::null_mut(),
             message: WM_USER,

@@ -1,27 +1,38 @@
-use winapi::shared::guiddef::GUID;
-use winapi::shared::minwindef::{ATOM, FALSE, LOWORD, LPARAM, LRESULT, UINT, WPARAM};
-use winapi::shared::windef::{HWND, RECT};
-use winapi::um::combaseapi::CoCreateGuid;
-use winapi::um::ole2::{OleInitialize, RegisterDragDrop, RevokeDragDrop};
-use winapi::um::oleidl::LPDROPTARGET;
-use winapi::um::winuser::{
-    AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    GetDpiForWindow, GetFocus, GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW,
-    RegisterClassW, ReleaseCapture, SetCapture, SetCursor, SetFocus, SetProcessDpiAwarenessContext,
-    SetTimer, SetWindowLongPtrW, SetWindowPos, TrackMouseEvent, TranslateMessage, UnregisterClassW,
-    CS_OWNDC, GET_XBUTTON_WPARAM, GWLP_USERDATA, HTCLIENT, IDC_ARROW, MSG, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOZORDER, TRACKMOUSEEVENT, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE,
-    WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSELEAVE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_NCDESTROY, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR,
-    WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW,
-    WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW,
-    WS_SIZEBOX, WS_VISIBLE, XBUTTON1, XBUTTON2,
+use windows_core::{ComObject, Interface};
+use windows_sys::Win32::{
+    Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
+    System::{
+        Com::CoCreateGuid,
+        Ole::{OleInitialize, RevokeDragDrop},
+    },
+    UI::{
+        Controls::{HOVER_DEFAULT, WM_MOUSELEAVE},
+        HiDpi::{
+            GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE,
+        },
+        Input::KeyboardAndMouse::{
+            GetFocus, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE,
+            TRACKMOUSEEVENT,
+        },
+        WindowsAndMessaging::{
+            AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
+            GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW, SetCursor,
+            SetTimer, SetWindowLongPtrW, SetWindowPos, TranslateMessage, UnregisterClassW,
+            CS_OWNDC, GWLP_USERDATA, HTCLIENT, IDC_ARROW, MSG, SWP_NOACTIVATE, SWP_NOMOVE,
+            SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED,
+            WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+            WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY,
+            WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR,
+            WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW,
+            WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW,
+            WS_SIZEBOX, WS_VISIBLE,
+        },
+    },
 };
 
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::VecDeque;
-use std::ffi::{c_void, OsStr};
+use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 use std::rc::Rc;
@@ -30,8 +41,12 @@ use raw_window_handle::{
     HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, Win32WindowHandle,
     WindowsDisplayHandle,
 };
+use windows::Win32::System::Ole::IDropTarget;
+use windows_sys::core::GUID;
+use windows_sys::Win32::Foundation::FALSE;
+use windows_sys::Win32::System::Ole::RegisterDragDrop;
 
-const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
+const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
 use crate::win::hook::{self, KeyboardHookHandle};
 use crate::{
@@ -51,18 +66,28 @@ unsafe fn generate_guid() -> String {
     CoCreateGuid(&mut guid);
     format!(
         "{:0X}-{:0X}-{:0X}-{:0X}{:0X}-{:0X}{:0X}{:0X}{:0X}{:0X}{:0X}\0",
-        guid.Data1,
-        guid.Data2,
-        guid.Data3,
-        guid.Data4[0],
-        guid.Data4[1],
-        guid.Data4[2],
-        guid.Data4[3],
-        guid.Data4[4],
-        guid.Data4[5],
-        guid.Data4[6],
-        guid.Data4[7]
+        guid.data1,
+        guid.data2,
+        guid.data3,
+        guid.data4[0],
+        guid.data4[1],
+        guid.data4[2],
+        guid.data4[3],
+        guid.data4[4],
+        guid.data4[5],
+        guid.data4[6],
+        guid.data4[7]
     )
+}
+
+#[allow(non_snake_case)]
+fn HIWORD(wparam: WPARAM) -> u16 {
+    ((wparam >> 16) & 0xffff) as u16
+}
+
+#[allow(non_snake_case)]
+fn LOWORD(lparam: LPARAM) -> u16 {
+    (lparam & 0xffff) as u16
 }
 
 const WIN_FRAME_TIMER: usize = 4242;
@@ -90,7 +115,7 @@ unsafe impl HasRawWindowHandle for WindowHandle {
     fn raw_window_handle(&self) -> RawWindowHandle {
         if let Some(hwnd) = self.hwnd {
             let mut handle = Win32WindowHandle::empty();
-            handle.hwnd = hwnd as *mut c_void;
+            handle.hwnd = hwnd;
 
             RawWindowHandle::Win32(handle)
         } else {
@@ -120,7 +145,7 @@ impl Drop for ParentHandle {
 }
 
 pub(crate) unsafe extern "system" fn wnd_proc(
-    hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM,
+    hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM,
 ) -> LRESULT {
     if msg == WM_CREATE {
         PostMessageW(hwnd, WM_SHOWWINDOW, 0, 0);
@@ -167,7 +192,7 @@ pub(crate) unsafe extern "system" fn wnd_proc(
 /// Our custom `wnd_proc` handler. If the result contains a value, then this is returned after
 /// handling any deferred tasks. otherwise the default window procedure is invoked.
 unsafe fn wnd_proc_inner(
-    hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM, window_state: &WindowState,
+    hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, window_state: &WindowState,
 ) -> Option<LRESULT> {
     match msg {
         WM_MOUSEMOVE => {
@@ -178,10 +203,10 @@ unsafe fn wnd_proc_inner(
                 // this makes Windows track whether the mouse leaves the window.
                 // When the mouse leaves it results in a `WM_MOUSELEAVE` event.
                 let mut track_mouse = TRACKMOUSEEVENT {
-                    cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
-                    dwFlags: winapi::um::winuser::TME_LEAVE,
+                    cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                    dwFlags: TME_LEAVE,
                     hwndTrack: hwnd,
-                    dwHoverTime: winapi::um::winuser::HOVER_DEFAULT,
+                    dwHoverTime: HOVER_DEFAULT,
                 };
                 // Couldn't find a good way to track whether the mouse enters,
                 // but if `WM_MOUSEMOVE` happens, the mouse must have entered.
@@ -249,6 +274,14 @@ unsafe fn wnd_proc_inner(
             let mut window = crate::Window::new(window_state.create_window());
 
             let mut mouse_button_counter = window_state.mouse_button_counter.get();
+
+            #[allow(non_snake_case)]
+            fn GET_XBUTTON_WPARAM(wparam: WPARAM) -> u16 {
+                HIWORD(wparam)
+            }
+
+            const XBUTTON1: u16 = 0x1;
+            const XBUTTON2: u16 = 0x2;
 
             let button = match msg {
                 WM_LBUTTONDOWN | WM_LBUTTONUP => Some(MouseButton::Left),
@@ -439,7 +472,7 @@ unsafe fn wnd_proc_inner(
         // If WM_SETCURSOR returns `None`, WM_SETCURSOR continues to get handled by the outer window(s),
         // If it returns `Some(1)`, the current window decides what the cursor is
         WM_SETCURSOR => {
-            let low_word = LOWORD(lparam as u32) as isize;
+            let low_word = LOWORD(lparam) as u32;
             let mouse_in_window = low_word == HTCLIENT;
             if mouse_in_window {
                 // Here we need to set the cursor back to what the state says, since it can have changed when outside the window
@@ -463,6 +496,9 @@ unsafe fn wnd_proc_inner(
         _ => None,
     }
 }
+
+#[allow(clippy::upper_case_acronyms)]
+type ATOM = u16;
 
 unsafe fn register_wnd_class() -> ATOM {
     // We generate a unique name for the new window class to prevent name collisions
@@ -510,7 +546,7 @@ pub(super) struct WindowState {
     cursor_icon: Cell<MouseCursor>,
     // Initialized late so the `Window` can hold a reference to this `WindowState`
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
-    _drop_target: RefCell<Option<Rc<DropTarget>>>,
+    _drop_target: RefCell<Option<ComObject<DropTarget>>>,
     scale_policy: WindowScalePolicy,
     dw_style: u32,
 
@@ -603,7 +639,7 @@ impl Window<'_> {
         B: Send + 'static,
     {
         let parent = match parent.raw_window_handle() {
-            RawWindowHandle::Win32(h) => h.hwnd as HWND,
+            RawWindowHandle::Win32(h) => h.hwnd,
             h => panic!("unsupported parent handle {:?}", h),
         };
 
@@ -703,7 +739,7 @@ impl Window<'_> {
             #[cfg(feature = "opengl")]
             let gl_context: Option<GlContext> = options.gl_config.map(|gl_config| {
                 let mut handle = Win32WindowHandle::empty();
-                handle.hwnd = hwnd as *mut c_void;
+                handle.hwnd = hwnd;
                 let handle = RawWindowHandle::Win32(handle);
 
                 GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
@@ -745,9 +781,7 @@ impl Window<'_> {
             *window_state.handler.borrow_mut() = Some(Box::new(handler));
 
             // Only works on Windows 10 unfortunately.
-            SetProcessDpiAwarenessContext(
-                winapi::shared::windef::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE,
-            );
+            SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE);
 
             // Now we can get the actual dpi of the window.
             let new_rect = if let WindowScalePolicy::SystemScaleFactor = options.scale {
@@ -776,11 +810,12 @@ impl Window<'_> {
                 None
             };
 
-            let drop_target = Rc::new(DropTarget::new(Rc::downgrade(&window_state)));
+            let drop_target = ComObject::new(DropTarget::new(Rc::downgrade(&window_state)));
             *window_state._drop_target.borrow_mut() = Some(drop_target.clone());
 
             OleInitialize(null_mut());
-            RegisterDragDrop(hwnd, Rc::as_ptr(&drop_target) as LPDROPTARGET);
+
+            RegisterDragDrop(hwnd, drop_target.as_interface::<IDropTarget>().as_raw());
 
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Rc::into_raw(window_state) as *const _ as _);
             SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
@@ -848,7 +883,7 @@ impl Window<'_> {
 unsafe impl HasRawWindowHandle for Window<'_> {
     fn raw_window_handle(&self) -> RawWindowHandle {
         let mut handle = Win32WindowHandle::empty();
-        handle.hwnd = self.state.hwnd as *mut c_void;
+        handle.hwnd = self.state.hwnd;
 
         RawWindowHandle::Win32(handle)
     }

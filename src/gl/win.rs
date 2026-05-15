@@ -1,22 +1,31 @@
 use std::ffi::{c_void, CString, OsStr};
 use std::os::windows::ffi::OsStrExt;
 
-use raw_window_handle::RawWindowHandle;
+use windows_sys::{
+    core::s,
+    Win32::{
+        Foundation::{FreeLibrary, HINSTANCE, HMODULE, HWND},
+        Graphics::{
+            Gdi::{GetDC, ReleaseDC, HDC},
+            OpenGL::{
+                wglCreateContext, wglDeleteContext, wglGetProcAddress, wglMakeCurrent,
+                ChoosePixelFormat, DescribePixelFormat, SetPixelFormat, SwapBuffers, HGLRC,
+                PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL,
+                PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
+            },
+        },
+        System::{
+            LibraryLoader::{GetProcAddress, LoadLibraryA},
+            SystemServices::IMAGE_DOS_HEADER,
+        },
+        UI::WindowsAndMessaging::{
+            CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, UnregisterClassW,
+            CS_OWNDC, CW_USEDEFAULT, WNDCLASSW,
+        },
+    },
+};
 
-use winapi::shared::minwindef::{HINSTANCE, HMODULE};
-use winapi::shared::ntdef::WCHAR;
-use winapi::shared::windef::{HDC, HGLRC, HWND};
-use winapi::um::libloaderapi::{FreeLibrary, GetProcAddress, LoadLibraryA};
-use winapi::um::wingdi::{
-    wglCreateContext, wglDeleteContext, wglGetProcAddress, wglMakeCurrent, ChoosePixelFormat,
-    DescribePixelFormat, SetPixelFormat, SwapBuffers, PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW,
-    PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
-};
-use winapi::um::winnt::IMAGE_DOS_HEADER;
-use winapi::um::winuser::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetDC, RegisterClassW, ReleaseDC,
-    UnregisterClassW, CS_OWNDC, CW_USEDEFAULT, WNDCLASSW,
-};
+use raw_window_handle::RawWindowHandle;
 
 use super::{GlConfig, GlError, Profile};
 
@@ -91,7 +100,7 @@ impl GlContext {
         // Create temporary window and context to load function pointers
 
         let class_name_str = format!("raw-gl-context-window-{}", uuid::Uuid::new_v4().to_simple());
-        let mut class_name: Vec<WCHAR> = OsStr::new(&class_name_str).encode_wide().collect();
+        let mut class_name: Vec<u16> = OsStr::new(&class_name_str).encode_wide().collect();
         class_name.push(0);
 
         let hinstance = &__ImageBase as *const IMAGE_DOS_HEADER as HINSTANCE;
@@ -111,7 +120,7 @@ impl GlContext {
 
         let hwnd_tmp = CreateWindowExW(
             0,
-            class as *const WCHAR,
+            class as *const _,
             [0].as_ptr(),
             0,
             CW_USEDEFAULT,
@@ -139,7 +148,7 @@ impl GlContext {
             cAlphaBits: 8,
             cDepthBits: 24,
             cStencilBits: 8,
-            iLayerType: PFD_MAIN_PLANE,
+            iLayerType: PFD_MAIN_PLANE as u8,
             ..std::mem::zeroed()
         };
 
@@ -148,7 +157,7 @@ impl GlContext {
         let hglrc_tmp = wglCreateContext(hdc_tmp);
         if hglrc_tmp.is_null() {
             ReleaseDC(hwnd_tmp, hdc_tmp);
-            UnregisterClassW(class as *const WCHAR, hinstance);
+            UnregisterClassW(class as *const _, hinstance);
             DestroyWindow(hwnd_tmp);
             return Err(GlError::CreationFailed(()));
         }
@@ -157,49 +166,28 @@ impl GlContext {
 
         #[allow(non_snake_case)]
         let wglCreateContextAttribsARB: Option<WglCreateContextAttribsARB> = {
-            let symbol = CString::new("wglCreateContextAttribsARB").unwrap();
-            let addr = wglGetProcAddress(symbol.as_ptr());
-            if !addr.is_null() {
-                #[allow(clippy::missing_transmute_annotations)]
-                Some(std::mem::transmute(addr))
-            } else {
-                None
-            }
+            wglGetProcAddress(s!("wglCreateContextAttribsARB"))
+                .map(|addr| std::mem::transmute(addr))
         };
 
         #[allow(non_snake_case)]
         let wglChoosePixelFormatARB: Option<WglChoosePixelFormatARB> = {
-            let symbol = CString::new("wglChoosePixelFormatARB").unwrap();
-            let addr = wglGetProcAddress(symbol.as_ptr());
-            if !addr.is_null() {
-                #[allow(clippy::missing_transmute_annotations)]
-                Some(std::mem::transmute(addr))
-            } else {
-                None
-            }
+            wglGetProcAddress(s!("wglChoosePixelFormatARB")).map(|addr| std::mem::transmute(addr))
         };
 
         #[allow(non_snake_case)]
-        let wglSwapIntervalEXT: Option<WglSwapIntervalEXT> = {
-            let symbol = CString::new("wglSwapIntervalEXT").unwrap();
-            let addr = wglGetProcAddress(symbol.as_ptr());
-            if !addr.is_null() {
-                #[allow(clippy::missing_transmute_annotations)]
-                Some(std::mem::transmute(addr))
-            } else {
-                None
-            }
-        };
+        let wglSwapIntervalEXT: Option<WglSwapIntervalEXT> =
+            { wglGetProcAddress(s!("wglSwapIntervalEXT")).map(|addr| std::mem::transmute(addr)) };
 
         wglMakeCurrent(hdc_tmp, std::ptr::null_mut());
         wglDeleteContext(hglrc_tmp);
         ReleaseDC(hwnd_tmp, hdc_tmp);
-        UnregisterClassW(class as *const WCHAR, hinstance);
+        UnregisterClassW(class as *const _, hinstance);
         DestroyWindow(hwnd_tmp);
 
         // Create actual context
 
-        let hwnd = handle.hwnd as HWND;
+        let hwnd = handle.hwnd;
 
         let hdc = GetDC(hwnd);
 
@@ -300,8 +288,7 @@ impl GlContext {
             return Err(GlError::CreationFailed(()));
         }
 
-        let gl_library_name = CString::new("opengl32.dll").unwrap();
-        let gl_library = LoadLibraryA(gl_library_name.as_ptr());
+        let gl_library = LoadLibraryA(s!("opengl32.dll"));
 
         wglMakeCurrent(hdc, hglrc);
         wglSwapIntervalEXT.unwrap()(config.vsync as i32);
@@ -320,11 +307,15 @@ impl GlContext {
 
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
         let symbol = CString::new(symbol).unwrap();
-        let addr = unsafe { wglGetProcAddress(symbol.as_ptr()) as *const c_void };
-        if !addr.is_null() {
-            addr
-        } else {
-            unsafe { GetProcAddress(self.gl_library, symbol.as_ptr()) as *const c_void }
+        let symbol_ptr = symbol.as_ptr().cast();
+
+        let addr = unsafe {
+            wglGetProcAddress(symbol_ptr).or_else(|| GetProcAddress(self.gl_library, symbol_ptr))
+        };
+
+        match addr {
+            Some(addr) => addr as *const c_void,
+            None => std::ptr::null(),
         }
     }
 

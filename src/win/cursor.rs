@@ -1,13 +1,13 @@
 use crate::MouseCursor;
-use winapi::{
-    shared::ntdef::LPCWSTR,
-    um::winuser::{
+use windows_sys::{
+    core::PCWSTR,
+    Win32::UI::WindowsAndMessaging::{
         IDC_APPSTARTING, IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_HELP, IDC_IBEAM, IDC_NO, IDC_SIZEALL,
         IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IDC_WAIT,
     },
 };
 
-pub fn cursor_to_lpcwstr(cursor: MouseCursor) -> LPCWSTR {
+pub fn cursor_to_lpcwstr(cursor: MouseCursor) -> PCWSTR {
     match cursor {
         MouseCursor::Default => IDC_ARROW,
         MouseCursor::Hand => IDC_HAND,
