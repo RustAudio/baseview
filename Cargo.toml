@@ -20,6 +20,7 @@ categories = ["gui"]
 repository = "https://github.com/RustAudio/baseview"
 
 exclude = [".github"]
+rust-version = "1.80"
 
 [features]
 default = []
