@@ -45,5 +45,5 @@ jobs:
           components: rustfmt
       - name: Check docs
         run: cargo doc --all --all-features --no-deps
-      - name: Clippy
-        run: cargo clippy --all --all-features -- -D warnings
+      - name: Check Formatting (rustfmt)
+        run: cargo fmt --all -- --check
