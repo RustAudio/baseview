@@ -26,7 +26,7 @@ use crate::win::wnd_proc;
 // track all windows opened by this instance of baseview
 // we use an RwLock here since the vast majority of uses (event interceptions)
 // will only need to read from the HashSet
-static HOOK_STATE: LazyLock<RwLock<KeyboardHookState>> = LazyLock::new(|| RwLock::default());
+static HOOK_STATE: LazyLock<RwLock<KeyboardHookState>> = LazyLock::new(RwLock::default);
 
 pub(crate) struct KeyboardHookHandle(HWNDWrapper);
 
