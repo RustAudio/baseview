@@ -1,0 +1,10 @@
+[package]
+name = "open_window"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+baseview = { path = "../.." }
+softbuffer = "0.3.4"
+rtrb = "0.3.4"

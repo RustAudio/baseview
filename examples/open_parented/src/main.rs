@@ -23,9 +23,6 @@ impl ParentWindowHandler {
             title: "baseview child".into(),
             size: baseview::Size::new(256.0, 256.0),
             scale: WindowScalePolicy::SystemScaleFactor,
-
-            // TODO: Add an example that uses the OpenGL context
-            #[cfg(feature = "opengl")]
             gl_config: None,
         };
         let child_window =
@@ -133,7 +130,6 @@ fn main() {
         scale: WindowScalePolicy::SystemScaleFactor,
 
         // TODO: Add an example that uses the OpenGL context
-        #[cfg(feature = "opengl")]
         gl_config: None,
     };
 
