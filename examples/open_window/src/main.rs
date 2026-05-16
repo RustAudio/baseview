@@ -7,7 +7,6 @@ use rtrb::{Consumer, RingBuffer};
 use baseview::{copy_to_clipboard, MouseEvent};
 use baseview::{
     Event, EventStatus, PhySize, Window, WindowEvent, WindowHandler, WindowOpenOptions,
-    WindowScalePolicy,
 };
 
 #[derive(Debug, Clone)]

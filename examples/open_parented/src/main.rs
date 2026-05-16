@@ -1,6 +1,6 @@
 use baseview::{
     Event, EventStatus, PhySize, Window, WindowEvent, WindowHandle, WindowHandler,
-    WindowOpenOptions, WindowScalePolicy,
+    WindowOpenOptions,
 };
 use std::num::NonZeroU32;
 
