@@ -14,6 +14,8 @@ use x11rb::xcb_ffi::XCBConnection;
 ///
 /// This allows us to interface with the same connection using Xlib (needed for GLX, and for FFI),
 /// as well as XCB (needed to preserve our sanity).
+///
+/// (Note: The term Xlib/XCB means "Xlib over XCB", not "Xlib or XCB").
 pub struct XlibXcbConnection {
     // SAFETY: Drop order matters here! We *MUST* Drop the XCBConnection first, as it essentially
     // borrows the Xlib/XCB connection
