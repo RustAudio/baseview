@@ -6,10 +6,9 @@ use std::rc::Rc;
 use x11_dl::error::OpenError;
 use x11_dl::glx::GLXContext;
 
-mod errors;
-mod glx;
-use crate::gl::x11::glx::GlxFbConfig;
-use glx::Glx;
+use crate::wrappers::glx::Glx;
+use crate::wrappers::glx::GlxFbConfig;
+use crate::wrappers::xlib::{XErrorHandler, XLibError};
 
 #[derive(Debug)]
 pub enum CreationFailedError {
@@ -18,12 +17,12 @@ pub enum CreationFailedError {
     GetProcAddressFailed,
     MakeCurrentFailed,
     ContextCreationFailed,
-    X11Error(errors::XLibError),
+    X11Error(XLibError),
     OpenError(OpenError),
 }
 
-impl From<errors::XLibError> for GlError {
-    fn from(e: errors::XLibError) -> Self {
+impl From<XLibError> for GlError {
+    fn from(e: XLibError) -> Self {
         GlError::CreationFailed(CreationFailedError::X11Error(e))
     }
 }
@@ -69,7 +68,9 @@ impl GlContext {
     ) -> Result<GlContext, GlError> {
         let glx = Glx::open()?;
 
-        errors::XErrorHandler::handle(&connection, |error_handler| {
+        let xlib_connection = connection.conn.xlib_connection();
+
+        XErrorHandler::handle(xlib_connection, |error_handler| {
             let Some(create_context) = glx.get_glx_create_context_attribs_arb() else {
                 return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
             };
@@ -79,7 +80,7 @@ impl GlContext {
             };
 
             let context = create_context.call(
-                &connection,
+                xlib_connection,
                 &config.gl_config,
                 config.fb_config,
                 error_handler,
@@ -89,12 +90,12 @@ impl GlContext {
             let context = GlContext { glx, window, connection: Rc::clone(&connection), context };
 
             context.glx.with_current_context(
-                &connection,
+                xlib_connection,
                 window,
                 context.context,
                 error_handler,
                 || {
-                    swap_interval(connection.dpy, window, config.gl_config.vsync as i32);
+                    swap_interval(xlib_connection.dpy(), window, config.gl_config.vsync as i32);
                     error_handler.check()
                 },
             )??;
@@ -107,16 +108,24 @@ impl GlContext {
     /// This needs to be passed to [Self::create] along with a handle to a window that was created
     /// using the visual also returned from this function.
     pub fn get_fb_config_and_visual(
-        conn: &XcbConnection, config: GlConfig,
+        connection: &XcbConnection, config: GlConfig,
     ) -> Result<(FbConfig, WindowConfig), GlError> {
         let glx = Glx::open()?;
 
-        errors::XErrorHandler::handle(conn, |error_handler| {
-            let fb_config = glx.choose_best_fb_config(conn, &config, error_handler)?;
+        let xlib_connection = connection.conn.xlib_connection();
+
+        XErrorHandler::handle(xlib_connection, |error_handler| {
+            let fb_config = glx.choose_best_fb_config(
+                xlib_connection,
+                &config,
+                connection.screen,
+                error_handler,
+            )?;
 
             // Now that we have a matching framebuffer config, we need to know which visual matches
             // this config so the window is compatible with the OpenGL context we're about to create
-            let visual = glx.get_visual_from_fb_config(conn, fb_config, error_handler)?;
+            let visual =
+                glx.get_visual_from_fb_config(xlib_connection, fb_config, error_handler)?;
 
             Ok((
                 FbConfig { fb_config, gl_config: config },
@@ -126,16 +135,21 @@ impl GlContext {
     }
 
     pub unsafe fn make_current(&self) {
-        errors::XErrorHandler::handle(&self.connection, |error_handler| {
+        XErrorHandler::handle(self.connection.conn.xlib_connection(), |error_handler| {
             self.glx
-                .make_current(&self.connection, self.window, self.context, error_handler)
+                .make_current(
+                    self.connection.conn.xlib_connection(),
+                    self.window,
+                    self.context,
+                    error_handler,
+                )
                 .unwrap();
         })
     }
 
     pub unsafe fn make_not_current(&self) {
-        errors::XErrorHandler::handle(&self.connection, |error_handler| {
-            self.glx.clear_current(&self.connection, error_handler).unwrap();
+        XErrorHandler::handle(self.connection.conn.xlib_connection(), |error_handler| {
+            self.glx.clear_current(self.connection.conn.xlib_connection(), error_handler).unwrap();
         })
     }
 
@@ -149,14 +163,16 @@ impl GlContext {
     }
 
     pub fn swap_buffers(&self) {
-        errors::XErrorHandler::handle(&self.connection, |error_handler| {
-            self.glx.swap_buffers(&self.connection, self.window, error_handler).unwrap()
+        XErrorHandler::handle(self.connection.conn.xlib_connection(), |error_handler| {
+            self.glx
+                .swap_buffers(self.connection.conn.xlib_connection(), self.window, error_handler)
+                .unwrap()
         })
     }
 }
 
 impl Drop for GlContext {
     fn drop(&mut self) {
-        unsafe { self.glx.destroy_context(&self.connection, self.context) }
+        unsafe { self.glx.destroy_context(self.connection.conn.xlib_connection(), self.context) }
     }
 }

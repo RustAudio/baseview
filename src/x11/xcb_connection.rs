@@ -8,7 +8,7 @@ use x11rb::protocol::xproto::{Cursor, Screen};
 use x11rb::resource_manager;
 
 use super::cursor;
-use crate::x11::xlib_xcb::XlibXcbConnection;
+use crate::wrappers::xlib::XlibXcbConnection;
 use crate::MouseCursor;
 
 x11rb::atom_manager! {
