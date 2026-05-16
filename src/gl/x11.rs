@@ -4,10 +4,11 @@ use std::ffi::{c_void, CString};
 use std::os::raw::c_ulong;
 use std::rc::Rc;
 use x11_dl::error::OpenError;
-use x11_dl::glx::{__GLXFBConfigRec, GLXContext};
+use x11_dl::glx::GLXContext;
 
 mod errors;
 mod glx;
+use crate::gl::x11::glx::GlxFbConfig;
 use glx::Glx;
 
 #[derive(Debug)]
@@ -33,15 +34,6 @@ impl From<OpenError> for GlError {
     }
 }
 
-fn get_proc_address(glx: &Glx, symbol: &str) -> *const c_void {
-    let symbol = CString::new(symbol).unwrap();
-
-    match glx.get_proc_address(&symbol) {
-        Some(ptr) => ptr.as_ptr(),
-        None => std::ptr::null(),
-    }
-}
-
 pub struct GlContext {
     glx: Glx,
     window: c_ulong,
@@ -53,7 +45,7 @@ pub struct GlContext {
 /// misuse.
 pub struct FbConfig {
     gl_config: GlConfig,
-    fb_config: *mut __GLXFBConfigRec,
+    fb_config: GlxFbConfig,
 }
 
 /// The configuration a window should be created with after calling
@@ -86,7 +78,12 @@ impl GlContext {
                 return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
             };
 
-            let context = create_context.call(&connection, &config, error_handler)?;
+            let context = create_context.call(
+                &connection,
+                &config.gl_config,
+                config.fb_config,
+                error_handler,
+            )?;
 
             // Create context object here so that error or panic will properly free the context
             let context = GlContext { glx, window, connection: Rc::clone(&connection), context };
@@ -143,7 +140,12 @@ impl GlContext {
     }
 
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        get_proc_address(&self.glx, symbol)
+        let symbol = CString::new(symbol).unwrap();
+
+        match self.glx.get_proc_address(&symbol) {
+            Some(ptr) => ptr.as_ptr(),
+            None => std::ptr::null(),
+        }
     }
 
     pub fn swap_buffers(&self) {

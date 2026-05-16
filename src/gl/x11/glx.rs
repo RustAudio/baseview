@@ -1,6 +1,4 @@
-// See https://www.khronos.org/registry/OpenGL/extensions/ARB/GLX_ARB_create_context.txt
-
-use crate::gl::platform::{CreationFailedError, FbConfig};
+use crate::gl::platform::CreationFailedError;
 use crate::gl::x11::errors::XErrorHandler;
 use crate::gl::{GlConfig, GlError, Profile};
 use crate::x11::XcbConnection;
@@ -11,6 +9,7 @@ use x11_dl::glx::{arb::*, *};
 use x11_dl::xlib;
 use x11_dl::xlib::XVisualInfo;
 
+/// See https://www.khronos.org/registry/OpenGL/extensions/ARB/GLX_ARB_create_context.txt
 type GlXCreateContextAttribsARB = unsafe extern "C" fn(
     dpy: *mut xlib::Display,
     fbc: GLXFBConfig,
@@ -19,13 +18,11 @@ type GlXCreateContextAttribsARB = unsafe extern "C" fn(
     attribs: *const c_int,
 ) -> GLXContext;
 
-// See https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_swap_control.txt
-
+/// See https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_swap_control.txt
 type GlXSwapIntervalEXT =
     unsafe extern "C" fn(dpy: *mut xlib::Display, drawable: GLXDrawable, interval: i32);
 
-// See https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_framebuffer_sRGB.txt
-
+/// See https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_framebuffer_sRGB.txt
 const GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB: i32 = 0x20B2;
 
 pub struct Glx {
@@ -62,7 +59,7 @@ impl Glx {
 
     pub fn choose_best_fb_config(
         &self, connection: &XcbConnection, config: &GlConfig, error_handler: &XErrorHandler,
-    ) -> Result<GLXFBConfig, GlError> {
+    ) -> Result<GlxFbConfig, GlError> {
         let fb_attribs = Self::get_fb_attribs(config);
 
         let mut nelements = 0;
@@ -90,14 +87,14 @@ impl Glx {
         // that we must free ourselves.
         unsafe { (connection.xlib.XFree)(result.cast()) };
 
-        Ok(first_result)
+        Ok(GlxFbConfig(first_result))
     }
 
     pub fn get_visual_from_fb_config(
-        &self, connection: &XcbConnection, fb_config: GLXFBConfig, error_handler: &XErrorHandler,
+        &self, connection: &XcbConnection, fb_config: GlxFbConfig, error_handler: &XErrorHandler,
     ) -> Result<XVisualInfo, GlError> {
         // SAFETY: XcbConnection guarantees the inner dpy is valid.
-        let result = unsafe { (self.inner.glXGetVisualFromFBConfig)(connection.dpy, fb_config) };
+        let result = unsafe { (self.inner.glXGetVisualFromFBConfig)(connection.dpy, fb_config.0) };
 
         error_handler.check()?;
         if result.is_null() {
@@ -202,16 +199,16 @@ impl Drop for ContextClearOnDrop<'_> {
 pub struct GlxCreateContextAttribsARB(GlXCreateContextAttribsARB);
 
 impl GlxCreateContextAttribsARB {
-    fn get_ctx_attribs(config: &FbConfig) -> [c_int; 7] {
-        let profile_mask = match config.gl_config.profile {
+    fn get_ctx_attribs(config: &GlConfig) -> [c_int; 7] {
+        let profile_mask = match config.profile {
             Profile::Core => GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
             Profile::Compatibility => GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
         };
 
         #[rustfmt::skip]
         let ctx_attribs = [
-            GLX_CONTEXT_MAJOR_VERSION_ARB, config.gl_config.version.0 as i32,
-            GLX_CONTEXT_MINOR_VERSION_ARB, config.gl_config.version.1 as i32,
+            GLX_CONTEXT_MAJOR_VERSION_ARB, config.version.0 as i32,
+            GLX_CONTEXT_MINOR_VERSION_ARB, config.version.1 as i32,
             GLX_CONTEXT_PROFILE_MASK_ARB, profile_mask,
             0,
         ];
@@ -220,12 +217,13 @@ impl GlxCreateContextAttribsARB {
     }
 
     pub fn call(
-        &self, connection: &XcbConnection, config: &FbConfig, error_handler: &XErrorHandler,
+        &self, connection: &XcbConnection, gl_config: &GlConfig, glx_fb_config: GlxFbConfig,
+        error_handler: &XErrorHandler,
     ) -> Result<GLXContext, GlError> {
-        let ctx_attribs = Self::get_ctx_attribs(config);
+        let ctx_attribs = Self::get_ctx_attribs(gl_config);
 
         let context = unsafe {
-            self.0(connection.dpy, config.fb_config, std::ptr::null_mut(), 1, ctx_attribs.as_ptr())
+            self.0(connection.dpy, glx_fb_config.0, std::ptr::null_mut(), 1, ctx_attribs.as_ptr())
         };
 
         error_handler.check()?;
@@ -237,3 +235,10 @@ impl GlxCreateContextAttribsARB {
         Ok(context)
     }
 }
+
+/// Handle to a GLX Framebuffer configuration object.
+///
+/// These point to objects in a global table managed by glXChooseFBConfig, and are never destroyed.
+/// Therefore, these have the 'static lifetime, and are always safe to use.
+#[derive(Copy, Clone)]
+pub struct GlxFbConfig(GLXFBConfig);
