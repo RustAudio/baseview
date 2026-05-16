@@ -118,7 +118,7 @@ impl GlContext {
             let fb_config = glx.choose_best_fb_config(conn, &config, error_handler)?;
 
             // Now that we have a matching framebuffer config, we need to know which visual matches
-            // thsi config so the window is compatible with the OpenGL context we're about to create
+            // this config so the window is compatible with the OpenGL context we're about to create
             let visual = glx.get_visual_from_fb_config(conn, fb_config, error_handler)?;
 
             Ok((

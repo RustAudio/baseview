@@ -132,15 +132,17 @@ impl Glx {
     pub fn get_glx_swap_interval_ext(&self) -> Option<GlXSwapIntervalEXT> {
         let ptr = self.get_proc_address(c"glXSwapIntervalEXT")?;
 
-        // SAFETY: TODO
-        Some(unsafe { core::mem::transmute(ptr) })
+        // SAFETY: NonNull is repr(transparent), GlXSwapIntervalEXT is the correct type for this function pointer
+        Some(unsafe { core::mem::transmute::<NonNull<c_void>, GlXSwapIntervalEXT>(ptr) })
     }
 
     pub fn get_glx_create_context_attribs_arb(&self) -> Option<GlxCreateContextAttribsARB> {
         let ptr = self.get_proc_address(c"glXCreateContextAttribsARB")?;
 
-        // SAFETY: TODO
-        Some(GlxCreateContextAttribsARB(unsafe { core::mem::transmute(ptr) }))
+        // SAFETY: NonNull is repr(transparent), GlxCreateContextAttribsARB is the correct type for this function pointer
+        Some(GlxCreateContextAttribsARB(unsafe {
+            core::mem::transmute::<NonNull<c_void>, GlXCreateContextAttribsARB>(ptr)
+        }))
     }
 
     pub unsafe fn destroy_context(&self, connection: &XcbConnection, context: GLXContext) {
@@ -152,7 +154,6 @@ impl Glx {
         &self, connection: &XcbConnection, window_id: c_ulong, context: GLXContext,
         error_handler: &XErrorHandler,
     ) -> Result<(), GlError> {
-        // SAFETY: TODO
         let res = unsafe { (self.inner.glXMakeCurrent)(connection.dpy, window_id, context) };
 
         error_handler.check()?;
@@ -194,7 +195,6 @@ pub struct ContextClearOnDrop<'a> {
 
 impl Drop for ContextClearOnDrop<'_> {
     fn drop(&mut self) {
-        // SAFETY: TODO
         let _ = unsafe { self.glx.clear_current(self.connection, self.error_handler) };
     }
 }
