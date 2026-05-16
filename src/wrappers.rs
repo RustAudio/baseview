@@ -11,7 +11,10 @@
 //! However, all of these APIs should always be sound (i.e. no UB can be triggered by safe code).
 //! Otherwise, this should be considered a bug and reported accordingly.
 
-pub mod glx;
 /// Wrappers and utilities around Xlib. (provided by x11_dl)
 #[cfg(target_os = "linux")]
 pub mod xlib;
+
+/// Wrappers and utilities around GLX
+#[cfg(target_os = "linux")]
+pub mod glx;
