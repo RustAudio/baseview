@@ -364,7 +364,7 @@ unsafe impl<'a> HasRawWindowHandle for Window<'a> {
 
 unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
     fn raw_display_handle(&self) -> RawDisplayHandle {
-        let display = self.inner.xcb_connection.dpy;
+        let display = self.inner.xcb_connection.conn.xlib_display();
         let mut handle = XlibDisplayHandle::empty();
 
         handle.display = display as *mut c_void;

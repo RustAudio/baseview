@@ -8,3 +8,5 @@ mod cursor;
 mod event_loop;
 mod keyboard;
 mod visual_info;
+
+mod xlib_xcb;
