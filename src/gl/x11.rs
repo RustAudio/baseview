@@ -6,8 +6,7 @@ use std::rc::Rc;
 use x11_dl::error::OpenError;
 use x11_dl::glx::GLXContext;
 
-use crate::wrappers::glx::Glx;
-use crate::wrappers::glx::GlxFbConfig;
+use crate::wrappers::glx::*;
 use crate::wrappers::xlib::{XErrorHandler, XLibError};
 
 #[derive(Debug)]

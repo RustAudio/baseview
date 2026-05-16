@@ -16,5 +16,5 @@
 pub mod xlib;
 
 /// Wrappers and utilities around GLX
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "opengl"))]
 pub mod glx;

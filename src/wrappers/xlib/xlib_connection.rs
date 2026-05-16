@@ -61,7 +61,7 @@ impl XlibConnection {
     }
 
     pub fn get_error_text(&self, buf: &mut [u8], error_code: c_uchar) -> &CStr {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return c"";
         }
 
