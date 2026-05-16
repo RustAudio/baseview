@@ -1,7 +1,7 @@
 use baseview::gl::GlConfig;
 use baseview::{
     Event, EventStatus, MouseEvent, PhyPoint, Size, Window, WindowEvent, WindowHandler, WindowInfo,
-    WindowOpenOptions, WindowScalePolicy,
+    WindowOpenOptions,
 };
 use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
@@ -95,13 +95,10 @@ impl WindowHandler for FemtovgExample {
 }
 
 fn main() {
-    let window_open_options = WindowOpenOptions {
-        title: "Femtovg on Baseview".into(),
-        size: Size::new(512.0, 512.0),
-        scale: WindowScalePolicy::SystemScaleFactor,
-
-        gl_config: Some(GlConfig { alpha_bits: 8, ..GlConfig::default() }),
-    };
+    let window_open_options = WindowOpenOptions::new()
+        .with_title("Femtovg on Baseview")
+        .with_size(512.0, 512.0)
+        .with_gl_config(GlConfig { alpha_bits: 8, ..GlConfig::default() });
 
     Window::open_blocking(window_open_options, FemtovgExample::new);
 }

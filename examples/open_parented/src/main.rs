@@ -1,6 +1,6 @@
 use baseview::{
     Event, EventStatus, PhySize, Window, WindowEvent, WindowHandle, WindowHandler,
-    WindowScalePolicy,
+    WindowOpenOptions,
 };
 use std::num::NonZeroU32;
 
@@ -19,12 +19,9 @@ impl ParentWindowHandler {
         let mut surface = unsafe { softbuffer::Surface::new(&ctx, window) }.unwrap();
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
-        let window_open_options = baseview::WindowOpenOptions {
-            title: "baseview child".into(),
-            size: baseview::Size::new(256.0, 256.0),
-            scale: WindowScalePolicy::SystemScaleFactor,
-            gl_config: None,
-        };
+        let window_open_options =
+            WindowOpenOptions::new().with_size(256.0, 256.0).with_title("baseview child");
+
         let child_window =
             Window::open_parented(window, window_open_options, ChildWindowHandler::new);
 
@@ -124,14 +121,7 @@ impl WindowHandler for ChildWindowHandler {
 }
 
 fn main() {
-    let window_open_options = baseview::WindowOpenOptions {
-        title: "baseview".into(),
-        size: baseview::Size::new(512.0, 512.0),
-        scale: WindowScalePolicy::SystemScaleFactor,
-
-        // TODO: Add an example that uses the OpenGL context
-        gl_config: None,
-    };
+    let window_open_options = WindowOpenOptions::new().with_size(512.0, 512.0);
 
     Window::open_blocking(window_open_options, ParentWindowHandler::new);
 }

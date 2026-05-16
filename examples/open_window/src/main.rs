@@ -6,7 +6,7 @@ use rtrb::{Consumer, RingBuffer};
 #[cfg(target_os = "macos")]
 use baseview::{copy_to_clipboard, MouseEvent};
 use baseview::{
-    Event, EventStatus, PhySize, Window, WindowEvent, WindowHandler, WindowScalePolicy,
+    Event, EventStatus, PhySize, Window, WindowEvent, WindowHandler, WindowOpenOptions,
 };
 
 #[derive(Debug, Clone)]
@@ -63,12 +63,7 @@ impl WindowHandler for OpenWindowExample {
 }
 
 fn main() {
-    let window_open_options = baseview::WindowOpenOptions {
-        title: "baseview".into(),
-        size: baseview::Size::new(512.0, 512.0),
-        scale: WindowScalePolicy::SystemScaleFactor,
-        gl_config: None,
-    };
+    let window_open_options = WindowOpenOptions::new().with_size(512.0, 512.0);
 
     let (mut tx, rx) = RingBuffer::new(128);
 

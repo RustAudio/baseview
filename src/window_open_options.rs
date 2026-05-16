@@ -30,9 +30,41 @@ pub struct WindowOpenOptions {
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
     /// access this context through [crate::Window::gl_context].
     ///
-    /// By default this is set to `None`.
+    /// By default, this is set to `None`.
     #[cfg(feature = "opengl")]
     pub gl_config: Option<GlConfig>,
+}
+
+impl WindowOpenOptions {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[inline]
+    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+        self.title = title.into();
+        self
+    }
+
+    #[inline]
+    pub fn with_size(mut self, width: f64, height: f64) -> Self {
+        self.size = Size::new(width, height);
+        self
+    }
+
+    #[inline]
+    pub fn with_scale_policy(mut self, scale: WindowScalePolicy) -> Self {
+        self.scale = scale;
+        self
+    }
+
+    #[cfg(feature = "opengl")]
+    #[inline]
+    pub fn with_gl_config(mut self, gl_config: impl Into<Option<GlConfig>>) -> Self {
+        self.gl_config = gl_config.into();
+        self
+    }
 }
 
 impl Default for WindowOpenOptions {
