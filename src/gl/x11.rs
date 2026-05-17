@@ -116,12 +116,7 @@ impl GlContext {
         let xlib_connection = connection.conn.xlib_connection();
 
         XErrorHandler::handle(xlib_connection, |error_handler| {
-            let fb_config = glx.choose_best_fb_config(
-                xlib_connection,
-                &config,
-                connection.screen,
-                error_handler,
-            )?;
+            let fb_config = glx.choose_best_fb_config(xlib_connection, &config, error_handler)?;
 
             // Now that we have a matching framebuffer config, we need to know which visual matches
             // this config so the window is compatible with the OpenGL context we're about to create

@@ -58,8 +58,7 @@ impl Glx {
     }
 
     pub fn choose_best_fb_config(
-        &self, connection: &XlibConnection, config: &GlConfig, screen: c_int,
-        error_handler: &XErrorHandler,
+        &self, connection: &XlibConnection, config: &GlConfig, error_handler: &XErrorHandler,
     ) -> Result<GlxFbConfig, GlError> {
         let fb_attribs = Self::get_fb_attribs(config);
 
@@ -69,7 +68,7 @@ impl Glx {
         let result = unsafe {
             (self.inner.glXChooseFBConfig)(
                 connection.dpy(),
-                screen,
+                connection.default_screen_index(),
                 fb_attribs.as_ptr(),
                 &mut nelements,
             )

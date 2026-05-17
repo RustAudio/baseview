@@ -367,7 +367,7 @@ unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
         let mut handle = XlibDisplayHandle::empty();
 
         handle.display = display as *mut c_void;
-        handle.screen = self.inner.xcb_connection.screen;
+        handle.screen = self.inner.xcb_connection.conn.default_screen();
 
         RawDisplayHandle::Xlib(handle)
     }

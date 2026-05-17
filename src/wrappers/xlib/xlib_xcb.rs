@@ -47,7 +47,7 @@ impl XlibXcbConnection {
     }
 
     pub fn default_screen(&self) -> c_int {
-        self.xlib_connection.default_screen()
+        self.xlib_connection.default_screen_index()
     }
 
     pub fn xlib_display(&self) -> *mut Display {

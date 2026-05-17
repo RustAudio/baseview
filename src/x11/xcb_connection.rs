@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::collections::hash_map::{Entry, HashMap};
 use std::error::Error;
-use std::ffi::c_int;
 use x11rb::connection::Connection;
 use x11rb::cursor::Handle as CursorHandle;
 use x11rb::protocol::xproto::{Cursor, Screen};
@@ -23,7 +22,6 @@ x11rb::atom_manager! {
 /// Keeps track of the xcb connection itself and the xlib display ID that was used to connect.
 pub struct XcbConnection {
     pub(crate) conn: XlibXcbConnection,
-    pub(crate) screen: c_int,
     pub(crate) atoms: Atoms,
     pub(crate) resources: resource_manager::Database,
     pub(crate) cursor_handle: CursorHandle,
@@ -42,7 +40,6 @@ impl XcbConnection {
 
         Ok(Self {
             conn,
-            screen,
             atoms,
             resources,
             cursor_handle,
@@ -101,7 +98,7 @@ impl XcbConnection {
             Entry::Vacant(entry) => {
                 let cursor = cursor::get_xcursor(
                     &self.conn,
-                    self.screen as usize,
+                    self.conn.default_screen() as usize,
                     &self.cursor_handle,
                     cursor,
                 )?;
@@ -112,6 +109,6 @@ impl XcbConnection {
     }
 
     pub fn screen(&self) -> &Screen {
-        &self.conn.setup().roots[self.screen as usize]
+        &self.conn.setup().roots[self.conn.default_screen() as usize]
     }
 }

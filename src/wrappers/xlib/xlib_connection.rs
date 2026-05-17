@@ -2,7 +2,6 @@ use std::error::Error;
 use std::fmt::Formatter;
 use std::os::raw::c_int;
 use std::ptr::NonNull;
-use std::sync::Arc;
 use x11_dl::xlib::{Display, Xlib};
 use x11_dl::xlib_xcb::{XEventQueueOwner, Xlib_xcb};
 
@@ -14,19 +13,24 @@ use x11_dl::xlib_xcb::{XEventQueueOwner, Xlib_xcb};
 /// It will also always close the display connection on drop.
 pub struct XlibConnection {
     display: NonNull<Display>,
-    xlib: Arc<Xlib>,
+    xlib: Box<Xlib>,
+    default_screen: c_int,
 }
 
 impl XlibConnection {
     pub fn open() -> Result<Self, Box<dyn Error>> {
-        let xlib = Arc::new(Xlib::open()?);
+        let xlib = Box::new(Xlib::open()?);
 
         // SAFETY: It's always safe to call XOpenDisplay with a NULL display_name
         let ptr = unsafe { (xlib.XOpenDisplay)(core::ptr::null()) };
 
         let Some(display) = NonNull::new(ptr) else { return Err(DisplayOpenFailedError.into()) };
 
-        Ok(Self { display, xlib })
+        let mut this = Self { display, xlib, default_screen: 0 };
+
+        this.default_screen = this.fetch_default_screen();
+
+        Ok(this)
     }
 
     pub fn set_xcb_queue_owner(&self, xlib_xcb: &Xlib_xcb) {
@@ -39,8 +43,13 @@ impl XlibConnection {
         }
     }
 
+    /// Returns the index of the default screen for this X server.
+    pub fn default_screen_index(&self) -> c_int {
+        self.default_screen
+    }
+
     /// Safe wrapper for XDefaultScreen
-    pub fn default_screen(&self) -> c_int {
+    fn fetch_default_screen(&self) -> c_int {
         // SAFETY: This type ensures the display pointer is always valid.
         unsafe { (self.xlib.XDefaultScreen)(self.display.as_ptr()) }
     }
