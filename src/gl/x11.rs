@@ -95,7 +95,11 @@ impl GlContext {
                     context.context,
                     error_handler,
                     || {
-                        swap_interval(xlib_connection.dpy(), window, config.gl_config.vsync as i32);
+                        swap_interval(
+                            xlib_connection.as_raw(),
+                            window,
+                            config.gl_config.vsync as i32,
+                        );
                         error_handler.check()
                     },
                 )??;

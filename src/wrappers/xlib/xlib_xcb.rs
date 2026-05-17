@@ -32,7 +32,7 @@ impl XlibXcbConnection {
 
         // Extract the XCB connection object pointer from the Xlib/XCB connection object
         // SAFETY: This is always safe to call as long as the OwnedDisplayConnection is alive
-        let xcb_connection = unsafe { (xlib_xcb.XGetXCBConnection)(xlib_connection.dpy()) };
+        let xcb_connection = unsafe { (xlib_xcb.XGetXCBConnection)(xlib_connection.as_raw()) };
 
         // The XGetXCBConnection function is not documented to ever be able to return NULL.
         // Still, this is cheap to check, just in case.
@@ -51,7 +51,7 @@ impl XlibXcbConnection {
     }
 
     pub fn xlib_display(&self) -> *mut Display {
-        self.xlib_connection.dpy()
+        self.xlib_connection.as_raw()
     }
 
     pub fn xcb_connection(&self) -> &XCBConnection {

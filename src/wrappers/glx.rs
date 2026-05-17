@@ -67,7 +67,7 @@ impl Glx {
         // The fb_attribs and nelements pointers come from references and are therefore valid.
         let result = unsafe {
             (self.inner.glXChooseFBConfig)(
-                connection.dpy(),
+                connection.as_raw(),
                 connection.default_screen_index(),
                 fb_attribs.as_ptr(),
                 &mut nelements,
@@ -95,7 +95,7 @@ impl Glx {
     ) -> Result<XVisualInfo, GlError> {
         // SAFETY: XlibConnection guarantees the inner dpy is valid.
         let result =
-            unsafe { (self.inner.glXGetVisualFromFBConfig)(connection.dpy(), fb_config.0) };
+            unsafe { (self.inner.glXGetVisualFromFBConfig)(connection.as_raw(), fb_config.0) };
 
         error_handler.check()?;
         if result.is_null() {
@@ -116,7 +116,7 @@ impl Glx {
         &self, connection: &XlibConnection, window_id: c_ulong, error_handler: &XErrorHandler,
     ) -> Result<(), GlError> {
         // SAFETY: XlibConnection guarantees the inner dpy is valid.
-        unsafe { (self.inner.glXSwapBuffers)(connection.dpy(), window_id) };
+        unsafe { (self.inner.glXSwapBuffers)(connection.as_raw(), window_id) };
 
         Ok(error_handler.check()?)
     }
@@ -145,7 +145,7 @@ impl Glx {
 
     pub unsafe fn destroy_context(&self, connection: &XlibConnection, context: GLXContext) {
         // SAFETY: XlibConnection guarantees the inner dpy is valid.
-        unsafe { (self.inner.glXDestroyContext)(connection.dpy(), context) };
+        unsafe { (self.inner.glXDestroyContext)(connection.as_raw(), context) };
     }
 
     pub unsafe fn make_current(
@@ -153,7 +153,7 @@ impl Glx {
         error_handler: &XErrorHandler,
     ) -> Result<(), GlError> {
         // SAFETY: XlibConnection guarantees the inner dpy is valid.
-        let res = unsafe { (self.inner.glXMakeCurrent)(connection.dpy(), window_id, context) };
+        let res = unsafe { (self.inner.glXMakeCurrent)(connection.as_raw(), window_id, context) };
 
         error_handler.check()?;
         if res == 0 {
@@ -225,7 +225,13 @@ impl GlxCreateContextAttribsARB {
         let ctx_attribs = Self::get_ctx_attribs(gl_config);
 
         let context = unsafe {
-            self.0(connection.dpy(), glx_fb_config.0, std::ptr::null_mut(), 1, ctx_attribs.as_ptr())
+            self.0(
+                connection.as_raw(),
+                glx_fb_config.0,
+                std::ptr::null_mut(),
+                1,
+                ctx_attribs.as_ptr(),
+            )
         };
 
         error_handler.check()?;

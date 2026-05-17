@@ -54,7 +54,7 @@ impl XlibConnection {
         unsafe { (self.xlib.XDefaultScreen)(self.display.as_ptr()) }
     }
 
-    pub fn dpy(&self) -> *mut Display {
+    pub fn as_raw(&self) -> *mut Display {
         self.display.as_ptr()
     }
 }
@@ -89,7 +89,7 @@ impl XlibConnection {
         // Moreover, the buffer pointer is guaranteed to be valid for writes for the given length, as it comes from the given mutable slice.
         unsafe {
             (self.xlib.XGetErrorText)(
-                self.dpy(),
+                self.as_raw(),
                 error_code.into(),
                 buf.as_mut_ptr().cast(),
                 buf_len,
