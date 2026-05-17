@@ -62,7 +62,7 @@ impl GlContext {
     /// only then create the OpenGL context.
     ///
     /// Use [Self::get_fb_config_and_visual] to create both of these things.
-    pub unsafe fn create(
+    pub fn create(
         window: c_ulong, connection: Rc<XcbConnection>, config: FbConfig,
     ) -> Result<GlContext, GlError> {
         let glx = Glx::open()?;
@@ -88,16 +88,18 @@ impl GlContext {
             // Create context object here so that error or panic will properly free the context
             let context = GlContext { glx, window, connection: Rc::clone(&connection), context };
 
-            context.glx.with_current_context(
-                xlib_connection,
-                window,
-                context.context,
-                error_handler,
-                || {
-                    swap_interval(xlib_connection.dpy(), window, config.gl_config.vsync as i32);
-                    error_handler.check()
-                },
-            )??;
+            unsafe {
+                context.glx.with_current_context(
+                    xlib_connection,
+                    window,
+                    context.context,
+                    error_handler,
+                    || {
+                        swap_interval(xlib_connection.dpy(), window, config.gl_config.vsync as i32);
+                        error_handler.check()
+                    },
+                )??;
+            }
 
             Ok(context)
         })

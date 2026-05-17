@@ -264,10 +264,9 @@ impl<'a> Window<'a> {
             let window = window_id as c_ulong;
 
             // Because of the visual negotation we had to take some extra steps to create this context
-            let context = unsafe {
+            let context =
                 platform::GlContext::create(window, Rc::clone(&xcb_connection), fb_config)
-            }
-            .expect("Could not create OpenGL context");
+                    .expect("Could not create OpenGL context");
             GlContext::new(context)
         });
 
