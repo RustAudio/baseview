@@ -264,10 +264,9 @@ impl<'a> Window<'a> {
             let window = window_id as c_ulong;
 
             // Because of the visual negotation we had to take some extra steps to create this context
-            let context = unsafe {
+            let context =
                 platform::GlContext::create(window, Rc::clone(&xcb_connection), fb_config)
-            }
-            .expect("Could not create OpenGL context");
+                    .expect("Could not create OpenGL context");
             GlContext::new(context)
         });
 
@@ -364,7 +363,7 @@ unsafe impl<'a> HasRawWindowHandle for Window<'a> {
 
 unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
     fn raw_display_handle(&self) -> RawDisplayHandle {
-        let display = self.inner.xcb_connection.dpy;
+        let display = self.inner.xcb_connection.conn.xlib_display();
         let mut handle = XlibDisplayHandle::empty();
 
         handle.display = display as *mut c_void;

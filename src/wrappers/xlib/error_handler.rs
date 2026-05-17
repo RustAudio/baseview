@@ -1,8 +1,7 @@
-use std::ffi::CStr;
 use std::fmt::{Debug, Display, Formatter};
 use x11_dl::xlib;
 
-use crate::x11::XcbConnection;
+use super::xlib_connection::XlibConnection;
 use std::cell::Cell;
 use std::error::Error;
 use std::os::raw::{c_int, c_uchar, c_ulong};
@@ -17,7 +16,7 @@ thread_local! {
 
 /// A helper struct for safe X11 error handling
 pub struct XErrorHandler<'a> {
-    conn: &'a XcbConnection,
+    conn: &'a XlibConnection,
     error: &'a Cell<Option<CaughtXLibError>>,
 }
 
@@ -25,7 +24,7 @@ impl<'a> XErrorHandler<'a> {
     /// Syncs and checks if any previous X11 calls from the given display returned an error
     pub fn check(&self) -> Result<(), XLibError> {
         // Flush all possible previous errors
-        unsafe { (self.conn.xlib.XSync)(self.conn.dpy, 0) };
+        self.conn.sync();
 
         let error = self.error.take();
 
@@ -37,7 +36,7 @@ impl<'a> XErrorHandler<'a> {
 
     /// Sets up a temporary X11 error handler for the duration of the given closure, and allows
     /// that closure to check on the latest X11 error at any time.
-    pub fn handle<T, F: FnOnce(&mut XErrorHandler) -> T>(conn: &XcbConnection, handler: F) -> T {
+    pub fn handle<T, F: FnOnce(&mut XErrorHandler) -> T>(conn: &XlibConnection, handler: F) -> T {
         /// # Safety
         /// The given display and error pointers *must* be valid for the duration of this function.
         unsafe extern "C" fn error_handler(
@@ -60,19 +59,19 @@ impl<'a> XErrorHandler<'a> {
         }
 
         // Flush all possible previous errors
-        unsafe { (conn.xlib.XSync)(conn.dpy, 0) };
+        conn.sync();
 
         CURRENT_X11_ERROR.with(|error| {
             // Make sure to clear any errors from the last call to this function
             error.set(None);
 
-            let old_handler = unsafe { (conn.xlib.XSetErrorHandler)(Some(error_handler)) };
+            let old_handler = conn.set_error_handler(Some(error_handler));
             let panic_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
                 let mut h = XErrorHandler { conn, error };
                 handler(&mut h)
             }));
             // Whatever happened, restore old error handler
-            unsafe { (conn.xlib.XSetErrorHandler)(old_handler) };
+            conn.set_error_handler(old_handler);
 
             match panic_result {
                 Ok(v) => v,
@@ -112,26 +111,11 @@ pub struct XLibError {
 }
 
 impl XLibError {
-    fn from_inner(inner: CaughtXLibError, conn: &XcbConnection) -> Self {
-        Self { display_name: Self::get_display_name(&inner, conn), inner }
-    }
-
-    fn get_display_name(error: &CaughtXLibError, conn: &XcbConnection) -> Box<str> {
+    fn from_inner(inner: CaughtXLibError, conn: &XlibConnection) -> Self {
         let mut buf = [0; 255];
-        unsafe {
-            (conn.xlib.XGetErrorText)(
-                conn.dpy,
-                error.error_code.into(),
-                buf.as_mut_ptr().cast(),
-                (buf.len() - 1) as i32,
-            )
-        };
+        let cstr = conn.get_error_text(&mut buf, inner.error_code);
 
-        *buf.last_mut().unwrap() = 0;
-        // SAFETY: whatever XGetErrorText did or not, we guaranteed there is a nul byte at the end of the buffer
-        let cstr = unsafe { CStr::from_ptr(buf.as_mut_ptr().cast()) };
-
-        cstr.to_string_lossy().into()
+        Self { display_name: cstr.to_string_lossy().into(), inner }
     }
 }
 
