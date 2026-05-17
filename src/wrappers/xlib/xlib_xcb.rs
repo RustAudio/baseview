@@ -57,6 +57,8 @@ impl XlibXcbConnection {
     pub fn xcb_connection(&self) -> &XCBConnection {
         &self.xcb_connection
     }
+
+    #[cfg(feature = "opengl")]
     pub fn xlib_connection(&self) -> &XlibConnection {
         &self.xlib_connection
     }

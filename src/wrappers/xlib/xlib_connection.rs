@@ -1,10 +1,9 @@
 use std::error::Error;
-use std::ffi::CStr;
 use std::fmt::Formatter;
-use std::os::raw::{c_int, c_uchar};
+use std::os::raw::c_int;
 use std::ptr::NonNull;
 use std::sync::Arc;
-use x11_dl::xlib::{Display, XErrorEvent, Xlib};
+use x11_dl::xlib::{Display, Xlib};
 use x11_dl::xlib_xcb::{XEventQueueOwner, Xlib_xcb};
 
 /// An owned Xlib Display connection.
@@ -49,7 +48,10 @@ impl XlibConnection {
     pub fn dpy(&self) -> *mut Display {
         self.display.as_ptr()
     }
+}
 
+#[cfg(feature = "opengl")]
+impl XlibConnection {
     pub fn xlib(&self) -> &Xlib {
         &self.xlib
     }
@@ -60,7 +62,9 @@ impl XlibConnection {
         unsafe { (self.xlib.XSync)(self.display.as_ptr(), 0) };
     }
 
-    pub fn get_error_text(&self, buf: &mut [u8], error_code: c_uchar) -> &CStr {
+    pub fn get_error_text(
+        &self, buf: &mut [u8], error_code: core::ffi::c_uchar,
+    ) -> &core::ffi::CStr {
         if buf.is_empty() {
             return c"";
         }
@@ -87,7 +91,7 @@ impl XlibConnection {
         *buf.last_mut().unwrap() = 0;
 
         // SAFETY: whatever XGetErrorText did or not, we guaranteed there is a nul byte at the end of the buffer
-        unsafe { CStr::from_ptr(buf.as_mut_ptr().cast()) }
+        unsafe { std::ffi::CStr::from_ptr(buf.as_mut_ptr().cast()) }
     }
 
     pub fn set_error_handler(
@@ -99,7 +103,8 @@ impl XlibConnection {
     }
 }
 
-type ErrorHandler = unsafe extern "C" fn(*mut Display, *mut XErrorEvent) -> c_int;
+#[cfg(feature = "opengl")]
+type ErrorHandler = unsafe extern "C" fn(*mut Display, *mut x11_dl::xlib::XErrorEvent) -> c_int;
 
 impl Drop for XlibConnection {
     fn drop(&mut self) {
