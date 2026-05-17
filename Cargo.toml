@@ -54,7 +54,7 @@ windows = { version = "=0.61.3", features = [
 windows-sys = { version = "0.61.2", features = [
     "Win32_Graphics_Gdi",
     "Win32_Graphics_OpenGL",
-    "Win32_System_Com",
+    "Win32_System_Rpc",
     "Win32_System_LibraryLoader",
     "Win32_System_Ole",
     "Win32_System_SystemServices",
