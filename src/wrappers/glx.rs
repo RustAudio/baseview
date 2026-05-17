@@ -1,7 +1,7 @@
+use super::xlib::*;
 use crate::gl::platform::CreationFailedError;
-use crate::gl::x11::errors::XErrorHandler;
 use crate::gl::{GlConfig, GlError, Profile};
-use crate::x11::XcbConnection;
+
 use std::ffi::{c_ulong, c_void, CStr};
 use std::os::raw::c_int;
 use std::ptr::NonNull;
@@ -58,17 +58,17 @@ impl Glx {
     }
 
     pub fn choose_best_fb_config(
-        &self, connection: &XcbConnection, config: &GlConfig, error_handler: &XErrorHandler,
+        &self, connection: &XlibConnection, config: &GlConfig, error_handler: &XErrorHandler,
     ) -> Result<GlxFbConfig, GlError> {
         let fb_attribs = Self::get_fb_attribs(config);
 
         let mut nelements = 0;
-        // SAFETY: XcbConnection guarantees the inner dpy is valid.
+        // SAFETY: XlibConnection guarantees the inner dpy is valid.
         // The fb_attribs and nelements pointers come from references and are therefore valid.
         let result = unsafe {
             (self.inner.glXChooseFBConfig)(
-                connection.dpy,
-                connection.screen,
+                connection.as_raw(),
+                connection.default_screen_index(),
                 fb_attribs.as_ptr(),
                 &mut nelements,
             )
@@ -85,16 +85,17 @@ impl Glx {
 
         // SAFETY: for the same reasons above, glXChooseFBConfig returned a valid array
         // that we must free ourselves.
-        unsafe { (connection.xlib.XFree)(result.cast()) };
+        unsafe { (connection.xlib().XFree)(result.cast()) };
 
         Ok(GlxFbConfig(first_result))
     }
 
     pub fn get_visual_from_fb_config(
-        &self, connection: &XcbConnection, fb_config: GlxFbConfig, error_handler: &XErrorHandler,
+        &self, connection: &XlibConnection, fb_config: GlxFbConfig, error_handler: &XErrorHandler,
     ) -> Result<XVisualInfo, GlError> {
-        // SAFETY: XcbConnection guarantees the inner dpy is valid.
-        let result = unsafe { (self.inner.glXGetVisualFromFBConfig)(connection.dpy, fb_config.0) };
+        // SAFETY: XlibConnection guarantees the inner dpy is valid.
+        let result =
+            unsafe { (self.inner.glXGetVisualFromFBConfig)(connection.as_raw(), fb_config.0) };
 
         error_handler.check()?;
         if result.is_null() {
@@ -106,16 +107,16 @@ impl Glx {
         let visual = unsafe { result.read() };
         // SAFETY: for the same reasons above, glXGetVisualFromFBConfig returned a valid array
         // that we must free ourselves.
-        unsafe { (connection.xlib.XFree)(result.cast()) };
+        unsafe { (connection.xlib().XFree)(result.cast()) };
 
         Ok(visual)
     }
 
     pub fn swap_buffers(
-        &self, connection: &XcbConnection, window_id: c_ulong, error_handler: &XErrorHandler,
+        &self, connection: &XlibConnection, window_id: c_ulong, error_handler: &XErrorHandler,
     ) -> Result<(), GlError> {
-        // SAFETY: XcbConnection guarantees the inner dpy is valid.
-        unsafe { (self.inner.glXSwapBuffers)(connection.dpy, window_id) };
+        // SAFETY: XlibConnection guarantees the inner dpy is valid.
+        unsafe { (self.inner.glXSwapBuffers)(connection.as_raw(), window_id) };
 
         Ok(error_handler.check()?)
     }
@@ -142,16 +143,17 @@ impl Glx {
         }))
     }
 
-    pub unsafe fn destroy_context(&self, connection: &XcbConnection, context: GLXContext) {
-        // SAFETY:
-        unsafe { (self.inner.glXDestroyContext)(connection.dpy, context) };
+    pub unsafe fn destroy_context(&self, connection: &XlibConnection, context: GLXContext) {
+        // SAFETY: XlibConnection guarantees the inner dpy is valid.
+        unsafe { (self.inner.glXDestroyContext)(connection.as_raw(), context) };
     }
 
     pub unsafe fn make_current(
-        &self, connection: &XcbConnection, window_id: c_ulong, context: GLXContext,
+        &self, connection: &XlibConnection, window_id: c_ulong, context: GLXContext,
         error_handler: &XErrorHandler,
     ) -> Result<(), GlError> {
-        let res = unsafe { (self.inner.glXMakeCurrent)(connection.dpy, window_id, context) };
+        // SAFETY: XlibConnection guarantees the inner dpy is valid.
+        let res = unsafe { (self.inner.glXMakeCurrent)(connection.as_raw(), window_id, context) };
 
         error_handler.check()?;
         if res == 0 {
@@ -162,13 +164,13 @@ impl Glx {
     }
 
     pub unsafe fn clear_current(
-        &self, connection: &XcbConnection, error_handler: &XErrorHandler,
+        &self, connection: &XlibConnection, error_handler: &XErrorHandler,
     ) -> Result<(), GlError> {
         self.make_current(connection, 0, core::ptr::null_mut(), error_handler)
     }
 
     pub unsafe fn with_current_context<T>(
-        &self, connection: &XcbConnection, window_id: c_ulong, context: GLXContext,
+        &self, connection: &XlibConnection, window_id: c_ulong, context: GLXContext,
         error_handler: &XErrorHandler, closure: impl FnOnce() -> T,
     ) -> Result<T, GlError> {
         self.make_current(connection, window_id, context, error_handler)?;
@@ -186,7 +188,7 @@ impl Glx {
 
 pub struct ContextClearOnDrop<'a> {
     glx: &'a Glx,
-    connection: &'a XcbConnection,
+    connection: &'a XlibConnection,
     error_handler: &'a XErrorHandler<'a>,
 }
 
@@ -217,13 +219,19 @@ impl GlxCreateContextAttribsARB {
     }
 
     pub fn call(
-        &self, connection: &XcbConnection, gl_config: &GlConfig, glx_fb_config: GlxFbConfig,
+        &self, connection: &XlibConnection, gl_config: &GlConfig, glx_fb_config: GlxFbConfig,
         error_handler: &XErrorHandler,
     ) -> Result<GLXContext, GlError> {
         let ctx_attribs = Self::get_ctx_attribs(gl_config);
 
         let context = unsafe {
-            self.0(connection.dpy, glx_fb_config.0, std::ptr::null_mut(), 1, ctx_attribs.as_ptr())
+            self.0(
+                connection.as_raw(),
+                glx_fb_config.0,
+                std::ptr::null_mut(),
+                1,
+                ctx_attribs.as_ptr(),
+            )
         };
 
         error_handler.check()?;
