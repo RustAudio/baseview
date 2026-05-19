@@ -1,10 +1,7 @@
 use windows_core::{ComObject, Interface};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
-    System::{
-        Com::CoCreateGuid,
-        Ole::{OleInitialize, RevokeDragDrop},
-    },
+    System::Ole::{OleInitialize, RevokeDragDrop},
     UI::{
         Controls::{HOVER_DEFAULT, WM_MOUSELEAVE},
         HiDpi::{
@@ -16,16 +13,15 @@ use windows_sys::Win32::{
         },
         WindowsAndMessaging::{
             AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-            GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, RegisterClassW, SetCursor,
-            SetTimer, SetWindowLongPtrW, SetWindowPos, TranslateMessage, UnregisterClassW,
-            CS_OWNDC, GWLP_USERDATA, HTCLIENT, IDC_ARROW, MSG, SWP_NOACTIVATE, SWP_NOMOVE,
-            SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED,
-            WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-            WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY,
-            WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR,
-            WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW,
-            WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW,
-            WS_SIZEBOX, WS_VISIBLE,
+            GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, SetCursor, SetTimer,
+            SetWindowLongPtrW, SetWindowPos, TranslateMessage, GWLP_USERDATA, HTCLIENT, MSG,
+            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE,
+            WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+            WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+            WM_NCDESTROY, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE,
+            WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN,
+            WM_XBUTTONUP, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
+            WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
         },
     },
 };
@@ -42,7 +38,6 @@ use raw_window_handle::{
     WindowsDisplayHandle,
 };
 use windows::Win32::System::Ole::IDropTarget;
-use windows_sys::core::GUID;
 use windows_sys::Win32::Foundation::FALSE;
 use windows_sys::Win32::System::Ole::RegisterDragDrop;
 
@@ -60,25 +55,8 @@ use super::keyboard::KeyboardState;
 
 #[cfg(feature = "opengl")]
 use crate::gl::GlContext;
-
-unsafe fn generate_guid() -> String {
-    let mut guid: GUID = std::mem::zeroed();
-    CoCreateGuid(&mut guid);
-    format!(
-        "{:0X}-{:0X}-{:0X}-{:0X}{:0X}-{:0X}{:0X}{:0X}{:0X}{:0X}{:0X}\0",
-        guid.data1,
-        guid.data2,
-        guid.data3,
-        guid.data4[0],
-        guid.data4[1],
-        guid.data4[2],
-        guid.data4[3],
-        guid.data4[4],
-        guid.data4[5],
-        guid.data4[6],
-        guid.data4[7]
-    )
-}
+use crate::wrappers::win32::h_instance::HInstance;
+use crate::wrappers::win32::window_class::RegisteredClass;
 
 #[allow(non_snake_case)]
 fn HIWORD(wparam: WPARAM) -> u16 {
@@ -174,7 +152,7 @@ pub(crate) unsafe extern "system" fn wnd_proc(
         // NOTE: This is not handled in `wnd_proc_inner` because of the deferred task loop above
         if msg == WM_NCDESTROY {
             RevokeDragDrop(hwnd);
-            unregister_wnd_class((*window_state_ptr).window_class);
+            let _ = (*window_state_ptr).window_class.take();
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             drop(Rc::from_raw(window_state_ptr));
         }
@@ -497,35 +475,6 @@ unsafe fn wnd_proc_inner(
     }
 }
 
-#[allow(clippy::upper_case_acronyms)]
-type ATOM = u16;
-
-unsafe fn register_wnd_class() -> ATOM {
-    // We generate a unique name for the new window class to prevent name collisions
-    let class_name_str = format!("Baseview-{}", generate_guid());
-    let mut class_name: Vec<u16> = OsStr::new(&class_name_str).encode_wide().collect();
-    class_name.push(0);
-
-    let wnd_class = WNDCLASSW {
-        style: CS_OWNDC,
-        lpfnWndProc: Some(wnd_proc),
-        hInstance: null_mut(),
-        lpszClassName: class_name.as_ptr(),
-        cbClsExtra: 0,
-        cbWndExtra: 0,
-        hIcon: null_mut(),
-        hCursor: LoadCursorW(null_mut(), IDC_ARROW),
-        hbrBackground: null_mut(),
-        lpszMenuName: null_mut(),
-    };
-
-    RegisterClassW(&wnd_class)
-}
-
-unsafe fn unregister_wnd_class(wnd_class: ATOM) {
-    UnregisterClassW(wnd_class as _, null_mut());
-}
-
 /// All data associated with the window. This uses internal mutability so the outer struct doesn't
 /// need to be mutably borrowed. Mutably borrowing the entire `WindowState` can be problematic
 /// because of the Windows message loops' reentrant nature. Care still needs to be taken to prevent
@@ -536,7 +485,7 @@ pub(super) struct WindowState {
     /// struct associated with this HWND through `unsafe { GetWindowLongPtrW(self.hwnd,
     /// GWLP_USERDATA) } as *const WindowState`.
     pub hwnd: HWND,
-    window_class: ATOM,
+    window_class: Cell<Option<RegisteredClass>>,
     current_size: Cell<PhySize>,
     current_scale_factor: Cell<f64>,
     _parent_handle: Option<ParentHandle>,
@@ -680,12 +629,13 @@ impl Window<'_> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
+        let instance = HInstance::get();
+
         unsafe {
             let mut title: Vec<u16> = OsStr::new(&options.title[..]).encode_wide().collect();
             title.push(0);
 
-            let window_class = register_wnd_class();
-            // todo: manage error ^
+            let window_class = RegisteredClass::register_new(instance, Some(wnd_proc)).unwrap();
 
             let scaling = match options.scale {
                 WindowScalePolicy::SystemScaleFactor => 1.0,
@@ -720,7 +670,7 @@ impl Window<'_> {
 
             let hwnd = CreateWindowExW(
                 0,
-                window_class as _,
+                window_class.as_atom_ptr(),
                 title.as_ptr(),
                 flags,
                 0,
@@ -750,7 +700,7 @@ impl Window<'_> {
 
             let window_state = Rc::new(WindowState {
                 hwnd,
-                window_class,
+                window_class: Some(window_class).into(),
                 current_scale_factor: scaling.into(),
                 current_size: current_size.into(),
                 _parent_handle: parent_handle,
