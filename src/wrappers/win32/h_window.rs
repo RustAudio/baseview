@@ -12,7 +12,7 @@ pub trait Initializer<W>: 'static {
     fn initialize(self: Box<Self>, window: &HWnd) -> W;
 }
 
-impl<F: 'static, W> Initializer<W> for F
+impl<F: 'static, W: WindowImpl> Initializer<W> for F
 where
     F: FnOnce(&HWnd) -> W,
 {
@@ -23,6 +23,7 @@ where
 }
 
 pub trait WindowImpl: 'static {
+    fn after_create(&self, window: &HWnd);
     fn handle_message(
         &self, window: &HWnd, message_code: u32, w_param: WPARAM, l_param: LPARAM,
     ) -> Option<LRESULT>;
@@ -46,13 +47,13 @@ impl<'a> LifeCycleWindowMessage<'a> {
 }
 
 // TODO: bikeshed
-struct WindowUserData<W> {
+pub(crate) struct WindowUserData<W> {
     initializer: Cell<Option<Box<dyn Initializer<W>>>>,
     inner_impl: OnceCell<W>,
 }
 
 impl<W: WindowImpl> WindowUserData<W> {
-    pub fn new(initializer: impl Initializer<W>) -> Rc<Self> {
+    pub fn new(initializer: impl FnOnce(&HWnd) -> W + 'static) -> Rc<Self> {
         Rc::new(Self {
             initializer: Cell::new(Some(Box::new(initializer))),
             inner_impl: OnceCell::new(),
@@ -77,6 +78,10 @@ impl<W: WindowImpl> WindowUserData<W> {
         if self.inner_impl.set(initializer.initialize(window)).is_err() {
             // Should not be possible
             panic!("AdapterContainer is already initialized");
+        }
+
+        if let Some(inner) = self.inner_impl.get() {
+            inner.after_create(window);
         }
 
         Ok(())
