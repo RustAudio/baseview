@@ -6,7 +6,7 @@ use raw_window_handle::{
 
 use crate::event::{Event, EventStatus};
 use crate::window_open_options::WindowOpenOptions;
-use crate::{MouseCursor, Size};
+use crate::{MouseCursor, Point, Size};
 
 #[cfg(target_os = "macos")]
 use crate::macos as platform;
@@ -96,6 +96,12 @@ impl<'a> Window<'a> {
     /// automatically be accounted for.
     pub fn resize(&mut self, size: Size) {
         self.window.resize(size);
+    }
+
+    /// Set the position of the window. The position is always in logical pixels. DPI scaling will
+    /// automatically be accounted for.
+    pub fn set_position(&mut self, position: Point) {
+        self.window.set_position(position);
     }
 
     pub fn set_mouse_cursor(&mut self, cursor: MouseCursor) {

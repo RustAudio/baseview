@@ -13,15 +13,16 @@ use windows_sys::Win32::{
         },
         WindowsAndMessaging::{
             AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-            GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, SetCursor, SetTimer,
-            SetWindowLongPtrW, SetWindowPos, TranslateMessage, GWLP_USERDATA, HTCLIENT, MSG,
-            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE,
-            WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
-            WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-            WM_NCDESTROY, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE,
-            WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN,
-            WM_XBUTTONUP, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-            WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+            GetMessageW, GetSystemMetrics, GetWindowLongPtrW, LoadCursorW, PostMessageW, SetCursor,
+            SetTimer, SetWindowLongPtrW, SetWindowPos, TranslateMessage, GWLP_USERDATA, HTCLIENT,
+            MSG, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+            WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DPICHANGED, WM_INPUTLANGCHANGE,
+            WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
+            WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_RBUTTONDOWN,
+            WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN,
+            WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WS_CAPTION, WS_CHILD,
+            WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX,
+            WS_VISIBLE,
         },
     },
 };
@@ -45,8 +46,8 @@ const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
 use crate::win::hook::{self, KeyboardHookHandle};
 use crate::{
-    Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
+    Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, Point, ScrollDelta, Size,
+    WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
 use super::cursor::cursor_to_lpcwstr;
@@ -562,6 +563,21 @@ impl WindowState {
                     )
                 };
             }
+            WindowTask::SetPosition(position) => {
+                let window_info = self.window_info();
+                let physical_pos = position.to_physical(&window_info);
+                unsafe {
+                    SetWindowPos(
+                        self.hwnd,
+                        self.hwnd,
+                        physical_pos.x,
+                        physical_pos.y,
+                        0,
+                        0,
+                        SWP_NOZORDER | SWP_NOSIZE,
+                    )
+                };
+            }
         }
     }
 }
@@ -573,6 +589,9 @@ pub(super) enum WindowTask {
     /// Resize the window to the given size. The size is in logical pixels. DPI scaling is applied
     /// automatically.
     Resize(Size),
+    /// Set the position of the window. The position is in logical pixels. DPI scaling is applied
+    /// automatically.
+    SetPosition(Point),
 }
 
 pub struct Window<'a> {
@@ -668,13 +687,24 @@ impl Window<'_> {
                 AdjustWindowRectEx(&mut rect, flags, FALSE, 0);
             }
 
+            let (x, y) = if !parented {
+                let screen_width = GetSystemMetrics(SM_CXSCREEN);
+                let screen_height = GetSystemMetrics(SM_CYSCREEN);
+                (
+                    (screen_width - (rect.right - rect.left)) / 2,
+                    (screen_height - (rect.bottom - rect.top)) / 2,
+                )
+            } else {
+                (0, 0)
+            };
+
             let hwnd = CreateWindowExW(
                 0,
                 window_class.as_atom_ptr(),
                 title.as_ptr(),
                 flags,
-                0,
-                0,
+                x,
+                y,
                 rect.right - rect.left,
                 rect.bottom - rect.top,
                 parent as *mut _,
@@ -771,20 +801,29 @@ impl Window<'_> {
             SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
 
             if let Some(mut new_rect) = new_rect {
-                // Convert this desired"client rectangle" size to the actual "window rectangle"
-                // size (Because of course you have to do that).
-                AdjustWindowRectEx(&mut new_rect, flags, 0, 0);
+                let (x, y) = if !parented {
+                    let screen_width = GetSystemMetrics(SM_CXSCREEN);
+                    let screen_height = GetSystemMetrics(SM_CYSCREEN);
+                    AdjustWindowRectEx(&mut new_rect, flags, FALSE, 0);
+                    (
+                        (screen_width - (new_rect.right - new_rect.left)) / 2,
+                        (screen_height - (new_rect.bottom - new_rect.top)) / 2,
+                    )
+                } else {
+                    AdjustWindowRectEx(&mut new_rect, flags, FALSE, 0);
+                    (new_rect.left, new_rect.top)
+                };
 
                 // Windows makes us resize the window manually. This will trigger another `WM_SIZE` event,
                 // which we can then send the user the new scale factor.
                 SetWindowPos(
                     hwnd,
                     hwnd,
-                    new_rect.left,
-                    new_rect.top,
+                    x,
+                    y,
                     new_rect.right - new_rect.left,
                     new_rect.bottom - new_rect.top,
-                    SWP_NOZORDER | SWP_NOMOVE,
+                    SWP_NOZORDER,
                 );
             }
 
@@ -813,6 +852,13 @@ impl Window<'_> {
         // To avoid reentrant event handler calls we'll defer the actual resizing until after the
         // event has been handled
         let task = WindowTask::Resize(size);
+        self.state.deferred_tasks.borrow_mut().push_back(task);
+    }
+
+    pub fn set_position(&mut self, position: Point) {
+        // To avoid reentrant event handler calls we'll defer the actual positioning until after the
+        // event has been handled
+        let task = WindowTask::SetPosition(position);
         self.state.deferred_tasks.borrow_mut().push_back(task);
     }
 

@@ -21,7 +21,7 @@ use x11rb::wrapper::ConnectionExt as _;
 
 use super::XcbConnection;
 use crate::{
-    Event, MouseCursor, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    Event, MouseCursor, Point, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
     WindowScalePolicy,
 };
 
@@ -195,6 +195,19 @@ impl<'a> Window<'a> {
 
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
+        let width = (options.size.width * scaling).round() as u32;
+        let height = (options.size.height * scaling).round() as u32;
+
+        let (x, y) = if parent.is_none() {
+            let screen_width = screen.width_in_pixels;
+            let screen_height = screen.height_in_pixels;
+            let x = (screen_width as i32 - width as i32) / 2;
+            let y = (screen_height as i32 - height as i32) / 2;
+            (x.max(0) as i16, y.max(0) as i16)
+        } else {
+            (0, 0)
+        };
+
         #[cfg(feature = "opengl")]
         let visual_info =
             WindowVisualConfig::find_best_visual_config_for_gl(&xcb_connection, options.gl_config)?;
@@ -207,11 +220,11 @@ impl<'a> Window<'a> {
             visual_info.visual_depth,
             window_id,
             parent_id,
-            0,                                         // x coordinate of the new window
-            0,                                         // y coordinate of the new window
-            window_info.physical_size().width as u16,  // window width
-            window_info.physical_size().height as u16, // window height
-            0,                                         // window border
+            x,
+            y,
+            width as u16,
+            height as u16,
+            0, // window border
             WindowClass::INPUT_OUTPUT,
             visual_info.visual_id,
             &CreateWindowAux::new()
@@ -342,6 +355,17 @@ impl<'a> Window<'a> {
 
         // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
         // and notify the window handler about it
+    }
+
+    pub fn set_position(&mut self, position: Point) {
+        let window_info = self.inner.window_info;
+        let physical_pos = position.to_physical(&window_info);
+
+        let _ = self.inner.xcb_connection.conn.configure_window(
+            self.inner.window_id,
+            &ConfigureWindowAux::new().x(physical_pos.x).y(physical_pos.y),
+        );
+        let _ = self.inner.xcb_connection.conn.flush();
     }
 
     #[cfg(feature = "opengl")]
