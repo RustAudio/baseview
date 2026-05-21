@@ -609,6 +609,11 @@ impl Window<'_> {
             let mut msg: MSG = std::mem::zeroed();
 
             loop {
+                let window_state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut WindowState;
+                if window_state_ptr.is_null() {
+                    break;
+                }
+
                 let status = GetMessageW(&mut msg, hwnd, 0, 0);
 
                 if status == -1 {
