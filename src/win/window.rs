@@ -652,17 +652,15 @@ impl Window<'_> {
                 bottom: current_size.height as i32,
             };
 
-            let flags = if parented {
+            let mut flags = if parented {
                 WS_CHILD | WS_VISIBLE
             } else {
-                WS_POPUPWINDOW
-                    | WS_CAPTION
-                    | WS_VISIBLE
-                    | WS_SIZEBOX
-                    | WS_MINIMIZEBOX
-                    | WS_MAXIMIZEBOX
-                    | WS_CLIPSIBLINGS
+                WS_POPUPWINDOW | WS_CAPTION | WS_VISIBLE | WS_MINIMIZEBOX | WS_CLIPSIBLINGS
             };
+
+            if !parented && options.resizable {
+                flags |= WS_SIZEBOX | WS_MAXIMIZEBOX;
+            }
 
             if !parented {
                 AdjustWindowRectEx(&mut rect, flags, FALSE, 0);

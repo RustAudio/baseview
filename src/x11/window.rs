@@ -13,6 +13,7 @@ use raw_window_handle::{
 };
 
 use x11rb::connection::Connection;
+use x11rb::properties::WmSizeHints;
 use x11rb::protocol::xproto::{
     AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt as _, CreateGCAux,
     CreateWindowAux, EventMask, PropMode, Visualid, Window as XWindow, WindowClass,
@@ -250,6 +251,18 @@ impl<'a> Window<'a> {
             AtomEnum::ATOM,
             &[xcb_connection.atoms.WM_DELETE_WINDOW],
         )?;
+
+        if !options.resizable {
+            let width = window_info.physical_size().width as i32;
+            let height = window_info.physical_size().height as i32;
+
+            WmSizeHints {
+                min_size: Some((width, height)),
+                max_size: Some((width, height)),
+                ..Default::default()
+            }
+            .set_normal_hints(xcb_connection.conn.xcb_connection(), window_id)?;
+        }
 
         xcb_connection.conn.flush()?;
         let xcb_connection = Rc::new(xcb_connection);

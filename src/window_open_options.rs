@@ -27,6 +27,9 @@ pub struct WindowOpenOptions {
     /// The dpi scaling policy
     pub scale: WindowScalePolicy,
 
+    /// Should this window be resizable?
+    pub resizable: bool,
+
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
     /// access this context through [crate::Window::gl_context].
     ///
@@ -59,6 +62,12 @@ impl WindowOpenOptions {
         self
     }
 
+    #[inline]
+    pub fn with_resizable(mut self, resizable: bool) -> Self {
+        self.resizable = resizable;
+        self
+    }
+
     #[cfg(feature = "opengl")]
     #[inline]
     pub fn with_gl_config(mut self, gl_config: impl Into<Option<GlConfig>>) -> Self {
@@ -73,6 +82,7 @@ impl Default for WindowOpenOptions {
             title: String::from("baseview window"),
             size: Size { width: 500.0, height: 400.0 },
             scale: WindowScalePolicy::default(),
+            resizable: true,
             #[cfg(feature = "opengl")]
             gl_config: None,
         }
