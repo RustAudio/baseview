@@ -265,6 +265,20 @@ impl EventLoop {
                 );
             }
 
+            XEvent::FocusIn(_) => {
+                self.handler.on_event(
+                    &mut crate::Window::new(Window { inner: &self.window }),
+                    Event::Window(WindowEvent::Focused),
+                );
+            }
+
+            XEvent::FocusOut(_) => {
+                self.handler.on_event(
+                    &mut crate::Window::new(Window { inner: &self.window }),
+                    Event::Window(WindowEvent::Unfocused),
+                );
+            }
+
             _ => {}
         }
     }

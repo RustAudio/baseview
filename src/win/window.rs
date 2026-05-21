@@ -16,12 +16,12 @@ use windows_sys::Win32::{
             GetMessageW, GetWindowLongPtrW, LoadCursorW, PostMessageW, SetCursor, SetTimer,
             SetWindowLongPtrW, SetWindowPos, TranslateMessage, GWLP_USERDATA, HTCLIENT, MSG,
             SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_CREATE,
-            WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
-            WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-            WM_NCDESTROY, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SHOWWINDOW, WM_SIZE,
-            WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN,
-            WM_XBUTTONUP, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-            WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+            WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_KILLFOCUS, WM_LBUTTONDOWN,
+            WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
+            WM_MOUSEWHEEL, WM_NCDESTROY, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS,
+            WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER,
+            WM_XBUTTONDOWN, WM_XBUTTONUP, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX,
+            WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
         },
     },
 };
@@ -366,6 +366,30 @@ unsafe fn wnd_proc_inner(
             } else {
                 None
             }
+        }
+        WM_SETFOCUS => {
+            let mut window = crate::Window::new(window_state.create_window());
+
+            window_state
+                .handler
+                .borrow_mut()
+                .as_mut()
+                .unwrap()
+                .on_event(&mut window, Event::Window(WindowEvent::Focused));
+
+            None
+        }
+        WM_KILLFOCUS => {
+            let mut window = crate::Window::new(window_state.create_window());
+
+            window_state
+                .handler
+                .borrow_mut()
+                .as_mut()
+                .unwrap()
+                .on_event(&mut window, Event::Window(WindowEvent::Unfocused));
+
+            None
         }
         WM_SIZE => {
             let mut window = crate::Window::new(window_state.create_window());
