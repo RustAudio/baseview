@@ -632,13 +632,13 @@ impl Window<'_> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let (_, hwnd) = Self::open(false, null_mut(), options, build);
+        let (_, _) = Self::open(false, null_mut(), options, build);
 
         unsafe {
             let mut msg: MSG = std::mem::zeroed();
 
             loop {
-                let status = GetMessageW(&mut msg, hwnd, 0, 0);
+                let status = GetMessageW(&mut msg, null_mut(), 0, 0);
 
                 if status == -1 {
                     break;
