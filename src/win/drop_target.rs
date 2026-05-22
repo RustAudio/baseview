@@ -1,20 +1,16 @@
 use std::cell::{Cell, RefCell};
-use std::ffi::OsString;
-use std::os::windows::prelude::OsStringExt;
-use std::ptr::null_mut;
 use std::rc::Weak;
 use windows::core::implement;
 use windows::Win32::Foundation::{E_UNEXPECTED, POINTL};
-use windows::Win32::System::Com::{IDataObject, DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL};
+use windows::Win32::System::Com::IDataObject;
 use windows::Win32::System::Ole::*;
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows_core::Ref;
-use windows_sys::Win32::{
-    Foundation::POINT, Graphics::Gdi::ScreenToClient, UI::Shell::DragQueryFileW,
-};
+use windows_sys::Win32::{Foundation::POINT, Graphics::Gdi::ScreenToClient};
 
 use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent, PhyPoint, Point};
 
+use super::data_object;
 use super::WindowState;
 
 #[implement(IDropTarget)]
@@ -72,42 +68,8 @@ impl DropTarget {
     }
 
     fn parse_drop_data(&self, data_object: &IDataObject) {
-        let format = FORMATETC {
-            cfFormat: CF_HDROP.0,
-            ptd: null_mut(),
-            dwAspect: DVASPECT_CONTENT.0,
-            lindex: -1,
-            tymed: TYMED_HGLOBAL.0 as u32,
-        };
-
-        unsafe {
-            let Ok(medium) = data_object.GetData(&format) else {
-                self.drop_data.replace(DropData::None);
-                return;
-            };
-
-            let hdrop = medium.u.hGlobal.0;
-
-            let item_count = DragQueryFileW(hdrop, 0xFFFFFFFF, null_mut(), 0);
-            if item_count == 0 {
-                self.drop_data.replace(DropData::None);
-                return;
-            }
-
-            let mut paths = Vec::with_capacity(item_count as usize);
-
-            for i in 0..item_count {
-                let characters = DragQueryFileW(hdrop, i, null_mut(), 0);
-                let buffer_size = characters as usize + 1;
-                let mut buffer = vec![0u16; buffer_size];
-
-                DragQueryFileW(hdrop, i, buffer.as_mut_ptr().cast(), buffer_size as u32);
-
-                paths.push(OsString::from_wide(&buffer[..characters as usize]).into())
-            }
-
-            self.drop_data.replace(DropData::Files(paths));
-        }
+        let drop_data = unsafe { data_object::parse_data_object(data_object) };
+        self.drop_data.replace(drop_data);
     }
 }
 
