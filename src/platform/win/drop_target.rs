@@ -11,6 +11,7 @@ use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows_core::Ref;
 use windows_sys::Win32::{
     Foundation::POINT, Graphics::Gdi::ScreenToClient, UI::Shell::DragQueryFileW,
+    UI::WindowsAndMessaging::GetCursorPos,
 };
 
 use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent, PhyPoint, Point};
@@ -58,14 +59,25 @@ impl DropTarget {
         }
     }
 
-    fn parse_coordinates(&self, pt: POINTL) {
+    fn parse_coordinates(&self, _pt: POINTL) {
         let Some(window_state) = self.window_state.upgrade() else {
             return;
         };
-        let mut pt = POINT { x: pt.x, y: pt.y };
-        unsafe { ScreenToClient(window_state.hwnd, &mut pt as *mut POINT) };
-        let phy_point = PhyPoint::new(pt.x, pt.y);
-        self.drag_position.set(phy_point.to_logical(&window_state.window_info()));
+        // OLE-supplied points can disagree with the actual cursor position for embedded
+        // child windows (DPI virtualization / DragEnter quirks). Query the cursor directly
+        // so drag coordinates match WM_MOUSEMOVE.
+        let mut pt = POINT { x: 0, y: 0 };
+        unsafe {
+            GetCursorPos(&mut pt as *mut POINT);
+            ScreenToClient(window_state.hwnd, &mut pt as *mut POINT);
+        }
+        let logical_point = if window_state.has_parent() {
+            // If the window has a parent, the coordinates are already in logical coordinates
+            Point::new(pt.x as f64, pt.y as f64)
+        } else {
+            PhyPoint::new(pt.x, pt.y).to_logical(&window_state.window_info())
+        };
+        self.drag_position.set(logical_point);
     }
 
     fn parse_drop_data(&self, data_object: &IDataObject) {
