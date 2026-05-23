@@ -7,21 +7,6 @@ use std::rc::Rc;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-pub trait Initializer<W>: 'static {
-    // TODO: handle errors
-    fn initialize(self: Box<Self>, window: &HWnd) -> W;
-}
-
-impl<F: 'static, W: WindowImpl> Initializer<W> for F
-where
-    F: FnOnce(&HWnd) -> W,
-{
-    #[inline]
-    fn initialize(self: Box<Self>, ctx: &HWnd) -> W {
-        self(ctx)
-    }
-}
-
 pub trait WindowImpl: 'static {
     fn after_create(&self, window: &HWnd);
     fn handle_message(
@@ -46,9 +31,11 @@ impl<'a> LifeCycleWindowMessage<'a> {
     }
 }
 
+type Initializer<W> = dyn FnOnce(&HWnd) -> W + 'static;
+
 // TODO: bikeshed
 pub(crate) struct WindowUserData<W> {
-    initializer: Cell<Option<Box<dyn Initializer<W>>>>,
+    initializer: Cell<Option<Box<Initializer<W>>>>,
     inner_impl: OnceCell<W>,
 }
 
@@ -58,10 +45,6 @@ impl<W: WindowImpl> WindowUserData<W> {
             initializer: Cell::new(Some(Box::new(initializer))),
             inner_impl: OnceCell::new(),
         })
-    }
-
-    pub unsafe fn consume_from_raw(raw: NonNull<WindowUserData<W>>) -> Rc<Self> {
-        Rc::from_raw(raw.as_ptr())
     }
 
     pub unsafe fn from_raw(raw: NonNull<WindowUserData<W>>) -> Rc<Self> {
@@ -75,7 +58,7 @@ impl<W: WindowImpl> WindowUserData<W> {
         };
 
         // TODO: allow initializer to return error
-        if self.inner_impl.set(initializer.initialize(window)).is_err() {
+        if self.inner_impl.set(initializer(window)).is_err() {
             // Should not be possible
             panic!("AdapterContainer is already initialized");
         }
@@ -155,9 +138,7 @@ pub(crate) unsafe extern "system" fn wnd_proc<W: WindowImpl>(
 
                 // Try to recover and free the received pointer data. But if this also fails, better to leak
                 // it than risk crashing
-                let _ = catch_unwind(AssertUnwindSafe(|| {
-                    drop(WindowUserData::<W>::consume_from_raw(inner_ptr))
-                }));
+                let _ = catch_unwind(AssertUnwindSafe(|| drop(Rc::from_raw(inner_ptr.as_ptr()))));
 
                 // TODO: log error
                 return -1;
@@ -182,9 +163,8 @@ pub(crate) unsafe extern "system" fn wnd_proc<W: WindowImpl>(
 
                     // Try to recover and free the received pointer data. But if this also fails, better to leak
                     // it than risk crashing
-                    let _ = catch_unwind(AssertUnwindSafe(|| {
-                        drop(WindowUserData::<W>::consume_from_raw(inner_ptr))
-                    }));
+                    let _ =
+                        catch_unwind(AssertUnwindSafe(|| drop(Rc::from_raw(inner_ptr.as_ptr()))));
 
                     // TODO: log error
                     -1
@@ -197,7 +177,7 @@ pub(crate) unsafe extern "system" fn wnd_proc<W: WindowImpl>(
                 return handle_default();
             };
 
-            let state = unsafe { WindowUserData::<W>::consume_from_raw(state_ptr) };
+            let state = unsafe { Rc::from_raw(state_ptr.as_ptr()) };
             let _ = catch_unwind(AssertUnwindSafe(|| state.destroy_started(window)));
             let _ = window.set_userdata_ptr(core::ptr::null::<W>());
             let _ = catch_unwind(AssertUnwindSafe(|| drop(state)));
