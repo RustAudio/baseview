@@ -22,7 +22,7 @@ use raw_window_handle::{
 };
 
 use crate::{
-    Event, EventStatus, MouseCursor, Size, WindowHandler, WindowInfo, WindowOpenOptions,
+    Event, EventStatus, MouseCursor, Point, Size, WindowHandler, WindowInfo, WindowOpenOptions,
     WindowScalePolicy,
 };
 
@@ -360,6 +360,23 @@ impl<'a> Window<'a> {
             // If this is a standalone window then we'll also need to resize the window itself
             if let Some(ns_window) = self.inner.ns_window.get() {
                 ns_window.setContentSize(size);
+            }
+        }
+    }
+
+    pub fn set_position(&mut self, position: Point) {
+        // NOTE: macOS uses a coordinate system where (0,0) is at the bottom-left of the screen.
+        // We need to convert from top-left coordinates to bottom-left coordinates.
+        if let Some(ns_window) = self.inner.ns_window.get() {
+            if let Some(screen) = ns_window.screen() {
+                let screen_frame = screen.frame();
+                let window_frame = ns_window.frame();
+
+                let y_bottom_left =
+                    screen_frame.size.height - position.y.round() - window_frame.size.height;
+                let origin = NSPoint::new(position.x.round(), y_bottom_left);
+
+                ns_window.setFrameOrigin(origin);
             }
         }
     }
