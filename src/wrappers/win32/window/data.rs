@@ -10,7 +10,8 @@ type Initializer<W> = dyn FnOnce(HWnd) -> W + 'static;
 pub(crate) struct WindowUserData<W> {
     initializer: Cell<Option<Box<Initializer<W>>>>,
     inner_impl: OnceCell<W>,
-    window_class: RegisteredClass,
+    // Keep this around to ensure the class is not de-registered while this window is open
+    _window_class: RegisteredClass,
 }
 
 impl<W: WindowImpl> WindowUserData<W> {
@@ -18,7 +19,7 @@ impl<W: WindowImpl> WindowUserData<W> {
         Rc::new(Self {
             initializer: Cell::new(Some(Box::new(initializer))),
             inner_impl: OnceCell::new(),
-            window_class: class,
+            _window_class: class,
         })
     }
 

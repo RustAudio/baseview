@@ -1,5 +1,6 @@
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::uuid::Uuid;
+use std::num::NonZeroU16;
 use std::ptr::null_mut;
 use std::sync::Arc;
 use windows_core::{Error, Result, HSTRING};
@@ -31,9 +32,10 @@ impl RegisteredClass {
         };
 
         let class_atom = unsafe { RegisterClassW(&class_info) };
-        if class_atom == 0 {
+
+        let Some(class_atom) = NonZeroU16::new(class_atom) else {
             return Err(Error::from_win32());
-        }
+        };
 
         Ok(Self(Arc::new(RegisteredClassInner(class_atom, instance))))
     }
@@ -44,7 +46,7 @@ impl RegisteredClass {
     }
 }
 
-struct RegisteredClassInner(u16, HInstance);
+struct RegisteredClassInner(NonZeroU16, HInstance);
 
 impl RegisteredClassInner {
     // See:
@@ -53,7 +55,7 @@ impl RegisteredClassInner {
     // https://learn.microsoft.com/en-us/windows/win32/winprog/windows-data-types
     #[inline]
     pub fn as_atom_ptr(&self) -> PCWSTR {
-        self.0 as u32 as PCWSTR
+        self.0.get() as u32 as PCWSTR
     }
 }
 
