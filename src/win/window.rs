@@ -251,7 +251,7 @@ impl WindowImpl for BaseviewWindow {
         result
     }
 
-    fn destroy_started(&self, window: HWnd) {
+    fn before_destroy(&self, window: HWnd) {
         unsafe { RevokeDragDrop(window.as_raw()) };
     }
 }
@@ -586,6 +586,7 @@ impl WindowState {
 
             deferred_tasks: RefCell::new(VecDeque::with_capacity(4)),
 
+            #[cfg(feature = "opengl")]
             gl_context: OnceCell::new(),
         }
     }

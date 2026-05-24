@@ -5,6 +5,9 @@ use std::rc::Rc;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
+/// The wndproc implementation wrapping a given [`WindowImpl`] type.
+///
+/// This handles all the lifecycle details of the window and its data created by [create_window].
 pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
     window: HWND, message_code: u32, w_param: WPARAM, l_param: LPARAM,
 ) -> LRESULT {
@@ -62,7 +65,9 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
         }
         WM_DESTROY => {
             let Some(state_ptr) = window.get_userdata_ptr::<WindowData<W>>() else {
-                // TODO: log error
+                // State pointer can be null if the WM_DESTROY message got sent before
+                // the handling of WM_CREATE above finished, or if it failed.
+                // If that's the case, we have nothing to destroy.
                 return handle_default();
             };
 
@@ -78,6 +83,8 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
                 return handle_default();
             };
 
+            // This guarantees WindowData remains valid until the end of this scope,
+            // even if the event handler leads to the window being destroyed
             let inner = unsafe { WindowData::from_raw(inner_ptr) };
 
             let result = catch_unwind(AssertUnwindSafe(|| {

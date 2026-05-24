@@ -26,6 +26,7 @@ impl<W: WindowImpl> WindowData<W> {
         })
     }
 
+    /// Returns an owned pointer from the given raw pointer, without transferring ownership.
     pub unsafe fn from_raw(raw: NonNull<WindowData<W>>) -> Rc<Self> {
         let this = ManuallyDrop::new(Rc::from_raw(raw.as_ptr()));
         Rc::clone(&this)
@@ -50,7 +51,7 @@ impl<W: WindowImpl> WindowData<W> {
 
     pub fn destroy_started(&self, window: HWnd) {
         if let Some(inner) = self.inner_impl.get() {
-            inner.destroy_started(window);
+            inner.before_destroy(window);
         }
     }
 

@@ -6,6 +6,12 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, SetWindowLongPtrW, GWLP_USERDATA,
 };
 
+/// A simple wrapper around a HWND.
+///
+/// This type guarantees the HWND is safe to use, but not that it remains valid. (i.e. functions using
+/// a handle from this type might still return an "invalid handle" error).
+///
+/// The role of this type is to help safely encapsulating most of the unsafe Win32 HWND APIs.
 #[derive(Copy, Clone)]
 pub struct HWnd<'a>(HWND, PhantomData<&'a ()>);
 
@@ -26,7 +32,7 @@ impl HWnd<'_> {
     pub fn set_userdata_ptr<T>(&self, data: *const T) -> Result<()> {
         // SAFETY: This function is always safe to call
         unsafe { SetLastError(0) };
-        // SAFETY: This type guarantees the HWND is still valid.
+        // SAFETY: This type guarantees the HWND is safe to use.
         let previous = unsafe { SetWindowLongPtrW(self.0, GWLP_USERDATA, data as isize) };
         if previous != 0 {
             return Ok(());
