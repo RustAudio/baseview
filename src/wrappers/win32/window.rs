@@ -40,7 +40,13 @@ pub trait WindowImpl: 'static {
 /// Creates a window from the given settings, with a given [`WindowImpl`] type to handle the message,
 /// and an initializer function that type.
 ///
-/// The initialization function is called right after the Win32 window was created
+/// The initialization function is called during the handling of the WM_CREATE function, which allows
+/// it to receive a valid HWND, but before it has to handle any messages.
+///
+/// Note that any message sent to the window by the given `initializer` will not be sent to the
+/// [`WindowImpl::handle_message`] function.
+/// For any non-trivial operations (e.g. window resizing, GL context creation, etc.), put them in
+/// [`WindowImpl::after_create`] instead.
 pub fn create_window<W: WindowImpl>(
     title: &HSTRING, flags: WINDOW_STYLE, nc_width: i32, nc_height: i32, parent: HWND,
     initializer: impl FnOnce(HWnd) -> W + 'static,
