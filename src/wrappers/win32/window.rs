@@ -3,20 +3,20 @@ mod handle;
 mod proc;
 mod window_class;
 
-use data::WindowUserData;
+use data::WindowData;
 pub use handle::HWnd;
 pub use proc::wnd_proc;
 use std::ptr::null_mut;
 use std::rc::Rc;
 use window_class::RegisteredClass;
-use windows_core::{Error, HSTRING};
+use windows_core::{Error, Result, HSTRING};
 
 use crate::wrappers::win32::h_instance::HInstance;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::{CreateWindowExW, WINDOW_STYLE};
 
 pub trait WindowImpl: 'static {
-    fn after_create(&self, window: HWnd);
+    fn after_create(&self, window: HWnd) -> Result<()>;
     fn handle_message(
         &self, window: HWnd, message_code: u32, w_param: WPARAM, l_param: LPARAM,
     ) -> Option<LRESULT>;
@@ -26,11 +26,11 @@ pub trait WindowImpl: 'static {
 pub fn create_window<W: WindowImpl>(
     title: &HSTRING, flags: WINDOW_STYLE, nc_width: i32, nc_height: i32, parent: HWND,
     initializer: impl FnOnce(HWnd) -> W + 'static,
-) -> Result<HWND, Error> {
+) -> Result<HWND> {
     let instance = HInstance::get();
     let window_class = RegisteredClass::register_new(instance, Some(wnd_proc::<W>))?;
 
-    let data = WindowUserData::new(initializer, window_class.clone());
+    let data = WindowData::new(initializer, window_class.clone());
 
     let hwnd = unsafe {
         CreateWindowExW(

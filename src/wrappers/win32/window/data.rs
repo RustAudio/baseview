@@ -7,14 +7,14 @@ use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 
 type Initializer<W> = dyn FnOnce(HWnd) -> W + 'static;
 
-pub(crate) struct WindowUserData<W> {
+pub struct WindowData<W> {
     initializer: Cell<Option<Box<Initializer<W>>>>,
     inner_impl: OnceCell<W>,
     // Keep this around to ensure the class is not de-registered while this window is open
     _window_class: RegisteredClass,
 }
 
-impl<W: WindowImpl> WindowUserData<W> {
+impl<W: WindowImpl> WindowData<W> {
     pub fn new(initializer: impl FnOnce(HWnd) -> W + 'static, class: RegisteredClass) -> Rc<Self> {
         Rc::new(Self {
             initializer: Cell::new(Some(Box::new(initializer))),
@@ -23,24 +23,23 @@ impl<W: WindowImpl> WindowUserData<W> {
         })
     }
 
-    pub unsafe fn from_raw(raw: NonNull<WindowUserData<W>>) -> Rc<Self> {
+    pub unsafe fn from_raw(raw: NonNull<WindowData<W>>) -> Rc<Self> {
         let this = ManuallyDrop::new(Rc::from_raw(raw.as_ptr()));
         Rc::clone(&this)
     }
 
-    pub fn initialize(&self, window: HWnd) -> Result<(), ()> {
+    pub fn initialize(&self, window: HWnd) -> Result<()> {
         let Some(initializer) = self.initializer.take() else {
-            panic!("AdapterContainer is already initialized");
+            panic!("WindowData is already initialized");
         };
 
-        // TODO: allow initializer to return error
         if self.inner_impl.set(initializer(window)).is_err() {
             // Should not be possible
-            panic!("AdapterContainer is already initialized");
+            unreachable!("WindowData is already initialized");
         }
 
         if let Some(inner) = self.inner_impl.get() {
-            inner.after_create(window);
+            inner.after_create(window)?;
         }
 
         Ok(())

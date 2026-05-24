@@ -15,7 +15,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::win::MyWindowImpl;
+use crate::win::BaseviewWindow;
 use crate::wrappers::win32::window::wnd_proc;
 
 // track all windows opened by this instance of baseview
@@ -129,7 +129,7 @@ unsafe fn offer_message_to_baseview(msg: *mut MSG) -> bool {
 
     // check if this is one of our windows. if so, intercept it
     if HOOK_STATE.read().unwrap().open_windows.contains(&HWNDWrapper(msg.hwnd)) {
-        let _ = wnd_proc::<MyWindowImpl>(msg.hwnd, msg.message, msg.wParam, msg.lParam);
+        let _ = wnd_proc::<BaseviewWindow>(msg.hwnd, msg.message, msg.wParam, msg.lParam);
 
         return true;
     }

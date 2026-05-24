@@ -14,7 +14,7 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
     match message_code {
         WM_CREATE => {
             let create = unsafe { &*(l_param as *const CREATESTRUCTW) };
-            let inner_ptr = create.lpCreateParams as *mut WindowUserData<W>;
+            let inner_ptr = create.lpCreateParams as *mut WindowData<W>;
 
             let Some(inner_ptr) = NonNull::new(inner_ptr) else {
                 // If the state pointer was null for some weird reason, we just abort.
@@ -46,7 +46,7 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
                 Ok(Ok(())) => 0,
 
                 // If initializer failed or errored, abort.
-                Ok(Err(())) | Err(_) => {
+                Ok(Err(_)) | Err(_) => {
                     // First, revoke ownership from the window, we don't want it to be used by any subsequent messages.
                     let _ = window.set_userdata_ptr(core::ptr::null::<W>());
 
@@ -61,7 +61,7 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
             }
         }
         WM_DESTROY => {
-            let Some(state_ptr) = window.get_userdata_ptr::<WindowUserData<W>>() else {
+            let Some(state_ptr) = window.get_userdata_ptr::<WindowData<W>>() else {
                 // TODO: log error
                 return handle_default();
             };
@@ -74,12 +74,12 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
             0
         }
         _ => {
-            let Some(inner_ptr) = window.get_userdata_ptr::<WindowUserData<W>>() else {
+            let Some(inner_ptr) = window.get_userdata_ptr::<WindowData<W>>() else {
                 // TODO: log error
                 return handle_default();
             };
 
-            let inner = unsafe { WindowUserData::from_raw(inner_ptr) };
+            let inner = unsafe { WindowData::from_raw(inner_ptr) };
 
             let result = catch_unwind(AssertUnwindSafe(|| {
                 inner.handle_message(window, message_code, w_param, l_param)

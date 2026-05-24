@@ -1,4 +1,4 @@
-use windows_core::{ComObject, Interface, HSTRING};
+use windows_core::{ComObject, Interface, Result, HSTRING};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     System::Ole::{OleInitialize, RevokeDragDrop},
@@ -108,12 +108,15 @@ impl Drop for ParentHandle {
     }
 }
 
-pub struct MyWindowImpl {
+pub struct BaseviewWindow {
     window_state: Rc<WindowState>,
+    _keyboard_hook: Cell<Option<KeyboardHookHandle>>,
+    _parent_handle: ParentHandle,
+    _drop_target: Cell<Option<ComObject<DropTarget>>>,
 }
 
-impl WindowImpl for MyWindowImpl {
-    fn after_create(&self, window: HWnd) {
+impl WindowImpl for BaseviewWindow {
+    fn after_create(&self, window: HWnd) -> Result<()> {
         let hwnd = window.as_raw();
         let window_state = &self.window_state;
 
@@ -155,7 +158,7 @@ impl WindowImpl for MyWindowImpl {
                 };
 
             let drop_target = ComObject::new(DropTarget::new(Rc::downgrade(window_state)));
-            *window_state._drop_target.borrow_mut() = Some(drop_target.clone());
+            self._drop_target.set(Some(drop_target.clone()));
 
             OleInitialize(null_mut());
 
@@ -187,6 +190,8 @@ impl WindowImpl for MyWindowImpl {
                 }
             }
         }
+
+        Ok(())
     }
 
     fn handle_message(
@@ -570,14 +575,12 @@ pub(super) struct WindowState {
     pub hwnd: HWND,
     current_size: Cell<PhySize>,
     current_scale_factor: Cell<f64>,
-    _parent_handle: ParentHandle,
     keyboard_state: RefCell<KeyboardState>,
     mouse_button_counter: Cell<usize>,
     mouse_was_outside_window: RefCell<bool>,
     cursor_icon: Cell<MouseCursor>,
     // Initialized late so the `Window` can hold a reference to this `WindowState`
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
-    _drop_target: RefCell<Option<ComObject<DropTarget>>>,
     scale_policy: WindowScalePolicy,
     dw_style: u32,
 
@@ -766,10 +769,9 @@ impl Window<'_> {
 
             let is_open = Rc::new(Cell::new(true));
 
-            let is_open2 = is_open.clone();
+            let parent_handle = ParentHandle { is_open: is_open.clone() };
 
             let initializer = move |hwnd: HWnd| {
-                println!("init");
                 let hwnd = hwnd.as_raw();
 
                 let kb_hook = hook::init_keyboard_hook(hwnd);
@@ -783,13 +785,10 @@ impl Window<'_> {
                     GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
                 });
 
-                let parent_handle = ParentHandle { is_open: is_open2 };
-
                 let window_state = Rc::new(WindowState {
                     hwnd,
                     current_scale_factor: scaling.into(),
                     current_size: current_size.into(),
-                    _parent_handle: parent_handle,
                     keyboard_state: RefCell::new(KeyboardState::new()),
                     mouse_button_counter: Cell::new(0),
                     mouse_was_outside_window: RefCell::new(true),
@@ -797,7 +796,6 @@ impl Window<'_> {
                     // The Window refers to this `WindowState`, so this `handler` needs to be
                     // initialized later
                     handler: RefCell::new(None),
-                    _drop_target: RefCell::new(None),
                     scale_policy: options.scale,
                     dw_style: flags,
 
@@ -816,7 +814,12 @@ impl Window<'_> {
                 };
                 *window_state.handler.borrow_mut() = Some(Box::new(handler));
 
-                MyWindowImpl { window_state }
+                BaseviewWindow {
+                    window_state,
+                    _parent_handle: parent_handle,
+                    _drop_target: None.into(),
+                    _keyboard_hook: None.into(),
+                }
             };
 
             let hwnd = create_window(
