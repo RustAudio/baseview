@@ -16,7 +16,7 @@ use windows_sys::Win32::{
 };
 
 use crate::win::MyWindowImpl;
-use crate::wrappers::win32::h_window::wnd_proc;
+use crate::wrappers::win32::window::wnd_proc;
 
 // track all windows opened by this instance of baseview
 // we use an RwLock here since the vast majority of uses (event interceptions)

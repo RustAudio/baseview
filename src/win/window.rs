@@ -1,4 +1,4 @@
-use windows_core::{ComObject, Error, Interface};
+use windows_core::{ComObject, Interface, HSTRING};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     System::Ole::{OleInitialize, RevokeDragDrop},
@@ -12,13 +12,13 @@ use windows_sys::Win32::{
             TRACKMOUSEEVENT,
         },
         WindowsAndMessaging::{
-            AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-            GetMessageW, LoadCursorW, PostMessageW, SetCursor, SetTimer, SetWindowPos,
-            TranslateMessage, HTCLIENT, MSG, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA,
-            WM_CHAR, WM_CLOSE, WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP,
-           WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL,
-            WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS,WM_SHOWWINDOW,
-            WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN,
+            AdjustWindowRectEx, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
+            LoadCursorW, PostMessageW, SetCursor, SetTimer, SetWindowPos, TranslateMessage,
+            HTCLIENT, MSG, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, WHEEL_DELTA, WM_CHAR,
+            WM_CLOSE, WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP,WM_KILLFOCUS, WM_LBUTTONDOWN,
+            WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
+            WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS,WM_SHOWWINDOW, WM_SIZE,
+            WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN,
             WM_XBUTTONUP, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX,
             WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
         },
@@ -27,8 +27,6 @@ use windows_sys::Win32::{
 
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::VecDeque;
-use std::ffi::OsStr;
-use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 use std::rc::Rc;
 
@@ -54,11 +52,7 @@ use super::keyboard::KeyboardState;
 
 #[cfg(feature = "opengl")]
 use crate::gl::GlContext;
-use crate::wrappers::win32;
-use crate::wrappers::win32::h_instance::HInstance;
-use crate::wrappers::win32::h_window::{WindowImpl, WindowUserData};
-use crate::wrappers::win32::h_wnd::HWnd;
-use crate::wrappers::win32::window_class::RegisteredClass;
+use crate::wrappers::win32::window::*;
 
 #[allow(non_snake_case)]
 fn HIWORD(wparam: WPARAM) -> u16 {
@@ -119,7 +113,7 @@ pub struct MyWindowImpl {
 }
 
 impl WindowImpl for MyWindowImpl {
-    fn after_create(&self, window: &HWnd) {
+    fn after_create(&self, window: HWnd) {
         let hwnd = window.as_raw();
         let window_state = &self.window_state;
 
@@ -196,7 +190,7 @@ impl WindowImpl for MyWindowImpl {
     }
 
     fn handle_message(
-        &self, window: &HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM,
+        &self, window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM,
     ) -> Option<LRESULT> {
         let hwnd = window.as_raw();
         unsafe {
@@ -227,8 +221,7 @@ impl WindowImpl for MyWindowImpl {
         }
     }
 
-    fn destroy_started(&self, window: &HWnd) {
-        println!("Destroying Window");
+    fn destroy_started(&self, window: HWnd) {
         unsafe { RevokeDragDrop(window.as_raw()) };
     }
 }
@@ -575,7 +568,6 @@ pub(super) struct WindowState {
     /// struct associated with this HWND through `unsafe { GetWindowLongPtrW(self.hwnd,
     /// GWLP_USERDATA) } as *const WindowState`.
     pub hwnd: HWND,
-    window_class: Cell<Option<RegisteredClass>>,
     current_size: Cell<PhySize>,
     current_scale_factor: Cell<f64>,
     _parent_handle: ParentHandle,
@@ -738,17 +730,8 @@ impl Window<'_> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let instance = HInstance::get();
-
         unsafe {
-            let mut title: Vec<u16> = OsStr::new(&options.title[..]).encode_wide().collect();
-            title.push(0);
-
-            let window_class = RegisteredClass::register_new(
-                instance,
-                Some(win32::h_window::wnd_proc::<MyWindowImpl>),
-            )
-            .unwrap();
+            let title = HSTRING::from(options.title);
 
             let scaling = match options.scale {
                 WindowScalePolicy::SystemScaleFactor => 1.0,
@@ -783,10 +766,9 @@ impl Window<'_> {
 
             let is_open = Rc::new(Cell::new(true));
 
-            let window_class2 = window_class.clone();
             let is_open2 = is_open.clone();
 
-            let data = WindowUserData::new(move |hwnd| {
+            let initializer = move |hwnd: HWnd| {
                 println!("init");
                 let hwnd = hwnd.as_raw();
 
@@ -805,7 +787,6 @@ impl Window<'_> {
 
                 let window_state = Rc::new(WindowState {
                     hwnd,
-                    window_class: Some(window_class2).into(),
                     current_scale_factor: scaling.into(),
                     current_size: current_size.into(),
                     _parent_handle: parent_handle,
@@ -836,26 +817,17 @@ impl Window<'_> {
                 *window_state.handler.borrow_mut() = Some(Box::new(handler));
 
                 MyWindowImpl { window_state }
-            });
+            };
 
-            let hwnd = CreateWindowExW(
-                0,
-                window_class.as_atom_ptr(),
-                title.as_ptr(),
+            let hwnd = create_window(
+                &title,
                 flags,
-                0,
-                0,
                 rect.right - rect.left,
                 rect.bottom - rect.top,
                 parent as *mut _,
-                null_mut(),
-                null_mut(),
-                Rc::into_raw(data).cast(),
-            );
-
-            if hwnd.is_null() {
-                panic!("CreateWindowExW failed: {}", Error::from_win32());
-            }
+                initializer,
+            )
+            .unwrap();
 
             PostMessageW(hwnd, WM_SHOWWINDOW, 0, 0);
 

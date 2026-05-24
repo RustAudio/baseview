@@ -1,18 +1,17 @@
-﻿use std::ptr::NonNull;
+﻿use std::marker::PhantomData;
+use std::ptr::NonNull;
 use windows_core::{Error, Result, HRESULT};
 use windows_sys::Win32::Foundation::{SetLastError, HWND};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, GetWindowLongW, SetWindowLongPtrW, ShowWindow, GWLP_USERDATA, SW_SHOWNORMAL,
-    WINDOW_LONG_PTR_INDEX,
+    GetWindowLongPtrW, SetWindowLongPtrW, GWLP_USERDATA,
 };
 
-#[repr(transparent)]
-pub struct HWnd(HWND);
+#[derive(Copy, Clone)]
+pub struct HWnd<'a>(HWND, PhantomData<&'a ()>);
 
-impl HWnd {
-    pub unsafe fn from_ref(hwnd: &HWND) -> &Self {
-        // SAFETY: HWnd is repr(transparent)
-        unsafe { &*(hwnd as *const HWND as *const HWnd) }
+impl HWnd<'_> {
+    pub unsafe fn from_raw(hwnd: HWND) -> Self {
+        Self(hwnd, PhantomData)
     }
 
     pub fn as_raw(&self) -> HWND {
