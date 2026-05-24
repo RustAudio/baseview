@@ -21,7 +21,7 @@ mod macos;
 #[cfg(target_os = "macos")]
 use macos as platform;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct GlConfig {
     pub version: (u8, u8),
     pub profile: Profile,

@@ -25,7 +25,7 @@ use windows_sys::Win32::{
     },
 };
 
-use std::cell::{Cell, Ref, RefCell, RefMut};
+use std::cell::{Cell, OnceCell, Ref, RefCell, RefMut};
 use std::collections::VecDeque;
 use std::ptr::null_mut;
 use std::rc::Rc;
@@ -108,17 +108,28 @@ impl Drop for ParentHandle {
     }
 }
 
+type HandlerBuilder = dyn FnOnce(&mut crate::Window) -> Box<dyn WindowHandler>;
+
 pub struct BaseviewWindow {
     window_state: Rc<WindowState>,
-    _keyboard_hook: Cell<Option<KeyboardHookHandle>>,
+
+    handler_builder: Cell<Option<Box<HandlerBuilder>>>,
+
+    // Things not directly used, but kept so their Drop impl runs when the window is destroyed
     _parent_handle: ParentHandle,
+    _keyboard_hook: Cell<Option<KeyboardHookHandle>>,
     _drop_target: Cell<Option<ComObject<DropTarget>>>,
+
+    #[cfg(feature = "opengl")]
+    pub gl_config: Option<crate::gl::GlConfig>,
 }
 
 impl WindowImpl for BaseviewWindow {
     fn after_create(&self, window: HWnd) -> Result<()> {
         let hwnd = window.as_raw();
         let window_state = &self.window_state;
+
+        self._keyboard_hook.set(Some(hook::init_keyboard_hook(hwnd)));
 
         unsafe {
             // Only works on Windows 10 unfortunately.
@@ -190,6 +201,27 @@ impl WindowImpl for BaseviewWindow {
                 }
             }
         }
+
+        #[cfg(feature = "opengl")]
+        if let Some(gl_config) = self.gl_config {
+            let mut handle = Win32WindowHandle::empty();
+            handle.hwnd = hwnd;
+            let handle = RawWindowHandle::Win32(handle);
+
+            let gl_context = unsafe { GlContext::create(&handle, gl_config) }
+                .expect("Could not create OpenGL context");
+
+            let Ok(()) = self.window_state.gl_context.set(gl_context) else {
+                unreachable!();
+            };
+        };
+
+        let handler = {
+            let mut window = crate::Window::new(window_state.create_window());
+
+            self.handler_builder.take().unwrap()(&mut window)
+        };
+        *window_state.handler.borrow_mut() = Some(handler);
 
         Ok(())
     }
@@ -577,11 +609,6 @@ pub(super) struct WindowState {
     scale_policy: WindowScalePolicy,
     dw_style: u32,
 
-    // handle to the win32 keyboard hook
-    // we don't need to read from this, just carry it around so the Drop impl can run
-    #[allow(dead_code)]
-    kb_hook: KeyboardHookHandle,
-
     /// Tasks that should be executed at the end of `wnd_proc`. This is needed to avoid mutably
     /// borrowing the fields from `WindowState` more than once. For instance, when the window
     /// handler requests a resize in response to a keyboard event, the window state will already be
@@ -590,10 +617,32 @@ pub(super) struct WindowState {
     pub deferred_tasks: RefCell<VecDeque<WindowTask>>,
 
     #[cfg(feature = "opengl")]
-    pub gl_context: Option<GlContext>,
+    pub gl_context: OnceCell<GlContext>,
 }
 
 impl WindowState {
+    pub fn new(
+        hwnd: HWND, current_size: PhySize, scaling: f64, scale_policy: WindowScalePolicy,
+        style_flags: u32,
+    ) -> Self {
+        Self {
+            hwnd,
+            current_scale_factor: scaling.into(),
+            current_size: current_size.into(),
+            keyboard_state: RefCell::new(KeyboardState::new()),
+            mouse_button_counter: Cell::new(0),
+            mouse_was_outside_window: RefCell::new(true),
+            cursor_icon: Cell::new(MouseCursor::Default),
+            handler: RefCell::new(None),
+            scale_policy,
+            dw_style: style_flags,
+
+            deferred_tasks: RefCell::new(VecDeque::with_capacity(4)),
+
+            gl_context: OnceCell::new(),
+        }
+    }
+
     pub(super) fn create_window(&self) -> Window<'_> {
         Window { state: self }
     }
@@ -726,111 +775,79 @@ impl Window<'_> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        unsafe {
-            let title = HSTRING::from(options.title);
+        let title = HSTRING::from(options.title);
 
-            let scaling = match options.scale {
-                WindowScalePolicy::SystemScaleFactor => 1.0,
-                WindowScalePolicy::ScaleFactor(scale) => scale,
-            };
+        let scaling = match options.scale {
+            WindowScalePolicy::SystemScaleFactor => 1.0,
+            WindowScalePolicy::ScaleFactor(scale) => scale,
+        };
 
-            let current_size = WindowInfo::from_logical_size(options.size, scaling).physical_size();
+        let current_size = WindowInfo::from_logical_size(options.size, scaling).physical_size();
 
-            let mut rect = RECT {
-                left: 0,
-                top: 0,
-                // todo: check if usize fits into i32
-                right: current_size.width as i32,
-                bottom: current_size.height as i32,
-            };
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            // todo: check if usize fits into i32
+            right: current_size.width as i32,
+            bottom: current_size.height as i32,
+        };
 
-            let flags = if parented {
-                WS_CHILD | WS_VISIBLE
-            } else {
-                WS_POPUPWINDOW
-                    | WS_CAPTION
-                    | WS_VISIBLE
-                    | WS_SIZEBOX
-                    | WS_MINIMIZEBOX
-                    | WS_MAXIMIZEBOX
-                    | WS_CLIPSIBLINGS
-            };
+        let flags = if parented {
+            WS_CHILD | WS_VISIBLE
+        } else {
+            WS_POPUPWINDOW
+                | WS_CAPTION
+                | WS_VISIBLE
+                | WS_SIZEBOX
+                | WS_MINIMIZEBOX
+                | WS_MAXIMIZEBOX
+                | WS_CLIPSIBLINGS
+        };
 
-            if !parented {
-                AdjustWindowRectEx(&mut rect, flags, FALSE, 0);
-            }
+        if !parented {
+            unsafe { AdjustWindowRectEx(&mut rect, flags, FALSE, 0) };
+        }
 
-            let is_open = Rc::new(Cell::new(true));
+        let is_open = Rc::new(Cell::new(true));
 
-            let parent_handle = ParentHandle { is_open: is_open.clone() };
+        let parent_handle =
+            ParentHandle { is_open: is_open.clone() };
 
-            let initializer = move |hwnd: HWnd| {
-                let hwnd = hwnd.as_raw();
+        let initializer = move |hwnd: HWnd| {
+            let window_state = Rc::new(WindowState::new(
+                hwnd.as_raw(),
+                current_size,
+                scaling,
+                options.scale,
+                flags,
+            ));
 
-                let kb_hook = hook::init_keyboard_hook(hwnd);
+            BaseviewWindow {
+                window_state,
+                handler_builder: Cell::new(Some(Box::new(|w| Box::new(build(w))))),
+
+                _parent_handle: parent_handle,
+                _drop_target: None.into(),
+                _keyboard_hook: None.into(),
 
                 #[cfg(feature = "opengl")]
-                let gl_context: Option<GlContext> = options.gl_config.map(|gl_config| {
-                    let mut handle = Win32WindowHandle::empty();
-                    handle.hwnd = hwnd;
-                    let handle = RawWindowHandle::Win32(handle);
+                gl_config: options.gl_config,
+            }
+        };
 
-                    GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
-                });
+        let hwnd = create_window(
+            &title,
+            flags,
+            rect.right - rect.left,
+            rect.bottom - rect.top,
+            parent as *mut _,
+            initializer,
+        )
+        .unwrap();
 
-                let window_state = Rc::new(WindowState {
-                    hwnd,
-                    current_scale_factor: scaling.into(),
-                    current_size: current_size.into(),
-                    keyboard_state: RefCell::new(KeyboardState::new()),
-                    mouse_button_counter: Cell::new(0),
-                    mouse_was_outside_window: RefCell::new(true),
-                    cursor_icon: Cell::new(MouseCursor::Default),
-                    // The Window refers to this `WindowState`, so this `handler` needs to be
-                    // initialized later
-                    handler: RefCell::new(None),
-                    scale_policy: options.scale,
-                    dw_style: flags,
+        unsafe { PostMessageW(hwnd, WM_SHOWWINDOW, 0, 0) };
 
-                    deferred_tasks: RefCell::new(VecDeque::with_capacity(4)),
-
-                    kb_hook,
-
-                    #[cfg(feature = "opengl")]
-                    gl_context,
-                });
-
-                let handler = {
-                    let mut window = crate::Window::new(window_state.create_window());
-
-                    build(&mut window)
-                };
-                *window_state.handler.borrow_mut() = Some(Box::new(handler));
-
-                BaseviewWindow {
-                    window_state,
-                    _parent_handle: parent_handle,
-                    _drop_target: None.into(),
-                    _keyboard_hook: None.into(),
-                }
-            };
-
-            let hwnd = create_window(
-                &title,
-                flags,
-                rect.right - rect.left,
-                rect.bottom - rect.top,
-                parent as *mut _,
-                initializer,
-            )
-            .unwrap();
-
-            PostMessageW(hwnd, WM_SHOWWINDOW, 0, 0);
-
-            let window_handle = WindowHandle { hwnd: Some(hwnd), is_open: Rc::clone(&is_open) };
-
-            window_handle
-        }
+        WindowHandle { hwnd: Some(hwnd), is_open: Rc::clone(&is_open) }
     }
 
     pub fn close(&mut self) {
@@ -867,7 +884,7 @@ impl Window<'_> {
 
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<&GlContext> {
-        self.state.gl_context.as_ref()
+        self.state.gl_context.get()
     }
 }
 
