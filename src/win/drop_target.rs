@@ -43,11 +43,8 @@ impl DropTarget {
         };
 
         unsafe {
-            let mut window = crate::Window::new(window_state.create_window());
-
             let event = Event::Mouse(event);
-            let event_status =
-                window_state.handler_mut().as_mut().unwrap().on_event(&mut window, event);
+            let event_status = window_state.handle_event(event);
 
             if let Some(pdwEffect) = pdwEffect {
                 match event_status {

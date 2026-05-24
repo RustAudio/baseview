@@ -25,7 +25,7 @@ use windows_sys::Win32::{
     },
 };
 
-use std::cell::{Cell, OnceCell, Ref, RefCell, RefMut};
+use std::cell::{Cell, OnceCell, Ref, RefCell};
 use std::collections::VecDeque;
 use std::ptr::null_mut;
 use std::rc::Rc;
@@ -42,8 +42,8 @@ const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
 use crate::win::hook::{self, KeyboardHookHandle};
 use crate::{
-    Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
+    Event, EventStatus, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size,
+    WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
 use super::cursor::cursor_to_lpcwstr;
@@ -217,7 +217,7 @@ impl WindowImpl for BaseviewWindow {
         };
 
         let handler = {
-            let mut window = crate::Window::new(window_state.create_window());
+            let mut window = crate::Window::new(Window { state: window_state });
 
             self.handler_builder.take().unwrap()(&mut window)
         };
@@ -263,10 +263,7 @@ unsafe fn wnd_proc_inner(
 ) -> Option<LRESULT> {
     match msg {
         WM_MOUSEMOVE => {
-            let mut window = crate::Window::new(window_state.create_window());
-
-            let mut mouse_was_outside_window = window_state.mouse_was_outside_window.borrow_mut();
-            if *mouse_was_outside_window {
+            if window_state.mouse_was_outside_window.get() {
                 // this makes Windows track whether the mouse leaves the window.
                 // When the mouse leaves it results in a `WM_MOUSELEAVE` event.
                 let mut track_mouse = TRACKMOUSEEVENT {
@@ -278,15 +275,10 @@ unsafe fn wnd_proc_inner(
                 // Couldn't find a good way to track whether the mouse enters,
                 // but if `WM_MOUSEMOVE` happens, the mouse must have entered.
                 TrackMouseEvent(&mut track_mouse);
-                *mouse_was_outside_window = false;
+                window_state.mouse_was_outside_window.set(false);
 
                 let enter_event = Event::Mouse(MouseEvent::CursorEntered);
-                window_state
-                    .handler
-                    .borrow_mut()
-                    .as_mut()
-                    .unwrap()
-                    .on_event(&mut window, enter_event);
+                window_state.handle_event(enter_event);
             }
 
             let x = (lparam & 0xFFFF) as i16 as i32;
@@ -301,21 +293,18 @@ unsafe fn wnd_proc_inner(
                     .borrow()
                     .get_modifiers_from_mouse_wparam(wparam),
             });
-            window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, move_event);
+
+            window_state.handle_event(move_event);
             Some(0)
         }
 
         WM_MOUSELEAVE => {
-            let mut window = crate::Window::new(window_state.create_window());
-            let event = Event::Mouse(MouseEvent::CursorLeft);
-            window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+            window_state.handle_event(Event::Mouse(MouseEvent::CursorLeft));
 
-            *window_state.mouse_was_outside_window.borrow_mut() = true;
+            window_state.mouse_was_outside_window.set(true);
             Some(0)
         }
         WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
-            let mut window = crate::Window::new(window_state.create_window());
-
             let value = (wparam >> 16) as i16;
             let value = value as i32;
             let value = value as f32 / WHEEL_DELTA as f32;
@@ -332,14 +321,11 @@ unsafe fn wnd_proc_inner(
                     .get_modifiers_from_mouse_wparam(wparam),
             });
 
-            window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
-
+            window_state.handle_event(event);
             Some(0)
         }
         WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
         | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
-            let mut window = crate::Window::new(window_state.create_window());
-
             let mut mouse_button_counter = window_state.mouse_button_counter.get();
 
             #[allow(non_snake_case)]
@@ -397,38 +383,20 @@ unsafe fn wnd_proc_inner(
                 };
 
                 window_state.mouse_button_counter.set(mouse_button_counter);
-
-                window_state
-                    .handler
-                    .borrow_mut()
-                    .as_mut()
-                    .unwrap()
-                    .on_event(&mut window, Event::Mouse(event));
+                window_state.handle_event(Event::Mouse(event));
             }
 
             None
         }
         WM_TIMER => {
-            let mut window = crate::Window::new(window_state.create_window());
-
             if wparam == WIN_FRAME_TIMER {
-                window_state.handler.borrow_mut().as_mut().unwrap().on_frame(&mut window);
+                window_state.handle_on_frame()
             }
 
             Some(0)
         }
         WM_CLOSE => {
-            // Make sure to release the borrow before the DefWindowProc call
-            {
-                let mut window = crate::Window::new(window_state.create_window());
-
-                window_state
-                    .handler
-                    .borrow_mut()
-                    .as_mut()
-                    .unwrap()
-                    .on_event(&mut window, Event::Window(WindowEvent::WillClose));
-            }
+            window_state.handle_event(Event::Window(WindowEvent::WillClose));
 
             // DestroyWindow(hwnd);
             // Some(0)
@@ -436,18 +404,11 @@ unsafe fn wnd_proc_inner(
         }
         WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP
         | WM_INPUTLANGCHANGE => {
-            let mut window = crate::Window::new(window_state.create_window());
-
             let opt_event =
                 window_state.keyboard_state.borrow_mut().process_message(hwnd, msg, wparam, lparam);
 
             if let Some(event) = opt_event {
-                window_state
-                    .handler
-                    .borrow_mut()
-                    .as_mut()
-                    .unwrap()
-                    .on_event(&mut window, Event::Keyboard(event));
+                window_state.handle_event(Event::Keyboard(event));
             }
 
             if msg != WM_SYSKEYDOWN {
@@ -481,8 +442,6 @@ unsafe fn wnd_proc_inner(
             None
         }
         WM_SIZE => {
-            let mut window = crate::Window::new(window_state.create_window());
-
             let width = (lparam & 0xFFFF) as u16 as u32;
             let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
 
@@ -500,12 +459,7 @@ unsafe fn wnd_proc_inner(
                 WindowInfo::from_physical_size(new_size, window_state.current_scale_factor.get())
             };
 
-            window_state
-                .handler
-                .borrow_mut()
-                .as_mut()
-                .unwrap()
-                .on_event(&mut window, Event::Window(WindowEvent::Resized(new_window_info)));
+            window_state.handle_event(Event::Window(WindowEvent::Resized(new_window_info)));
 
             None
         }
@@ -544,18 +498,11 @@ unsafe fn wnd_proc_inner(
             if changed {
                 window_state.current_size.set(new_size);
 
-                let mut window = crate::Window::new(window_state.create_window());
                 let new_window_info = WindowInfo::from_physical_size(
                     new_size,
                     window_state.current_scale_factor.get(),
                 );
-
-                window_state
-                    .handler
-                    .borrow_mut()
-                    .as_mut()
-                    .unwrap()
-                    .on_event(&mut window, Event::Window(WindowEvent::Resized(new_window_info)));
+                window_state.handle_event(Event::Window(WindowEvent::Resized(new_window_info)));
             }
 
             None
@@ -602,7 +549,7 @@ pub(super) struct WindowState {
     current_scale_factor: Cell<f64>,
     keyboard_state: RefCell<KeyboardState>,
     mouse_button_counter: Cell<usize>,
-    mouse_was_outside_window: RefCell<bool>,
+    mouse_was_outside_window: Cell<bool>,
     cursor_icon: Cell<MouseCursor>,
     // Initialized late so the `Window` can hold a reference to this `WindowState`
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
@@ -631,7 +578,7 @@ impl WindowState {
             current_size: current_size.into(),
             keyboard_state: RefCell::new(KeyboardState::new()),
             mouse_button_counter: Cell::new(0),
-            mouse_was_outside_window: RefCell::new(true),
+            mouse_was_outside_window: true.into(),
             cursor_icon: Cell::new(MouseCursor::Default),
             handler: RefCell::new(None),
             scale_policy,
@@ -643,8 +590,23 @@ impl WindowState {
         }
     }
 
-    pub(super) fn create_window(&self) -> Window<'_> {
-        Window { state: self }
+    pub(crate) fn handle_on_frame(&self) {
+        let mut handler = self.handler.borrow_mut();
+        let Some(handler) = handler.as_mut() else { return };
+        let mut window = crate::window::Window::new(Window { state: self });
+
+        handler.on_frame(&mut window)
+    }
+
+    pub(crate) fn handle_event(&self, event: Event) -> EventStatus {
+        let mut handler = self.handler.borrow_mut();
+
+        let Some(handler) = handler.as_mut() else {
+            return EventStatus::Ignored;
+        };
+
+        let mut window = crate::window::Window::new(Window { state: self });
+        handler.on_event(&mut window, event)
     }
 
     pub(super) fn window_info(&self) -> WindowInfo {
@@ -653,10 +615,6 @@ impl WindowState {
 
     pub(super) fn keyboard_state(&self) -> Ref<'_, KeyboardState> {
         self.keyboard_state.borrow()
-    }
-
-    pub(super) fn handler_mut(&self) -> RefMut<'_, Option<Box<dyn WindowHandler>>> {
-        self.handler.borrow_mut()
     }
 
     fn send_resized(&self, logical_size: Size) {
