@@ -194,36 +194,29 @@ impl WindowImpl for BaseviewWindow {
         Ok(())
     }
 
-    fn handle_message(
+    unsafe fn handle_message(
         &self, window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM,
     ) -> Option<LRESULT> {
         let hwnd = window.as_raw();
-        unsafe {
-            let result = wnd_proc_inner(hwnd, msg, wparam, lparam, &self.window_state);
 
-            // If any of the above event handlers caused tasks to be pushed to the deferred tasks list,
-            // then we'll try to handle them now
-            loop {
-                // NOTE: This is written like this instead of using a `while let` loop to avoid exending
-                //       the borrow of `window_state.deferred_tasks` into the call of
-                //       `window_state.handle_deferred_task()` since that may also generate additional
-                //       messages.
-                let task = match self.window_state.deferred_tasks.borrow_mut().pop_front() {
-                    Some(task) => task,
-                    None => break,
-                };
+        let result = unsafe { wnd_proc_inner(hwnd, msg, wparam, lparam, &self.window_state) };
 
-                self.window_state.handle_deferred_task(task);
-            }
+        // If any of the above event handlers caused tasks to be pushed to the deferred tasks list,
+        // then we'll try to handle them now
+        loop {
+            // NOTE: This is written like this instead of using a `while let` loop to avoid exending
+            //       the borrow of `window_state.deferred_tasks` into the call of
+            //       `window_state.handle_deferred_task()` since that may also generate additional
+            //       messages.
+            let task = match self.window_state.deferred_tasks.borrow_mut().pop_front() {
+                Some(task) => task,
+                None => break,
+            };
 
-            // The actual custom window proc has been moved to another function so we can always handle
-            // the deferred tasks regardless of whether the custom window proc returns early or not
-            if let Some(result) = result {
-                return Some(result);
-            }
-
-            Some(DefWindowProcW(hwnd, msg, wparam, lparam))
+            self.window_state.handle_deferred_task(task);
         }
+
+        result
     }
 
     fn destroy_started(&self, window: HWnd) {

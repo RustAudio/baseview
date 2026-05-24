@@ -17,7 +17,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{CreateWindowExW, WINDOW_STYLE}
 
 pub trait WindowImpl: 'static {
     fn after_create(&self, window: HWnd) -> Result<()>;
-    fn handle_message(
+    unsafe fn handle_message(
         &self, window: HWnd, message_code: u32, w_param: WPARAM, l_param: LPARAM,
     ) -> Option<LRESULT>;
     fn destroy_started(&self, window: HWnd);

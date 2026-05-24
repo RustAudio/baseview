@@ -75,7 +75,6 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
         }
         _ => {
             let Some(inner_ptr) = window.get_userdata_ptr::<WindowData<W>>() else {
-                // TODO: log error
                 return handle_default();
             };
 
