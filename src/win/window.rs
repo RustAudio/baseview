@@ -175,8 +175,6 @@ impl WindowImpl for BaseviewWindow {
 
             RegisterDragDrop(hwnd, drop_target.as_interface::<IDropTarget>().as_raw());
 
-            SetTimer(hwnd, WIN_FRAME_TIMER, 15, None);
-
             if let Some(mut new_rect) = new_rect {
                 // Convert this desired"client rectangle" size to the actual "window rectangle"
                 // size (Because of course you have to do that).
@@ -803,6 +801,12 @@ impl Window<'_> {
             initializer,
         )
         .unwrap();
+
+        // FIXME: this SetTimer call could be in after_create, but for some reason it changes the ordering
+        // for a parent+child window situation, which results in the parent drawing over the child.
+        // This timer should be replaced by proper window redrawing/damage/vsync handling, but this
+        // would be a breaking change, so we'll do that later.
+        unsafe { SetTimer(hwnd, WIN_FRAME_TIMER, 15, None) };
 
         unsafe { PostMessageW(hwnd, WM_SHOWWINDOW, 0, 0) };
 
