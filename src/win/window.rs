@@ -203,7 +203,7 @@ impl WindowImpl for BaseviewWindow {
         }
 
         #[cfg(feature = "opengl")]
-        if let Some(gl_config) = self.gl_config {
+        if let Some(gl_config) = self.gl_config.clone() {
             let mut handle = Win32WindowHandle::empty();
             handle.hwnd = hwnd;
             let handle = RawWindowHandle::Win32(handle);
