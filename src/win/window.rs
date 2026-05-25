@@ -556,6 +556,18 @@ impl WindowState {
         self.handler.borrow_mut()
     }
 
+    fn send_resized(&self, logical_size: Size) {
+        let window_info =
+            WindowInfo::from_logical_size(logical_size, self.current_scale_factor.get());
+        self.current_size.set(window_info.physical_size());
+
+        let mut window = crate::Window::new(self.create_window());
+        self.handler_mut()
+            .as_mut()
+            .unwrap()
+            .on_event(&mut window, Event::Window(WindowEvent::Resized(window_info)));
+    }
+
     /// Handle a deferred task as described in [`Self::deferred_tasks`].
     pub(self) fn handle_deferred_task(&self, task: WindowTask) {
         match task {
@@ -774,14 +786,18 @@ impl Window<'_> {
                 if current_scale_factor != scale_factor {
                     window_state.current_scale_factor.set(scale_factor);
 
-                    let current_size = window_state.current_size.get();
+                    let new_size =
+                        WindowInfo::from_logical_size(options.size, scale_factor).physical_size();
+                    // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
+                    // doesn't also emit Resized.
+                    window_state.current_size.set(new_size);
 
                     Some(RECT {
                         left: 0,
                         top: 0,
                         // todo: check if usize fits into i32
-                        right: current_size.width as i32,
-                        bottom: current_size.height as i32,
+                        right: new_size.width as i32,
+                        bottom: new_size.height as i32,
                     })
                 } else {
                     None
@@ -805,8 +821,7 @@ impl Window<'_> {
                 // size (Because of course you have to do that).
                 AdjustWindowRectEx(&mut new_rect, flags, 0, 0);
 
-                // Windows makes us resize the window manually. This will trigger another `WM_SIZE` event,
-                // which we can then send the user the new scale factor.
+                // Windows makes us resize the window manually. This will trigger another `WM_SIZE` event, but it happens before GWLP_USERDATA is set, so it is not delivered to the handler
                 SetWindowPos(
                     hwnd,
                     hwnd,
@@ -816,6 +831,13 @@ impl Window<'_> {
                     new_rect.bottom - new_rect.top,
                     SWP_NOZORDER | SWP_NOMOVE,
                 );
+
+                // Send an initial Resized event so users get the correct scale factor and physical size.
+                {
+                    let window_state_ptr =
+                        GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const WindowState;
+                    (*window_state_ptr).send_resized(options.size);
+                }
             }
 
             window_handle
