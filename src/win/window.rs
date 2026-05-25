@@ -621,9 +621,7 @@ impl Window<'_> {
             h => panic!("unsupported parent handle {:?}", h),
         };
 
-        let (window_handle, _) = Self::open(true, parent, options, build);
-
-        window_handle
+        Self::open(true, parent, options, build)
     }
 
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
@@ -632,7 +630,7 @@ impl Window<'_> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let (window_handle, _) = Self::open(false, null_mut(), options, build);
+        let window_handle = Self::open(false, null_mut(), options, build);
 
         unsafe {
             let mut msg: MSG = std::mem::zeroed();
@@ -656,7 +654,7 @@ impl Window<'_> {
 
     fn open<H, B>(
         parented: bool, parent: HWND, options: WindowOpenOptions, build: B,
-    ) -> (WindowHandle, HWND)
+    ) -> WindowHandle
     where
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
@@ -820,7 +818,7 @@ impl Window<'_> {
                 );
             }
 
-            (window_handle, hwnd)
+            window_handle
         }
     }
 
