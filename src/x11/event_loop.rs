@@ -52,10 +52,7 @@ impl EventLoop {
 
             let window_info = self.window.window_info;
 
-            self.handler.on_event(
-                &mut crate::Window::new(Window { inner: &self.window }),
-                Event::Window(WindowEvent::Resized(window_info)),
-            );
+            self.handle_event(Event::Window(WindowEvent::Resized(window_info)));
         }
 
         Ok(())
@@ -175,112 +172,83 @@ impl EventLoop {
                 let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
                 let logical_pos = physical_pos.to_logical(&self.window.window_info);
 
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Mouse(MouseEvent::CursorMoved {
-                        position: logical_pos,
-                        modifiers: key_mods(event.state),
-                    }),
-                );
+                self.handle_event(Event::Mouse(MouseEvent::CursorMoved {
+                    position: logical_pos,
+                    modifiers: key_mods(event.state),
+                }));
             }
 
             XEvent::EnterNotify(event) => {
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Mouse(MouseEvent::CursorEntered),
-                );
+                self.handle_event(Event::Mouse(MouseEvent::CursorEntered));
                 // since no `MOTION_NOTIFY` event is generated when `ENTER_NOTIFY` is generated,
                 // we generate a CursorMoved as well, so the mouse position from here isn't lost
                 let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
                 let logical_pos = physical_pos.to_logical(&self.window.window_info);
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Mouse(MouseEvent::CursorMoved {
-                        position: logical_pos,
-                        modifiers: key_mods(event.state),
-                    }),
-                );
+                self.handle_event(Event::Mouse(MouseEvent::CursorMoved {
+                    position: logical_pos,
+                    modifiers: key_mods(event.state),
+                }));
             }
 
             XEvent::LeaveNotify(_) => {
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Mouse(MouseEvent::CursorLeft),
-                );
+                self.handle_event(Event::Mouse(MouseEvent::CursorLeft));
             }
 
             XEvent::ButtonPress(event) => match event.detail {
                 4..=7 => {
-                    self.handler.on_event(
-                        &mut crate::Window::new(Window { inner: &self.window }),
-                        Event::Mouse(MouseEvent::WheelScrolled {
-                            delta: match event.detail {
-                                4 => ScrollDelta::Lines { x: 0.0, y: 1.0 },
-                                5 => ScrollDelta::Lines { x: 0.0, y: -1.0 },
-                                6 => ScrollDelta::Lines { x: -1.0, y: 0.0 },
-                                7 => ScrollDelta::Lines { x: 1.0, y: 0.0 },
-                                _ => unreachable!(),
-                            },
-                            modifiers: key_mods(event.state),
-                        }),
-                    );
+                    self.handle_event(Event::Mouse(MouseEvent::WheelScrolled {
+                        delta: match event.detail {
+                            4 => ScrollDelta::Lines { x: 0.0, y: 1.0 },
+                            5 => ScrollDelta::Lines { x: 0.0, y: -1.0 },
+                            6 => ScrollDelta::Lines { x: -1.0, y: 0.0 },
+                            7 => ScrollDelta::Lines { x: 1.0, y: 0.0 },
+                            _ => unreachable!(),
+                        },
+                        modifiers: key_mods(event.state),
+                    }));
                 }
                 detail => {
                     let button_id = mouse_id(detail);
-                    self.handler.on_event(
-                        &mut crate::Window::new(Window { inner: &self.window }),
-                        Event::Mouse(MouseEvent::ButtonPressed {
-                            button: button_id,
-                            modifiers: key_mods(event.state),
-                        }),
-                    );
+                    self.handle_event(Event::Mouse(MouseEvent::ButtonPressed {
+                        button: button_id,
+                        modifiers: key_mods(event.state),
+                    }));
                 }
             },
 
             XEvent::ButtonRelease(event) if !(4..=7).contains(&event.detail) => {
                 let button_id = mouse_id(event.detail);
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Mouse(MouseEvent::ButtonReleased {
-                        button: button_id,
-                        modifiers: key_mods(event.state),
-                    }),
-                );
+                self.handle_event(Event::Mouse(MouseEvent::ButtonReleased {
+                    button: button_id,
+                    modifiers: key_mods(event.state),
+                }));
             }
 
             ////
             // keys
             ////
             XEvent::KeyPress(event) => {
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Keyboard(convert_key_press_event(&event)),
-                );
+                self.handle_event(Event::Keyboard(convert_key_press_event(&event)));
             }
 
             XEvent::KeyRelease(event) => {
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Keyboard(convert_key_release_event(&event)),
-                );
+                self.handle_event(Event::Keyboard(convert_key_release_event(&event)));
             }
 
             XEvent::FocusIn(_) => {
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Window(WindowEvent::Focused),
-                );
+                self.handle_event(Event::Window(WindowEvent::Focused));
             }
 
             XEvent::FocusOut(_) => {
-                self.handler.on_event(
-                    &mut crate::Window::new(Window { inner: &self.window }),
-                    Event::Window(WindowEvent::Unfocused),
-                );
+                self.handle_event(Event::Window(WindowEvent::Unfocused));
             }
 
             _ => {}
         }
+    }
+
+    fn handle_event(&mut self, event: Event) {
+        self.handler.on_event(&mut crate::Window::new(Window { inner: &self.window }), event);
     }
 
     fn handle_close_requested(&mut self) {
@@ -289,10 +257,7 @@ impl EventLoop {
     }
 
     fn handle_must_close(&mut self) {
-        self.handler.on_event(
-            &mut crate::Window::new(Window { inner: &self.window }),
-            Event::Window(WindowEvent::WillClose),
-        );
+        self.handle_event(Event::Window(WindowEvent::WillClose));
 
         self.event_loop_running = false;
     }
