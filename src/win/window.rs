@@ -512,7 +512,7 @@ pub(super) struct WindowState {
     window_class: Cell<Option<RegisteredClass>>,
     current_size: Cell<PhySize>,
     current_scale_factor: Cell<f64>,
-    _parent_handle: Option<ParentHandle>,
+    _parent_handle: ParentHandle,
     keyboard_state: RefCell<KeyboardState>,
     mouse_button_counter: Cell<usize>,
     mouse_was_outside_window: RefCell<bool>,
@@ -632,7 +632,7 @@ impl Window<'_> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let (_, _) = Self::open(false, null_mut(), options, build);
+        let (window_handle, _) = Self::open(false, null_mut(), options, build);
 
         unsafe {
             let mut msg: MSG = std::mem::zeroed();
@@ -646,6 +646,10 @@ impl Window<'_> {
 
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
+
+                if !window_handle.is_open() {
+                    break;
+                }
             }
         }
     }
@@ -725,7 +729,6 @@ impl Window<'_> {
             });
 
             let (parent_handle, window_handle) = ParentHandle::new(hwnd);
-            let parent_handle = if parented { Some(parent_handle) } else { None };
 
             let window_state = Rc::new(WindowState {
                 hwnd,
