@@ -38,7 +38,7 @@ pub trait WindowImpl: 'static {
 }
 
 /// Creates a window from the given settings, with a given [`WindowImpl`] type to handle the message,
-/// and an initializer function that type.
+/// and an initializer function for that type.
 ///
 /// The initialization function is called during the handling of the WM_CREATE function, which allows
 /// it to receive a valid HWND, but before it has to handle any messages.
