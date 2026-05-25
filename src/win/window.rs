@@ -25,7 +25,7 @@ use windows_sys::Win32::{
     },
 };
 
-use std::cell::{Cell, OnceCell, Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::collections::VecDeque;
 use std::ptr::null_mut;
 use std::rc::Rc;
@@ -564,7 +564,7 @@ pub(super) struct WindowState {
     pub deferred_tasks: RefCell<VecDeque<WindowTask>>,
 
     #[cfg(feature = "opengl")]
-    pub gl_context: OnceCell<GlContext>,
+    pub gl_context: core::cell::OnceCell<GlContext>,
 }
 
 impl WindowState {
@@ -587,7 +587,7 @@ impl WindowState {
             deferred_tasks: RefCell::new(VecDeque::with_capacity(4)),
 
             #[cfg(feature = "opengl")]
-            gl_context: OnceCell::new(),
+            gl_context: core::cell::OnceCell::new(),
         }
     }
 
