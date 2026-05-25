@@ -753,8 +753,7 @@ impl Window<'_> {
 
         let is_open = Rc::new(Cell::new(true));
 
-        let parent_handle =
-            ParentHandle { is_open: is_open.clone() };
+        let parent_handle = ParentHandle { is_open: is_open.clone() };
 
         let initializer = move |hwnd: HWnd| {
             let window_state = Rc::new(WindowState::new(
