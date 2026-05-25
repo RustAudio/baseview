@@ -46,9 +46,12 @@ nix = "0.22.0"
 windows = { version = "=0.61.3", features = [
     "Win32_Graphics_Gdi",
     "Win32_Graphics_OpenGL",
+    "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
+    "Win32_System_Memory",
     "Win32_System_Ole",
     "Win32_System_SystemServices",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
 windows-sys = { version = "0.61.2", features = [
@@ -71,12 +74,16 @@ uuid = { version = "0.8", features = ["v4"], optional = true }
 [target.'cfg(target_os="macos")'.dependencies]
 objc2 = "0.6.4"
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString", "CFUUID"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSEnumerator"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSEnumerator", "NSURL"] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSApplication",
+    "NSColor",
     "NSDragging",
+    "NSDraggingItem",
+    "NSDraggingSession",
     "NSEvent",
     "NSGraphics",
+    "NSImage",
     "NSPasteboard",
     "NSResponder",
     "NSRunningApplication",

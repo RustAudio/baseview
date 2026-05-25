@@ -4,7 +4,7 @@ use raw_window_handle::{
     HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
 
-use crate::event::{Event, EventStatus};
+use crate::event::{DropData, Event, EventStatus};
 use crate::window_open_options::WindowOpenOptions;
 use crate::{MouseCursor, Size};
 
@@ -96,6 +96,11 @@ impl<'a> Window<'a> {
     /// automatically be accounted for.
     pub fn resize(&mut self, size: Size) {
         self.window.resize(size);
+    }
+
+    /// Initiate a drag operation with the given data.
+    pub fn start_drag(&self, data: DropData) {
+        self.window.start_drag(data);
     }
 
     pub fn set_mouse_cursor(&mut self, cursor: MouseCursor) {

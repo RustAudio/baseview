@@ -21,7 +21,7 @@ use x11rb::wrapper::ConnectionExt as _;
 
 use super::XcbConnection;
 use crate::{
-    Event, MouseCursor, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    DropData, Event, MouseCursor, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
     WindowScalePolicy,
 };
 
@@ -343,6 +343,10 @@ impl<'a> Window<'a> {
 
         // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
         // and notify the window handler about it
+    }
+
+    pub fn start_drag(&self, _data: DropData) {
+        todo!("Drag initiation is not yet supported on Linux")
     }
 
     #[cfg(feature = "opengl")]

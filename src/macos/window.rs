@@ -6,23 +6,24 @@ use std::rc::Rc;
 
 use keyboard_types::KeyboardEvent;
 use objc2::rc::{autoreleasepool, Retained};
-use objc2::runtime::NSObjectProtocol;
-use objc2::{msg_send, MainThreadMarker, MainThreadOnly};
+use objc2::runtime::{NSObjectProtocol, ProtocolObject};
+use objc2::{msg_send, AnyThread, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSEvent, NSPasteboard,
-    NSPasteboardTypeString, NSView, NSWindow, NSWindowStyleMask,
+    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSDraggingItem,
+    NSDraggingSession, NSEvent, NSImage, NSPasteboard, NSPasteboardTypeString, NSView, NSWindow,
+    NSWindowStyleMask,
 };
 use objc2_core_foundation::{
     kCFAllocatorDefault, kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext,
 };
-use objc2_foundation::{NSNotificationCenter, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{NSArray, NSNotificationCenter, NSPoint, NSRect, NSSize, NSString, NSURL};
 use raw_window_handle::{
     AppKitDisplayHandle, AppKitWindowHandle, HasRawDisplayHandle, HasRawWindowHandle,
     RawDisplayHandle, RawWindowHandle,
 };
 
 use crate::{
-    Event, EventStatus, MouseCursor, Size, WindowHandler, WindowInfo, WindowOpenOptions,
+    DropData, Event, EventStatus, MouseCursor, Size, WindowHandler, WindowInfo, WindowOpenOptions,
     WindowScalePolicy,
 };
 
@@ -68,6 +69,9 @@ pub(super) struct WindowInner {
 
     /// Our subclassed NSView
     ns_view: RetainedCell<NSView>,
+
+    /// Required for drag support
+    pub(super) last_mouse_down: RefCell<Option<Retained<NSEvent>>>,
 
     #[cfg(feature = "opengl")]
     pub(super) gl_context: Option<GlContext>,
@@ -179,6 +183,7 @@ impl<'a> Window<'a> {
                 ns_window: RetainedCell::empty(),
                 parent_ns_window: RetainedCell::with(parent_window.clone()),
                 ns_view: RetainedCell::new(ns_view.clone()),
+                last_mouse_down: RefCell::new(None),
 
                 #[cfg(feature = "opengl")]
                 gl_context: options
@@ -253,6 +258,7 @@ impl<'a> Window<'a> {
                 ns_app: RetainedCell::new(app.clone()),
                 parent_ns_window: RetainedCell::empty(),
                 ns_view: RetainedCell::new(ns_view.clone()),
+                last_mouse_down: RefCell::new(None),
 
                 #[cfg(feature = "opengl")]
                 gl_context: options.gl_config.map(|gl_config| {
@@ -362,6 +368,76 @@ impl<'a> Window<'a> {
                 ns_window.setContentSize(size);
             }
         }
+    }
+
+    #[allow(deprecated)]
+    fn drag_image(size: NSSize) -> Retained<NSImage> {
+        let image = NSImage::initWithSize(NSImage::alloc(), size);
+        let color = NSColor::colorWithRed_green_blue_alpha(0.3, 0.3, 0.3, 0.5);
+        image.lockFocus();
+        color.drawSwatchInRect(NSRect::new(NSPoint::ZERO, size));
+        image.unlockFocus();
+        image
+    }
+
+    pub fn start_drag(&self, data: DropData) {
+        let DropData::Files(paths) = data else {
+            return;
+        };
+        if paths.is_empty() {
+            return;
+        }
+
+        let Some(_mtm) = MainThreadMarker::new() else {
+            panic!("start_drag must be called on the main thread");
+        };
+
+        let Some(ns_view) = self.inner.ns_view.get() else {
+            return;
+        };
+
+        let Some(event) = self.inner.last_mouse_down.borrow().clone() else {
+            panic!("Expected a mouse down event before dragging");
+        };
+
+        let point = event.locationInWindow();
+        let point = ns_view.convertPoint_fromView(point, None);
+
+        let size = NSSize::new(20.0, 20.0);
+        let image = Self::drag_image(size);
+        let frame = NSRect::new(
+            NSPoint::new(point.x - (size.width / 2.0), point.y - (size.height / 2.0)),
+            size,
+        );
+
+        let mut file_urls = Vec::with_capacity(paths.len());
+        let mut dragging_items = Vec::with_capacity(paths.len());
+
+        for (i, path) in paths.into_iter().enumerate() {
+            let path_string = NSString::from_str(&path.into_os_string().into_string().unwrap());
+            let file_url = NSURL::fileURLWithPath(&path_string);
+            let writer = ProtocolObject::from_ref(&*file_url);
+            let dragging_item =
+                NSDraggingItem::initWithPasteboardWriter(NSDraggingItem::alloc(), writer);
+            unsafe {
+                dragging_item
+                    .setDraggingFrame_contents(frame, if i == 0 { Some(&*image) } else { None });
+            }
+            file_urls.push(file_url);
+            dragging_items.push(dragging_item);
+        }
+
+        let items = NSArray::from_retained_slice(&dragging_items);
+        // Our custom NSView subclass implements NSDraggingSource at runtime, but Rust
+        // doesn't know that statically, so use msg_send! for the source argument.
+        let _session: Retained<NSDraggingSession> = unsafe {
+            msg_send![
+                &*ns_view,
+                beginDraggingSessionWithItems: &*items,
+                event: &*event,
+                source: &*ns_view,
+            ]
+        };
     }
 
     pub fn set_mouse_cursor(&mut self, _mouse_cursor: MouseCursor) {

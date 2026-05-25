@@ -6,11 +6,11 @@ use objc2::rc::Allocated;
 use objc2::runtime::{
     AnyClass, AnyObject, Bool, ClassBuilder, NSObjectProtocol, ProtocolObject, Sel,
 };
-use objc2::{msg_send, sel, AllocAnyThread, ClassType};
+use objc2::{msg_send, sel, AllocAnyThread, ClassType, Message, ProtocolType};
 use objc2_app_kit::{
-    NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
-    NSTrackingAreaOptions, NSView, NSWindow, NSWindowDidBecomeKeyNotification,
-    NSWindowDidResignKeyNotification,
+    NSDragOperation, NSDraggingContext, NSDraggingInfo, NSDraggingSession, NSDraggingSource,
+    NSEvent, NSFilenamesPboardType, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow,
+    NSWindowDidBecomeKeyNotification, NSWindowDidResignKeyNotification,
 };
 use objc2_core_foundation::CFUUID;
 use objc2_foundation::{
@@ -226,12 +226,19 @@ unsafe fn create_view_class() -> &'static AnyClass {
             sel!(draggingExited:),
             dragging_exited as extern "C-unwind" fn(_, _, _) -> _,
         );
+        if let Some(protocol) = <dyn NSDraggingSource as ProtocolType>::protocol() {
+            class.add_protocol(protocol);
+        }
+        class.add_method(
+            sel!(draggingSession:sourceOperationMaskForDraggingContext:),
+            source_operation_mask_for_dragging_context as extern "C-unwind" fn(_, _, _, _) -> _,
+        );
         class.add_method(
             sel!(handleNotification:),
             handle_notification as extern "C-unwind" fn(_, _, _) -> _,
         );
 
-        add_mouse_button_class_method!(class, mouseDown, ButtonPressed, MouseButton::Left);
+        class.add_method(sel!(mouseDown:), mouse_down as extern "C-unwind" fn(_, _, _) -> _);
         add_mouse_button_class_method!(class, mouseUp, ButtonReleased, MouseButton::Left);
         add_mouse_button_class_method!(class, rightMouseDown, ButtonPressed, MouseButton::Right);
         add_mouse_button_class_method!(class, rightMouseUp, ButtonReleased, MouseButton::Right);
@@ -509,6 +516,25 @@ fn on_event(window_state: &WindowState, event: MouseEvent) -> NSDragOperation {
         EventStatus::AcceptDrop(DropEffect::Move) => NSDragOperation::Move,
         EventStatus::AcceptDrop(DropEffect::Link) => NSDragOperation::Link,
         EventStatus::AcceptDrop(DropEffect::Scroll) => NSDragOperation::Generic,
+        _ => NSDragOperation::None,
+    }
+}
+
+extern "C-unwind" fn mouse_down(this: &NSView, _: Sel, event: &NSEvent) {
+    let state = unsafe { WindowState::from_view(this) };
+    state.window_inner.last_mouse_down.replace(Some(event.retain()));
+    state.trigger_event(Event::Mouse(ButtonPressed {
+        button: MouseButton::Left,
+        modifiers: make_modifiers(event.modifierFlags()),
+    }));
+}
+
+extern "C-unwind" fn source_operation_mask_for_dragging_context(
+    _this: &NSView, _: Sel, _session: &NSDraggingSession, context: NSDraggingContext,
+) -> NSDragOperation {
+    match context {
+        NSDraggingContext::WithinApplication => NSDragOperation::Generic,
+        NSDraggingContext::OutsideApplication => NSDragOperation::Copy,
         _ => NSDragOperation::None,
     }
 }
