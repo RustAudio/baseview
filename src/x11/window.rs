@@ -224,7 +224,8 @@ impl<'a> Window<'a> {
                         | EventMask::KEY_RELEASE
                         | EventMask::STRUCTURE_NOTIFY
                         | EventMask::ENTER_WINDOW
-                        | EventMask::LEAVE_WINDOW,
+                        | EventMask::LEAVE_WINDOW
+                        | EventMask::FOCUS_CHANGE,
                 )
                 // As mentioned above, these two values are needed to be able to create a window
                 // with a depth of 32-bits when the parent window has a different depth
