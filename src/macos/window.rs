@@ -224,14 +224,20 @@ impl<'a> Window<'a> {
 
             let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
+            let mut style_mask = NSWindowStyleMask::Titled
+                | NSWindowStyleMask::Closable
+                | NSWindowStyleMask::Miniaturizable;
+
+            if options.resizable {
+                style_mask |= NSWindowStyleMask::Resizable;
+            }
+
             // SAFETY: This is safe because of the setReleasedWhenClosed(false) below
             let ns_window = unsafe {
                 NSWindow::initWithContentRect_styleMask_backing_defer(
                     NSWindow::alloc(mtm),
                     rect,
-                    NSWindowStyleMask::Titled
-                        | NSWindowStyleMask::Closable
-                        | NSWindowStyleMask::Miniaturizable,
+                    style_mask,
                     NSBackingStoreType::Buffered,
                     false,
                 )
