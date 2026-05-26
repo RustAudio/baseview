@@ -112,6 +112,7 @@ type HandlerBuilder = dyn FnOnce(&mut crate::Window) -> Box<dyn WindowHandler>;
 
 pub struct BaseviewWindow {
     window_state: Rc<WindowState>,
+    initial_size: Size,
 
     handler_builder: Cell<Option<Box<HandlerBuilder>>>,
 
@@ -136,37 +137,37 @@ impl WindowImpl for BaseviewWindow {
             SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE);
 
             // Now we can get the actual dpi of the window.
-            let new_rect =
-                if let WindowScalePolicy::SystemScaleFactor = self.window_state.scale_policy {
-                    // Only works on Windows 10 unfortunately.
-                    let dpi = GetDpiForWindow(hwnd);
-                    let scale_factor = dpi as f64 / 96.0;
+            let new_rect = if let WindowScalePolicy::SystemScaleFactor =
+                self.window_state.scale_policy
+            {
+                // Only works on Windows 10 unfortunately.
+                let dpi = GetDpiForWindow(hwnd);
+                let scale_factor = dpi as f64 / 96.0;
 
-                    let current_scale_factor = window_state.current_scale_factor.get();
+                let current_scale_factor = window_state.current_scale_factor.get();
 
-                    if current_scale_factor != scale_factor {
-                        window_state.current_scale_factor.set(scale_factor);
+                if current_scale_factor != scale_factor {
+                    window_state.current_scale_factor.set(scale_factor);
 
-                    let new_size =
-                        WindowInfo::from_logical_size(options.size, scale_factor).physical_size();
+                    let new_size = WindowInfo::from_logical_size(self.initial_size, scale_factor)
+                        .physical_size();
                     // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
                     // doesn't also emit Resized.
                     window_state.current_size.set(new_size);
 
-
-                        Some(RECT {
-                            left: 0,
-                            top: 0,
-                            // todo: check if usize fits into i32
-                            right: current_size.width as i32,
-                            bottom: current_size.height as i32,
-                        })
-                    } else {
-                        None
-                    }
+                    Some(RECT {
+                        left: 0,
+                        top: 0,
+                        // todo: check if usize fits into i32
+                        right: new_size.width as i32,
+                        bottom: new_size.height as i32,
+                    })
                 } else {
                     None
-                };
+                }
+            } else {
+                None
+            };
 
             let drop_target = ComObject::new(DropTarget::new(Rc::downgrade(window_state)));
             self._drop_target.set(Some(drop_target.clone()));
@@ -192,11 +193,7 @@ impl WindowImpl for BaseviewWindow {
                 );
 
                 // Send an initial Resized event so users get the correct scale factor and physical size.
-                {
-                    let window_state_ptr =
-                        GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const WindowState;
-                    (*window_state_ptr).send_resized(options.size);
-                }
+                self.window_state.send_resized(self.initial_size);
             }
         }
 
@@ -607,11 +604,7 @@ impl WindowState {
             WindowInfo::from_logical_size(logical_size, self.current_scale_factor.get());
         self.current_size.set(window_info.physical_size());
 
-        let mut window = crate::Window::new(self.create_window());
-        self.handler_mut()
-            .as_mut()
-            .unwrap()
-            .on_event(&mut window, Event::Window(WindowEvent::Resized(window_info)));
+        self.handle_event(Event::Window(WindowEvent::Resized(window_info)));
     }
 
     /// Handle a deferred task as described in [`Self::deferred_tasks`].
@@ -766,6 +759,7 @@ impl Window<'_> {
 
             BaseviewWindow {
                 window_state,
+                initial_size: options.size,
                 handler_builder: Cell::new(Some(Box::new(|w| Box::new(build(w))))),
 
                 _parent_handle: parent_handle,
