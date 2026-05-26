@@ -10,8 +10,10 @@ use windows::Win32::System::Ole::*;
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows_core::Ref;
 use windows_sys::Win32::{
-    Foundation::POINT, Graphics::Gdi::ScreenToClient, UI::Shell::DragQueryFileW,
-    UI::WindowsAndMessaging::GetCursorPos,
+    Foundation::{POINT, RECT},
+    Graphics::Gdi::ScreenToClient,
+    UI::Shell::DragQueryFileW,
+    UI::WindowsAndMessaging::{GetClientRect, GetCursorPos},
 };
 
 use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent, PhyPoint, Point};
@@ -26,6 +28,10 @@ pub(crate) struct DropTarget {
     // and handling drag move events gets awkward on the client end otherwise
     drag_position: Cell<Point>,
     drop_data: RefCell<DropData>,
+    /// Whether drag client coordinates are physical pixels (`true`) or already logical
+    /// (`false`). Cached when `is_drag_coords_physical` is called, and cleared on `DragLeave`
+    /// and `Drop`.
+    drag_coords_physical: Cell<Option<bool>>,
 }
 
 impl DropTarget {
@@ -34,6 +40,7 @@ impl DropTarget {
             window_state,
             drag_position: Cell::new(Point::new(0.0, 0.0)),
             drop_data: RefCell::new(DropData::None),
+            drag_coords_physical: Cell::new(None),
         }
     }
 
@@ -59,23 +66,52 @@ impl DropTarget {
         }
     }
 
-    fn parse_coordinates(&self, _pt: POINTL) {
+    /// Returns `true` when client coordinates from `GetCursorPos`/`ScreenToClient` are physical
+    /// pixels and should be scaled with [`PhyPoint::to_logical`]. Returns `false` when they are
+    /// already in logical space.
+    ///
+    /// For some reason, this can vary based on the combination of parent window AND drag source.
+    /// Most of the time the coordinates are physical, but logical coordinates have been observed
+    /// with Bitwig as the parent and Windows Explorer as the drag source.
+    ///
+    /// Cached on self.drag_coords_physical.
+    fn is_drag_coords_physical(&self, window_state: &WindowState) -> bool {
+        match self.drag_coords_physical.get() {
+            Some(physical) => physical,
+            None => {
+                let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+                unsafe { GetClientRect(window_state.hwnd, &mut rect) };
+                let client_w = (rect.right - rect.left) as u32;
+                let physical_w = window_state.window_info().physical_size().width;
+                let logical_w = window_state.window_info().logical_size().width as u32;
+                let physical = client_w.abs_diff(physical_w) < client_w.abs_diff(logical_w);
+
+                self.drag_coords_physical.set(Some(physical));
+                physical
+            }
+        }
+    }
+
+    fn end_drag_session(&self) {
+        self.drag_coords_physical.set(None);
+    }
+
+    fn parse_coordinates(&self) {
         let Some(window_state) = self.window_state.upgrade() else {
             return;
         };
-        // OLE-supplied points can disagree with the actual cursor position for embedded
-        // child windows (DPI virtualization / DragEnter quirks). Query the cursor directly
-        // so drag coordinates match WM_MOUSEMOVE.
+
+        // Some parents pass weird coordinates via OLE `pt`. Query the cursor directly instead.
         let mut pt = POINT { x: 0, y: 0 };
         unsafe {
             GetCursorPos(&mut pt as *mut POINT);
             ScreenToClient(window_state.hwnd, &mut pt as *mut POINT);
         }
-        let logical_point = if window_state.has_parent() {
-            // If the window has a parent, the coordinates are already in logical coordinates
-            Point::new(pt.x as f64, pt.y as f64)
-        } else {
+
+        let logical_point = if self.is_drag_coords_physical(&window_state) {
             PhyPoint::new(pt.x, pt.y).to_logical(&window_state.window_info())
+        } else {
+            Point::new(pt.x as f64, pt.y as f64)
         };
         self.drag_position.set(logical_point);
     }
@@ -123,7 +159,7 @@ impl DropTarget {
 #[allow(non_snake_case)]
 impl IDropTarget_Impl for DropTarget_Impl {
     fn DragEnter(
-        &self, pdataobj: Ref<IDataObject>, grfkeystate: MODIFIERKEYS_FLAGS, pt: &POINTL,
+        &self, pdataobj: Ref<IDataObject>, grfkeystate: MODIFIERKEYS_FLAGS, _pt: &POINTL,
         pdweffect: *mut DROPEFFECT,
     ) -> windows_core::Result<()> {
         let Some(window_state) = self.window_state.upgrade() else {
@@ -133,7 +169,7 @@ impl IDropTarget_Impl for DropTarget_Impl {
         let modifiers =
             window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfkeystate.0 as usize);
 
-        self.parse_coordinates(*pt);
+        self.parse_coordinates();
         self.parse_drop_data(pdataobj.unwrap());
 
         let event = MouseEvent::DragEntered {
@@ -147,7 +183,7 @@ impl IDropTarget_Impl for DropTarget_Impl {
     }
 
     fn DragOver(
-        &self, grfkeystate: MODIFIERKEYS_FLAGS, pt: &POINTL, pdweffect: *mut DROPEFFECT,
+        &self, grfkeystate: MODIFIERKEYS_FLAGS, _pt: &POINTL, pdweffect: *mut DROPEFFECT,
     ) -> windows_core::Result<()> {
         let Some(window_state) = self.window_state.upgrade() else {
             return Err(E_UNEXPECTED.into());
@@ -156,7 +192,7 @@ impl IDropTarget_Impl for DropTarget_Impl {
         let modifiers =
             window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfkeystate.0 as usize);
 
-        self.parse_coordinates(*pt);
+        self.parse_coordinates();
 
         let event = MouseEvent::DragMoved {
             position: self.drag_position.get(),
@@ -169,12 +205,13 @@ impl IDropTarget_Impl for DropTarget_Impl {
     }
 
     fn DragLeave(&self) -> windows_core::Result<()> {
+        self.end_drag_session();
         self.on_event(None, MouseEvent::DragLeft);
         Ok(())
     }
 
     fn Drop(
-        &self, pdataobj: Ref<IDataObject>, grfkeystate: MODIFIERKEYS_FLAGS, pt: &POINTL,
+        &self, pdataobj: Ref<IDataObject>, grfkeystate: MODIFIERKEYS_FLAGS, _pt: &POINTL,
         pdweffect: *mut DROPEFFECT,
     ) -> windows_core::Result<()> {
         let Some(window_state) = self.window_state.upgrade() else {
@@ -184,7 +221,7 @@ impl IDropTarget_Impl for DropTarget_Impl {
         let modifiers =
             window_state.keyboard_state().get_modifiers_from_mouse_wparam(grfkeystate.0 as usize);
 
-        self.parse_coordinates(*pt);
+        self.parse_coordinates();
         self.parse_drop_data(pdataobj.unwrap());
 
         let event = MouseEvent::DragDropped {
@@ -194,6 +231,7 @@ impl IDropTarget_Impl for DropTarget_Impl {
         };
 
         self.on_event(Some(pdweffect), event);
+        self.end_drag_session();
         Ok(())
     }
 }
