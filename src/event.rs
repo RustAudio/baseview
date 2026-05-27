@@ -135,6 +135,8 @@ pub enum DropEffect {
 pub enum DropData {
     None,
     Files(Vec<PathBuf>),
+    /// A URL being dragged, e.g. from a web browser.
+    Url(String),
 }
 
 /// Return value for [WindowHandler::on_event](`crate::WindowHandler::on_event()`),

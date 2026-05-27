@@ -8,8 +8,8 @@ use objc2::runtime::{
 };
 use objc2::{msg_send, sel, AllocAnyThread, ClassType};
 use objc2_app_kit::{
-    NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
-    NSTrackingAreaOptions, NSView, NSWindow, NSWindowDidBecomeKeyNotification,
+    NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSPasteboardTypeURL,
+    NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow, NSWindowDidBecomeKeyNotification,
     NSWindowDidResignKeyNotification,
 };
 use objc2_core_foundation::CFUUID;
@@ -17,6 +17,7 @@ use objc2_foundation::{
     NSArray, NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize, NSString,
 };
 use std::ffi::{c_void, CStr, CString};
+use std::path::PathBuf;
 
 use super::keyboard::make_modifiers;
 use super::window::WindowState;
@@ -116,9 +117,13 @@ pub(super) fn create_view(window_options: &WindowOpenOptions) -> Retained<NSView
         );
     }
 
-    // SAFETY: This static is a read-only constant
+    // SAFETY: These statics are read-only constants
     let ns_filenames_pboard_type = unsafe { NSFilenamesPboardType };
-    view.registerForDraggedTypes(&NSArray::from_slice(&[ns_filenames_pboard_type]));
+    let ns_url_pboard_type = unsafe { NSPasteboardTypeURL };
+    view.registerForDraggedTypes(&NSArray::from_slice(&[
+        ns_filenames_pboard_type,
+        ns_url_pboard_type,
+    ]));
 
     view
 }
@@ -485,21 +490,29 @@ fn get_drop_data(sender: Option<&ProtocolObject<dyn NSDraggingInfo>>) -> DropDat
     };
 
     let pasteboard = sender.draggingPasteboard();
-    let Some(file_list) = pasteboard.propertyListForType(unsafe { NSFilenamesPboardType }) else {
-        return DropData::None;
-    };
 
-    let Ok(file_list) = file_list.downcast::<NSArray>() else {
-        return DropData::None;
-    };
+    if let Some(file_list) = pasteboard.propertyListForType(unsafe { NSFilenamesPboardType }) {
+        if let Ok(file_list) = file_list.downcast::<NSArray>() {
+            let files: Vec<PathBuf> = file_list
+                .into_iter()
+                .filter_map(|s| s.downcast::<NSString>().ok())
+                .map(|s| PathBuf::from(s.to_string()))
+                .collect();
 
-    let files = file_list
-        .into_iter()
-        .filter_map(|s| s.downcast::<NSString>().ok())
-        .map(|s| s.to_string().into())
-        .collect();
+            if !files.is_empty() {
+                return DropData::Files(files);
+            }
+        }
+    }
 
-    DropData::Files(files)
+    if let Some(url) = pasteboard.stringForType(unsafe { NSPasteboardTypeURL }) {
+        let url = url.to_string();
+        if !url.is_empty() {
+            return DropData::Url(url);
+        }
+    }
+
+    DropData::None
 }
 
 fn on_event(window_state: &WindowState, event: MouseEvent) -> NSDragOperation {
