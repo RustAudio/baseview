@@ -1,29 +1,23 @@
 use windows_core::{ComObject, Result, HSTRING};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
-    System::Ole::RevokeDragDrop,
     UI::{
-        Controls::{HOVER_DEFAULT, WM_MOUSELEAVE},
-        HiDpi::{SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE},
-        Input::KeyboardAndMouse::{
-            GetFocus, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE,
-            TRACKMOUSEEVENT,
-        },
+        Controls::WM_MOUSELEAVE,
         WindowsAndMessaging::{
-            DestroyWindow, DispatchMessageW, GetMessageW, LoadCursorW, PostMessageW, SetCursor,
-            SetTimer, TranslateMessage, HTCLIENT, MSG, WHEEL_DELTA, WM_CHAR, WM_CLOSE,
-            WM_DPICHANGED, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_KILLFOCUS, WM_LBUTTONDOWN,
-            WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
-            WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS, WM_SHOWWINDOW,
-            WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN,
-            WM_XBUTTONUP, WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-            WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
+            PostMessageW, HTCLIENT, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_DPICHANGED,
+            WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP,
+            WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+            WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS, WM_SIZE, WM_SYSCHAR,
+            WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP,
+            WS_CAPTION, WS_CHILD, WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW,
+            WS_SIZEBOX, WS_VISIBLE,
         },
     },
 };
 
 use std::cell::{Cell, Ref, RefCell};
 use std::collections::VecDeque;
+use std::num::NonZeroUsize;
 use std::ptr::null_mut;
 use std::rc::Rc;
 
@@ -40,14 +34,16 @@ use crate::{
     WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 
-use super::cursor::cursor_to_lpcwstr;
 use super::drop_target::DropTarget;
 use super::keyboard::KeyboardState;
+use crate::wrappers::win32::cursor::SystemCursor;
 
 #[cfg(feature = "opengl")]
 use crate::gl::GlContext;
 use crate::wrappers::win32::window::*;
-use crate::wrappers::win32::{ole_initialize, Rect};
+use crate::wrappers::win32::{
+    ole_initialize, run_thread_message_loop_until, set_process_per_monitor_dpi_aware, Rect,
+};
 
 #[allow(non_snake_case)]
 fn HIWORD(wparam: WPARAM) -> u16 {
@@ -59,7 +55,10 @@ fn LOWORD(lparam: LPARAM) -> u16 {
     (lparam & 0xffff) as u16
 }
 
-const WIN_FRAME_TIMER: usize = 4242;
+const WIN_FRAME_TIMER: NonZeroUsize = match NonZeroUsize::new(4242) {
+    Some(x) => x,
+    None => unreachable!(),
+};
 
 pub struct WindowHandle {
     hwnd: Option<HWND>,
@@ -128,7 +127,7 @@ impl WindowImpl for BaseviewWindow {
         self._keyboard_hook.set(Some(hook::init_keyboard_hook(hwnd)));
 
         // Only works on Windows 10 unfortunately.
-        unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE) };
+        set_process_per_monitor_dpi_aware();
 
         // Now we can get the actual dpi of the window.
         let new_size = if let WindowScalePolicy::SystemScaleFactor = self.window_state.scale_policy
@@ -219,7 +218,7 @@ impl WindowImpl for BaseviewWindow {
     }
 
     fn before_destroy(&self, window: HWnd) {
-        unsafe { RevokeDragDrop(window.as_raw()) };
+        let _ = window.revoke_drag_drop();
     }
 }
 
@@ -233,15 +232,9 @@ unsafe fn wnd_proc_inner(
             if window_state.mouse_was_outside_window.get() {
                 // this makes Windows track whether the mouse leaves the window.
                 // When the mouse leaves it results in a `WM_MOUSELEAVE` event.
-                let mut track_mouse = TRACKMOUSEEVENT {
-                    cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
-                    dwFlags: TME_LEAVE,
-                    hwndTrack: window.as_raw(),
-                    dwHoverTime: HOVER_DEFAULT,
-                };
                 // Couldn't find a good way to track whether the mouse enters,
                 // but if `WM_MOUSEMOVE` happens, the mouse must have entered.
-                TrackMouseEvent(&mut track_mouse);
+                let _ = window.start_cursor_leave_tracking();
                 window_state.mouse_was_outside_window.set(false);
 
                 let enter_event = Event::Mouse(MouseEvent::CursorEntered);
@@ -320,7 +313,7 @@ unsafe fn wnd_proc_inner(
                     WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN | WM_XBUTTONDOWN => {
                         // Capture the mouse cursor on button down
                         mouse_button_counter = mouse_button_counter.saturating_add(1);
-                        SetCapture(window.as_raw());
+                        window.set_capture();
                         MouseEvent::ButtonPressed {
                             button,
                             modifiers: window_state
@@ -333,7 +326,7 @@ unsafe fn wnd_proc_inner(
                         // Release the mouse cursor capture when all buttons are released
                         mouse_button_counter = mouse_button_counter.saturating_sub(1);
                         if mouse_button_counter == 0 {
-                            ReleaseCapture();
+                            HWnd::release_capture();
                         }
 
                         MouseEvent::ButtonReleased {
@@ -356,7 +349,7 @@ unsafe fn wnd_proc_inner(
             None
         }
         WM_TIMER => {
-            if wparam == WIN_FRAME_TIMER {
+            if wparam == WIN_FRAME_TIMER.get() {
                 window_state.handle_on_frame()
             }
 
@@ -459,10 +452,8 @@ unsafe fn wnd_proc_inner(
             let mouse_in_window = low_word == HTCLIENT;
             if mouse_in_window {
                 // Here we need to set the cursor back to what the state says, since it can have changed when outside the window
-                let cursor =
-                    LoadCursorW(null_mut(), cursor_to_lpcwstr(window_state.cursor_icon.get()));
-                unsafe {
-                    SetCursor(cursor);
+                if let Ok(cursor) = SystemCursor::load(window_state.cursor_icon.get()) {
+                    cursor.set()
                 }
                 Some(1)
             } else {
@@ -473,7 +464,7 @@ unsafe fn wnd_proc_inner(
         // NOTE: `WM_NCDESTROY` is handled in the outer function because this deallocates the window
         //        state
         BV_WINDOW_MUST_CLOSE => {
-            DestroyWindow(window.as_raw());
+            let _ = window.destroy();
             Some(0)
         }
         _ => None,
@@ -583,9 +574,7 @@ impl WindowState {
 
                 window.resize_and_activate(new_size, self.dw_style).unwrap();
             }
-            WindowTask::Focus => unsafe {
-                SetFocus(self.hwnd);
-            },
+            WindowTask::Focus => window.set_focus().unwrap(),
         }
     }
 }
@@ -629,24 +618,7 @@ impl Window<'_> {
     {
         let window_handle = Self::open(false, null_mut(), options, build);
 
-        unsafe {
-            let mut msg: MSG = std::mem::zeroed();
-
-            loop {
-                let status = GetMessageW(&mut msg, null_mut(), 0, 0);
-
-                if status == -1 {
-                    break;
-                }
-
-                TranslateMessage(&msg);
-                DispatchMessageW(&msg);
-
-                if !window_handle.is_open() {
-                    break;
-                }
-            }
-        }
+        run_thread_message_loop_until(|| !window_handle.is_open()).unwrap();
     }
 
     fn open<H, B>(
@@ -713,13 +685,17 @@ impl Window<'_> {
         let hwnd =
             create_window(&title, flags, rect.size(), parent as *mut _, initializer).unwrap();
 
+        // SAFETY: this handle should be safe to use
+        let window = unsafe { HWnd::from_raw(hwnd) };
+
         // FIXME: this SetTimer call could be in after_create, but for some reason it changes the ordering
         // for a parent+child window situation, which results in the parent drawing over the child.
         // This timer should be replaced by proper window redrawing/damage/vsync handling, but this
         // would be a breaking change, so we'll do that later.
-        unsafe { SetTimer(hwnd, WIN_FRAME_TIMER, 15, None) };
+        // TODO: create a new timer instead of hard-coding a specific ID
+        window.set_timer(WIN_FRAME_TIMER, 15).unwrap();
 
-        unsafe { PostMessageW(hwnd, WM_SHOWWINDOW, 0, 0) };
+        window.show_and_activate();
 
         WindowHandle { hwnd: Some(hwnd), is_open: Rc::clone(&is_open) }
     }
@@ -731,8 +707,7 @@ impl Window<'_> {
     }
 
     pub fn has_focus(&mut self) -> bool {
-        let focused_window = unsafe { GetFocus() };
-        focused_window == self.state.hwnd
+        HWnd::get_focused_window() == self.state.hwnd
     }
 
     pub fn focus(&mut self) {
@@ -750,9 +725,8 @@ impl Window<'_> {
 
     pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
         self.state.cursor_icon.set(mouse_cursor);
-        unsafe {
-            let cursor = LoadCursorW(null_mut(), cursor_to_lpcwstr(mouse_cursor));
-            SetCursor(cursor);
+        if let Ok(cursor) = SystemCursor::load(mouse_cursor) {
+            cursor.set()
         }
     }
 

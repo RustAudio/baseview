@@ -1,4 +1,8 @@
 use crate::MouseCursor;
+use std::ffi::c_void;
+use std::ptr::{null_mut, NonNull};
+use windows_core::{Error, Result};
+use windows_sys::Win32::UI::WindowsAndMessaging::{LoadCursorW, SetCursor};
 use windows_sys::{
     core::PCWSTR,
     Win32::UI::WindowsAndMessaging::{
@@ -7,7 +11,29 @@ use windows_sys::{
     },
 };
 
-pub fn cursor_to_lpcwstr(cursor: MouseCursor) -> PCWSTR {
+#[derive(Copy, Clone)]
+pub struct SystemCursor(NonNull<c_void>);
+
+impl SystemCursor {
+    pub fn load(cursor: MouseCursor) -> Result<Self> {
+        let cursor_ptr = cursor_to_lpcwstr(cursor);
+
+        // SAFETY: the PCWSTR returned by cursor_to_lpcwstr is always a valid shared cursor ID
+        let result = unsafe { LoadCursorW(null_mut(), cursor_ptr) };
+
+        match NonNull::new(result) {
+            Some(res) => Ok(Self(res)),
+            None => Err(Error::from_win32()),
+        }
+    }
+
+    pub fn set(&self) {
+        // SAFETY: This type guarantees the HCURSOR was returned by a successful call to LoadCursorW
+        unsafe { SetCursor(self.0.as_ptr()) };
+    }
+}
+
+fn cursor_to_lpcwstr(cursor: MouseCursor) -> PCWSTR {
     match cursor {
         MouseCursor::Default => IDC_ARROW,
         MouseCursor::Hand => IDC_HAND,
