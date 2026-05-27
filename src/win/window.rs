@@ -131,23 +131,22 @@ impl WindowImpl for BaseviewWindow {
         unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE) };
 
         // Now we can get the actual dpi of the window.
-        let new_size = if let WindowScalePolicy::SystemScaleFactor =
-                self.window_state.scale_policy
+        let new_size = if let WindowScalePolicy::SystemScaleFactor = self.window_state.scale_policy
+        {
+            // Only works on Windows 10 unfortunately.
+            let dpi = window.get_dpi()?;
+            let scale_factor = dpi as f64 / 96.0;
 
-        {        // Only works on Windows 10 unfortunately.
-                let dpi = window.get_dpi()?;
-                let scale_factor = dpi as f64 / 96.0;
+            let current_scale_factor = window_state.current_scale_factor.get();
 
-                let current_scale_factor = window_state.current_scale_factor.get();
+            if current_scale_factor != scale_factor {
+                window_state.current_scale_factor.set(scale_factor);
 
-                if current_scale_factor != scale_factor {
-                    window_state.current_scale_factor.set(scale_factor);
-
-                    let new_size = WindowInfo::from_logical_size(self.initial_size, scale_factor)
-                        .physical_size();
-                    // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
-                    // doesn't also emit Resized.
-                    window_state.current_size.set(new_size);
+                let new_size =
+                    WindowInfo::from_logical_size(self.initial_size, scale_factor).physical_size();
+                // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
+                // doesn't also emit Resized.
+                window_state.current_size.set(new_size);
 
                 Some(new_size)
             } else {
