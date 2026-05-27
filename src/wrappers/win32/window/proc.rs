@@ -27,8 +27,7 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
             if let Err(_e) = window.set_userdata_ptr(inner_ptr.as_ptr()) {
                 // The call to SetWindowLongPtrW failed for some reason, we cannot continue.
 
-                // Recover and free the received pointer data. But if this also fails, better to leak
-                // it than risk crashing
+                // Recover and free the received pointer data.
                 drop(Rc::from_raw(inner_ptr.as_ptr()));
 
                 // TODO: log error
