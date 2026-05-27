@@ -255,9 +255,9 @@ impl<'a> Window<'a> {
                 ns_view: RetainedCell::new(ns_view.clone()),
 
                 #[cfg(feature = "opengl")]
-                gl_context: options.gl_config.map(|gl_config| {
-                    Self::create_gl_context(&ns_view, gl_config)
-                }),
+                gl_context: options
+                    .gl_config
+                    .map(|gl_config| Self::create_gl_context(&ns_view, gl_config)),
 
                 ns_window: RetainedCell::new(ns_window.clone()),
             };
