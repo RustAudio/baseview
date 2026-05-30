@@ -117,9 +117,13 @@ impl BaseviewView {
         (view, state)
     }
 
-    pub fn close(this: &View<Self>) {
-        this.inner().state.closed.set(true);
-        this.removeFromSuperview();
+    pub fn close(this: ViewRef<Self>) {
+        this.state.closed.set(true);
+        this.view.removeFromSuperview();
+
+        if let Some(app) = this.owned_app.as_ref().and_then(|a| a.load()) {
+            app.stop(Some(&app))
+        }
     }
 
     /// Trigger the event immediately and return the event status.
@@ -196,10 +200,8 @@ impl ViewImpl for BaseviewView {
     }
 
     fn window_should_close(this: ViewRef<Self>) -> bool {
-        BaseviewView::trigger_event(this, Event::Window(WindowEvent::WillClose));
-
-        //state.window_inner.close();
-        // TODO: exit app
+        Self::trigger_event(this, Event::Window(WindowEvent::WillClose));
+        Self::close(this);
 
         true
     }

@@ -33,7 +33,7 @@ impl WindowHandle {
             return;
         };
 
-        BaseviewView::close(&view);
+        BaseviewView::close(view.inner_ref());
     }
 
     pub fn is_open(&self) -> bool {
@@ -117,7 +117,7 @@ impl<'a> Window<'a> {
     }
 
     pub fn close(&mut self) {
-        BaseviewView::close(self.view);
+        BaseviewView::close(self.view.inner_ref());
     }
 
     pub fn has_focus(&mut self) -> bool {
