@@ -1,7 +1,7 @@
 #![allow(deprecated)] // Allow use of NSFilenamesPboardType for now
 
 use super::keyboard::{make_modifiers, KeyboardState};
-use super::window::WindowState;
+use super::window::WindowSharedState;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
@@ -13,7 +13,7 @@ use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
 use objc2::{msg_send, AllocAnyThread};
 use objc2_app_kit::{
-    NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
+    NSApplication, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
     NSTrackingAreaOptions, NSView, NSWindow,
 };
 use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
@@ -22,7 +22,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 pub(crate) struct BaseviewView {
-    state: Rc<WindowState>,
+    state: Rc<WindowSharedState>,
     window_handler: RefCell<Option<Box<dyn WindowHandler>>>,
 
     /// Events that will be triggered at the end of `window_handler`'s borrow.
@@ -30,6 +30,8 @@ pub(crate) struct BaseviewView {
 
     frame_timer: Cell<Option<TimerHandle>>,
     keyboard_state: KeyboardState,
+
+    owned_app: Option<Weak<NSApplication>>,
 
     #[cfg(feature = "opengl")]
     pub(crate) gl_context: std::cell::OnceCell<crate::gl::GlContext>,
@@ -74,11 +76,12 @@ pub(super) fn create_view<V: ViewImpl>(
 impl BaseviewView {
     pub fn new<H: WindowHandler + 'static>(
         options: WindowOpenOptions, builder: impl FnOnce(&mut crate::Window) -> H,
-    ) -> (Retained<View<Self>>, Rc<WindowState>) {
+        owned_app: Option<Weak<NSApplication>>,
+    ) -> (Retained<View<Self>>, Rc<WindowSharedState>) {
         let view_rect =
             NSRect::new(NSPoint::ZERO, NSSize::new(options.size.width, options.size.height));
 
-        let state = Rc::new(WindowState::new(&options));
+        let state = Rc::new(WindowSharedState::new(&options));
 
         let inner = BaseviewView {
             state: state.clone(),
@@ -87,6 +90,7 @@ impl BaseviewView {
             keyboard_state: KeyboardState::new(),
             frame_timer: None.into(),
             window_handler: None.into(),
+            owned_app,
 
             #[cfg(feature = "opengl")]
             gl_context: std::cell::OnceCell::new(),
@@ -111,6 +115,11 @@ impl BaseviewView {
         });
 
         (view, state)
+    }
+
+    pub fn close(this: &View<Self>) {
+        this.inner().state.closed.set(true);
+        this.removeFromSuperview();
     }
 
     /// Trigger the event immediately and return the event status.
@@ -159,6 +168,12 @@ impl BaseviewView {
                 break;
             }
         }
+    }
+}
+
+impl Drop for BaseviewView {
+    fn drop(&mut self) {
+        self.state.closed.set(true);
     }
 }
 

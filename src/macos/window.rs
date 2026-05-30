@@ -24,7 +24,7 @@ use crate::wrappers::appkit::{
 
 pub struct WindowHandle {
     view: Option<Weak<View<BaseviewView>>>,
-    state: Rc<WindowState>,
+    state: Rc<WindowSharedState>,
 }
 
 impl WindowHandle {
@@ -33,16 +33,11 @@ impl WindowHandle {
             return;
         };
 
-        view.removeFromSuperview();
-
-        // TODO
-
-        // self.state.window_inner.close();
+        BaseviewView::close(&view);
     }
 
     pub fn is_open(&self) -> bool {
-        todo!()
-        //self.state.window_inner.open.get()
+        self.state.closed.get()
     }
 }
 
@@ -79,7 +74,7 @@ impl<'a> Window<'a> {
             let (_parent_window, parent_view) =
                 extract_raw_window_handle(parent.raw_window_handle());
 
-            let (ns_view, state) = BaseviewView::new(options, build);
+            let (ns_view, state) = BaseviewView::new(options, build, None);
 
             if let Some(parent_view) = parent_view {
                 parent_view.addSubview(&ns_view);
@@ -112,7 +107,7 @@ impl<'a> Window<'a> {
             window.setTitle(&title);
             window.makeKeyAndOrderFront(None);
 
-            let (view, _) = BaseviewView::new(options, build);
+            let (view, _) = BaseviewView::new(options, build, Some(Weak::from_retained(&app)));
 
             window.setContentView(Some(&view));
             set_delegate(&window, &view);
@@ -122,8 +117,7 @@ impl<'a> Window<'a> {
     }
 
     pub fn close(&mut self) {
-        // self.inner.close();
-        todo!()
+        BaseviewView::close(self.view);
     }
 
     pub fn has_focus(&mut self) -> bool {
@@ -181,18 +175,22 @@ impl<'a> Window<'a> {
 
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<&GlContext> {
-        self.view.inner().gl_context.get()
+        self.inner.gl_context.get()
     }
 }
 
-pub(crate) struct WindowState {
+pub(crate) struct WindowSharedState {
     /// The last known window info for this window.
     pub window_info: Cell<WindowInfo>,
+    pub closed: Cell<bool>,
 }
 
-impl WindowState {
+impl WindowSharedState {
     pub fn new(options: &WindowOpenOptions) -> Self {
-        Self { window_info: WindowInfo::from_logical_size(options.size, 1.0).into() }
+        Self {
+            window_info: WindowInfo::from_logical_size(options.size, 1.0).into(),
+            closed: false.into(),
+        }
     }
 }
 
