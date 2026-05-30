@@ -150,6 +150,8 @@ impl BaseviewView {
         if let Some(ns_window) = this.owned_window.as_ref().and_then(|w| w.load()) {
             ns_window.setContentSize(size);
         }
+
+        Self::view_did_change_backing_properties(this);
     }
 
     /// Trigger the event immediately and return the event status.
@@ -250,7 +252,10 @@ impl ViewImpl for BaseviewView {
         // other platform implementations
         if new_window_info.physical_size() != window_info.physical_size() {
             this.state.window_info.set(new_window_info);
-            Self::trigger_event(this, Event::Window(WindowEvent::Resized(new_window_info)));
+            Self::trigger_deferrable_event(
+                this,
+                Event::Window(WindowEvent::Resized(new_window_info)),
+            );
         }
     }
 
