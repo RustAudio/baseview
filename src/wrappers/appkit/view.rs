@@ -123,7 +123,6 @@ impl<V> Deref for ViewRef<'_, V> {
 }
 
 pub trait ViewImpl: Sized {
-    fn init(&self, view: &Retained<View<Self>>);
     fn become_first_responder(this: ViewRef<Self>) -> bool;
     fn resign_first_responder(this: ViewRef<Self>) -> bool;
     fn window_should_close(this: ViewRef<Self>) -> bool;

@@ -99,6 +99,13 @@ impl BaseviewView {
                 let Ok(()) = view.gl_context.set(gl_context) else { unreachable!() };
             }
 
+            let timer_view = Weak::new(view.view);
+            view.frame_timer.set(TimerHandle::new(0.015, move || {
+                if let Some(view) = timer_view.load() {
+                    BaseviewView::trigger_frame(view.inner_ref());
+                }
+            }));
+
             let handler = builder(&mut view.into());
             view.window_handler.replace(Some(Box::new(handler)));
         });
@@ -156,15 +163,6 @@ impl BaseviewView {
 }
 
 impl ViewImpl for BaseviewView {
-    fn init(&self, view: &Retained<View<Self>>) {
-        let timer_view = Weak::from_retained(view);
-        self.frame_timer.set(TimerHandle::new(0.015, move || {
-            if let Some(view) = timer_view.load() {
-                BaseviewView::trigger_frame(view.inner_ref());
-            }
-        }));
-    }
-
     fn become_first_responder(this: ViewRef<Self>) -> bool {
         let Some(window) = this.view.window() else {
             return true;
@@ -186,8 +184,9 @@ impl ViewImpl for BaseviewView {
         BaseviewView::trigger_event(this, Event::Window(WindowEvent::WillClose));
 
         //state.window_inner.close();
+        // TODO: exit app
 
-        false
+        true
     }
 
     fn view_did_change_backing_properties(this: ViewRef<Self>) {
