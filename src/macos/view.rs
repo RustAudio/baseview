@@ -2,7 +2,6 @@
 
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowState;
-use crate::macos::Window;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
@@ -12,20 +11,17 @@ use crate::{
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
-use objc2::{msg_send, sel, AllocAnyThread};
+use objc2::{msg_send, AllocAnyThread};
 use objc2_app_kit::{
     NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
-    NSTrackingAreaOptions, NSView, NSWindow, NSWindowDidBecomeKeyNotification,
-    NSWindowDidResignKeyNotification,
+    NSTrackingAreaOptions, NSView, NSWindow,
 };
-use objc2_foundation::{
-    NSArray, NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize, NSString,
-};
+use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-pub struct BaseviewView {
+pub(crate) struct BaseviewView {
     state: Rc<WindowState>,
     window_handler: RefCell<Option<Box<dyn WindowHandler>>>,
 
@@ -36,8 +32,9 @@ pub struct BaseviewView {
     keyboard_state: KeyboardState,
 
     #[cfg(feature = "opengl")]
-    gl_context: std::cell::OnceCell<crate::gl::GlContext>,
+    pub(crate) gl_context: std::cell::OnceCell<crate::gl::GlContext>,
 }
+// TODO
 /*
 pub(super) fn create_view<V: ViewImpl>(
     window_options: &WindowOpenOptions, inner: V,
@@ -77,12 +74,14 @@ pub(super) fn create_view<V: ViewImpl>(
 impl BaseviewView {
     pub fn new<H: WindowHandler + 'static>(
         options: WindowOpenOptions, builder: impl FnOnce(&mut crate::Window) -> H,
-    ) -> Retained<View<Self>> {
+    ) -> (Retained<View<Self>>, Rc<WindowState>) {
         let view_rect =
             NSRect::new(NSPoint::ZERO, NSSize::new(options.size.width, options.size.height));
 
+        let state = Rc::new(WindowState::new(&options));
+
         let inner = BaseviewView {
-            state: Rc::new(WindowState::new()),
+            state: state.clone(),
 
             deferred_events: RefCell::default(),
             keyboard_state: KeyboardState::new(),
@@ -96,51 +95,57 @@ impl BaseviewView {
         let view = View::new(view_rect, inner, |view| {
             #[cfg(feature = "opengl")]
             if let Some(gl_config) = options.gl_config {
-                let gl_context = crate::gl::GlContext::create(&view.view, gl_config).unwrap();
-                let _ = view.gl_context.set(gl_context);
+                let gl_context = crate::gl::GlContext::create(view.view, gl_config).unwrap();
+                let Ok(()) = view.gl_context.set(gl_context) else { unreachable!() };
             }
 
             let handler = builder(&mut view.into());
             view.window_handler.replace(Some(Box::new(handler)));
         });
 
-        view
+        (view, state)
     }
 
     /// Trigger the event immediately and return the event status.
     /// Will panic if `window_handler` is already borrowed (see `trigger_deferrable_event`).
-    pub(super) fn trigger_event(&self, event: Event) -> EventStatus {
-        let mut window = crate::Window::new(Window { inner: &self.window_inner });
-        let mut window_handler = self.window_handler.borrow_mut();
-        let status = window_handler.on_event(&mut window, event);
-        self.send_deferred_events(window_handler.as_mut());
+    fn trigger_event(this: ViewRef<Self>, event: Event) -> EventStatus {
+        let mut handler = this.window_handler.borrow_mut();
+        let Some(handler) = handler.as_mut() else {
+            return EventStatus::Ignored;
+        };
+
+        let status = handler.on_event(&mut this.into(), event);
+        Self::send_deferred_events(this, handler.as_mut());
         status
     }
 
     /// Trigger the event immediately if `window_handler` can be borrowed mutably,
     /// otherwise add the event to a queue that will be cleared once `window_handler`'s mutable borrow ends.
     /// As this method might result in the event triggering asynchronously, it can't reliably return the event status.
-    pub(super) fn trigger_deferrable_event(&self, event: Event) {
-        if let Ok(mut window_handler) = self.window_handler.try_borrow_mut() {
-            let mut window = crate::Window::new(Window { inner: &self.window_inner });
-            window_handler.on_event(&mut window, event);
-            self.send_deferred_events(window_handler.as_mut());
-        } else {
-            self.deferred_events.borrow_mut().push_back(event);
-        }
+    fn trigger_deferrable_event(this: ViewRef<Self>, event: Event) {
+        let Ok(mut handler) = this.window_handler.try_borrow_mut() else {
+            this.deferred_events.borrow_mut().push_back(event);
+            return;
+        };
+
+        let Some(handler) = handler.as_mut() else { return };
+
+        handler.on_event(&mut this.into(), event);
+        Self::send_deferred_events(this, handler.as_mut());
     }
 
-    fn trigger_frame(&self) {
-        let mut window = crate::Window::new(Window { inner: &self.window_inner });
-        let mut window_handler = self.window_handler.borrow_mut();
-        window_handler.on_frame(&mut window);
-        self.send_deferred_events(window_handler.as_mut());
+    fn trigger_frame(this: ViewRef<Self>) {
+        let mut handler = this.window_handler.borrow_mut();
+        let Some(handler) = handler.as_mut() else { return };
+
+        handler.on_frame(&mut this.into());
+        Self::send_deferred_events(this, handler.as_mut());
     }
 
-    fn send_deferred_events(&self, window_handler: &mut dyn WindowHandler) {
-        let mut window = crate::Window::new(Window { inner: &self.window_inner });
+    fn send_deferred_events(this: ViewRef<Self>, window_handler: &mut dyn WindowHandler) {
+        let mut window = this.into();
         loop {
-            let next_event = self.deferred_events.borrow_mut().pop_front();
+            let next_event = { this.deferred_events.borrow_mut().pop_front() };
             if let Some(event) = next_event {
                 window_handler.on_event(&mut window, event);
             } else {
@@ -155,7 +160,7 @@ impl ViewImpl for BaseviewView {
         let timer_view = Weak::from_retained(view);
         self.frame_timer.set(TimerHandle::new(0.015, move || {
             if let Some(view) = timer_view.load() {
-                view.inner().trigger_frame();
+                BaseviewView::trigger_frame(view.inner_ref());
             }
         }));
     }
@@ -166,19 +171,19 @@ impl ViewImpl for BaseviewView {
         };
 
         if window.isKeyWindow() {
-            this.trigger_deferrable_event(Event::Window(WindowEvent::Focused));
+            BaseviewView::trigger_deferrable_event(this, Event::Window(WindowEvent::Focused));
         }
 
         true
     }
 
     fn resign_first_responder(this: ViewRef<Self>) -> bool {
-        this.trigger_deferrable_event(Event::Window(WindowEvent::Unfocused));
+        BaseviewView::trigger_deferrable_event(this, Event::Window(WindowEvent::Unfocused));
         true
     }
 
     fn window_should_close(this: ViewRef<Self>) -> bool {
-        this.trigger_event(Event::Window(WindowEvent::WillClose));
+        BaseviewView::trigger_event(this, Event::Window(WindowEvent::WillClose));
 
         //state.window_inner.close();
 
@@ -190,9 +195,6 @@ impl ViewImpl for BaseviewView {
 
         let scale_factor: f64 = ns_window.map(|w| w.backingScaleFactor()).unwrap_or(1.0);
 
-        // SAFETY: This is our own view instance
-        let state = &this.state;
-
         let bounds = this.view.bounds();
 
         let new_window_info = WindowInfo::from_logical_size(
@@ -200,13 +202,13 @@ impl ViewImpl for BaseviewView {
             scale_factor,
         );
 
-        let window_info = state.window_info.get();
+        let window_info = this.state.window_info.get();
 
         // Only send the event when the window's size has actually changed to be in line with the
         // other platform implementations
         if new_window_info.physical_size() != window_info.physical_size() {
-            state.window_info.set(new_window_info);
-            this.trigger_event(Event::Window(WindowEvent::Resized(new_window_info)));
+            this.state.window_info.set(new_window_info);
+            BaseviewView::trigger_event(this, Event::Window(WindowEvent::Resized(new_window_info)));
         }
     }
 
@@ -233,7 +235,7 @@ impl ViewImpl for BaseviewView {
     /// No-op without the `opengl` feature: there's no GL subview to
     /// collapse, so the override pass-through is equivalent to the
     /// default implementation.
-    fn hit_test(this: ViewRef<Self>, point: NSPoint) -> Option<&NSView> {
+    fn hit_test(this: ViewRef<'_, Self>, point: NSPoint) -> Option<&NSView> {
         let superclass = this.view.class().superclass().unwrap();
 
         // SAFETY: Our superclass is NSView
@@ -298,10 +300,13 @@ impl ViewImpl for BaseviewView {
 
         let position = Point { x: point.x, y: point.y };
 
-        this.trigger_event(Event::Mouse(MouseEvent::CursorMoved {
-            position,
-            modifiers: make_modifiers(event.modifierFlags()),
-        }));
+        BaseviewView::trigger_event(
+            this,
+            Event::Mouse(MouseEvent::CursorMoved {
+                position,
+                modifiers: make_modifiers(event.modifierFlags()),
+            }),
+        );
     }
 
     fn scroll_wheel(this: ViewRef<Self>, event: &NSEvent) {
@@ -314,10 +319,13 @@ impl ViewImpl for BaseviewView {
             ScrollDelta::Lines { x, y }
         };
 
-        this.trigger_event(Event::Mouse(MouseEvent::WheelScrolled {
-            delta,
-            modifiers: make_modifiers(event.modifierFlags()),
-        }));
+        BaseviewView::trigger_event(
+            this,
+            Event::Mouse(MouseEvent::WheelScrolled {
+                delta,
+                modifiers: make_modifiers(event.modifierFlags()),
+            }),
+        );
     }
 
     fn dragging_entered(
@@ -332,7 +340,7 @@ impl ViewImpl for BaseviewView {
             data: drop_data,
         };
 
-        on_event(&this, event)
+        on_event(this, event)
     }
 
     fn dragging_updated(
@@ -347,7 +355,7 @@ impl ViewImpl for BaseviewView {
             data: drop_data,
         };
 
-        on_event(&this, event)
+        on_event(this, event)
     }
 
     fn prepare_for_drag_operation(
@@ -371,16 +379,13 @@ impl ViewImpl for BaseviewView {
             data: drop_data,
         };
 
-        let event_status = this.trigger_event(Event::Mouse(event));
+        let event_status = BaseviewView::trigger_event(this, Event::Mouse(event));
 
-        match event_status {
-            EventStatus::AcceptDrop(_) => true,
-            _ => false,
-        }
+        matches!(event_status, EventStatus::AcceptDrop(_))
     }
 
     fn dragging_exited(this: ViewRef<Self>, _sender: Option<&ProtocolObject<dyn NSDraggingInfo>>) {
-        on_event(&this, MouseEvent::DragLeft);
+        on_event(this, MouseEvent::DragLeft);
     }
 
     fn handle_notification(this: ViewRef<Self>, notification: &NSNotification) {
@@ -405,66 +410,87 @@ impl ViewImpl for BaseviewView {
             return;
         }
 
-        this.trigger_event(Event::Window(if window.isKeyWindow() {
-            WindowEvent::Focused
-        } else {
-            WindowEvent::Unfocused
-        }));
+        BaseviewView::trigger_event(
+            this,
+            Event::Window(if window.isKeyWindow() {
+                WindowEvent::Focused
+            } else {
+                WindowEvent::Unfocused
+            }),
+        );
     }
 
     fn mouse_down(this: ViewRef<Self>, event: &NSEvent) {
-        this.trigger_event(Event::Mouse(ButtonPressed {
-            button: MouseButton::Left,
-            modifiers: make_modifiers(event.modifierFlags()),
-        }));
+        BaseviewView::trigger_event(
+            this,
+            Event::Mouse(ButtonPressed {
+                button: MouseButton::Left,
+                modifiers: make_modifiers(event.modifierFlags()),
+            }),
+        );
     }
 
     fn mouse_up(this: ViewRef<Self>, event: &NSEvent) {
-        this.trigger_event(Event::Mouse(ButtonReleased {
-            button: MouseButton::Left,
-            modifiers: make_modifiers(event.modifierFlags()),
-        }));
+        BaseviewView::trigger_event(
+            this,
+            Event::Mouse(ButtonReleased {
+                button: MouseButton::Left,
+                modifiers: make_modifiers(event.modifierFlags()),
+            }),
+        );
     }
 
     fn right_mouse_down(this: ViewRef<Self>, event: &NSEvent) {
-        this.trigger_event(Event::Mouse(ButtonPressed {
-            button: MouseButton::Right,
-            modifiers: make_modifiers(event.modifierFlags()),
-        }));
+        BaseviewView::trigger_event(
+            this,
+            Event::Mouse(ButtonPressed {
+                button: MouseButton::Right,
+                modifiers: make_modifiers(event.modifierFlags()),
+            }),
+        );
     }
 
     fn right_mouse_up(this: ViewRef<Self>, event: &NSEvent) {
-        this.trigger_event(Event::Mouse(ButtonReleased {
-            button: MouseButton::Right,
-            modifiers: make_modifiers(event.modifierFlags()),
-        }));
+        BaseviewView::trigger_event(
+            this,
+            Event::Mouse(ButtonReleased {
+                button: MouseButton::Right,
+                modifiers: make_modifiers(event.modifierFlags()),
+            }),
+        );
     }
 
     fn other_mouse_down(this: ViewRef<Self>, event: &NSEvent) {
-        this.trigger_event(Event::Mouse(ButtonPressed {
-            button: MouseButton::Middle,
-            modifiers: make_modifiers(event.modifierFlags()),
-        }));
+        BaseviewView::trigger_event(
+            this,
+            Event::Mouse(ButtonPressed {
+                button: MouseButton::Middle,
+                modifiers: make_modifiers(event.modifierFlags()),
+            }),
+        );
     }
 
     fn other_mouse_up(this: ViewRef<Self>, event: &NSEvent) {
-        this.trigger_event(Event::Mouse(ButtonReleased {
-            button: MouseButton::Middle,
-            modifiers: make_modifiers(event.modifierFlags()),
-        }));
+        BaseviewView::trigger_event(
+            this,
+            Event::Mouse(ButtonReleased {
+                button: MouseButton::Middle,
+                modifiers: make_modifiers(event.modifierFlags()),
+            }),
+        );
     }
 
     fn mouse_entered(this: ViewRef<Self>) {
-        this.trigger_event(Event::Mouse(MouseEvent::CursorEntered));
+        BaseviewView::trigger_event(this, Event::Mouse(MouseEvent::CursorEntered));
     }
 
     fn mouse_exited(this: ViewRef<Self>) {
-        this.trigger_event(Event::Mouse(MouseEvent::CursorLeft));
+        BaseviewView::trigger_event(this, Event::Mouse(MouseEvent::CursorLeft));
     }
 
     fn key_down(this: ViewRef<Self>, event: &NSEvent) {
         if let Some(key_event) = this.keyboard_state.process_native_event(event) {
-            let status = this.trigger_event(Event::Keyboard(key_event));
+            let status = BaseviewView::trigger_event(this, Event::Keyboard(key_event));
 
             if let EventStatus::Ignored = status {
                 unsafe {
@@ -478,7 +504,7 @@ impl ViewImpl for BaseviewView {
 
     fn key_up(this: ViewRef<Self>, event: &NSEvent) {
         if let Some(key_event) = this.keyboard_state.process_native_event(event) {
-            let status = this.trigger_event(Event::Keyboard(key_event));
+            let status = BaseviewView::trigger_event(this, Event::Keyboard(key_event));
 
             if let EventStatus::Ignored = status {
                 unsafe {
@@ -492,7 +518,7 @@ impl ViewImpl for BaseviewView {
 
     fn flags_changed(this: ViewRef<Self>, event: &NSEvent) {
         if let Some(key_event) = this.keyboard_state.process_native_event(event) {
-            let status = this.trigger_event(Event::Keyboard(key_event));
+            let status = BaseviewView::trigger_event(this, Event::Keyboard(key_event));
 
             if let EventStatus::Ignored = status {
                 unsafe {
@@ -561,8 +587,8 @@ fn get_drop_data(sender: Option<&ProtocolObject<dyn NSDraggingInfo>>) -> DropDat
     DropData::Files(files)
 }
 
-fn on_event(window_state: &BaseviewView, event: MouseEvent) -> NSDragOperation {
-    let event_status = window_state.trigger_event(Event::Mouse(event));
+fn on_event(this: ViewRef<BaseviewView>, event: MouseEvent) -> NSDragOperation {
+    let event_status = BaseviewView::trigger_event(this, Event::Mouse(event));
     match event_status {
         EventStatus::AcceptDrop(DropEffect::Copy) => NSDragOperation::Copy,
         EventStatus::AcceptDrop(DropEffect::Move) => NSDragOperation::Move,

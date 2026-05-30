@@ -1,13 +1,10 @@
-use crate::WindowOpenOptions;
 use objc2::__framework_prelude::{Allocated, AnyClass, ProtocolObject, Retained};
+use objc2::rc::Weak;
 use objc2::runtime::AnyObject;
-use objc2::{msg_send, sel, Encoding, Message, RefEncode};
-use objc2_app_kit::{
-    NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSView, NSWindow,
-    NSWindowDidBecomeKeyNotification, NSWindowDidResignKeyNotification,
-};
+use objc2::{msg_send, Encoding, Message, RefEncode};
+use objc2_app_kit::{NSDragOperation, NSDraggingInfo, NSEvent, NSView, NSWindow};
 use objc2_core_foundation::{CGRect, CFUUID};
-use objc2_foundation::{NSArray, NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize};
+use objc2_foundation::{NSNotification, NSPoint};
 use raw_window_handle::{AppKitWindowHandle, HasRawWindowHandle, RawWindowHandle};
 use std::ffi::{c_void, CStr, CString};
 use std::marker::PhantomData;
@@ -84,7 +81,7 @@ impl<V: ViewImpl> View<V> {
         &self.get_inner().inner
     }
 
-    pub fn inner_ref(&self) -> ViewRef<V> {
+    pub fn inner_ref(&self) -> ViewRef<'_, V> {
         ViewRef { view: self, inner: self.inner() }
     }
 }
@@ -111,7 +108,7 @@ pub struct ViewRef<'a, V> {
 
 impl<'a, V> Clone for ViewRef<'a, V> {
     fn clone(&self) -> Self {
-        Self { view: self.view, inner: self.inner }
+        *self
     }
 }
 
@@ -131,7 +128,7 @@ pub trait ViewImpl: Sized {
     fn resign_first_responder(this: ViewRef<Self>) -> bool;
     fn window_should_close(this: ViewRef<Self>) -> bool;
     fn view_did_change_backing_properties(this: ViewRef<Self>);
-    fn hit_test(this: ViewRef<Self>, point: NSPoint) -> Option<&NSView>;
+    fn hit_test(this: ViewRef<'_, Self>, point: NSPoint) -> Option<&NSView>;
     fn view_will_move_to_window(this: ViewRef<Self>, new_window: Option<&NSWindow>);
     fn update_tracking_areas(this: ViewRef<Self>);
     fn mouse_moved(this: ViewRef<Self>, event: &NSEvent);
@@ -164,4 +161,18 @@ pub trait ViewImpl: Sized {
     fn key_down(this: ViewRef<Self>, event: &NSEvent);
     fn key_up(this: ViewRef<Self>, event: &NSEvent);
     fn flags_changed(this: ViewRef<Self>, event: &NSEvent);
+}
+
+unsafe impl<V: ViewImpl> HasRawWindowHandle for View<V> {
+    fn raw_window_handle(&self) -> RawWindowHandle {
+        let mut handle = AppKitWindowHandle::empty();
+
+        handle.ns_view = (&self.parent as *const NSView).cast_mut().cast();
+
+        if let Some(window) = self.window() {
+            handle.ns_window = Retained::as_ptr(&window).cast_mut().cast()
+        }
+
+        handle.into()
+    }
 }
