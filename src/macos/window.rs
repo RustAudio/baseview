@@ -74,7 +74,7 @@ impl<'a> Window<'a> {
             let (_parent_window, parent_view) =
                 extract_raw_window_handle(parent.raw_window_handle());
 
-            let (ns_view, state) = BaseviewView::new(options, build, None);
+            let (ns_view, state) = BaseviewView::new(options, build, None, None);
 
             if let Some(parent_view) = parent_view {
                 parent_view.addSubview(&ns_view);
@@ -107,7 +107,12 @@ impl<'a> Window<'a> {
             window.setTitle(&title);
             window.makeKeyAndOrderFront(None);
 
-            let (view, _) = BaseviewView::new(options, build, Some(Weak::from_retained(&app)));
+            let (view, _) = BaseviewView::new(
+                options,
+                build,
+                Some(Weak::from_retained(&app)),
+                Some(Weak::from_retained(&window)),
+            );
 
             window.setContentView(Some(&view));
             set_delegate(&window, &view);
@@ -143,30 +148,11 @@ impl<'a> Window<'a> {
     }
 
     pub fn resize(&mut self, size: Size) {
-        todo!()
-        /*
-        if self.inner.open.get() {
-            // NOTE: macOS gives you a personal rave if you pass in fractional pixels here. Even
-            // though the size is in fractional pixels.
-            let size = NSSize::new(size.width.round(), size.height.round());
+        if self.inner.state.closed.get() {
+            return;
+        }
 
-            if let Some(view) = self.inner.ns_view.get() {
-                view.setFrameSize(size);
-                view.setNeedsDisplay(true);
-            }
-
-            // When using OpenGL the `NSOpenGLView` needs to be resized separately? Why? Because
-            // macOS.
-            #[cfg(feature = "opengl")]
-            if let Some(gl_context) = &self.inner.gl_context {
-                gl_context.resize(size);
-            }
-
-            // If this is a standalone window then we'll also need to resize the window itself
-            if let Some(ns_window) = self.inner.ns_window.get() {
-                ns_window.setContentSize(size);
-            }
-        }*/
+        BaseviewView::resize(self.view.inner_ref(), size);
     }
 
     pub fn set_mouse_cursor(&mut self, _mouse_cursor: MouseCursor) {
