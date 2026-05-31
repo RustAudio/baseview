@@ -113,7 +113,10 @@ impl BaseviewView {
             view.notification_center_observer.set(Some(observer));
 
             // Send an initial Resized event so users get the correct scale factor and physical size.
-            Self::view_did_change_backing_properties(view);
+            Self::trigger_deferrable_event(
+                view,
+                Event::Window(WindowEvent::Resized(Self::fetch_view_size(view.view))),
+            );
         });
 
         (view, state)
@@ -208,6 +211,19 @@ impl BaseviewView {
             }
         }
     }
+
+    fn fetch_view_size(view: &NSView) -> WindowInfo {
+        let ns_window = view.window();
+
+        let scale_factor: f64 = ns_window.map(|w| w.backingScaleFactor()).unwrap_or(1.0);
+
+        let bounds = view.bounds();
+
+        WindowInfo::from_logical_size(
+            Size::new(bounds.size.width, bounds.size.height),
+            scale_factor,
+        )
+    }
 }
 
 impl Drop for BaseviewView {
@@ -242,17 +258,7 @@ impl ViewImpl for BaseviewView {
     }
 
     fn view_did_change_backing_properties(this: ViewRef<Self>) {
-        let ns_window = this.view.window();
-
-        let scale_factor: f64 = ns_window.map(|w| w.backingScaleFactor()).unwrap_or(1.0);
-
-        let bounds = this.view.bounds();
-
-        let new_window_info = WindowInfo::from_logical_size(
-            Size::new(bounds.size.width, bounds.size.height),
-            scale_factor,
-        );
-
+        let new_window_info = Self::fetch_view_size(this.view);
         let window_info = this.state.window_info.get();
 
         // Only send the event when the window's size has actually changed to be in line with the
