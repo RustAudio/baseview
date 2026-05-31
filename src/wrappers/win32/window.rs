@@ -12,6 +12,7 @@ use window_class::RegisteredClass;
 use windows_core::{Error, Result, HSTRING};
 
 use crate::wrappers::win32::h_instance::HInstance;
+use crate::PhySize;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::{CreateWindowExW, WINDOW_STYLE};
 
@@ -48,7 +49,7 @@ pub trait WindowImpl: 'static {
 /// For any non-trivial operations (e.g. window resizing, GL context creation, etc.), put them in
 /// [`WindowImpl::after_create`] instead.
 pub fn create_window<W: WindowImpl>(
-    title: &HSTRING, flags: WINDOW_STYLE, nc_width: i32, nc_height: i32, parent: HWND,
+    title: &HSTRING, flags: WINDOW_STYLE, nc_size: PhySize, parent: HWND,
     initializer: impl FnOnce(HWnd) -> W + 'static,
 ) -> Result<HWND> {
     let instance = HInstance::get();
@@ -64,8 +65,8 @@ pub fn create_window<W: WindowImpl>(
             flags,
             0,
             0,
-            nc_width,
-            nc_height,
+            nc_size.width.try_into().unwrap_or(i32::MAX),
+            nc_size.height.try_into().unwrap_or(i32::MAX),
             parent,
             null_mut(),
             instance.as_raw(),

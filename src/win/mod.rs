@@ -1,4 +1,3 @@
-mod cursor;
 mod drop_target;
 mod hook;
 mod keyboard;
