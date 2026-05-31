@@ -8,17 +8,21 @@ use crate::{
     DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, Point, ScrollDelta, Size,
     WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
 };
+use block2::RcBlock;
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
 use objc2::{msg_send, AllocAnyThread};
 use objc2_app_kit::{
     NSApplication, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
-    NSTrackingAreaOptions, NSView, NSWindow,
+    NSTrackingAreaOptions, NSView, NSWindow, NSWindowDidBecomeKeyNotification,
 };
-use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{
+    NSArray, NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize, NSString,
+};
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
+use std::ptr::NonNull;
 use std::rc::Rc;
 
 pub(crate) struct BaseviewView {
@@ -37,42 +41,6 @@ pub(crate) struct BaseviewView {
     #[cfg(feature = "opengl")]
     pub(crate) gl_context: std::cell::OnceCell<crate::gl::GlContext>,
 }
-// TODO
-/*
-pub(super) fn create_view<V: ViewImpl>(
-    window_options: &WindowOpenOptions, inner: V,
-) -> Retained<View<V>> {
-    let size = window_options.size;
-    let view = View::new(NSRect::new(NSPoint::ZERO, NSSize::new(size.width, size.height)), inner);
-
-    /*
-    let notification_center = NSNotificationCenter::defaultCenter();
-
-    // SAFETY: Our NSView class does have a handleNotification: method with the matching signature.
-    unsafe {
-        notification_center.addObserver_selector_name_object(
-            &view,
-            sel!(handleNotification:),
-            Some(NSWindowDidBecomeKeyNotification),
-            None,
-        );
-        notification_center.addObserver_selector_name_object(
-            &view,
-            sel!(handleNotification:),
-            Some(NSWindowDidResignKeyNotification),
-            None,
-        );
-    }*/
-
-    /*
-    // SAFETY: This static is a read-only constant
-    let ns_filenames_pboard_type = unsafe { NSFilenamesPboardType };
-    view.registerForDraggedTypes(&NSArray::from_slice(&[ns_filenames_pboard_type]));
-
-     */
-
-    view
-}*/
 
 impl BaseviewView {
     pub fn new<H: WindowHandler + 'static>(
@@ -117,6 +85,34 @@ impl BaseviewView {
             }));
 
             view.window_handler.replace(Some(Box::new(builder(&mut view.into()))));
+
+            let notification_center = NSNotificationCenter::defaultCenter();
+
+            let notifier_view = Weak::new(view.view);
+            let notified = RcBlock::new(move |n: NonNull<NSNotification>| {
+                let Some(view) = notifier_view.load() else {
+                    return;
+                };
+
+                BaseviewView::handle_notification(view.inner_ref(), unsafe { n.as_ref() });
+            });
+
+            // SAFETY: block does not need to be sendable, as a `None` queue specifies the block
+            // will run on the calling thread, which for Window operations is the main thread.
+            unsafe {
+                notification_center.addObserverForName_object_queue_usingBlock(
+                    Some(NSWindowDidBecomeKeyNotification),
+                    None,
+                    None,
+                    &notified,
+                );
+                notification_center.addObserverForName_object_queue_usingBlock(
+                    Some(NSWindowDidBecomeKeyNotification),
+                    None,
+                    None,
+                    &notified,
+                )
+            };
         });
 
         (view, state)

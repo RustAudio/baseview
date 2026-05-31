@@ -90,17 +90,6 @@ pub struct ViewInner<V> {
     inner: V,
 }
 
-fn new_class_name() -> CString {
-    // PANIC: CFUUIDCreate is not documented to return NULL.
-    let uuid = CFUUID::new(None).unwrap();
-    // PANIC: CFUUIDCreateString is not documented to return NULL.
-    let uuid_str = CFUUID::new_string(None, Some(&uuid)).unwrap();
-
-    let class_name = format!("BaseviewNSView_{uuid_str}");
-    // PANIC: This cannot have any NULL bytes
-    CString::new(class_name).unwrap()
-}
-
 pub struct ViewRef<'a, V> {
     pub view: &'a View<V>,
     pub inner: &'a V,

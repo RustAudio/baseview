@@ -1,4 +1,5 @@
 use super::*;
+use crate::wrappers::appkit::new_class_name;
 use objc2::__framework_prelude::{AnyClass, AnyObject, Bool, Sel};
 use objc2::ffi::objc_disposeClassPair;
 use objc2::runtime::ClassBuilder;
@@ -17,7 +18,7 @@ pub unsafe fn create_view_class<V: ViewImpl>() -> &'static AnyClass {
     // the class was stored in a OnceCell after creation. This way, we didn't
     // have to recreate it each time a view was opened, but now we don't leave
     // any class definitions lying around when the plugin is closed.
-    let class_name = new_class_name();
+    let class_name = new_class_name("BaseviewNSView_");
 
     let mut class = ClassBuilder::new(&class_name, NSView::class()).unwrap();
 

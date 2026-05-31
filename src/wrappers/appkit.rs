@@ -4,11 +4,24 @@ mod window;
 
 use objc2::rc::Retained;
 use objc2_app_kit::{NSView, NSWindow};
+use objc2_core_foundation::CFUUID;
+use std::ffi::CString;
 pub use timer::TimerHandle;
 pub use view::*;
 pub use window::*;
 
 use raw_window_handle::RawWindowHandle;
+
+fn new_class_name(prefix: &str) -> CString {
+    // PANIC: CFUUIDCreate is not documented to return NULL.
+    let uuid = CFUUID::new(None).unwrap();
+    // PANIC: CFUUIDCreateString is not documented to return NULL.
+    let uuid_str = CFUUID::new_string(None, Some(&uuid)).unwrap();
+
+    let class_name = format!("{prefix}{uuid_str}");
+    // PANIC: This cannot have any NULL bytes
+    CString::new(class_name).unwrap()
+}
 
 pub fn extract_raw_window_handle(
     handle: RawWindowHandle,
