@@ -1,12 +1,11 @@
 use objc2::__framework_prelude::{Allocated, AnyClass, ProtocolObject, Retained};
-use objc2::rc::Weak;
 use objc2::runtime::AnyObject;
 use objc2::{msg_send, Encoding, Message, RefEncode};
 use objc2_app_kit::{NSDragOperation, NSDraggingInfo, NSEvent, NSView, NSWindow};
-use objc2_core_foundation::{CGRect, CFUUID};
+use objc2_core_foundation::CGRect;
 use objc2_foundation::{NSNotification, NSPoint};
 use raw_window_handle::{AppKitWindowHandle, HasRawWindowHandle, RawWindowHandle};
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{c_void, CStr};
 use std::marker::PhantomData;
 use std::ops::Deref;
 
@@ -21,7 +20,7 @@ pub struct View<V> {
     _inner: PhantomData<ViewInner<V>>,
 }
 
-// SAFETY: TODO
+// SAFETY: Due to #[repr(C)] just wrapping an NSView
 unsafe impl<V> RefEncode for View<V> {
     const ENCODING_REF: Encoding = NSView::ENCODING_REF;
 }
@@ -57,7 +56,7 @@ impl<V: ViewImpl> View<V> {
     fn set_inner(view: &Allocated<View<V>>, class: &AnyClass, inner: ViewInner<V>) {
         let inner = Box::new(inner);
         let ivar = class.instance_variable(BASEVIEW_STATE_IVAR).unwrap();
-        let ivar_target = unsafe { &*Allocated::as_ptr(&view).cast() };
+        let ivar_target = unsafe { &*Allocated::as_ptr(view).cast() };
         let ivar = unsafe { ivar.load_ptr::<*mut c_void>(ivar_target) };
         unsafe { ivar.write(Box::into_raw(inner).cast()) };
     }

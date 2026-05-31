@@ -28,5 +28,5 @@ pub fn create_window(size: Size, mtm: MainThreadMarker) -> Retained<NSWindow> {
 }
 
 pub fn set_delegate(window: &NSWindow, delegate: &View<impl ViewImpl>) {
-    let () = unsafe { msg_send![&*window, setDelegate: &*delegate] };
+    let () = unsafe { msg_send![window, setDelegate: delegate] };
 }
