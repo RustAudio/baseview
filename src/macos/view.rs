@@ -69,12 +69,6 @@ impl BaseviewView {
         };
 
         let view = View::new(view_rect, inner, |view| {
-            #[cfg(feature = "opengl")]
-            if let Some(gl_config) = options.gl_config {
-                let gl_context = crate::gl::GlContext::create(view.view, gl_config).unwrap();
-                let Ok(()) = view.gl_context.set(gl_context) else { unreachable!() };
-            }
-
             // Set up parenting before handler setup
             match &view.parenting {
                 ViewParentingType::Parented { parent_view } => {
@@ -86,6 +80,12 @@ impl BaseviewView {
                     owned_window.setContentView(Some(view.view));
                     set_delegate(&owned_window, view.view);
                 }
+            }
+
+            #[cfg(feature = "opengl")]
+            if let Some(gl_config) = options.gl_config {
+                let gl_context = crate::gl::GlContext::create(view.view, gl_config).unwrap();
+                let Ok(()) = view.gl_context.set(gl_context) else { unreachable!() };
             }
 
             // Initialize handler
@@ -111,6 +111,9 @@ impl BaseviewView {
                 }
             });
             view.notification_center_observer.set(Some(observer));
+
+            // Send an initial Resized event so users get the correct scale factor and physical size.
+            Self::view_did_change_backing_properties(view);
         });
 
         (view, state)
