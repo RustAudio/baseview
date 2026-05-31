@@ -8,22 +8,23 @@ use crate::{
     DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, Point, ScrollDelta, Size,
     WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
 };
-use block2::RcBlock;
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
 use objc2::{msg_send, AllocAnyThread};
 use objc2_app_kit::{
     NSApplication, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
-    NSTrackingAreaOptions, NSView, NSWindow, NSWindowDidBecomeKeyNotification,
+    NSTrackingAreaOptions, NSView, NSWindow,
 };
-use objc2_foundation::{
-    NSArray, NSNotification, NSNotificationCenter, NSPoint, NSRect, NSSize, NSString,
-};
+use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
-use std::ptr::NonNull;
 use std::rc::Rc;
+
+pub enum ViewParentingType {
+    Parented { parent_view: Weak<NSView> },
+    Windowed { owned_window: Weak<NSWindow>, running_app: Weak<NSApplication> },
+}
 
 pub(crate) struct BaseviewView {
     pub(crate) state: Rc<WindowSharedState>,
@@ -33,10 +34,11 @@ pub(crate) struct BaseviewView {
     deferred_events: RefCell<VecDeque<Event>>,
 
     frame_timer: Cell<Option<TimerHandle>>,
+    notification_center_observer: Cell<Option<NotificationCenterObserver>>,
+
     keyboard_state: KeyboardState,
 
-    owned_app: Option<Weak<NSApplication>>,
-    owned_window: Option<Weak<NSWindow>>,
+    parenting: ViewParentingType,
 
     #[cfg(feature = "opengl")]
     pub(crate) gl_context: std::cell::OnceCell<crate::gl::GlContext>,
@@ -45,7 +47,7 @@ pub(crate) struct BaseviewView {
 impl BaseviewView {
     pub fn new<H: WindowHandler + 'static>(
         options: WindowOpenOptions, builder: impl FnOnce(&mut crate::Window) -> H,
-        owned_app: Option<Weak<NSApplication>>, owned_window: Option<Weak<NSWindow>>,
+        parenting: ViewParentingType,
     ) -> (Retained<View<Self>>, Rc<WindowSharedState>) {
         let view_rect =
             NSRect::new(NSPoint::ZERO, NSSize::new(options.size.width, options.size.height));
@@ -59,23 +61,41 @@ impl BaseviewView {
             keyboard_state: KeyboardState::new(),
             frame_timer: None.into(),
             window_handler: None.into(),
-            owned_app,
-            owned_window,
+            notification_center_observer: None.into(),
+            parenting,
 
             #[cfg(feature = "opengl")]
             gl_context: std::cell::OnceCell::new(),
         };
 
         let view = View::new(view_rect, inner, |view| {
-            // SAFETY: This static is a read-only constant
-            let ns_filenames_pboard_type = unsafe { NSFilenamesPboardType };
-            view.view.registerForDraggedTypes(&NSArray::from_slice(&[ns_filenames_pboard_type]));
-
             #[cfg(feature = "opengl")]
             if let Some(gl_config) = options.gl_config {
                 let gl_context = crate::gl::GlContext::create(view.view, gl_config).unwrap();
                 let Ok(()) = view.gl_context.set(gl_context) else { unreachable!() };
             }
+
+            // Set up parenting before handler setup
+            match &view.parenting {
+                ViewParentingType::Parented { parent_view } => {
+                    let parent_view = parent_view.load().unwrap();
+                    parent_view.addSubview(view.view);
+                }
+                ViewParentingType::Windowed { owned_window, .. } => {
+                    let owned_window = owned_window.load().unwrap();
+                    owned_window.setContentView(Some(view.view));
+                    set_delegate(&owned_window, view.view);
+                }
+            }
+
+            // Initialize handler
+            view.window_handler.replace(Some(Box::new(builder(&mut view.into()))));
+
+            // Set up anything that might trigger events to the handler
+
+            // SAFETY: This static is a read-only constant
+            let ns_filenames_pboard_type = unsafe { NSFilenamesPboardType };
+            view.view.registerForDraggedTypes(&NSArray::from_slice(&[ns_filenames_pboard_type]));
 
             let timer_view = Weak::new(view.view);
             view.frame_timer.set(TimerHandle::new(0.015, move || {
@@ -84,35 +104,13 @@ impl BaseviewView {
                 }
             }));
 
-            view.window_handler.replace(Some(Box::new(builder(&mut view.into()))));
-
-            let notification_center = NSNotificationCenter::defaultCenter();
-
             let notifier_view = Weak::new(view.view);
-            let notified = RcBlock::new(move |n: NonNull<NSNotification>| {
-                let Some(view) = notifier_view.load() else {
-                    return;
-                };
-
-                BaseviewView::handle_notification(view.inner_ref(), unsafe { n.as_ref() });
+            let observer = NotificationCenterObserver::register_window_key_change(move |n| {
+                if let Some(view) = notifier_view.load() {
+                    BaseviewView::handle_notification(view.inner_ref(), n);
+                }
             });
-
-            // SAFETY: block does not need to be sendable, as a `None` queue specifies the block
-            // will run on the calling thread, which for Window operations is the main thread.
-            unsafe {
-                notification_center.addObserverForName_object_queue_usingBlock(
-                    Some(NSWindowDidBecomeKeyNotification),
-                    None,
-                    None,
-                    &notified,
-                );
-                notification_center.addObserverForName_object_queue_usingBlock(
-                    Some(NSWindowDidBecomeKeyNotification),
-                    None,
-                    None,
-                    &notified,
-                )
-            };
+            view.notification_center_observer.set(Some(observer));
         });
 
         (view, state)
@@ -122,8 +120,16 @@ impl BaseviewView {
         this.state.closed.set(true);
         this.view.removeFromSuperview();
 
-        if let Some(app) = this.owned_app.as_ref().and_then(|a| a.load()) {
-            app.stop(Some(&app))
+        if let ViewParentingType::Windowed { owned_window: parent_window, running_app } =
+            &this.parenting
+        {
+            if let Some(parent_window) = parent_window.load() {
+                parent_window.close();
+            }
+
+            if let Some(app) = running_app.load() {
+                app.stop(Some(&app));
+            }
         }
     }
 
@@ -143,8 +149,10 @@ impl BaseviewView {
         }
 
         // If this is a standalone window then we'll also need to resize the window itself
-        if let Some(ns_window) = this.owned_window.as_ref().and_then(|w| w.load()) {
-            ns_window.setContentSize(size);
+        if let ViewParentingType::Windowed { owned_window, .. } = &this.parenting {
+            if let Some(owned_window) = owned_window.load() {
+                owned_window.setContentSize(size);
+            }
         }
 
         Self::view_did_change_backing_properties(this);

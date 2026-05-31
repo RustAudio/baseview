@@ -17,10 +17,8 @@ use crate::{MouseCursor, Size, WindowHandler, WindowInfo, WindowOpenOptions};
 
 #[cfg(feature = "opengl")]
 use crate::gl::GlContext;
-use crate::macos::view::BaseviewView;
-use crate::wrappers::appkit::{
-    create_window, extract_raw_window_handle, set_delegate, View, ViewRef,
-};
+use crate::macos::view::{BaseviewView, ViewParentingType};
+use crate::wrappers::appkit::{create_window, extract_raw_window_handle, View, ViewRef};
 
 pub struct WindowHandle {
     view: Option<Weak<View<BaseviewView>>>,
@@ -74,11 +72,14 @@ impl<'a> Window<'a> {
             let (_parent_window, parent_view) =
                 extract_raw_window_handle(parent.raw_window_handle());
 
-            let (ns_view, state) = BaseviewView::new(options, build, None, None);
+            let Some(parent_view) = parent_view else {
+                panic!("Invalid window handle: ns_view is NULL");
+            };
 
-            if let Some(parent_view) = parent_view {
-                parent_view.addSubview(&ns_view);
-            }
+            let parenting =
+                ViewParentingType::Parented { parent_view: Weak::from_retained(&parent_view) };
+
+            let (ns_view, state) = BaseviewView::new(options, build, parenting);
 
             WindowHandle { view: Some(Weak::from_retained(&ns_view)), state }
         })
@@ -107,15 +108,12 @@ impl<'a> Window<'a> {
             window.setTitle(&title);
             window.makeKeyAndOrderFront(None);
 
-            let (view, _) = BaseviewView::new(
-                options,
-                build,
-                Some(Weak::from_retained(&app)),
-                Some(Weak::from_retained(&window)),
-            );
+            let parenting = ViewParentingType::Windowed {
+                running_app: Weak::from_retained(&app),
+                owned_window: Weak::from_retained(&window),
+            };
 
-            window.setContentView(Some(&view));
-            set_delegate(&window, &view);
+            let _ = BaseviewView::new(options, build, parenting);
 
             app.run();
         })
