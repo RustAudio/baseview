@@ -7,7 +7,6 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use keyboard_types::Modifiers;
 use raw_window_handle::{
     HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, XlibDisplayHandle,
     XlibWindowHandle,
@@ -15,16 +14,15 @@ use raw_window_handle::{
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    Atom, AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, CreateGCAux,
-    CreateWindowAux, EventMask, PropMode, Timestamp, Visualid, Window as XWindow, WindowClass,
+    AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, CreateGCAux,
+    CreateWindowAux, EventMask, PropMode, Visualid, Window as XWindow, WindowClass,
 };
 use x11rb::wrapper::ConnectionExt as _;
 
-use super::drag_n_drop::DragNDrop;
 use super::XcbConnection;
 use crate::{
-    DropData, Event, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta,
-    Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
+    Event, MouseCursor, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    WindowScalePolicy,
 };
 
 #[cfg(feature = "opengl")]
@@ -100,14 +98,12 @@ pub(crate) struct WindowInner {
     gl_context: Option<GlContext>,
 
     pub(crate) xcb_connection: Rc<XcbConnection>,
-    window_id: XWindow,
+    pub(crate) window_id: XWindow,
     pub(crate) window_info: WindowInfo,
     visual_id: Visualid,
     mouse_cursor: Cell<MouseCursor>,
 
     pub(crate) close_requested: Cell<bool>,
-    drag_n_drop: DragNDrop,
-    root_window_id: Option<XWindow>,
 }
 
 pub struct Window<'a> {
@@ -290,8 +286,6 @@ impl<'a> Window<'a> {
             window_info,
             visual_id: visual_info.visual_id,
             mouse_cursor: Cell::new(MouseCursor::default()),
-            drag_n_drop: DragNDrop::new(),
-            root_window_id,
 
             close_requested: Cell::new(false),
 

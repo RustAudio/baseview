@@ -151,7 +151,7 @@ impl EventLoop {
             ////
             // window
             ////
-            XEvent::ClientMessage(event) {
+            XEvent::ClientMessage(event) => {
                 if event.format != 32 {
                     return;
                 }
