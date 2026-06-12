@@ -83,7 +83,12 @@ impl WindowHandler for FemtovgExample {
                 self.canvas.set_size(phy_size.width, phy_size.height, size.scale() as f32);
                 self.damaged = true;
             }
-            Event::Mouse(MouseEvent::CursorMoved { position, .. }) => {
+            Event::Mouse(
+                MouseEvent::CursorMoved { position, .. }
+                | MouseEvent::DragEntered { position, .. }
+                | MouseEvent::DragMoved { position, .. }
+                | MouseEvent::DragDropped { position, .. },
+            ) => {
                 self.current_mouse_position = position.to_physical(&self.current_size);
                 self.damaged = true;
             }
