@@ -35,18 +35,12 @@ opengl = [
 keyboard-types = { version = "0.6.1", default-features = false }
 raw-window-handle = "0.5"
 
-[target.'cfg(target_os="linux")'.dependencies]
+[target.'cfg(any(target_os="linux", target_os="freebsd"))'.dependencies]
 x11rb = { version = "0.13.2", features = ["cursor", "resource_manager", "allow-unsafe-code", "dl-libxcb"], default-features = false }
 x11-dl = { version = "2.21" }
 polling = "3.11.0"
 percent-encoding = "2.3.1"
 bytemuck = "1.15.0"
-
-[target.'cfg(target_os="freebsd")'.dependencies]
-xcb = { version = "0.9", features = ["thread", "xlib_xcb", "dri2"] }
-x11 = { version = "2.18", features = ["xlib", "xcursor"] }
-xcb-util = { version = "0.3", features = ["icccm"] }
-nix = "0.22.0"
 
 [target.'cfg(target_os="windows")'.dependencies]
 # Later versions of the windows crates need MSRV 1.80
