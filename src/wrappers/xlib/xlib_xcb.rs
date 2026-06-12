@@ -1,6 +1,7 @@
 use crate::wrappers::xlib::xlib_connection::XlibConnection;
 use std::error::Error;
 use std::ops::Deref;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::os::raw::c_int;
 use x11_dl::xlib::Display;
 use x11_dl::xlib_xcb::Xlib_xcb;
@@ -70,5 +71,11 @@ impl Deref for XlibXcbConnection {
 
     fn deref(&self) -> &Self::Target {
         &self.xcb_connection
+    }
+}
+
+impl AsFd for XlibXcbConnection {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.xcb_connection.as_fd()
     }
 }

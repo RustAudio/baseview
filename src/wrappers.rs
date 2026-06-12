@@ -19,6 +19,9 @@ pub mod xlib;
 #[cfg(all(target_os = "linux", feature = "opengl"))]
 pub mod glx;
 
+#[cfg(target_os = "linux")]
+pub mod connection_poller;
+
 /// Wrappers and utilities around the Win32 API
 #[cfg(target_os = "windows")]
 pub mod win32;
