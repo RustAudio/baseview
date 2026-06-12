@@ -25,7 +25,6 @@ rust-version = "1.80"
 [features]
 default = []
 opengl = [
-    "uuid",
     "objc2-core-foundation/CFBundle",
     "objc2-app-kit/NSOpenGL",
     "objc2-app-kit/NSOpenGLView",
@@ -68,7 +67,6 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 windows-core = { version = "=0.61.2" }
-uuid = { version = "0.8", features = ["v4"], optional = true }
 
 [target.'cfg(target_os="macos")'.dependencies]
 objc2 = "0.6.4"

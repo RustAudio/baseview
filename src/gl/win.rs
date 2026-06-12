@@ -28,6 +28,7 @@ use windows_sys::{
 use raw_window_handle::RawWindowHandle;
 
 use super::{GlConfig, GlError, Profile};
+use crate::wrappers::win32::uuid::Uuid;
 
 // See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_create_context.txt
 
@@ -99,7 +100,7 @@ impl GlContext {
 
         // Create temporary window and context to load function pointers
 
-        let class_name_str = format!("raw-gl-context-window-{}", uuid::Uuid::new_v4().to_simple());
+        let class_name_str = format!("raw-gl-context-window-{}", Uuid::new());
         let mut class_name: Vec<u16> = OsStr::new(&class_name_str).encode_wide().collect();
         class_name.push(0);
 
