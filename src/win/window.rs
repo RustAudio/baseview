@@ -528,16 +528,25 @@ impl WindowState {
     }
 
     pub(crate) fn handle_on_frame(&self) {
-        let mut handler = self.handler.borrow_mut();
+        // Use `try_borrow_mut` so a re-entrant call (e.g. a synchronous `WM_SIZE`
+        // dispatched by a `SetWindowPos`/host resize that happens *inside* the
+        // handler) is skipped instead of panicking with "already borrowed".
+        let Ok(mut handler) = self.handler.try_borrow_mut() else {
+            return;
+        };
         let Some(handler) = handler.as_mut() else { return };
         let mut window = crate::window::Window::new(Window { state: self });
 
         handler.on_frame(&mut window)
     }
 
-    pub(crate) fn handle_event(&self, event: Event) -> EventStatus {
-        let mut handler = self.handler.borrow_mut();
-
+     pub(crate) fn handle_event(&self, event: Event) -> EventStatus {
+        // See `handle_on_frame`: skip re-entrant events rather than panicking on
+        // a double `borrow_mut`. This is what makes resizing from within a
+        // handler callback safe (the host's resize synchronously re-enters here).
+        let Ok(mut handler) = self.handler.try_borrow_mut() else {
+            return EventStatus::Ignored;
+        };
         let Some(handler) = handler.as_mut() else {
             return EventStatus::Ignored;
         };
