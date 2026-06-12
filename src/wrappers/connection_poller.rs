@@ -1,8 +1,7 @@
 use polling::{Event, Events, Poller};
-use std::error::Error;
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 pub struct ConnectionPoller<'a> {
     poller: Poller,
@@ -42,13 +41,15 @@ impl<'a> ConnectionPoller<'a> {
             if event.is_interrupt() {
                 return Ok(PollStatus::ConnectionClosed);
             }
+
+            return Ok(PollStatus::ReadAvailable);
         }
 
         Ok(PollStatus::Nothing)
     }
 
-    pub fn delete(self) -> Result<(), Box<dyn Error>> {
-        Ok(self.poller.delete(self.fd)?)
+    pub fn delete(self) -> io::Result<()> {
+        self.poller.delete(self.fd)
     }
 }
 

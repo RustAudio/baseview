@@ -109,6 +109,8 @@ impl EventLoop {
             }
         }
 
+        poller.delete()?;
+
         Ok(())
     }
 
