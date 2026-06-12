@@ -563,7 +563,7 @@ pub fn send_finished_rejected(
     conn.conn.flush()
 }
 
-pub fn send_finished_event(
+fn send_finished_event(
     source_window: xproto::Window, window: &WindowInner, action: Option<DndAction>,
 ) -> Result<(), ConnectionError> {
     let conn = &window.xcb_connection;
@@ -696,7 +696,7 @@ impl Display for ParseError {
 impl Error for ParseError {}
 
 #[derive(Debug, Copy, Clone)]
-enum DndAction {
+pub(crate) enum DndAction {
     Copy,
     Move,
     Link,
