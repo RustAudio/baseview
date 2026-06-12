@@ -1,3 +1,4 @@
+use crate::wrappers::connection_poller::{ConnectionPoller, PollStatus};
 use crate::x11::drag_n_drop::DragNDropState;
 use crate::x11::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
 use crate::x11::{ParentHandle, Window, WindowInner};
@@ -6,7 +7,7 @@ use crate::{
     WindowInfo,
 };
 use std::error::Error;
-use std::os::fd::AsRawFd;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::protocol::Event as XEvent;
@@ -63,13 +64,9 @@ impl EventLoop {
     }
 
     // Event loop
-    // FIXME: poll() acts fine on linux, sometimes funky on *BSD. XCB upstream uses a define to
-    // switch between poll() and select() (the latter of which is fine on *BSD), and we should do
-    // the same.
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        use nix::poll::*;
-
-        let xcb_fd = self.window.xcb_connection.conn.as_raw_fd();
+        let connection = Rc::clone(&self.window.xcb_connection);
+        let mut poller = ConnectionPoller::new(&connection.conn)?;
 
         let mut last_frame = Instant::now();
         self.event_loop_running = true;
@@ -87,24 +84,13 @@ impl EventLoop {
                 last_frame = Instant::max(next_frame, Instant::now() - self.frame_interval);
             }
 
-            let mut fds = [PollFd::new(xcb_fd, PollFlags::POLLIN)];
-
             // Check for any events in the internal buffers
             // before going to sleep:
             self.drain_xcb_events()?;
 
             // FIXME: handle errors
-            poll(&mut fds, next_frame.duration_since(Instant::now()).subsec_millis() as i32)
-                .unwrap();
-
-            if let Some(revents) = fds[0].revents() {
-                if revents.contains(PollFlags::POLLERR) {
-                    panic!("xcb connection poll error");
-                }
-
-                if revents.contains(PollFlags::POLLIN) {
-                    self.drain_xcb_events()?;
-                }
+            if let PollStatus::ReadAvailable = poller.wait(next_frame).unwrap() {
+                self.drain_xcb_events()?;
             }
 
             // Check if the parents's handle was dropped (such as when the host
