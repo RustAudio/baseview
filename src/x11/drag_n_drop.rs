@@ -10,14 +10,14 @@ use std::{
 use percent_encoding::percent_decode;
 use x11rb::connection::Connection;
 use x11rb::errors::ReplyError;
-use x11rb::protocol::xproto::{ClientMessageEvent, SelectionNotifyEvent, Timestamp};
+use x11rb::protocol::xproto::{Atom, ClientMessageEvent, SelectionNotifyEvent, Timestamp};
 use x11rb::{
     errors::ConnectionError,
     protocol::xproto::{self, ConnectionExt},
     x11_utils::Serialize,
 };
 
-use super::xcb_connection::GetPropertyError;
+use super::xcb_connection::{Atoms, GetPropertyError};
 use crate::x11::{Window, WindowInner};
 use crate::{DropData, Event, MouseEvent, PhyPoint, WindowHandler};
 use DragNDropState::*;
@@ -49,6 +49,8 @@ pub(crate) enum DragNDropState {
     ///
     /// More position events can still be received to further update the position data.
     WaitingForData {
+        /// The protocol version used in this session.
+        protocol_version: u8,
         /// The source window the current drag session originates from.
         source_window: xproto::Window,
         /// The current position of the pointer, from the last received position event.
@@ -60,6 +62,8 @@ pub(crate) enum DragNDropState {
         /// In very old versions of the protocol (v0), this timestamp isn't provided. In that case,
         /// this will be `None`.
         requested_at: Option<Timestamp>,
+
+        requested_action: Option<DndAction>,
         /// This will be true if we received a drop event *before* we managed to fetch the data.
         ///
         /// If this is true, this means we must complete the drop upon receiving the data, instead
@@ -73,10 +77,13 @@ pub(crate) enum DragNDropState {
     ///
     /// More position events can still be received to further update the position data.
     Ready {
+        /// The protocol version used in this session.
+        protocol_version: u8,
         /// The source window the current drag session originates from.
         source_window: xproto::Window,
         position: PhyPoint,
         data: DropData,
+        requested_action: Option<DndAction>,
     },
 }
 
@@ -88,7 +95,7 @@ impl DragNDropState {
         let data = event.data.as_data32();
 
         let source_window = data[0] as xproto::Window;
-        let [protocol_version, _, _, flags] = data[1].to_le_bytes();
+        let [protocol_version, _, _, flags] = data[1].to_be_bytes();
 
         // Fetch the list of supported data types. It can be either stored inline in the event, or
         // in a separate property on the source window.
@@ -139,15 +146,15 @@ impl DragNDropState {
         &mut self, window: &WindowInner, handler: &mut dyn WindowHandler,
         event: &ClientMessageEvent,
     ) -> Result<(), ReplyError> {
-        let data = event.data.as_data32();
+        let event_data = event.data.as_data32();
 
-        let event_source_window = data[0] as xproto::Window;
-        let (event_x, event_y) = decode_xy(data[2]);
+        let event_source_window = event_data[0] as xproto::Window;
+        let (event_x, event_y) = decode_xy(event_data[2]);
 
         match self {
             // Someone sent us a position event without first sending an enter event.
             // Weird, but we'll still politely tell them we reject the drop.
-            NoCurrentSession => Ok(send_status_event(event_source_window, window, false)?),
+            NoCurrentSession => Ok(send_status_rejected(event_source_window, window)?),
 
             // The current session's source window does not match the given event.
             // This means it can either be from a stale session, or a misbehaving app.
@@ -158,28 +165,34 @@ impl DragNDropState {
             | Ready { source_window, .. }
                 if *source_window != event_source_window =>
             {
-                Ok(send_status_event(event_source_window, window, false)?)
+                Ok(send_status_rejected(event_source_window, window)?)
             }
 
             // We decided to permanently reject this drop.
             // This means the WindowHandler can't do anything with the data, so we reject the drop.
-            PermanentlyRejected { .. } => {
-                Ok(send_status_event(event_source_window, window, false)?)
-            }
+            PermanentlyRejected { .. } => Ok(send_status_rejected(event_source_window, window)?),
 
             // This is the position event we were waiting for. Now we can request the selection data.
             // The code above already checks that source_window == event_source_window.
             WaitingForPosition { protocol_version, source_window: _ } => {
                 // In version 0, time isn't specified
-                let timestamp = (*protocol_version >= 1).then_some(data[3] as Timestamp);
+                let timestamp = (*protocol_version >= 1).then_some(event_data[3] as Timestamp);
+                // In version <2, action isn't specified
+                let requested_action = (*protocol_version >= 2).then_some(event_data[4] as Atom);
+                let requested_action = requested_action.map(|a| {
+                    DndAction::from_atom(a, &window.xcb_connection.atoms)
+                        .unwrap_or(DndAction::Private)
+                });
 
                 request_convert_selection(window, timestamp)?;
 
                 // We set our state before translating position data, in case that fails.
                 *self = WaitingForData {
+                    protocol_version: *protocol_version,
                     requested_at: timestamp,
                     source_window: event_source_window,
                     position: PhyPoint::new(0, 0),
+                    requested_action,
                     dropped: false,
                 };
 
@@ -197,14 +210,22 @@ impl DragNDropState {
             }
 
             // We have already received the data. We can update the position and notify the handler
-            Ready { position, data, .. } => {
+            Ready { protocol_version, position, data, requested_action, .. } => {
                 // Inform the source that we are still accepting the drop.
                 // Do this first, in case translate_root_coordinates fails, or the handler panics.
                 // Do not return right away on failure though, we can still inform the handler about
                 // the new position.
-                let status_result = send_status_event(event_source_window, window, true);
+                let status_result =
+                    send_status_event(event_source_window, window, *requested_action);
 
                 *position = translate_root_coordinates(window, event_x, event_y)?;
+
+                // In version <2, action isn't specified
+                *requested_action = if *protocol_version < 2 {
+                    None
+                } else {
+                    DndAction::from_atom(event_data[4] as Atom, &window.xcb_connection.atoms)
+                };
 
                 handler.on_event(
                     &mut crate::Window::new(Window { inner: window }),
@@ -269,7 +290,7 @@ impl DragNDropState {
         match self {
             // Someone sent us a position event without first sending an enter event.
             // Weird, but we'll still politely tell them we reject the drop.
-            NoCurrentSession => send_finished_event(event_source_window, window, false),
+            NoCurrentSession => send_finished_rejected(event_source_window, window),
 
             // The current session's source window does not match the given event.
             // This means it can either be from a stale session, or a misbehaving app.
@@ -280,7 +301,7 @@ impl DragNDropState {
             | Ready { source_window, .. }
                 if *source_window != event_source_window =>
             {
-                send_finished_event(event_source_window, window, false)
+                send_finished_rejected(event_source_window, window)
             }
 
             // We decided to permanently reject this drop.
@@ -288,7 +309,7 @@ impl DragNDropState {
             PermanentlyRejected { .. } => {
                 *self = NoCurrentSession;
 
-                send_finished_event(event_source_window, window, false)
+                send_finished_rejected(event_source_window, window)
             }
 
             // We received a drop event without any position event. That's very weird, but not
@@ -309,17 +330,19 @@ impl DragNDropState {
                     // Try to inform the source that we ended up rejecting the drop.
                     // If the initial request failed, this is likely to fail too, so we'll ignore
                     // it if it errors, so we can focus on the original error.
-                    let _ = send_finished_event(event_source_window, window, false);
+                    let _ = send_finished_rejected(event_source_window, window);
 
                     return Err(e);
                 };
 
                 *self = WaitingForData {
+                    protocol_version: *protocol_version,
                     requested_at: timestamp,
                     source_window: event_source_window,
                     // We don't have usable position data. Maybe we'll receive a position later,
                     // but otherwise this will have to do.
                     position: PhyPoint::new(0, 0),
+                    requested_action: Some(DndAction::Private),
                     dropped: true,
                 };
 
@@ -348,13 +371,16 @@ impl DragNDropState {
 
             // The normal case.
             Ready { .. } => {
-                let Ready { data, position, .. } = mem::replace(self, NoCurrentSession) else {
+                let Ready { data, position, requested_action, .. } =
+                    mem::replace(self, NoCurrentSession)
+                else {
                     unreachable!()
                 };
 
                 // Don't return immediately if sending the reply fails, we can still notify the window
                 // handler about the drop.
-                let reply_result = send_finished_event(event_source_window, window, true);
+                let reply_result =
+                    send_finished_event(event_source_window, window, requested_action);
 
                 handler.on_event(
                     &mut crate::Window::new(Window { inner: window }),
@@ -376,7 +402,15 @@ impl DragNDropState {
         event: &SelectionNotifyEvent,
     ) -> Result<(), ConnectionError> {
         // Ignore the event if we weren't actually waiting for a selection notify event
-        let WaitingForData { source_window, requested_at, position, dropped } = *self else {
+        let WaitingForData {
+            source_window,
+            requested_at,
+            position,
+            dropped,
+            protocol_version,
+            requested_action,
+        } = *self
+        else {
             return Ok(());
         };
 
@@ -398,9 +432,9 @@ impl DragNDropState {
                 *self = PermanentlyRejected { source_window };
 
                 if dropped {
-                    send_finished_event(source_window, window, false)
+                    send_finished_rejected(source_window, window)
                 } else {
-                    send_status_event(source_window, window, false)
+                    send_status_rejected(source_window, window)
                 }
 
                 // TODO: Log warning
@@ -414,7 +448,7 @@ impl DragNDropState {
                 if dropped {
                     *self = NoCurrentSession;
 
-                    let reply_result = send_finished_event(source_window, window, true);
+                    let reply_result = send_finished_event(source_window, window, requested_action);
 
                     // Now that we have actual drop data, we can inform the handler about the drag AND drop events.
                     handler.on_event(
@@ -440,9 +474,15 @@ impl DragNDropState {
                     reply_result
                 } else {
                     // Save the data, now that we finally have it!
-                    *self = Ready { data: data.clone(), source_window, position };
+                    *self = Ready {
+                        data: data.clone(),
+                        source_window,
+                        position,
+                        requested_action,
+                        protocol_version,
+                    };
 
-                    let reply_result = send_status_event(source_window, window, true);
+                    let reply_result = send_status_event(source_window, window, requested_action);
 
                     // Now that we have actual drop data, we can inform the handler about the drag event.
                     handler.on_event(
@@ -462,18 +502,16 @@ impl DragNDropState {
     }
 }
 
-fn send_status_event(
-    source_window: xproto::Window, window: &WindowInner, accepted: bool,
+fn send_status_rejected(
+    source_window: xproto::Window, window: &WindowInner,
 ) -> Result<(), ConnectionError> {
     let conn = &window.xcb_connection;
-    let (accepted, action) =
-        if accepted { (1, conn.atoms.XdndActionPrivate) } else { (0, conn.atoms.None) };
 
     let event = ClientMessageEvent {
         response_type: xproto::CLIENT_MESSAGE_EVENT,
         window: source_window,
         format: 32,
-        data: [window.window_id, accepted, 0, 0, action as _].into(),
+        data: [window.window_id, 0, 0, 0, conn.atoms.None as _].into(),
         sequence: 0,
         type_: conn.atoms.XdndStatus,
     };
@@ -483,20 +521,63 @@ fn send_status_event(
     conn.conn.flush()
 }
 
-pub fn send_finished_event(
-    source_window: xproto::Window, window: &WindowInner, accepted: bool,
+fn send_status_event(
+    source_window: xproto::Window, window: &WindowInner, action: Option<DndAction>,
 ) -> Result<(), ConnectionError> {
     let conn = &window.xcb_connection;
-    let (accepted, action) =
-        if accepted { (1, conn.atoms.XdndFinished) } else { (0, conn.atoms.None) };
+
+    let action = action
+        .map(|a| a.to_atom(&window.xcb_connection.atoms))
+        .unwrap_or(window.xcb_connection.atoms.None);
 
     let event = ClientMessageEvent {
         response_type: xproto::CLIENT_MESSAGE_EVENT,
         window: source_window,
         format: 32,
-        data: [window.window_id, accepted, action as _, 0, 0].into(),
+        data: [window.window_id, 1, 0, 0, action as _].into(),
         sequence: 0,
-        type_: conn.atoms.XdndStatus as _,
+        type_: conn.atoms.XdndStatus,
+    };
+
+    conn.conn.send_event(false, source_window, xproto::EventMask::NO_EVENT, event.serialize())?;
+
+    conn.conn.flush()
+}
+
+pub fn send_finished_rejected(
+    source_window: xproto::Window, window: &WindowInner,
+) -> Result<(), ConnectionError> {
+    let conn = &window.xcb_connection;
+
+    let event = ClientMessageEvent {
+        response_type: xproto::CLIENT_MESSAGE_EVENT,
+        window: source_window,
+        format: 32,
+        data: [window.window_id, 1, window.xcb_connection.atoms.None as _, 0, 0].into(),
+        sequence: 0,
+        type_: conn.atoms.XdndFinished as _,
+    };
+
+    conn.conn.send_event(false, source_window, xproto::EventMask::NO_EVENT, event.serialize())?;
+
+    conn.conn.flush()
+}
+
+pub fn send_finished_event(
+    source_window: xproto::Window, window: &WindowInner, action: Option<DndAction>,
+) -> Result<(), ConnectionError> {
+    let conn = &window.xcb_connection;
+    let action = action
+        .map(|a| a.to_atom(&window.xcb_connection.atoms))
+        .unwrap_or(window.xcb_connection.atoms.None);
+
+    let event = ClientMessageEvent {
+        response_type: xproto::CLIENT_MESSAGE_EVENT,
+        window: source_window,
+        format: 32,
+        data: [window.window_id, 1, action as _, 0, 0].into(),
+        sequence: 0,
+        type_: conn.atoms.XdndFinished as _,
     };
 
     conn.conn.send_event(false, source_window, xproto::EventMask::NO_EVENT, event.serialize())?;
@@ -613,3 +694,40 @@ impl Display for ParseError {
 }
 
 impl Error for ParseError {}
+
+#[derive(Debug, Copy, Clone)]
+enum DndAction {
+    Copy,
+    Move,
+    Link,
+    Ask,
+    Private,
+}
+
+impl DndAction {
+    pub fn from_atom(atom: Atom, atoms: &Atoms) -> Option<Self> {
+        if atom == atoms.XdndActionCopy {
+            Some(DndAction::Copy)
+        } else if atom == atoms.XdndActionMove {
+            Some(DndAction::Move)
+        } else if atom == atoms.XdndActionLink {
+            Some(DndAction::Link)
+        } else if atom == atoms.XdndActionAsk {
+            Some(DndAction::Ask)
+        } else if atom == atoms.XdndActionPrivate {
+            Some(DndAction::Private)
+        } else {
+            None
+        }
+    }
+
+    pub fn to_atom(self, atoms: &Atoms) -> Atom {
+        match self {
+            DndAction::Copy => atoms.XdndActionCopy,
+            DndAction::Move => atoms.XdndActionMove,
+            DndAction::Link => atoms.XdndActionLink,
+            DndAction::Ask => atoms.XdndActionAsk,
+            DndAction::Private => atoms.XdndActionPrivate,
+        }
+    }
+}
