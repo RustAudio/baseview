@@ -1,6 +1,6 @@
 use objc2::__framework_prelude::Retained;
 use objc2::runtime::{MessageReceiver, Sel};
-use objc2::{sel, ClassType};
+use objc2::{msg_send, sel, ClassType};
 use objc2_app_kit::NSCursor;
 
 use crate::MouseCursor;
@@ -76,7 +76,10 @@ impl Cursor {
             Cursor::Undocumented(sel) => {
                 let class = NSCursor::class();
 
-                if !class.responds_to(*sel) {
+                // NOTE: class.responds_to does not yield the same result (probably because NSCursor overrides respondsToSelector)
+                let responds_to: bool = unsafe { msg_send![class, respondsToSelector: *sel] };
+
+                if !responds_to {
                     return NSCursor::arrowCursor();
                 }
 
