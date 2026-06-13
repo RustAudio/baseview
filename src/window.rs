@@ -98,7 +98,6 @@ impl<'a> Window<'a> {
         self.window.resize(size);
     }
 
-    /// Set the cursor to the given cursor type
     pub fn set_mouse_cursor(&mut self, cursor: MouseCursor) {
         self.window.set_mouse_cursor(cursor);
     }
