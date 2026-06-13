@@ -23,30 +23,17 @@ use std::mem;
 use std::ops::RangeInclusive;
 
 use keyboard_types::{Code, Key, KeyState, KeyboardEvent, Location, Modifiers};
-
-use winapi::shared::minwindef::{HKL, INT, LPARAM, UINT, WPARAM};
-use winapi::shared::ntdef::SHORT;
-use winapi::shared::windef::HWND;
-use winapi::um::winuser::{
-    GetKeyState, GetKeyboardLayout, MapVirtualKeyExW, PeekMessageW, ToUnicodeEx, MAPVK_VK_TO_CHAR,
-    MAPVK_VSC_TO_VK_EX, MK_CONTROL, MK_SHIFT, PM_NOREMOVE, VK_ACCEPT, VK_ADD, VK_APPS, VK_ATTN,
-    VK_BACK, VK_BROWSER_BACK, VK_BROWSER_FAVORITES, VK_BROWSER_FORWARD, VK_BROWSER_HOME,
-    VK_BROWSER_REFRESH, VK_BROWSER_SEARCH, VK_BROWSER_STOP, VK_CANCEL, VK_CAPITAL, VK_CLEAR,
-    VK_CONTROL, VK_CONVERT, VK_CRSEL, VK_DECIMAL, VK_DELETE, VK_DIVIDE, VK_DOWN, VK_END, VK_EREOF,
-    VK_ESCAPE, VK_EXECUTE, VK_EXSEL, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3, VK_F4, VK_F5,
-    VK_F6, VK_F7, VK_F8, VK_F9, VK_FINAL, VK_HELP, VK_HOME, VK_INSERT, VK_JUNJA, VK_KANA, VK_KANJI,
-    VK_LAUNCH_APP1, VK_LAUNCH_APP2, VK_LAUNCH_MAIL, VK_LAUNCH_MEDIA_SELECT, VK_LCONTROL, VK_LEFT,
-    VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
-    VK_MEDIA_STOP, VK_MENU, VK_MODECHANGE, VK_MULTIPLY, VK_NEXT, VK_NONCONVERT, VK_NUMLOCK,
-    VK_NUMPAD0, VK_NUMPAD1, VK_NUMPAD2, VK_NUMPAD3, VK_NUMPAD4, VK_NUMPAD5, VK_NUMPAD6, VK_NUMPAD7,
-    VK_NUMPAD8, VK_NUMPAD9, VK_OEM_ATTN, VK_OEM_CLEAR, VK_PAUSE, VK_PLAY, VK_PRINT, VK_PRIOR,
-    VK_PROCESSKEY, VK_RCONTROL, VK_RETURN, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SCROLL,
-    VK_SELECT, VK_SHIFT, VK_SLEEP, VK_SNAPSHOT, VK_SUBTRACT, VK_TAB, VK_UP, VK_VOLUME_DOWN,
-    VK_VOLUME_MUTE, VK_VOLUME_UP, VK_ZOOM, WM_CHAR, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP,
-    WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
+use windows_sys::Win32::{
+    Foundation::{HWND, LPARAM, WPARAM},
+    System::SystemServices::{MK_CONTROL, MK_SHIFT},
+    UI::{
+        Input::KeyboardAndMouse::*,
+        WindowsAndMessaging::{
+            PeekMessageW, PM_NOREMOVE, WM_CHAR, WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP,
+            WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
+        },
+    },
 };
-
-const VK_ABNT_C2: INT = 0xc2;
 
 /// A (non-extended) virtual key code.
 type VkCode = u8;
@@ -91,7 +78,7 @@ const SCAN_MASK: LPARAM = 0x1ff_0000;
 /// When this function returns `false`, there is another message in the queue
 /// with a matching scan code, therefore it is reasonable to stash the data
 /// from this message and defer til later to actually produce the event.
-unsafe fn is_last_message(hwnd: HWND, msg: UINT, lparam: LPARAM) -> bool {
+unsafe fn is_last_message(hwnd: HWND, msg: u32, lparam: LPARAM) -> bool {
     let expected_msg = match msg {
         WM_KEYDOWN | WM_CHAR => WM_CHAR,
         WM_SYSKEYDOWN | WM_SYSCHAR => WM_SYSCHAR,
@@ -102,7 +89,7 @@ unsafe fn is_last_message(hwnd: HWND, msg: UINT, lparam: LPARAM) -> bool {
     avail == 0 || msg.lParam & SCAN_MASK != lparam & SCAN_MASK
 }
 
-const MODIFIER_MAP: &[(INT, Modifiers, SHORT)] = &[
+const MODIFIER_MAP: &[(VIRTUAL_KEY, Modifiers, u16)] = &[
     (VK_MENU, Modifiers::ALT, 0x80),
     (VK_CAPITAL, Modifiers::CAPS_LOCK, 0x1),
     (VK_CONTROL, Modifiers::CONTROL, 0x80),
@@ -259,7 +246,7 @@ fn scan_to_code(scan_code: u32) -> Code {
 }
 
 fn vk_to_key(vk: VkCode) -> Option<Key> {
-    Some(match vk as INT {
+    Some(match vk as u16 {
         VK_CANCEL => Key::Cancel,
         VK_BACK => Key::Backspace,
         VK_TAB => Key::Tab,
@@ -365,7 +352,7 @@ fn code_unit_to_key(code_unit: u32) -> Key {
 ///
 /// This logic is based on NativeKey::GetKeyLocation from Mozilla.
 fn vk_to_location(vk: VkCode, is_extended: bool) -> Location {
-    match vk as INT {
+    match vk as u16 {
         VK_LSHIFT | VK_LCONTROL | VK_LMENU | VK_LWIN => Location::Left,
         VK_RSHIFT | VK_RCONTROL | VK_RMENU | VK_RWIN => Location::Right,
         VK_RETURN if is_extended => Location::Numpad,
@@ -437,7 +424,7 @@ impl KeyboardState {
     /// a valid `HKL` reference in the `WM_INPUTLANGCHANGE` message. Actual danger
     /// is likely low, though.
     pub(crate) unsafe fn process_message(
-        &mut self, hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM,
+        &mut self, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM,
     ) -> Option<KeyboardEvent> {
         match msg {
             WM_KEYDOWN | WM_SYSKEYDOWN => {
@@ -550,11 +537,11 @@ impl KeyboardState {
         unsafe {
             let mut modifiers = Modifiers::empty();
             for &(vk, modifier, mask) in MODIFIER_MAP {
-                if GetKeyState(vk) & mask != 0 {
+                if GetKeyState(vk.into()) as u16 & mask != 0 {
                     modifiers |= modifier;
                 }
             }
-            if self.has_altgr && GetKeyState(VK_RMENU) & 0x80 != 0 {
+            if self.has_altgr && GetKeyState(VK_RMENU.into()) & 0x80 != 0 {
                 modifiers |= Modifiers::ALT_GRAPH;
                 modifiers &= !(Modifiers::CONTROL | Modifiers::ALT);
             }
@@ -569,16 +556,16 @@ impl KeyboardState {
             let mut modifiers = Modifiers::empty();
             for &(vk, modifier, mask) in MODIFIER_MAP {
                 let modifier_active = match modifier {
-                    Modifiers::CONTROL => wparam & MK_CONTROL != 0,
-                    Modifiers::SHIFT => wparam & MK_SHIFT != 0,
-                    _ => GetKeyState(vk) & mask != 0,
+                    Modifiers::CONTROL => wparam & MK_CONTROL as usize != 0,
+                    Modifiers::SHIFT => wparam & MK_SHIFT as usize != 0,
+                    _ => GetKeyState(vk.into()) as u16 & mask != 0,
                 };
 
                 if modifier_active {
                     modifiers |= modifier;
                 }
             }
-            if self.has_altgr && GetKeyState(VK_RMENU) & 0x80 != 0 {
+            if self.has_altgr && GetKeyState(VK_RMENU.into()) & 0x80 != 0 {
                 modifiers |= Modifiers::ALT_GRAPH;
                 modifiers &= !(Modifiers::CONTROL | Modifiers::ALT);
             }
@@ -614,7 +601,7 @@ impl KeyboardState {
                 #[allow(clippy::iter_overeager_cloned)]
                 for vk in PRINTABLE_VKS.iter().cloned().flatten() {
                     let ret = ToUnicodeEx(
-                        vk as UINT,
+                        vk.into(),
                         0,
                         key_state.as_ptr(),
                         uni_chars.as_mut_ptr(),
@@ -643,7 +630,7 @@ impl KeyboardState {
                             // It's a dead key, press it again to reset the state.
                             self.dead_keys.insert((vk, shift_state));
                             let _ = ToUnicodeEx(
-                                vk as UINT,
+                                vk.into(),
                                 0,
                                 key_state.as_ptr(),
                                 uni_chars.as_mut_ptr(),
@@ -691,7 +678,7 @@ impl KeyboardState {
     /// This only does the mapping if the original code is ambiguous, as otherwise the
     /// virtual key code reported in `wparam` is more reliable.
     fn refine_vk(&self, vk: VkCode, mut scan_code: u32) -> VkCode {
-        match vk as INT {
+        match vk.into() {
             0 | VK_SHIFT | VK_CONTROL | VK_MENU => {
                 if scan_code >= 0x100 {
                     scan_code += 0xE000 - 0x100;

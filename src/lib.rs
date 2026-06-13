@@ -3,7 +3,7 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod win;
 #[cfg(target_os = "linux")]
-mod x11;
+pub(crate) mod x11;
 
 mod clipboard;
 mod event;
@@ -22,3 +22,5 @@ pub use mouse_cursor::MouseCursor;
 pub use window::*;
 pub use window_info::*;
 pub use window_open_options::*;
+
+pub(crate) mod wrappers;

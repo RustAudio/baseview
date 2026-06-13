@@ -1,48 +1,29 @@
-use std::ffi::c_void;
-use std::str::FromStr;
+#![allow(deprecated)] // OpenGL is deprecated on macOS
 
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
-
-use cocoa::appkit::{
+use super::{GlConfig, GlError, Profile};
+use objc2::rc::Retained;
+use objc2::AllocAnyThread;
+use objc2::{MainThreadMarker, MainThreadOnly};
+use objc2_app_kit::{
     NSOpenGLContext, NSOpenGLContextParameter, NSOpenGLPFAAccelerated, NSOpenGLPFAAlphaSize,
     NSOpenGLPFAColorSize, NSOpenGLPFADepthSize, NSOpenGLPFADoubleBuffer, NSOpenGLPFAMultisample,
     NSOpenGLPFAOpenGLProfile, NSOpenGLPFASampleBuffers, NSOpenGLPFASamples, NSOpenGLPFAStencilSize,
     NSOpenGLPixelFormat, NSOpenGLProfileVersion3_2Core, NSOpenGLProfileVersion4_1Core,
     NSOpenGLProfileVersionLegacy, NSOpenGLView, NSView,
 };
-use cocoa::base::{id, nil, YES};
-use cocoa::foundation::NSSize;
-
-use core_foundation::base::TCFType;
-use core_foundation::bundle::{CFBundleGetBundleWithIdentifier, CFBundleGetFunctionPointerForName};
-use core_foundation::string::CFString;
-
-use objc::{msg_send, sel, sel_impl};
-
-use super::{GlConfig, GlError, Profile};
+use objc2_core_foundation::{CFBundle, CFString};
+use objc2_foundation::NSSize;
+use std::ffi::c_void;
+use std::ptr::NonNull;
 
 pub type CreationFailedError = ();
 pub struct GlContext {
-    view: id,
-    context: id,
+    view: Retained<NSOpenGLView>,
+    context: Retained<NSOpenGLContext>,
 }
 
 impl GlContext {
-    pub unsafe fn create(
-        parent: &impl HasRawWindowHandle, config: GlConfig,
-    ) -> Result<GlContext, GlError> {
-        let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
-            handle
-        } else {
-            return Err(GlError::InvalidWindowHandle);
-        };
-
-        if handle.ns_view.is_null() {
-            return Err(GlError::InvalidWindowHandle);
-        }
-
-        let parent_view = handle.ns_view as id;
-
+    pub(crate) fn create(parent_view: &NSView, config: GlConfig) -> Result<GlContext, GlError> {
         let version = if config.version < (3, 2) && config.profile == Profile::Compatibility {
             NSOpenGLProfileVersionLegacy
         } else if config.version == (3, 2) && config.profile == Profile::Core {
@@ -55,57 +36,60 @@ impl GlContext {
 
         #[rustfmt::skip]
         let mut attrs = vec![
-            NSOpenGLPFAOpenGLProfile as u32, version as u32,
-            NSOpenGLPFAColorSize as u32, (config.red_bits + config.blue_bits + config.green_bits) as u32,
-            NSOpenGLPFAAlphaSize as u32, config.alpha_bits as u32,
-            NSOpenGLPFADepthSize as u32, config.depth_bits as u32,
-            NSOpenGLPFAStencilSize as u32, config.stencil_bits as u32,
-            NSOpenGLPFAAccelerated as u32,
+            NSOpenGLPFAOpenGLProfile, version,
+            NSOpenGLPFAColorSize, (config.red_bits + config.blue_bits + config.green_bits) as u32,
+            NSOpenGLPFAAlphaSize, config.alpha_bits as u32,
+            NSOpenGLPFADepthSize, config.depth_bits as u32,
+            NSOpenGLPFAStencilSize, config.stencil_bits as u32,
+            NSOpenGLPFAAccelerated,
         ];
 
-        if config.samples.is_some() {
+        if let Some(samples) = config.samples {
             #[rustfmt::skip]
             attrs.extend_from_slice(&[
-                NSOpenGLPFAMultisample as u32,
-                NSOpenGLPFASampleBuffers as u32, 1,
-                NSOpenGLPFASamples as u32, config.samples.unwrap() as u32,
+                NSOpenGLPFAMultisample,
+                NSOpenGLPFASampleBuffers, 1,
+                NSOpenGLPFASamples, samples as u32,
             ]);
         }
 
         if config.double_buffer {
-            attrs.push(NSOpenGLPFADoubleBuffer as u32);
+            attrs.push(NSOpenGLPFADoubleBuffer);
         }
 
         attrs.push(0);
 
-        let pixel_format = NSOpenGLPixelFormat::alloc(nil).initWithAttributes_(&attrs);
-
-        if pixel_format == nil {
-            return Err(GlError::CreationFailed(()));
+        // SAFETY: Attribs pointer is valid (coming from the above vec) and null-terminated
+        let pixel_format = unsafe {
+            NSOpenGLPixelFormat::initWithAttributes(
+                NSOpenGLPixelFormat::alloc(),
+                // PANIC: This cannot panic, as the pointer comes from the vec
+                NonNull::new(attrs.as_mut_ptr()).unwrap(),
+            )
         }
+        .ok_or(GlError::CreationFailed(()))?;
 
-        let view =
-            NSOpenGLView::alloc(nil).initWithFrame_pixelFormat_(parent_view.frame(), pixel_format);
+        let view = NSOpenGLView::initWithFrame_pixelFormat(
+            // PANIC: This cannot panic, as the pointer comes from the vec
+            NSOpenGLView::alloc(MainThreadMarker::new().unwrap()),
+            parent_view.frame(),
+            Some(&pixel_format),
+        )
+        .ok_or(GlError::CreationFailed(()))?;
 
-        if view == nil {
-            return Err(GlError::CreationFailed(()));
+        view.setWantsBestResolutionOpenGLSurface(true);
+
+        view.display();
+        parent_view.addSubview(&view);
+
+        let context = view.openGLContext().ok_or(GlError::CreationFailed(()))?;
+
+        let value = config.vsync as i32;
+
+        // SAFETY: pointer is a valid &i32, and is valid for SwapInterval
+        unsafe {
+            context.setValues_forParameter((&value).into(), NSOpenGLContextParameter::SwapInterval);
         }
-
-        view.setWantsBestResolutionOpenGLSurface_(YES);
-
-        let () = msg_send![view, retain];
-        NSOpenGLView::display_(view);
-        parent_view.addSubview_(view);
-
-        let context: id = msg_send![view, openGLContext];
-        let () = msg_send![context, retain];
-
-        context.setValues_forParameter_(
-            &(config.vsync as i32),
-            NSOpenGLContextParameter::NSOpenGLCPSwapInterval,
-        );
-
-        let () = msg_send![pixel_format, release];
 
         Ok(GlContext { view, context })
     }
@@ -115,41 +99,33 @@ impl GlContext {
     }
 
     pub unsafe fn make_not_current(&self) {
-        NSOpenGLContext::clearCurrentContext(self.context);
+        NSOpenGLContext::clearCurrentContext();
     }
 
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        let symbol_name = CFString::from_str(symbol).unwrap();
-        let framework_name = CFString::from_str("com.apple.opengl").unwrap();
-        let framework =
-            unsafe { CFBundleGetBundleWithIdentifier(framework_name.as_concrete_TypeRef()) };
-        let addr = unsafe {
-            CFBundleGetFunctionPointerForName(framework, symbol_name.as_concrete_TypeRef())
-        };
-        addr as *const c_void
+        let symbol_name = CFString::from_str(symbol);
+        let framework_name = CFString::from_static_str("com.apple.opengl");
+        let framework = CFBundle::bundle_with_identifier(Some(&framework_name)).unwrap();
+
+        CFBundle::function_pointer_for_name(&framework, Some(&symbol_name))
     }
 
     pub fn swap_buffers(&self) {
-        unsafe {
-            self.context.flushBuffer();
-            let () = msg_send![self.view, setNeedsDisplay: YES];
-        }
+        self.context.flushBuffer();
+        self.view.setNeedsDisplay(true);
     }
 
     /// On macOS the `NSOpenGLView` needs to be resized separtely from our main view.
     pub(crate) fn resize(&self, size: NSSize) {
-        unsafe { NSView::setFrameSize(self.view, size) };
-        unsafe {
-            let _: () = msg_send![self.view, setNeedsDisplay: YES];
-        }
+        self.view.setFrameSize(size);
+        self.view.setNeedsDisplay(true);
     }
-}
 
-impl Drop for GlContext {
-    fn drop(&mut self) {
-        unsafe {
-            let () = msg_send![self.context, release];
-            let () = msg_send![self.view, release];
-        }
+    /// Pointer to the `NSOpenGLView` this context renders into. Used by
+    /// the parent `NSView`'s `hitTest:` override to collapse hits on the
+    /// render subview to the parent, so AppKit routes `mouseDown:` on
+    /// first click in non-key windows.
+    pub(crate) fn ns_view(&self) -> &NSOpenGLView {
+        &self.view
     }
 }

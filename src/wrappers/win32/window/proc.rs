@@ -1,0 +1,94 @@
+use super::*;
+use std::ptr::NonNull;
+use std::rc::Rc;
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::UI::WindowsAndMessaging::*;
+
+/// The wndproc implementation wrapping a given [`WindowImpl`] type.
+///
+/// This handles all the lifecycle details of the window and its data created by [create_window].
+pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
+    window: HWND, message_code: u32, w_param: WPARAM, l_param: LPARAM,
+) -> LRESULT {
+    let handle_default = || unsafe { DefWindowProcW(window, message_code, w_param, l_param) };
+    let window = unsafe { HWnd::from_raw(window) };
+
+    match message_code {
+        WM_CREATE => {
+            let create = unsafe { &*(l_param as *const CREATESTRUCTW) };
+            let inner_ptr = create.lpCreateParams as *mut WindowData<W>;
+
+            let Some(inner_ptr) = NonNull::new(inner_ptr) else {
+                // If the state pointer was null for some weird reason, we just abort.
+                // TODO: log error
+                return -1;
+            };
+
+            if let Err(_e) = window.set_userdata_ptr(inner_ptr.as_ptr()) {
+                // The call to SetWindowLongPtrW failed for some reason, we cannot continue.
+
+                // Recover and free the received pointer data.
+                drop(Rc::from_raw(inner_ptr.as_ptr()));
+
+                // TODO: log error
+                return -1;
+            }
+
+            // Now the fun begins
+            let result = {
+                let inner = unsafe { inner_ptr.as_ref() };
+
+                inner.initialize(window)
+            };
+
+            match result {
+                // If successful, all good.
+                // Ownership of the inner state has been passed to the window via the userdata ptr.
+                Ok(()) => 0,
+
+                // If initializer failed, abort.
+                Err(_) => {
+                    // First, revoke ownership from the window, we don't want it to be used by any subsequent messages.
+                    let _ = window.set_userdata_ptr(core::ptr::null::<W>());
+
+                    // Try to recover and free the received pointer data. But if this also fails, better to leak
+                    // it than risk crashing
+                    drop(Rc::from_raw(inner_ptr.as_ptr()));
+
+                    // TODO: log error
+                    -1
+                }
+            }
+        }
+        WM_DESTROY => {
+            let Some(state_ptr) = window.get_userdata_ptr::<WindowData<W>>() else {
+                // State pointer can be null if the WM_DESTROY message got sent before
+                // the handling of WM_CREATE above finished, or if it failed.
+                // If that's the case, we have nothing to destroy.
+                return handle_default();
+            };
+
+            let state = unsafe { Rc::from_raw(state_ptr.as_ptr()) };
+            state.destroy_started(window);
+            let _ = window.set_userdata_ptr(core::ptr::null::<W>());
+            drop(state);
+
+            0
+        }
+        _ => {
+            let Some(inner_ptr) = window.get_userdata_ptr::<WindowData<W>>() else {
+                return handle_default();
+            };
+
+            // This guarantees WindowData remains valid until the end of this scope,
+            // even if the event handler leads to the window being destroyed
+            let inner = unsafe { WindowData::from_raw(inner_ptr) };
+
+            let result = inner.handle_message(window, message_code, w_param, l_param);
+
+            drop(inner);
+
+            result.unwrap_or_else(handle_default)
+        }
+    }
+}

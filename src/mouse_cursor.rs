@@ -1,5 +1,6 @@
-#[derive(Debug, Eq, PartialEq, Clone, Copy, PartialOrd, Ord, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, PartialOrd, Ord, Hash, Default)]
 pub enum MouseCursor {
+    #[default]
     Default,
     Hand,
     HandGrabbing,
@@ -41,10 +42,4 @@ pub enum MouseCursor {
     NeswResize,
     ColResize,
     RowResize,
-}
-
-impl Default for MouseCursor {
-    fn default() -> Self {
-        Self::Default
-    }
 }
