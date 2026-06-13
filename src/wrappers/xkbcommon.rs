@@ -11,6 +11,8 @@ impl XkbcommonState {
     pub fn new(xcb_connection: &crate::x11::XcbConnection) -> Option<Self> {
         let xkb_common = xkbc::xkbcommon_option()?;
         let xkb_x11 = xkbc::x11::xkbcommon_x11_option()?;
+
+        // libxkbcommon is avail, let's allocate a new context
         let context =
             unsafe { (xkb_common.xkb_context_new)(xkbc::xkb_context_flags::XKB_CONTEXT_NO_FLAGS) };
 
@@ -20,14 +22,20 @@ impl XkbcommonState {
         let state = unsafe {
             let device_id = (xkb_x11.xkb_x11_get_core_keyboard_device_id)(conn);
             assert!(device_id >= 0);
+            // keymap should be unref when XkbcommonState drop
             let keymap = (xkb_x11.xkb_x11_keymap_new_from_device)(
                 context,
                 conn,
                 device_id,
                 xkbc::xkb_keymap_compile_flags::XKB_KEYMAP_COMPILE_NO_FLAGS,
             );
+            // state will be unref on drop
             (xkb_x11.xkb_x11_state_new_from_device)(keymap, conn, device_id)
         };
+
+        // free the context, it's no longer needed
+        unsafe { (xkb_common.xkb_context_unref)(context) };
+
         Some(XkbcommonState { state, xkb_common })
     }
 
