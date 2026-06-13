@@ -8,7 +8,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::USER_DEFAULT_SCREEN_DPI;
 pub struct Dpi(pub u32);
 
 impl Dpi {
-    pub const fn scale_factor(&self) -> f64 {
+    pub fn scale_factor(&self) -> f64 {
         self.0 as f64 / USER_DEFAULT_SCREEN_DPI as f64
     }
 }
