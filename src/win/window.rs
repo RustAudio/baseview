@@ -126,9 +126,11 @@ impl WindowImpl for BaseviewWindow {
 
         // Now we can get the actual dpi of the window.
         let dpi = window.get_dpi()?;
+        let mut dpi_changed = false;
 
         if dpi != window_state.current_dpi.get() {
             window_state.current_dpi.set(dpi);
+            dpi_changed = true;
 
             // If the user's requested initial size was in system-scaled logical pixels
             if let WindowScalePolicy::SystemScaleFactor = self.window_state.scale_policy {
@@ -143,9 +145,6 @@ impl WindowImpl for BaseviewWindow {
                 // doesn't also emit Resized.
                 window_state.current_size.set(new_size);
                 window.resize_and_activate(new_size, dpi)?;
-
-                // Send an initial Resized event so users get the correct scale factor and physical size.
-                self.window_state.send_resized();
             }
         }
 
@@ -175,6 +174,11 @@ impl WindowImpl for BaseviewWindow {
             self.handler_builder.take().unwrap()(&mut window)
         };
         *window_state.handler.borrow_mut() = Some(handler);
+
+        if dpi_changed {
+            // Send an initial Resized event so users get the correct scale factor and physical size.
+            self.window_state.send_resized();
+        }
 
         Ok(())
     }
