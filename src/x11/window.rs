@@ -2,9 +2,9 @@ use std::cell::Cell;
 use std::error::Error;
 use std::ffi::c_void;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use raw_window_handle::{
@@ -26,7 +26,7 @@ use crate::{
 };
 
 #[cfg(feature = "opengl")]
-use crate::gl::{GlContext, platform};
+use crate::gl::{platform, GlContext};
 use crate::x11::event_loop::EventLoop;
 use crate::x11::visual_info::WindowVisualConfig;
 
