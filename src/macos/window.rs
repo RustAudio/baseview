@@ -13,6 +13,7 @@ use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle,
 };
 
+use super::cursor::Cursor;
 use crate::{MouseCursor, Size, WindowHandler, WindowInfo, WindowOpenOptions};
 
 #[cfg(feature = "opengl")]
@@ -153,8 +154,9 @@ impl<'a> Window<'a> {
         BaseviewView::resize(self.view.inner_ref(), size);
     }
 
-    pub fn set_mouse_cursor(&mut self, _mouse_cursor: MouseCursor) {
-        todo!()
+    pub fn set_mouse_cursor(&self, cursor: MouseCursor) {
+        let native_cursor = Cursor::from(cursor);
+        self.view.addCursorRect_cursor(self.view.bounds(), &native_cursor.load());
     }
 
     #[cfg(feature = "opengl")]
