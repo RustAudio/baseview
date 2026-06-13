@@ -15,6 +15,10 @@
 #[cfg(target_os = "linux")]
 pub mod xlib;
 
+/// Wrappers and utilities around xkbcommon. (provided by xkbcommon_dl)
+#[cfg(target_os = "linux")]
+pub mod xkbcommon;
+
 /// Wrappers and utilities around GLX
 #[cfg(all(target_os = "linux", feature = "opengl"))]
 pub mod glx;
