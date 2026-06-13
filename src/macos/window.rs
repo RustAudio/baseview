@@ -154,20 +154,9 @@ impl<'a> Window<'a> {
         BaseviewView::resize(self.view.inner_ref(), size);
     }
 
-    pub fn set_mouse_cursor(&mut self, _mouse_cursor: MouseCursor) {
-        todo!()
-    }
-
     pub fn set_mouse_cursor(&self, cursor: MouseCursor) {
         let native_cursor = Cursor::from(cursor);
-        unsafe {
-            let bounds: NSRect = msg_send![self.ns_view as id, bounds];
-            let cursor = native_cursor.load();
-            let _: () = msg_send![self.ns_view as id,
-                addCursorRect:bounds
-                cursor:cursor
-            ];
-        }
+        self.view.addCursorRect_cursor(self.view.bounds(), &native_cursor.load());
     }
 
     #[cfg(feature = "opengl")]

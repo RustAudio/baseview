@@ -4,7 +4,6 @@ pub enum MouseCursor {
     Default,
     Hand,
     HandGrabbing,
-    Pointer,
     Help,
 
     Hidden,

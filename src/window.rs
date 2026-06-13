@@ -7,7 +7,6 @@ use raw_window_handle::{
 use crate::event::{Event, EventStatus};
 use crate::window_open_options::WindowOpenOptions;
 use crate::{MouseCursor, Size};
-use crate::MouseCursor;
 
 #[cfg(target_os = "macos")]
 use crate::macos as platform;
@@ -100,10 +99,6 @@ impl<'a> Window<'a> {
     }
 
     /// Set the cursor to the given cursor type
-    pub fn set_mouse_cursor(&self, cursor: MouseCursor) {
-        self.window.set_mouse_cursor(cursor);
-    }
-
     pub fn set_mouse_cursor(&mut self, cursor: MouseCursor) {
         self.window.set_mouse_cursor(cursor);
     }
