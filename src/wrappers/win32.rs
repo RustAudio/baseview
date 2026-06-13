@@ -1,18 +1,19 @@
 pub mod cursor;
+mod dpi;
 pub mod h_instance;
 mod rect;
+mod style;
 pub mod uuid;
 pub mod window;
 
+pub use dpi::*;
 pub use rect::Rect;
+pub use style::*;
 
 use std::ptr::null_mut;
 use windows_core::{Error, Result, HRESULT};
 use windows_sys::Win32::Foundation::{S_FALSE, S_OK};
 use windows_sys::Win32::System::Ole::OleInitialize;
-use windows_sys::Win32::UI::HiDpi::{
-    SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE,
-};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, TranslateMessage, MSG,
 };
@@ -50,9 +51,4 @@ pub fn run_thread_message_loop_until(until: impl Fn() -> bool) -> Result<()> {
             return Ok(());
         }
     }
-}
-
-// Only works on Windows 10 unfortunately.
-pub fn set_process_per_monitor_dpi_aware() {
-    unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE) };
 }

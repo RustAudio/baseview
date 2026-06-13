@@ -1,20 +1,11 @@
 use crate::PhySize;
-use windows_core::{Error, Result};
 use windows_sys::Win32::Foundation::RECT;
-use windows_sys::Win32::UI::WindowsAndMessaging::AdjustWindowRectEx;
 
 #[derive(Copy, Clone)]
 pub struct Rect(pub RECT);
 
 impl Rect {
-    pub fn client_area_to_nc_area(mut self, style: u32) -> Result<Self> {
-        let result = unsafe { AdjustWindowRectEx(&mut self.0, style, 0, 0) };
-        if result == 0 {
-            return Err(Error::from_win32());
-        }
-
-        Ok(self)
-    }
+    pub const EMPTY: Self = Self(RECT { left: 0, top: 0, right: 0, bottom: 0 });
 
     pub fn size(&self) -> PhySize {
         PhySize {
