@@ -24,13 +24,13 @@ pub(super) struct EventLoop {
 
     drag_n_drop: DragNDropState,
 
-    xkb_state: XkbcommonState,
+    xkb_state: Option<XkbcommonState>,
 }
 
 impl EventLoop {
     pub fn new(
         window: WindowInner, handler: impl WindowHandler + 'static,
-        parent_handle: Option<ParentHandle>, xkb_state: XkbcommonState,
+        parent_handle: Option<ParentHandle>, xkb_state: Option<XkbcommonState>,
     ) -> Self {
         Self {
             window,

@@ -8,28 +8,30 @@ pub struct XkbcommonState {
 }
 
 impl XkbcommonState {
-    pub fn new(xcb_connection: &crate::x11::XcbConnection) -> Self {
-        let xkb_common = xkbc::xkbcommon_handle();
-        let context =
-            unsafe { (xkb_common.xkb_context_new)(xkbc::xkb_context_flags::XKB_CONTEXT_NO_FLAGS) };
+    pub fn new(xcb_connection: &crate::x11::XcbConnection) -> Option<Self> {
+        xkbc::xkbcommon_option().and_then(|xkb_common| {
+            xkbc::x11::xkbcommon_x11_option().and_then(|xkb_x11| {
+                let context = unsafe {
+                    (xkb_common.xkb_context_new)(xkbc::xkb_context_flags::XKB_CONTEXT_NO_FLAGS)
+                };
 
-        let conn: *mut xkbc::x11::xcb_connection_t =
-            xcb_connection.conn.xcb_connection().get_raw_xcb_connection();
+                let conn: *mut xkbc::x11::xcb_connection_t =
+                    xcb_connection.conn.xcb_connection().get_raw_xcb_connection();
 
-        let xkb_x11 = xkbc::x11::xkbcommon_x11_handle();
-
-        let state = unsafe {
-            let device_id = (xkb_x11.xkb_x11_get_core_keyboard_device_id)(conn);
-            assert!(device_id >= 0);
-            let keymap = (xkb_x11.xkb_x11_keymap_new_from_device)(
-                context,
-                conn,
-                device_id,
-                xkbc::xkb_keymap_compile_flags::XKB_KEYMAP_COMPILE_NO_FLAGS,
-            );
-            (xkb_x11.xkb_x11_state_new_from_device)(keymap, conn, device_id)
-        };
-        XkbcommonState { state, xkb_common }
+                let state = unsafe {
+                    let device_id = (xkb_x11.xkb_x11_get_core_keyboard_device_id)(conn);
+                    assert!(device_id >= 0);
+                    let keymap = (xkb_x11.xkb_x11_keymap_new_from_device)(
+                        context,
+                        conn,
+                        device_id,
+                        xkbc::xkb_keymap_compile_flags::XKB_KEYMAP_COMPILE_NO_FLAGS,
+                    );
+                    (xkb_x11.xkb_x11_state_new_from_device)(keymap, conn, device_id)
+                };
+                Some(XkbcommonState { state, xkb_common })
+            })
+        })
     }
 
     pub fn key_get_utf8(&self, code: Keycode) -> String {
