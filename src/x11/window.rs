@@ -177,6 +177,9 @@ impl<'a> Window<'a> {
         // FIXME: baseview error type instead of unwrap()
         let xcb_connection = XcbConnection::new()?;
 
+        // Setup xkbcommon
+        let xkb_state = crate::wrappers::xkbcommon::XkbcommonState::new(&xcb_connection);
+
         // Get screen information
         let screen = xcb_connection.screen();
         let parent_id = parent.unwrap_or(screen.root);
@@ -303,7 +306,7 @@ impl<'a> Window<'a> {
 
         let _ = tx.send(Ok(SendableRwh(window.raw_window_handle())));
 
-        EventLoop::new(inner, handler, parent_handle).run()?;
+        EventLoop::new(inner, handler, parent_handle, xkb_state).run()?;
 
         Ok(())
     }
