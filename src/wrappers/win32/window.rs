@@ -15,7 +15,7 @@ use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::style::WindowStyle;
 use crate::PhySize;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::UI::WindowsAndMessaging::{CreateWindowExW, WINDOW_STYLE};
+use windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW;
 
 pub trait WindowImpl: 'static {
     /// Called during the processing of the WM_CREATE message, but after this type was properly
