@@ -58,12 +58,12 @@ const WIN_FRAME_TIMER: NonZeroUsize = match NonZeroUsize::new(4242) {
 };
 
 pub struct WindowHandle {
-    hwnd: Option<HWND>,
+    hwnd: Cell<Option<HWND>>,
     is_open: Rc<Cell<bool>>,
 }
 
 impl WindowHandle {
-    pub fn close(&mut self) {
+    pub fn close(&self) {
         if let Some(hwnd) = self.hwnd.take() {
             unsafe {
                 PostMessageW(hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
@@ -78,7 +78,7 @@ impl WindowHandle {
 
 unsafe impl HasRawWindowHandle for WindowHandle {
     fn raw_window_handle(&self) -> RawWindowHandle {
-        if let Some(hwnd) = self.hwnd {
+        if let Some(hwnd) = self.hwnd.get() {
             let mut handle = Win32WindowHandle::empty();
             handle.hwnd = hwnd;
 
@@ -470,7 +470,7 @@ pub(crate) struct WindowState {
     mouse_was_outside_window: Cell<bool>,
     cursor_icon: Cell<MouseCursor>,
     // Initialized late so the `Window` can hold a reference to this `WindowState`
-    handler: RefCell<Option<Box<dyn WindowHandler>>>,
+    handler: Option<Box<dyn WindowHandler>>,
     scale_policy: WindowScalePolicy,
 
     user32: ExtendedUser32,
@@ -676,33 +676,33 @@ impl Window<'_> {
 
         window.show_and_activate();
 
-        WindowHandle { hwnd: Some(hwnd), is_open: Rc::clone(&is_open) }
+        WindowHandle { hwnd: Some(hwnd).into(), is_open: Rc::clone(&is_open) }
     }
 
-    pub fn close(&mut self) {
+    pub fn close(&self) {
         unsafe {
             PostMessageW(self.state.hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
         }
     }
 
-    pub fn has_focus(&mut self) -> bool {
+    pub fn has_focus(&self) -> bool {
         HWnd::get_focused_window() == self.state.hwnd
     }
 
-    pub fn focus(&mut self) {
+    pub fn focus(&self) {
         // To avoid reentrant event handler calls we'll defer the actual focus request until after
         // the event has been handled
         self.state.deferred_tasks.borrow_mut().push_back(WindowTask::Focus);
     }
 
-    pub fn resize(&mut self, size: Size) {
+    pub fn resize(&self, size: Size) {
         // To avoid reentrant event handler calls we'll defer the actual resizing until after the
         // event has been handled
         let task = WindowTask::Resize(size);
         self.state.deferred_tasks.borrow_mut().push_back(task);
     }
 
-    pub fn set_mouse_cursor(&mut self, mouse_cursor: MouseCursor) {
+    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) {
         self.state.cursor_icon.set(mouse_cursor);
         if let Ok(cursor) = SystemCursor::load(mouse_cursor) {
             cursor.set()

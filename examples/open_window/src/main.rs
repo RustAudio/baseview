@@ -1,3 +1,4 @@
+use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 use std::time::Duration;
 
@@ -16,14 +17,14 @@ enum Message {
 }
 
 struct OpenWindowExample {
-    rx: Consumer<Message>,
+    rx: RefCell<Consumer<Message>>,
 
     _ctx: softbuffer::Context,
-    surface: softbuffer::Surface,
-    current_size: WindowInfo,
-    mouse_pos: PhyPoint,
-    is_cursor_inside: bool,
-    damaged: bool,
+    surface: RefCell<softbuffer::Surface>,
+    current_size: Cell<WindowInfo>,
+    mouse_pos: Cell<PhyPoint>,
+    is_cursor_inside: Cell<bool>,
+    damaged: Cell<bool>,
 }
 
 impl WindowHandler for OpenWindowExample {
@@ -32,9 +33,10 @@ impl WindowHandler for OpenWindowExample {
             return;
         }
 
-        let mut pixels = self.surface.buffer_mut().unwrap();
-        let size = self.current_size.physical_size();
-        let scale_factor = self.current_size.scale();
+        let mut surface = self.surface.borrow_mut();
+        let mut pixels = surface.buffer_mut().unwrap();
+        let size = self.current_size.get().physical_size();
+        let scale_factor = self.current_size.get().scale();
         let (width, height) = (size.width, size.height);
 
         for index in 0..(width * height) {
@@ -75,10 +77,10 @@ impl WindowHandler for OpenWindowExample {
         if self.is_cursor_inside {
             let rect_size = (25.0 * scale_factor) as i32;
 
-            let rect_x_start = (self.mouse_pos.x - rect_size).clamp(0, width as i32) as u32;
-            let rect_x_end = (self.mouse_pos.x + rect_size).clamp(0, width as i32) as u32;
-            let rect_y_start = (self.mouse_pos.y - rect_size).clamp(0, height as i32) as u32;
-            let rect_y_end = (self.mouse_pos.y + rect_size).clamp(0, height as i32) as u32;
+            let rect_x_start = (self.mouse_pos.get().x - rect_size).clamp(0, width as i32) as u32;
+            let rect_x_end = (self.mouse_pos.get().x + rect_size).clamp(0, width as i32) as u32;
+            let rect_y_start = (self.mouse_pos.get().y - rect_size).clamp(0, height as i32) as u32;
+            let rect_y_end = (self.mouse_pos.get().y + rect_size).clamp(0, height as i32) as u32;
 
             for x in rect_x_start..rect_x_end {
                 for y in rect_y_start..rect_y_end {
@@ -89,41 +91,41 @@ impl WindowHandler for OpenWindowExample {
         }
 
         pixels.present().unwrap();
-        self.damaged = false;
+        self.damaged.set(false);
 
-        while let Ok(message) = self.rx.pop() {
+        while let Ok(message) = self.rx.borrow_mut().pop() {
             println!("Message: {:?}", message);
         }
     }
 
-    fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
+    fn on_event(&self, _window: &mut Window, event: Event) -> EventStatus {
         match &event {
             #[cfg(target_os = "macos")]
             Event::Mouse(MouseEvent::ButtonPressed { .. }) => copy_to_clipboard("This is a test!"),
             Event::Mouse(MouseEvent::CursorMoved { position, .. }) => {
-                let phy_pos = position.to_physical(&self.current_size);
-                self.mouse_pos = phy_pos;
-                self.damaged = true;
+                let phy_pos = position.to_physical(&self.current_size.get());
+                self.mouse_pos.set(phy_pos);
+                self.damaged.set(true);
             }
             Event::Mouse(MouseEvent::CursorEntered) => {
-                self.is_cursor_inside = true;
-                self.damaged = true;
+                self.is_cursor_inside.set(true);
+                self.damaged.set(true);
             }
             Event::Mouse(MouseEvent::CursorLeft) => {
-                self.is_cursor_inside = false;
-                self.damaged = true;
+                self.is_cursor_inside.set(false);
+                self.damaged.set(true);
             }
             Event::Window(WindowEvent::Resized(info)) => {
                 println!("Resized: {:?}", info);
-                self.current_size = *info;
+                self.current_size.set(*info);
 
                 let new_size = info.physical_size();
 
                 if let (Some(width), Some(height)) =
                     (NonZeroU32::new(new_size.width), NonZeroU32::new(new_size.height))
                 {
-                    self.surface.resize(width, height).unwrap();
-                    self.damaged = true;
+                    self.surface.borrow_mut().resize(width, height).unwrap();
+                    self.damaged.set(true);
                 }
             }
             _ => {}
@@ -155,12 +157,12 @@ fn main() {
 
         OpenWindowExample {
             _ctx: ctx,
-            surface,
-            rx,
-            current_size: WindowInfo::from_physical_size(PhySize::new(512, 512), 1.0),
-            mouse_pos: PhyPoint::new(0, 0),
-            is_cursor_inside: false,
-            damaged: true,
+            surface: surface.into(),
+            rx: rx.into(),
+            current_size: WindowInfo::from_physical_size(PhySize::new(512, 512).into(), 1.0).into(),
+            mouse_pos: PhyPoint::new(0, 0).into(),
+            is_cursor_inside: false.into(),
+            damaged: true.into(),
         }
     });
 }
