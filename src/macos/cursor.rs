@@ -84,7 +84,7 @@ impl Cursor {
                 }
 
                 let raw: *mut NSCursor = unsafe { class.send_message(*sel, ()) };
-                let cursor = unsafe { Retained::from_raw(raw) };
+                let cursor = unsafe { Retained::retain(raw) };
 
                 cursor.unwrap_or_else(NSCursor::arrowCursor)
             }
