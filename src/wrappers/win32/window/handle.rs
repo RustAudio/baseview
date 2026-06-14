@@ -1,4 +1,5 @@
-﻿use crate::wrappers::win32::Rect;
+﻿use crate::wrappers::win32::style::WindowStyle;
+use crate::wrappers::win32::{Dpi, DpiAwarenessContext, Rect};
 use crate::PhySize;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
@@ -12,8 +13,9 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DestroyWindow, GetWindowLongPtrW, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    GWLP_USERDATA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SW_SHOW,
+    DestroyWindow, GetWindowLongPtrW, GetWindowLongW, SetTimer, SetWindowLongPtrW, SetWindowPos,
+    ShowWindow, GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER,
+    SW_SHOW, WINDOW_LONG_PTR_INDEX,
 };
 
 /// A simple wrapper around a HWND.
@@ -58,11 +60,37 @@ impl HWnd<'_> {
         Err(error)
     }
 
-    pub fn get_dpi(&self) -> Result<u32> {
+    pub fn get_long(&self, index: WINDOW_LONG_PTR_INDEX) -> Result<i32> {
+        // SAFETY: This function is always safe to call
+        unsafe { SetLastError(0) };
+        // SAFETY: This type guarantees the HWND is still valid.
+        let result = unsafe { GetWindowLongW(self.0, index) };
+        if result != 0 {
+            return Ok(result);
+        }
+
+        // We can't know if a return value of 0 is indicative of an error, or if it's just because the
+        // value was actually 0. So we check GetLastError instead (called by Error::from_win32).
+        let error = Error::from_win32();
+        if error.code() == HRESULT(0) {
+            return Ok(result);
+        }
+
+        Err(error)
+    }
+
+    pub fn get_style(&self) -> Result<WindowStyle> {
+        Ok(WindowStyle {
+            style: self.get_long(GWL_STYLE)? as _,
+            style_ex: self.get_long(GWL_EXSTYLE)? as _,
+        })
+    }
+
+    pub fn get_dpi(&self) -> Result<Dpi> {
         // SAFETY: This type guarantees the HWND is safe to use.
         match unsafe { GetDpiForWindow(self.0) } {
             0 => Err(Error::from_win32()),
-            dpi => Ok(dpi),
+            dpi => Ok(Dpi(dpi)),
         }
     }
 
@@ -106,8 +134,12 @@ impl HWnd<'_> {
         Ok(())
     }
 
-    pub fn resize_and_activate(&self, client_size: PhySize, style: u32) -> Result<()> {
-        let rect = Rect::from(client_size).client_area_to_nc_area(style)?;
+    pub fn resize_and_activate(&self, client_size: PhySize, window_dpi: Dpi) -> Result<()> {
+        let dpi_ctx = DpiAwarenessContext::new()?;
+        let style = self.get_style()?;
+
+        let rect = Rect::from(client_size);
+        let rect = dpi_ctx.client_area_to_nc_area(rect, style, window_dpi)?;
 
         self.resize_nc_and_activate(rect.size())
     }
