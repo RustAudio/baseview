@@ -167,8 +167,7 @@ impl BaseviewView {
             return EventStatus::Ignored;
         };
 
-        let status = handler.on_event(&mut this.into(), event);
-        status
+        handler.on_event(&mut this.into(), event)
     }
 
     fn trigger_frame(this: ViewRef<Self>) {
