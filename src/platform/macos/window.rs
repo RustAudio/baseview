@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use objc2::rc::{autoreleasepool, Weak};
@@ -22,12 +22,12 @@ use crate::platform::macos::view::{BaseviewView, ViewParentingType};
 use crate::wrappers::appkit::{create_window, extract_raw_window_handle, View, ViewRef};
 
 pub struct WindowHandle {
-    view: Option<Weak<View<BaseviewView>>>,
+    view: RefCell<Option<Weak<View<BaseviewView>>>>,
     state: Rc<WindowSharedState>,
 }
 
 impl WindowHandle {
-    pub fn close(&mut self) {
+    pub fn close(&self) {
         let Some(view) = self.view.take().and_then(|w| w.load()) else {
             return;
         };
@@ -42,7 +42,7 @@ impl WindowHandle {
 
 unsafe impl HasRawWindowHandle for WindowHandle {
     fn raw_window_handle(&self) -> RawWindowHandle {
-        let Some(view) = self.view.as_ref().and_then(|w| w.load()) else {
+        let Some(view) = self.view.borrow().as_ref().and_then(|w| w.load()) else {
             return AppKitWindowHandle::empty().into();
         };
 
@@ -82,7 +82,7 @@ impl<'a> Window<'a> {
 
             let (ns_view, state) = BaseviewView::new(options, build, parenting);
 
-            WindowHandle { view: Some(Weak::from_retained(&ns_view)), state }
+            WindowHandle { view: Some(Weak::from_retained(&ns_view)).into(), state }
         })
     }
 
@@ -120,11 +120,11 @@ impl<'a> Window<'a> {
         })
     }
 
-    pub fn close(&mut self) {
+    pub fn close(&self) {
         BaseviewView::close(self.view.inner_ref());
     }
 
-    pub fn has_focus(&mut self) -> bool {
+    pub fn has_focus(&self) -> bool {
         let Some(window) = self.view.window() else {
             return false;
         };
@@ -140,13 +140,13 @@ impl<'a> Window<'a> {
         self.view.isEqual(Some(&*first_responder))
     }
 
-    pub fn focus(&mut self) {
+    pub fn focus(&self) {
         if let Some(window) = self.view.window() {
             window.makeFirstResponder(Some(self.view));
         }
     }
 
-    pub fn resize(&mut self, size: Size) {
+    pub fn resize(&self, size: Size) {
         if self.inner.state.closed.get() {
             return;
         }

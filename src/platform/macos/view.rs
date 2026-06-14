@@ -18,7 +18,6 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
 use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
 use std::rc::Rc;
 
 pub enum ViewParentingType {
@@ -29,9 +28,6 @@ pub enum ViewParentingType {
 pub(crate) struct BaseviewView {
     pub(crate) state: Rc<WindowSharedState>,
     window_handler: RefCell<Option<Box<dyn WindowHandler>>>,
-
-    /// Events that will be triggered at the end of `window_handler`'s borrow.
-    deferred_events: RefCell<VecDeque<Event>>,
 
     frame_timer: Cell<Option<TimerHandle>>,
     notification_center_observer: Cell<Option<NotificationCenterObserver>>,
@@ -57,7 +53,6 @@ impl BaseviewView {
         let inner = BaseviewView {
             state: state.clone(),
 
-            deferred_events: RefCell::default(),
             keyboard_state: KeyboardState::new(),
             frame_timer: None.into(),
             window_handler: None.into(),
@@ -114,7 +109,7 @@ impl BaseviewView {
             view.notification_center_observer.set(Some(observer));
 
             // Send an initial Resized event so users get the correct scale factor and physical size.
-            Self::trigger_deferrable_event(
+            Self::trigger_event(
                 view,
                 Event::Window(WindowEvent::Resized(Self::fetch_view_size(view.view))),
             );
@@ -166,51 +161,21 @@ impl BaseviewView {
     }
 
     /// Trigger the event immediately and return the event status.
-    /// Will panic if `window_handler` is already borrowed (see `trigger_deferrable_event`).
     fn trigger_event(this: ViewRef<Self>, event: Event) -> EventStatus {
-        let mut handler = this.window_handler.borrow_mut();
-        let Some(handler) = handler.as_mut() else {
+        let handler = this.window_handler.borrow();
+        let Some(handler) = handler.as_ref() else {
             return EventStatus::Ignored;
         };
 
         let status = handler.on_event(&mut this.into(), event);
-        Self::send_deferred_events(this, handler.as_mut());
         status
     }
 
-    /// Trigger the event immediately if `window_handler` can be borrowed mutably,
-    /// otherwise add the event to a queue that will be cleared once `window_handler`'s mutable borrow ends.
-    /// As this method might result in the event triggering asynchronously, it can't reliably return the event status.
-    fn trigger_deferrable_event(this: ViewRef<Self>, event: Event) {
-        let Ok(mut handler) = this.window_handler.try_borrow_mut() else {
-            this.deferred_events.borrow_mut().push_back(event);
-            return;
-        };
-
-        let Some(handler) = handler.as_mut() else { return };
-
-        handler.on_event(&mut this.into(), event);
-        Self::send_deferred_events(this, handler.as_mut());
-    }
-
     fn trigger_frame(this: ViewRef<Self>) {
-        let mut handler = this.window_handler.borrow_mut();
-        let Some(handler) = handler.as_mut() else { return };
+        let handler = this.window_handler.borrow();
+        let Some(handler) = handler.as_ref() else { return };
 
         handler.on_frame(&mut this.into());
-        Self::send_deferred_events(this, handler.as_mut());
-    }
-
-    fn send_deferred_events(this: ViewRef<Self>, window_handler: &mut dyn WindowHandler) {
-        let mut window = this.into();
-        loop {
-            let next_event = { this.deferred_events.borrow_mut().pop_front() };
-            if let Some(event) = next_event {
-                window_handler.on_event(&mut window, event);
-            } else {
-                break;
-            }
-        }
     }
 
     fn fetch_view_size(view: &NSView) -> WindowInfo {
@@ -240,14 +205,14 @@ impl ViewImpl for BaseviewView {
         };
 
         if window.isKeyWindow() {
-            Self::trigger_deferrable_event(this, Event::Window(WindowEvent::Focused));
+            Self::trigger_event(this, Event::Window(WindowEvent::Focused));
         }
 
         true
     }
 
     fn resign_first_responder(this: ViewRef<Self>) -> bool {
-        Self::trigger_deferrable_event(this, Event::Window(WindowEvent::Unfocused));
+        Self::trigger_event(this, Event::Window(WindowEvent::Unfocused));
         true
     }
 
@@ -266,10 +231,7 @@ impl ViewImpl for BaseviewView {
         // other platform implementations
         if new_window_info.physical_size() != window_info.physical_size() {
             this.state.window_info.set(new_window_info);
-            Self::trigger_deferrable_event(
-                this,
-                Event::Window(WindowEvent::Resized(new_window_info)),
-            );
+            Self::trigger_event(this, Event::Window(WindowEvent::Resized(new_window_info)));
         }
     }
 
