@@ -278,10 +278,12 @@ impl EventLoop {
             }
 
             XEvent::FocusIn(_) => {
+                self.window.is_focused.set(true);
                 self.handle_event(Event::Window(WindowEvent::Focused));
             }
 
             XEvent::FocusOut(_) => {
+                self.window.is_focused.set(false);
                 self.handle_event(Event::Window(WindowEvent::Unfocused));
             }
 

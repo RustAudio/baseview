@@ -15,9 +15,10 @@ use raw_window_handle::{
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, CreateGCAux,
-    CreateWindowAux, EventMask, PropMode, Visualid, Window as XWindow, WindowClass,
+    CreateWindowAux, EventMask, InputFocus, PropMode, Visualid, Window as XWindow, WindowClass,
 };
 use x11rb::wrapper::ConnectionExt as _;
+use x11rb::CURRENT_TIME;
 
 use super::XcbConnection;
 use crate::{
@@ -104,6 +105,7 @@ pub(crate) struct WindowInner {
     mouse_cursor: Cell<MouseCursor>,
 
     pub(crate) close_requested: Cell<bool>,
+    pub(crate) is_focused: Cell<bool>,
 }
 
 pub struct Window<'a> {
@@ -291,6 +293,7 @@ impl<'a> Window<'a> {
             mouse_cursor: Cell::new(MouseCursor::default()),
 
             close_requested: Cell::new(false),
+            is_focused: false.into(),
 
             #[cfg(feature = "opengl")]
             gl_context,
@@ -333,12 +336,17 @@ impl<'a> Window<'a> {
         self.inner.close_requested.set(true);
     }
 
-    pub fn has_focus(&mut self) -> bool {
-        unimplemented!()
+    pub fn has_focus(&self) -> bool {
+        self.inner.is_focused.get()
     }
 
-    pub fn focus(&mut self) {
-        unimplemented!()
+    pub fn focus(&self) {
+        let _ = self.inner.xcb_connection.conn.set_input_focus(
+            InputFocus::POINTER_ROOT,
+            self.inner.window_id,
+            CURRENT_TIME,
+        );
+        let _ = self.inner.xcb_connection.conn.flush();
     }
 
     pub fn resize(&mut self, size: Size) {
