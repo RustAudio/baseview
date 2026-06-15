@@ -40,7 +40,8 @@ use crate::wrappers::win32::cursor::SystemCursor;
 use crate::gl::GlContext;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
-    ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessContext, Rect, WindowStyle,
+    ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessContext, ExtendedUser32, Rect,
+    WindowStyle,
 };
 
 #[allow(non_snake_case)]
@@ -125,7 +126,7 @@ impl WindowImpl for BaseviewWindow {
         self._keyboard_hook.set(Some(hook::init_keyboard_hook(hwnd)));
 
         // Now we can get the actual dpi of the window.
-        let dpi = window.get_dpi()?;
+        let dpi = window.get_dpi(&self.window_state.user32)?;
         let mut dpi_changed = false;
 
         if dpi != window_state.current_dpi.get() {
@@ -144,7 +145,7 @@ impl WindowImpl for BaseviewWindow {
                 // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
                 // doesn't also emit Resized.
                 window_state.current_size.set(new_size);
-                window.resize_and_activate(new_size, dpi)?;
+                window.resize_and_activate(new_size, dpi, &window_state.user32)?;
             }
         }
 
@@ -404,7 +405,7 @@ unsafe fn wnd_proc_inner(
             let suggested_nc_rect = Rect((lparam as *const RECT).read());
             let dpi = Dpi((wparam & 0xFFFF) as u16 as u32);
 
-            let dpi_ctx = DpiAwarenessContext::new().unwrap();
+            let dpi_ctx = DpiAwarenessContext::new(&window_state.user32).unwrap();
             let style = window.get_style().unwrap();
             let suggested_rect =
                 dpi_ctx.nc_area_to_client_area(suggested_nc_rect, style, dpi).unwrap();
@@ -473,6 +474,8 @@ pub(super) struct WindowState {
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
     scale_policy: WindowScalePolicy,
 
+    user32: ExtendedUser32,
+
     /// Tasks that should be executed at the end of `wnd_proc`. This is needed to avoid mutably
     /// borrowing the fields from `WindowState` more than once. For instance, when the window
     /// handler requests a resize in response to a keyboard event, the window state will already be
@@ -485,7 +488,9 @@ pub(super) struct WindowState {
 }
 
 impl WindowState {
-    pub fn new(hwnd: HWND, current_size: PhySize, scale_policy: WindowScalePolicy) -> Self {
+    pub fn new(
+        hwnd: HWND, current_size: PhySize, scale_policy: WindowScalePolicy, user32: ExtendedUser32,
+    ) -> Self {
         Self {
             hwnd,
             current_dpi: Dpi::default().into(),
@@ -496,6 +501,7 @@ impl WindowState {
             cursor_icon: Cell::new(MouseCursor::Default),
             handler: RefCell::new(None),
             scale_policy,
+            user32,
 
             deferred_tasks: RefCell::new(VecDeque::with_capacity(4)),
 
@@ -552,7 +558,7 @@ impl WindowState {
                 let window_info = WindowInfo::from_logical_size(size, dpi.scale_factor());
                 let new_size = window_info.physical_size();
 
-                window.resize_and_activate(new_size, dpi).unwrap();
+                window.resize_and_activate(new_size, dpi, &self.user32).unwrap();
             }
             WindowTask::Focus => window.set_focus().unwrap(),
         }
@@ -609,6 +615,7 @@ impl Window<'_> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
+        let extended_user_32 = ExtendedUser32::load().unwrap();
         let title = HSTRING::from(options.title);
 
         let scaling_factor = match options.scale {
@@ -620,17 +627,24 @@ impl Window<'_> {
             WindowInfo::from_logical_size(options.size, scaling_factor).physical_size();
 
         let style = if parented { WindowStyle::parented() } else { WindowStyle::embedded() };
-        let dpi_ctx = DpiAwarenessContext::new().unwrap();
+        let dpi_ctx = DpiAwarenessContext::new(&extended_user_32).unwrap();
 
         let rect =
             dpi_ctx.client_area_to_nc_area(window_size.into(), style, Dpi::default()).unwrap();
+
+        drop(dpi_ctx);
 
         let is_open = Rc::new(Cell::new(true));
 
         let parent_handle = ParentHandle { is_open: is_open.clone() };
 
         let initializer = move |hwnd: HWnd| {
-            let window_state = Rc::new(WindowState::new(hwnd.as_raw(), window_size, options.scale));
+            let window_state = Rc::new(WindowState::new(
+                hwnd.as_raw(),
+                window_size,
+                options.scale,
+                extended_user_32,
+            ));
 
             BaseviewWindow {
                 window_state,

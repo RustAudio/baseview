@@ -1,4 +1,5 @@
 ﻿use crate::wrappers::win32::style::WindowStyle;
+use crate::wrappers::win32::user32::ExtendedUser32;
 use crate::wrappers::win32::{Dpi, DpiAwarenessContext, Rect};
 use crate::PhySize;
 use std::marker::PhantomData;
@@ -8,7 +9,6 @@ use windows::Win32::System::Ole::IDropTarget;
 use windows_core::{Error, Interface, InterfaceRef, Result, HRESULT};
 use windows_sys::Win32::Foundation::{SetLastError, HWND, S_OK};
 use windows_sys::Win32::System::Ole::{RegisterDragDrop, RevokeDragDrop};
-use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
 };
@@ -86,9 +86,13 @@ impl HWnd<'_> {
         })
     }
 
-    pub fn get_dpi(&self) -> Result<Dpi> {
+    pub fn get_dpi(&self, extended_user32: &ExtendedUser32) -> Result<Dpi> {
+        let Some(get_dpi_for_window) = extended_user32.get_dpi_for_window else {
+            return Ok(Dpi::default());
+        };
+
         // SAFETY: This type guarantees the HWND is safe to use.
-        match unsafe { GetDpiForWindow(self.0) } {
+        match unsafe { get_dpi_for_window(self.0) } {
             0 => Err(Error::from_win32()),
             dpi => Ok(Dpi(dpi)),
         }
@@ -134,8 +138,10 @@ impl HWnd<'_> {
         Ok(())
     }
 
-    pub fn resize_and_activate(&self, client_size: PhySize, window_dpi: Dpi) -> Result<()> {
-        let dpi_ctx = DpiAwarenessContext::new()?;
+    pub fn resize_and_activate(
+        &self, client_size: PhySize, window_dpi: Dpi, user32: &ExtendedUser32,
+    ) -> Result<()> {
+        let dpi_ctx = DpiAwarenessContext::new(user32)?;
         let style = self.get_style()?;
 
         let rect = Rect::from(client_size);
