@@ -28,8 +28,8 @@ struct OpenWindowExample {
 }
 
 impl WindowHandler for OpenWindowExample {
-    fn on_frame(&mut self, _window: &mut Window) {
-        if !self.damaged {
+    fn on_frame(&self, _window: &mut Window) {
+        if !self.damaged.get() {
             return;
         }
 
@@ -74,7 +74,7 @@ impl WindowHandler for OpenWindowExample {
             pixels[index as usize] = if (y % 10) < 5 { 0xFFFF00FF } else { 0xFF000000 };
         }
 
-        if self.is_cursor_inside {
+        if self.is_cursor_inside.get() {
             let rect_size = (25.0 * scale_factor) as i32;
 
             let rect_x_start = (self.mouse_pos.get().x - rect_size).clamp(0, width as i32) as u32;

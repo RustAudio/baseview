@@ -17,7 +17,7 @@ use objc2_app_kit::{
     NSTrackingAreaOptions, NSView, NSWindow,
 };
 use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell};
 use std::rc::Rc;
 
 pub enum ViewParentingType {
@@ -27,7 +27,7 @@ pub enum ViewParentingType {
 
 pub(crate) struct BaseviewView {
     pub(crate) state: Rc<WindowSharedState>,
-    window_handler: RefCell<Option<Box<dyn WindowHandler>>>,
+    window_handler: OnceCell<Box<dyn WindowHandler>>,
 
     frame_timer: Cell<Option<TimerHandle>>,
     notification_center_observer: Cell<Option<NotificationCenterObserver>>,
@@ -37,7 +37,7 @@ pub(crate) struct BaseviewView {
     parenting: ViewParentingType,
 
     #[cfg(feature = "opengl")]
-    pub(crate) gl_context: std::cell::OnceCell<crate::gl::GlContext>,
+    pub(crate) gl_context: OnceCell<crate::gl::GlContext>,
 }
 
 impl BaseviewView {
@@ -55,12 +55,12 @@ impl BaseviewView {
 
             keyboard_state: KeyboardState::new(),
             frame_timer: None.into(),
-            window_handler: None.into(),
+            window_handler: OnceCell::new(),
             notification_center_observer: None.into(),
             parenting,
 
             #[cfg(feature = "opengl")]
-            gl_context: std::cell::OnceCell::new(),
+            gl_context: OnceCell::new(),
         };
 
         let view = View::new(view_rect, inner, |view| {
@@ -85,7 +85,9 @@ impl BaseviewView {
             }
 
             // Initialize handler
-            view.window_handler.replace(Some(Box::new(builder(&mut view.into()))));
+            let Ok(()) = view.window_handler.set(Box::new(builder(&mut view.into()))) else {
+                unreachable!()
+            };
 
             // Set up anything that might trigger events to the handler
 
@@ -162,8 +164,7 @@ impl BaseviewView {
 
     /// Trigger the event immediately and return the event status.
     fn trigger_event(this: ViewRef<Self>, event: Event) -> EventStatus {
-        let handler = this.window_handler.borrow();
-        let Some(handler) = handler.as_ref() else {
+        let Some(handler) = this.window_handler.get() else {
             return EventStatus::Ignored;
         };
 
@@ -171,8 +172,7 @@ impl BaseviewView {
     }
 
     fn trigger_frame(this: ViewRef<Self>) {
-        let handler = this.window_handler.borrow();
-        let Some(handler) = handler.as_ref() else { return };
+        let Some(handler) = this.window_handler.get() else { return };
 
         handler.on_frame(&mut this.into());
     }
