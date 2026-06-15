@@ -28,7 +28,7 @@ pub struct DpiAwarenessContext<'a> {
 impl<'a> DpiAwarenessContext<'a> {
     pub fn new(user32: &'a ExtendedUser32) -> Result<Self> {
         let Some(set_thread_dpi_awareness_context) = user32.set_thread_dpi_awareness_context else {
-            return Ok(Self { previous: DPI_AWARENESS_CONTEXT::default(), user32 });
+            return Ok(Self { previous: null_mut(), user32 });
         };
 
         let previous =
