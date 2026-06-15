@@ -3,12 +3,14 @@ mod dpi;
 pub mod h_instance;
 mod rect;
 mod style;
+mod user32;
 pub mod uuid;
 pub mod window;
 
 pub use dpi::*;
 pub use rect::Rect;
 pub use style::*;
+pub use user32::*;
 
 use std::ptr::null_mut;
 use windows_core::{Error, Result, HRESULT};
