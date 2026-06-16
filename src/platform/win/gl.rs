@@ -27,7 +27,7 @@ use windows_sys::{
 
 use raw_window_handle::RawWindowHandle;
 
-use super::{GlConfig, GlError, Profile};
+use crate::gl::*;
 use crate::wrappers::win32::uuid::Uuid;
 
 // See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_create_context.txt

@@ -26,7 +26,7 @@ use raw_window_handle::{
 
 const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
-use crate::platform::win::hook::{self, KeyboardHookHandle};
+use super::*;
 use crate::{
     Event, EventStatus, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size,
     WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
@@ -36,8 +36,6 @@ use super::drop_target::DropTarget;
 use super::keyboard::KeyboardState;
 use crate::wrappers::win32::cursor::SystemCursor;
 
-#[cfg(feature = "opengl")]
-use crate::gl::GlContext;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessContext, ExtendedUser32, Rect,
@@ -111,7 +109,7 @@ pub struct BaseviewWindow {
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
     _parent_handle: ParentHandle,
-    _keyboard_hook: Cell<Option<KeyboardHookHandle>>,
+    _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
     _drop_target: Cell<Option<ComObject<DropTarget>>>,
 
     #[cfg(feature = "opengl")]
@@ -161,10 +159,11 @@ impl WindowImpl for BaseviewWindow {
             handle.hwnd = hwnd;
             let handle = RawWindowHandle::Win32(handle);
 
-            let gl_context = unsafe { GlContext::create(&handle, gl_config) }
+            let gl_context = unsafe { gl::GlContext::create(&handle, gl_config) }
                 .expect("Could not create OpenGL context");
 
-            let Ok(()) = self.window_state.gl_context.set(gl_context) else {
+            let Ok(()) = self.window_state.gl_context.set(crate::gl::GlContext::new(gl_context))
+            else {
                 unreachable!();
             };
         };
@@ -484,7 +483,7 @@ pub(crate) struct WindowState {
     pub deferred_tasks: RefCell<VecDeque<WindowTask>>,
 
     #[cfg(feature = "opengl")]
-    pub gl_context: core::cell::OnceCell<GlContext>,
+    pub gl_context: core::cell::OnceCell<crate::gl::GlContext>,
 }
 
 impl WindowState {
@@ -709,7 +708,7 @@ impl Window<'_> {
     }
 
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<&GlContext> {
+    pub fn gl_context(&self) -> Option<&crate::gl::GlContext> {
         self.state.gl_context.get()
     }
 }

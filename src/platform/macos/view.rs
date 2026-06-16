@@ -275,7 +275,7 @@ impl ViewImpl for BaseviewView {
     /// `hitTest:` override that collapses hits on baseview's internal
     /// OpenGL render subview to this NSView.
     ///
-    /// `src/gl/macos.rs` attaches an `NSOpenGLView` as a subview of this
+    /// `src/gl/gl` attaches an `NSOpenGLView` as a subview of this
     /// view so the GL context is isolated from event handling. The side
     /// effect is that `[NSView hitTest:]` returns the GL subview for
     /// every click inside our frame — `NSOpenGLView` inherits the
