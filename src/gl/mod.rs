@@ -13,6 +13,11 @@ pub(crate) mod x11;
 #[cfg(target_os = "linux")]
 pub(crate) use self::x11 as platform;
 
+#[cfg(target_os = "freebsd")]
+pub(crate) mod x11;
+#[cfg(target_os = "freebsd")]
+pub(crate) use self::x11 as platform;
+
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
@@ -93,7 +98,7 @@ impl GlContext {
     /// The X11 version needs to be set up in a different way compared to the Windows and macOS
     /// versions. So the platform-specific versions should be used to construct the context within
     /// baseview, and then this object can be passed to the user.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     pub(crate) fn new(context: platform::GlContext) -> GlContext {
         GlContext { context: AssertUnwindSafe(context), phantom: PhantomData }
     }

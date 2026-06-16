@@ -216,7 +216,7 @@ fn code_to_key(
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 /// Map hardware keycode to code.
 ///
 /// In theory, the hardware keycode is device dependent, but in

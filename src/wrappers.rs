@@ -12,7 +12,7 @@
 //! Otherwise, this should be considered a bug and reported accordingly.
 
 /// Wrappers and utilities around Xlib. (provided by x11_dl)
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub mod xlib;
 
 /// Wrappers and utilities around xkbcommon. (provided by xkbcommon_dl)
@@ -20,10 +20,10 @@ pub mod xlib;
 pub mod xkbcommon;
 
 /// Wrappers and utilities around GLX
-#[cfg(all(target_os = "linux", feature = "opengl"))]
+#[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "opengl"))]
 pub mod glx;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub mod connection_poller;
 
 /// Wrappers and utilities around the Win32 API
