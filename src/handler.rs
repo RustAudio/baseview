@@ -2,7 +2,7 @@ use crate::context::WindowContext;
 use crate::{Event, EventStatus, Window};
 use std::cell::{Cell, OnceCell};
 
-pub trait WindowHandler<'a> {
+pub trait WindowHandler<'a>: 'a {
     fn on_frame(&mut self, window: &mut Window);
     fn on_event(&mut self, window: &mut Window, event: Event) -> EventStatus;
 }
