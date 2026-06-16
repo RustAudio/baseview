@@ -54,7 +54,7 @@ pub enum GlError {
 pub struct GlContext {
     // AssertUnwindSafe should *not* be here, but this is needed for now to keep semver compatibility
     // Remove this in 0.2
-    inner: AssertUnwindSafe<crate::platform::gl::GlContext>,
+    pub(crate) inner: AssertUnwindSafe<crate::platform::gl::GlContext>,
     phantom: PhantomData<*mut ()>,
 }
 
