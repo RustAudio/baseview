@@ -26,7 +26,7 @@ use raw_window_handle::{
 
 const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
-use crate::win::hook::{self, KeyboardHookHandle};
+use crate::platform::win::hook::{self, KeyboardHookHandle};
 use crate::{
     Event, EventStatus, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size,
     WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
@@ -459,7 +459,7 @@ unsafe fn wnd_proc_inner(
 /// because of the Windows message loops' reentrant nature. Care still needs to be taken to prevent
 /// `handler` from indirectly triggering other events that would also need to be handled using
 /// `handler`.
-pub(super) struct WindowState {
+pub(crate) struct WindowState {
     /// The HWND belonging to this window. The window's actual state is stored in the `WindowState`
     /// struct associated with this HWND through `unsafe { GetWindowLongPtrW(self.hwnd,
     /// GWLP_USERDATA) } as *const WindowState`.
@@ -529,7 +529,7 @@ impl WindowState {
         handler.on_event(&mut window, event)
     }
 
-    pub(super) fn window_info(&self) -> WindowInfo {
+    pub(crate) fn window_info(&self) -> WindowInfo {
         WindowInfo::from_physical_size(self.current_size.get(), self.current_scale_factor())
     }
 
@@ -540,7 +540,7 @@ impl WindowState {
         }
     }
 
-    pub(super) fn keyboard_state(&self) -> Ref<'_, KeyboardState> {
+    pub(crate) fn keyboard_state(&self) -> Ref<'_, KeyboardState> {
         self.keyboard_state.borrow()
     }
 
@@ -568,7 +568,7 @@ impl WindowState {
 /// Tasks that must be deferred until the end of [`wnd_proc()`] to avoid reentrant `WindowState`
 /// borrows. See the docstring on [`WindowState::deferred_tasks`] for more information.
 #[derive(Debug, Clone)]
-pub(super) enum WindowTask {
+pub(crate) enum WindowTask {
     /// Resize the window to the given size. The size is in logical pixels. DPI scaling is applied
     /// automatically.
     Resize(Size),

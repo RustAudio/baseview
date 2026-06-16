@@ -1,22 +1,7 @@
+use crate::platform::gl::*;
 use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::panic::AssertUnwindSafe;
-
-#[cfg(target_os = "windows")]
-mod win;
-#[cfg(target_os = "windows")]
-use win as platform;
-
-// We need to use this directly within the X11 window creation to negotiate the correct visual
-#[cfg(target_os = "linux")]
-pub(crate) mod x11;
-#[cfg(target_os = "linux")]
-pub(crate) use self::x11 as platform;
-
-#[cfg(target_os = "macos")]
-mod macos;
-#[cfg(target_os = "macos")]
-use macos as platform;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GlConfig {
@@ -63,69 +48,34 @@ pub enum Profile {
 pub enum GlError {
     InvalidWindowHandle,
     VersionNotSupported,
-    CreationFailed(platform::CreationFailedError),
+    CreationFailed(CreationFailedError),
 }
 
 pub struct GlContext {
     // AssertUnwindSafe should *not* be here, but this is needed for now to keep semver compatibility
     // Remove this in 0.2
-    context: AssertUnwindSafe<platform::GlContext>,
+    inner: AssertUnwindSafe<crate::platform::gl::GlContext>,
     phantom: PhantomData<*mut ()>,
 }
 
 impl GlContext {
-    #[cfg(target_os = "windows")]
-    pub(crate) unsafe fn create(
-        parent: &raw_window_handle::RawWindowHandle, config: GlConfig,
-    ) -> Result<GlContext, GlError> {
-        platform::GlContext::create(parent, config)
-            .map(|context| GlContext { context: AssertUnwindSafe(context), phantom: PhantomData })
-    }
-
-    #[cfg(target_os = "macos")]
-    pub(crate) fn create(
-        parent: &objc2_app_kit::NSView, config: GlConfig,
-    ) -> Result<GlContext, GlError> {
-        platform::GlContext::create(parent, config)
-            .map(|context| GlContext { context: AssertUnwindSafe(context), phantom: PhantomData })
-    }
-
-    /// The X11 version needs to be set up in a different way compared to the Windows and macOS
-    /// versions. So the platform-specific versions should be used to construct the context within
-    /// baseview, and then this object can be passed to the user.
-    #[cfg(target_os = "linux")]
-    pub(crate) fn new(context: platform::GlContext) -> GlContext {
-        GlContext { context: AssertUnwindSafe(context), phantom: PhantomData }
+    pub(crate) fn new(context: crate::platform::gl::GlContext) -> GlContext {
+        GlContext { inner: AssertUnwindSafe(context), phantom: PhantomData }
     }
 
     pub unsafe fn make_current(&self) {
-        self.context.make_current();
+        self.inner.make_current();
     }
 
     pub unsafe fn make_not_current(&self) {
-        self.context.make_not_current();
+        self.inner.make_not_current();
     }
 
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        self.context.get_proc_address(symbol)
+        self.inner.get_proc_address(symbol)
     }
 
     pub fn swap_buffers(&self) {
-        self.context.swap_buffers();
-    }
-
-    /// On macOS the `NSOpenGLView` needs to be resized separtely from our main view.
-    #[cfg(target_os = "macos")]
-    pub(crate) fn resize(&self, size: objc2_foundation::NSSize) {
-        self.context.resize(size);
-    }
-
-    /// Pointer to the `NSOpenGLView` this context renders into. Used by
-    /// the parent `NSView`'s `hitTest:` override to collapse hits on the
-    /// render subview to the parent, so AppKit routes `mouseDown:` on
-    /// first click in non-key windows.
-    #[cfg(target_os = "macos")]
-    pub(crate) fn ns_view(&self) -> &objc2_app_kit::NSView {
-        self.context.ns_view()
+        self.inner.swap_buffers();
     }
 }

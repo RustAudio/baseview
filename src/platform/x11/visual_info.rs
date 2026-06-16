@@ -1,4 +1,4 @@
-use crate::x11::xcb_connection::XcbConnection;
+use super::xcb_connection::XcbConnection;
 use std::error::Error;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
@@ -6,9 +6,9 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::COPY_FROM_PARENT;
 
-pub(super) struct WindowVisualConfig {
+pub(crate) struct WindowVisualConfig {
     #[cfg(feature = "opengl")]
-    pub fb_config: Option<crate::gl::x11::FbConfig>,
+    pub fb_config: Option<super::gl::FbConfig>,
 
     pub visual_depth: u8,
     pub visual_id: Visualid,
@@ -24,7 +24,7 @@ impl WindowVisualConfig {
         let Some(gl_config) = gl_config else { return Self::find_best_visual_config(connection) };
 
         let (fb_config, window_config) =
-            crate::gl::platform::GlContext::get_fb_config_and_visual(connection, gl_config)
+            super::gl::GlContext::get_fb_config_and_visual(connection, gl_config)
                 .expect("Could not fetch framebuffer config");
 
         Ok(Self {

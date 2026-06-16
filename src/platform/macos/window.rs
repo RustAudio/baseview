@@ -18,7 +18,7 @@ use crate::{MouseCursor, Size, WindowHandler, WindowInfo, WindowOpenOptions};
 
 #[cfg(feature = "opengl")]
 use crate::gl::GlContext;
-use crate::macos::view::{BaseviewView, ViewParentingType};
+use crate::platform::macos::view::{BaseviewView, ViewParentingType};
 use crate::wrappers::appkit::{create_window, extract_raw_window_handle, View, ViewRef};
 
 pub struct WindowHandle {

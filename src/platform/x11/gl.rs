@@ -1,13 +1,13 @@
-use super::{GlConfig, GlError};
-use crate::x11::XcbConnection;
+use super::*;
+use crate::gl::*;
+use crate::wrappers::glx::*;
+use crate::wrappers::xlib::{XErrorHandler, XLibError};
+
 use std::ffi::{c_void, CString};
 use std::os::raw::c_ulong;
 use std::rc::Rc;
 use x11_dl::error::OpenError;
 use x11_dl::glx::GLXContext;
-
-use crate::wrappers::glx::*;
-use crate::wrappers::xlib::{XErrorHandler, XLibError};
 
 #[derive(Debug)]
 pub enum CreationFailedError {

@@ -1,6 +1,6 @@
 use super::xlib::*;
-use crate::gl::platform::CreationFailedError;
 use crate::gl::{GlConfig, GlError, Profile};
+use crate::platform::gl::CreationFailedError;
 
 use std::ffi::{c_ulong, c_void, CStr};
 use std::os::raw::c_int;

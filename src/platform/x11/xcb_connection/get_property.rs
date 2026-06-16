@@ -78,7 +78,7 @@ impl Error for GetPropertyError {}
 // To test if `get_property` works correctly, set this to 1.
 const PROPERTY_BUFFER_SIZE: u32 = 1024; // 4k of RAM ought to be enough for anyone!
 
-pub(super) fn get_property<T: Pod>(
+pub(crate) fn get_property<T: Pod>(
     window: xproto::Window, property: xproto::Atom, property_type: xproto::Atom,
     conn: &XCBConnection,
 ) -> Result<Vec<T>, GetPropertyError> {

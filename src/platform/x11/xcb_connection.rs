@@ -46,7 +46,7 @@ pub struct XcbConnection {
     pub(crate) atoms: Atoms,
     pub(crate) resources: resource_manager::Database,
     pub(crate) cursor_handle: CursorHandle,
-    pub(super) cursor_cache: RefCell<HashMap<MouseCursor, u32>>,
+    pub(crate) cursor_cache: RefCell<HashMap<MouseCursor, u32>>,
 }
 
 impl XcbConnection {

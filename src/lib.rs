@@ -1,10 +1,3 @@
-#[cfg(target_os = "macos")]
-mod macos;
-#[cfg(target_os = "windows")]
-mod win;
-#[cfg(target_os = "linux")]
-pub(crate) mod x11;
-
 mod clipboard;
 mod event;
 mod keyboard;
@@ -12,6 +5,8 @@ mod mouse_cursor;
 mod window;
 mod window_info;
 mod window_open_options;
+
+pub(crate) mod platform;
 
 #[cfg(feature = "opengl")]
 pub mod gl;

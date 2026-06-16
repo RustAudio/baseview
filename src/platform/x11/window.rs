@@ -27,9 +27,9 @@ use crate::{
 };
 
 #[cfg(feature = "opengl")]
-use crate::gl::{platform, GlContext};
-use crate::x11::event_loop::EventLoop;
-use crate::x11::visual_info::WindowVisualConfig;
+use crate::gl::*;
+
+use super::{event_loop::EventLoop, visual_info::WindowVisualConfig};
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
@@ -280,8 +280,9 @@ impl<'a> Window<'a> {
 
             // Because of the visual negotation we had to take some extra steps to create this context
             let context =
-                platform::GlContext::create(window, Rc::clone(&xcb_connection), fb_config)
+                super::gl::GlContext::create(window, Rc::clone(&xcb_connection), fb_config)
                     .expect("Could not create OpenGL context");
+
             GlContext::new(context)
         });
 
