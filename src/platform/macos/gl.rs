@@ -1,6 +1,6 @@
 #![allow(deprecated)] // OpenGL is deprecated on macOS
 
-use super::{GlConfig, GlError, Profile};
+use crate::gl::{GlConfig, GlError, Profile};
 use objc2::rc::Retained;
 use objc2::AllocAnyThread;
 use objc2::{MainThreadMarker, MainThreadOnly};
