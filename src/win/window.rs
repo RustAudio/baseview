@@ -214,7 +214,7 @@ impl WindowImpl for BaseviewWindow {
 
 /// Our custom `wnd_proc` handler. If the result contains a value, then this is returned after
 /// handling any deferred tasks. otherwise the default window procedure is invoked.
-unsafe fn wnd_proc_inner(
+fn wnd_proc_inner(
     window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM, window_state: &WindowState,
 ) -> Option<LRESULT> {
     match msg {
@@ -463,7 +463,7 @@ pub(super) struct WindowState {
     /// The HWND belonging to this window. The window's actual state is stored in the `WindowState`
     /// struct associated with this HWND through `unsafe { GetWindowLongPtrW(self.hwnd,
     /// GWLP_USERDATA) } as *const WindowState`.
-    pub hwnd: HWND,
+    pub hwnd: HWnd,
     current_size: Cell<PhySize>,
     current_dpi: Cell<Dpi>, // None if in non-system scale policy
     keyboard_state: RefCell<KeyboardState>,
