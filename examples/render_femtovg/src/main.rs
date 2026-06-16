@@ -98,6 +98,9 @@ impl WindowHandler for FemtovgExample {
                 | MouseEvent::DragDropped { position, .. },
             ) => {
                 self.current_mouse_position.set(position.to_physical(&self.current_size.get()));
+                if self.current_mouse_position.get().y > 400 && !_window.has_focus() {
+                    _window.focus()
+                }
                 self.damaged.set(true);
             }
             _ => {}

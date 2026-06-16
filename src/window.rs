@@ -37,11 +37,6 @@ unsafe impl HasRawWindowHandle for WindowHandle {
     }
 }
 
-pub trait WindowHandler {
-    fn on_frame(&self, window: &mut Window);
-    fn on_event(&self, window: &mut Window, event: Event) -> EventStatus;
-}
-
 pub struct Window<'a> {
     window: platform::Window<'a>,
 
