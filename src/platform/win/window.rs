@@ -631,36 +631,38 @@ impl Window<'_> {
         let rect =
             dpi_ctx.client_area_to_nc_area(window_size.into(), style, Dpi::default()).unwrap();
 
-        drop(dpi_ctx);
-
         let is_open = Rc::new(Cell::new(true));
 
-        let parent_handle = ParentHandle { is_open: is_open.clone() };
+        let initializer = {
+            let parent_handle = ParentHandle { is_open: is_open.clone() };
+            let extended_user_32 = extended_user_32.clone();
 
-        let initializer = move |hwnd: HWnd| {
-            let window_state = Rc::new(WindowState::new(
-                hwnd.as_raw(),
-                window_size,
-                options.scale,
-                extended_user_32,
-            ));
+            move |hwnd: HWnd| {
+                let window_state = Rc::new(WindowState::new(
+                    hwnd.as_raw(),
+                    window_size,
+                    options.scale,
+                    extended_user_32,
+                ));
 
-            BaseviewWindow {
-                window_state,
-                initial_size: options.size,
-                handler_builder: Cell::new(Some(Box::new(|w| Box::new(build(w))))),
+                BaseviewWindow {
+                    window_state,
+                    initial_size: options.size,
+                    handler_builder: Cell::new(Some(Box::new(|w| Box::new(build(w))))),
 
-                _parent_handle: parent_handle,
-                _drop_target: None.into(),
-                _keyboard_hook: None.into(),
+                    _parent_handle: parent_handle,
+                    _drop_target: None.into(),
+                    _keyboard_hook: None.into(),
 
-                #[cfg(feature = "opengl")]
-                gl_config: options.gl_config,
+                    #[cfg(feature = "opengl")]
+                    gl_config: options.gl_config,
+                }
             }
         };
 
         let hwnd =
-            create_window(&title, style, rect.size(), parent as *mut _, initializer).unwrap();
+            create_window(&title, style, rect.size(), parent as *mut _, &dpi_ctx, initializer)
+                .unwrap();
 
         // SAFETY: this handle should be safe to use
         let window = unsafe { HWnd::from_raw(hwnd) };
