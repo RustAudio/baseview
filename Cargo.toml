@@ -1,6 +1,6 @@
 [package]
 name = "baseview"
-version = "0.1.3"
+version = "0.1.4"
 authors = [
     "William Light <git@wrl.lhiaudio.com>",
     "Charles Saracco <crsaracco@gmail.com>",
