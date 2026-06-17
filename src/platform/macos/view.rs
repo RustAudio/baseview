@@ -84,7 +84,8 @@ impl BaseviewView {
 
             #[cfg(feature = "opengl")]
             if let Some(gl_config) = options.gl_config {
-                let gl_context = crate::gl::GlContext::create(view.view, gl_config).unwrap();
+                let gl_context = super::gl::GlContext::create(view.view, gl_config).unwrap();
+                let gl_context = crate::gl::GlContext::new(gl_context);
                 let Ok(()) = view.gl_context.set(gl_context) else { unreachable!() };
             }
 
@@ -151,7 +152,7 @@ impl BaseviewView {
         // macOS.
         #[cfg(feature = "opengl")]
         if let Some(gl_context) = this.gl_context.get() {
-            gl_context.resize(size);
+            gl_context.inner.resize(size);
         }
 
         // If this is a standalone window then we'll also need to resize the window itself
@@ -275,7 +276,7 @@ impl ViewImpl for BaseviewView {
     /// `hitTest:` override that collapses hits on baseview's internal
     /// OpenGL render subview to this NSView.
     ///
-    /// `src/gl/macos.rs` attaches an `NSOpenGLView` as a subview of this
+    /// `src/gl/gl` attaches an `NSOpenGLView` as a subview of this
     /// view so the GL context is isolated from event handling. The side
     /// effect is that `[NSView hitTest:]` returns the GL subview for
     /// every click inside our frame — `NSOpenGLView` inherits the
@@ -306,7 +307,7 @@ impl ViewImpl for BaseviewView {
         #[cfg(feature = "opengl")]
         {
             if let Some(gl_context) = this.gl_context.get() {
-                if super_result == gl_context.ns_view() {
+                if *super_result == **gl_context.inner.0.view {
                     return Some(this.view);
                 }
             }

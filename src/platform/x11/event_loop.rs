@@ -1,8 +1,9 @@
+use super::drag_n_drop::DragNDropState;
+use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
+use super::*;
+
 use crate::wrappers::connection_poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
-use crate::x11::drag_n_drop::DragNDropState;
-use crate::x11::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
-use crate::x11::{ParentHandle, Window, WindowInner};
 use crate::{
     Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, WindowEvent, WindowHandler,
     WindowInfo,
@@ -13,7 +14,7 @@ use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::protocol::Event as XEvent;
 
-pub(super) struct EventLoop {
+pub(crate) struct EventLoop {
     handler: Box<dyn WindowHandler>,
     window: WindowInner,
     parent_handle: Option<ParentHandle>,

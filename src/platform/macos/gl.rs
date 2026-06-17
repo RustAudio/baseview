@@ -1,6 +1,6 @@
 #![allow(deprecated)] // OpenGL is deprecated on macOS
 
-use super::{GlConfig, GlError, Profile};
+use crate::gl::{GlConfig, GlError, Profile};
 use objc2::rc::Retained;
 use objc2::AllocAnyThread;
 use objc2::{MainThreadMarker, MainThreadOnly};
@@ -18,7 +18,7 @@ use std::ptr::NonNull;
 
 pub type CreationFailedError = ();
 pub struct GlContext {
-    view: Retained<NSOpenGLView>,
+    pub(crate) view: Retained<NSOpenGLView>,
     context: Retained<NSOpenGLContext>,
 }
 
@@ -119,13 +119,5 @@ impl GlContext {
     pub(crate) fn resize(&self, size: NSSize) {
         self.view.setFrameSize(size);
         self.view.setNeedsDisplay(true);
-    }
-
-    /// Pointer to the `NSOpenGLView` this context renders into. Used by
-    /// the parent `NSView`'s `hitTest:` override to collapse hits on the
-    /// render subview to the parent, so AppKit routes `mouseDown:` on
-    /// first click in non-key windows.
-    pub(crate) fn ns_view(&self) -> &NSOpenGLView {
-        &self.view
     }
 }

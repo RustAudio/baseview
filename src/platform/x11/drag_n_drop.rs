@@ -18,7 +18,7 @@ use x11rb::{
 };
 
 use super::xcb_connection::{Atoms, GetPropertyError};
-use crate::x11::{Window, WindowInner};
+use super::*;
 use crate::{DropData, Event, MouseEvent, PhyPoint, WindowHandler};
 use DragNDropState::*;
 

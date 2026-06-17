@@ -45,7 +45,7 @@ const SHIFT_STATE_ALTGR: ShiftState = 2;
 const N_SHIFT_STATE: ShiftState = 4;
 
 /// Per-window keyboard state.
-pub(super) struct KeyboardState {
+pub(crate) struct KeyboardState {
     hkl: HKL,
     // A map from (vk, is_shifted) to string val
     key_vals: HashMap<(VkCode, ShiftState), String>,

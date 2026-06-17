@@ -18,7 +18,7 @@ use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent, PhyPoint, Poin
 use super::WindowState;
 
 #[implement(IDropTarget)]
-pub(super) struct DropTarget {
+pub(crate) struct DropTarget {
     window_state: Weak<WindowState>,
 
     // These are cached since DragOver and DragLeave callbacks don't provide them,
@@ -28,7 +28,7 @@ pub(super) struct DropTarget {
 }
 
 impl DropTarget {
-    pub(super) fn new(window_state: Weak<WindowState>) -> Self {
+    pub(crate) fn new(window_state: Weak<WindowState>) -> Self {
         Self {
             window_state,
             drag_position: Cell::new(Point::new(0.0, 0.0)),

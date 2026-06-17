@@ -6,14 +6,7 @@ use raw_window_handle::{
 
 use crate::event::{Event, EventStatus};
 use crate::window_open_options::WindowOpenOptions;
-use crate::{MouseCursor, Size};
-
-#[cfg(target_os = "macos")]
-use crate::macos as platform;
-#[cfg(target_os = "windows")]
-use crate::win as platform;
-#[cfg(target_os = "linux")]
-use crate::x11 as platform;
+use crate::{platform, MouseCursor, Size};
 
 pub struct WindowHandle {
     window_handle: platform::WindowHandle,

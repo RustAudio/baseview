@@ -15,7 +15,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::win::BaseviewWindow;
+use super::*;
 use crate::wrappers::win32::window::wnd_proc;
 
 // track all windows opened by this instance of baseview

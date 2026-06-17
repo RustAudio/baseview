@@ -8,7 +8,7 @@ pub struct XkbcommonState {
 }
 
 impl XkbcommonState {
-    pub fn new(xcb_connection: &crate::x11::XcbConnection) -> Option<Self> {
+    pub fn new(xcb_connection: &crate::platform::XcbConnection) -> Option<Self> {
         let xkb_common = xkbc::xkbcommon_option()?;
         let xkb_x11 = xkbc::x11::xkbcommon_x11_option()?;
 

@@ -377,7 +377,7 @@ fn hardware_keycode_to_code(hw_keycode: u16) -> Code {
 
 // Extracts the keyboard modifiers from, e.g., the `state` field of
 // `x11rb::protocol::xproto::ButtonPressEvent`
-pub(super) fn key_mods(mods: KeyButMask) -> Modifiers {
+pub(crate) fn key_mods(mods: KeyButMask) -> Modifiers {
     let mut ret = Modifiers::default();
     let key_masks = [
         (KeyButMask::SHIFT, Modifiers::SHIFT),
@@ -398,7 +398,7 @@ pub(super) fn key_mods(mods: KeyButMask) -> Modifiers {
     ret
 }
 
-pub(super) fn convert_key_press_event(
+pub(crate) fn convert_key_press_event(
     key_press: &KeyPressEvent, state: &mut Option<XkbcommonState>,
 ) -> KeyboardEvent {
     let hw_keycode = key_press.detail;
@@ -418,7 +418,7 @@ pub(super) fn convert_key_press_event(
     KeyboardEvent { code, key, modifiers, location, state, repeat: false, is_composing: false }
 }
 
-pub(super) fn convert_key_release_event(
+pub(crate) fn convert_key_release_event(
     key_release: &KeyReleaseEvent, state: &mut Option<XkbcommonState>,
 ) -> KeyboardEvent {
     let hw_keycode = key_release.detail;

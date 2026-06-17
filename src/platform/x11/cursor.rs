@@ -42,7 +42,7 @@ fn load_first_existing_cursor(
     Ok(None)
 }
 
-pub(super) fn get_xcursor(
+pub(crate) fn get_xcursor(
     conn: &XCBConnection, screen: usize, cursor_handle: &CursorHandle, cursor: MouseCursor,
 ) -> Result<Cursor, Box<dyn Error>> {
     let load = |name: &str| load_cursor(conn, cursor_handle, name);

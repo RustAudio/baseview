@@ -26,7 +26,7 @@ use raw_window_handle::{
 
 const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
-use crate::win::hook::{self, KeyboardHookHandle};
+use super::*;
 use crate::{
     Event, EventStatus, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size,
     WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
@@ -36,8 +36,6 @@ use super::drop_target::DropTarget;
 use super::keyboard::KeyboardState;
 use crate::wrappers::win32::cursor::SystemCursor;
 
-#[cfg(feature = "opengl")]
-use crate::gl::GlContext;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessContext, ExtendedUser32, Rect,
@@ -111,7 +109,7 @@ pub struct BaseviewWindow {
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
     _parent_handle: ParentHandle,
-    _keyboard_hook: Cell<Option<KeyboardHookHandle>>,
+    _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
     _drop_target: Cell<Option<ComObject<DropTarget>>>,
 
     #[cfg(feature = "opengl")]
@@ -161,10 +159,11 @@ impl WindowImpl for BaseviewWindow {
             handle.hwnd = hwnd;
             let handle = RawWindowHandle::Win32(handle);
 
-            let gl_context = unsafe { GlContext::create(&handle, gl_config) }
+            let gl_context = unsafe { gl::GlContext::create(&handle, gl_config) }
                 .expect("Could not create OpenGL context");
 
-            let Ok(()) = self.window_state.gl_context.set(gl_context) else {
+            let Ok(()) = self.window_state.gl_context.set(crate::gl::GlContext::new(gl_context))
+            else {
                 unreachable!();
             };
         };
@@ -459,7 +458,7 @@ unsafe fn wnd_proc_inner(
 /// because of the Windows message loops' reentrant nature. Care still needs to be taken to prevent
 /// `handler` from indirectly triggering other events that would also need to be handled using
 /// `handler`.
-pub(super) struct WindowState {
+pub(crate) struct WindowState {
     /// The HWND belonging to this window. The window's actual state is stored in the `WindowState`
     /// struct associated with this HWND through `unsafe { GetWindowLongPtrW(self.hwnd,
     /// GWLP_USERDATA) } as *const WindowState`.
@@ -484,7 +483,7 @@ pub(super) struct WindowState {
     pub deferred_tasks: RefCell<VecDeque<WindowTask>>,
 
     #[cfg(feature = "opengl")]
-    pub gl_context: core::cell::OnceCell<GlContext>,
+    pub gl_context: core::cell::OnceCell<crate::gl::GlContext>,
 }
 
 impl WindowState {
@@ -529,7 +528,7 @@ impl WindowState {
         handler.on_event(&mut window, event)
     }
 
-    pub(super) fn window_info(&self) -> WindowInfo {
+    pub(crate) fn window_info(&self) -> WindowInfo {
         WindowInfo::from_physical_size(self.current_size.get(), self.current_scale_factor())
     }
 
@@ -540,7 +539,7 @@ impl WindowState {
         }
     }
 
-    pub(super) fn keyboard_state(&self) -> Ref<'_, KeyboardState> {
+    pub(crate) fn keyboard_state(&self) -> Ref<'_, KeyboardState> {
         self.keyboard_state.borrow()
     }
 
@@ -568,7 +567,7 @@ impl WindowState {
 /// Tasks that must be deferred until the end of [`wnd_proc()`] to avoid reentrant `WindowState`
 /// borrows. See the docstring on [`WindowState::deferred_tasks`] for more information.
 #[derive(Debug, Clone)]
-pub(super) enum WindowTask {
+pub(crate) enum WindowTask {
     /// Resize the window to the given size. The size is in logical pixels. DPI scaling is applied
     /// automatically.
     Resize(Size),
@@ -709,7 +708,7 @@ impl Window<'_> {
     }
 
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<&GlContext> {
+    pub fn gl_context(&self) -> Option<&crate::gl::GlContext> {
         self.state.gl_context.get()
     }
 }
