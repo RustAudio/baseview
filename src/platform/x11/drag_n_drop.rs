@@ -19,7 +19,8 @@ use x11rb::{
 
 use super::xcb_connection::{Atoms, GetPropertyError};
 use super::*;
-use crate::{DropData, Event, MouseEvent, PhyPoint, WindowHandler};
+use crate::handler::WindowHandler;
+use crate::{DropData, Event, MouseEvent, PhyPoint};
 use DragNDropState::*;
 
 /// The Drag-N-Drop session state of a `baseview` X11 window, for which it is the target.
@@ -89,7 +90,7 @@ pub(crate) enum DragNDropState {
 
 impl DragNDropState {
     pub fn handle_enter_event(
-        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler,
+        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler<'static>,
         event: &ClientMessageEvent,
     ) -> Result<(), GetPropertyError> {
         let data = event.data.as_data32();
@@ -133,17 +134,14 @@ impl DragNDropState {
 
         // Do this at the end, in case the handler panics, so that it doesn't poison our internal state.
         if interrupted_active_drag {
-            handler.on_event(
-                &mut crate::Window::new(Window { inner: window }),
-                Event::Mouse(MouseEvent::DragLeft),
-            );
+            handler.on_event(Event::Mouse(MouseEvent::DragLeft));
         }
 
         Ok(())
     }
 
     pub fn handle_position_event(
-        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler,
+        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler<'static>,
         event: &ClientMessageEvent,
     ) -> Result<(), ReplyError> {
         let event_data = event.data.as_data32();
@@ -227,15 +225,12 @@ impl DragNDropState {
                     DndAction::from_atom(event_data[4] as Atom, &window.xcb_connection.atoms)
                 };
 
-                handler.on_event(
-                    &mut crate::Window::new(Window { inner: window }),
-                    Event::Mouse(MouseEvent::DragMoved {
-                        position: position.to_logical(&window.window_info),
-                        data: data.clone(),
-                        // We don't get modifiers for drag n drop events.
-                        modifiers: Modifiers::empty(),
-                    }),
-                );
+                handler.on_event(Event::Mouse(MouseEvent::DragMoved {
+                    position: position.to_logical(&window.window_info),
+                    data: data.clone(),
+                    // We don't get modifiers for drag n drop events.
+                    modifiers: Modifiers::empty(),
+                }));
 
                 status_result?;
                 Ok(())
@@ -244,8 +239,7 @@ impl DragNDropState {
     }
 
     pub fn handle_leave_event(
-        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler,
-        event: &ClientMessageEvent,
+        &mut self, handler: &mut dyn WindowHandler, event: &ClientMessageEvent,
     ) {
         let data = event.data.as_data32();
         let event_source_window = data[0] as xproto::Window;
@@ -272,10 +266,7 @@ impl DragNDropState {
 
         // Do this at the end, in case the handler panics, so that it doesn't poison our internal state.
         if left_active_drag {
-            handler.on_event(
-                &mut crate::Window::new(Window { inner: window }),
-                Event::Mouse(MouseEvent::DragLeft),
-            );
+            handler.on_event(Event::Mouse(MouseEvent::DragLeft));
         }
     }
 
@@ -382,15 +373,12 @@ impl DragNDropState {
                 let reply_result =
                     send_finished_event(event_source_window, window, requested_action);
 
-                handler.on_event(
-                    &mut crate::Window::new(Window { inner: window }),
-                    Event::Mouse(MouseEvent::DragDropped {
-                        position: position.to_logical(&window.window_info),
-                        data,
-                        // We don't get modifiers for drag n drop events.
-                        modifiers: Modifiers::empty(),
-                    }),
-                );
+                handler.on_event(Event::Mouse(MouseEvent::DragDropped {
+                    position: position.to_logical(&window.window_info),
+                    data,
+                    // We don't get modifiers for drag n drop events.
+                    modifiers: Modifiers::empty(),
+                }));
 
                 reply_result
             }
@@ -451,25 +439,19 @@ impl DragNDropState {
                     let reply_result = send_finished_event(source_window, window, requested_action);
 
                     // Now that we have actual drop data, we can inform the handler about the drag AND drop events.
-                    handler.on_event(
-                        &mut crate::Window::new(Window { inner: window }),
-                        Event::Mouse(MouseEvent::DragEntered {
-                            position: logical_position,
-                            data: data.clone(),
-                            // We don't get modifiers for drag n drop events.
-                            modifiers: Modifiers::empty(),
-                        }),
-                    );
+                    handler.on_event(Event::Mouse(MouseEvent::DragEntered {
+                        position: logical_position,
+                        data: data.clone(),
+                        // We don't get modifiers for drag n drop events.
+                        modifiers: Modifiers::empty(),
+                    }));
 
-                    handler.on_event(
-                        &mut crate::Window::new(Window { inner: window }),
-                        Event::Mouse(MouseEvent::DragDropped {
-                            position: logical_position,
-                            data: data.clone(),
-                            // We don't get modifiers for drag n drop events.
-                            modifiers: Modifiers::empty(),
-                        }),
-                    );
+                    handler.on_event(Event::Mouse(MouseEvent::DragDropped {
+                        position: logical_position,
+                        data: data.clone(),
+                        // We don't get modifiers for drag n drop events.
+                        modifiers: Modifiers::empty(),
+                    }));
 
                     reply_result
                 } else {
@@ -485,15 +467,12 @@ impl DragNDropState {
                     let reply_result = send_status_event(source_window, window, requested_action);
 
                     // Now that we have actual drop data, we can inform the handler about the drag event.
-                    handler.on_event(
-                        &mut crate::Window::new(Window { inner: window }),
-                        Event::Mouse(MouseEvent::DragEntered {
-                            position: logical_position,
-                            data,
-                            // We don't get modifiers for drag n drop events.
-                            modifiers: Modifiers::empty(),
-                        }),
-                    );
+                    handler.on_event(Event::Mouse(MouseEvent::DragEntered {
+                        position: logical_position,
+                        data,
+                        // We don't get modifiers for drag n drop events.
+                        modifiers: Modifiers::empty(),
+                    }));
 
                     reply_result
                 }

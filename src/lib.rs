@@ -15,6 +15,7 @@ pub mod gl;
 
 pub use clipboard::*;
 pub use event::*;
+pub use handler::WindowHandler;
 pub use mouse_cursor::MouseCursor;
 pub use window::*;
 pub use window_info::*;

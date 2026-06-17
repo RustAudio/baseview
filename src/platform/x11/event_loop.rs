@@ -15,7 +15,7 @@ use x11rb::connection::Connection;
 use x11rb::protocol::Event as XEvent;
 
 pub(crate) struct EventLoop {
-    handler: Box<dyn WindowHandler>,
+    handler: Box<dyn WindowHandler<'static>>,
     window: WindowInner,
     parent_handle: Option<ParentHandle>,
 
@@ -30,7 +30,7 @@ pub(crate) struct EventLoop {
 
 impl EventLoop {
     pub fn new(
-        window: WindowInner, handler: impl WindowHandler + 'static,
+        window: WindowInner, handler: impl WindowHandler<'static>,
         parent_handle: Option<ParentHandle>, xkb_state: Option<XkbcommonState>,
     ) -> Self {
         Self {
@@ -85,7 +85,7 @@ impl EventLoop {
             // if it's already time to draw a new frame.
             let next_frame = last_frame + self.frame_interval;
             if Instant::now() >= next_frame {
-                self.handler.on_frame(&mut crate::Window::new(Window { inner: &self.window }));
+                self.handler.on_frame();
                 last_frame = Instant::max(next_frame, Instant::now() - self.frame_interval);
             }
 
@@ -180,7 +180,7 @@ impl EventLoop {
                         // TODO: log warning
                     }
                 } else if event.type_ == self.window.xcb_connection.atoms.XdndLeave {
-                    self.drag_n_drop.handle_leave_event(&self.window, &mut *self.handler, &event);
+                    self.drag_n_drop.handle_leave_event(&mut *self.handler, &event);
                 }
             }
 

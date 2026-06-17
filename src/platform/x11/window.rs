@@ -1,28 +1,22 @@
 use std::cell::Cell;
 use std::error::Error;
-use std::ffi::c_void;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use raw_window_handle::{
-    HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, XlibDisplayHandle,
-    XlibWindowHandle,
-};
+use raw_window_handle::{HasRawWindowHandle, HasWindowHandle, RawWindowHandle, XlibWindowHandle};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    AtomEnum, ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, CreateGCAux,
-    CreateWindowAux, EventMask, InputFocus, PropMode, Visualid, Window as XWindow, WindowClass,
+    AtomEnum, ConnectionExt, CreateGCAux, CreateWindowAux, EventMask, PropMode, WindowClass,
 };
 use x11rb::wrapper::ConnectionExt as _;
-use x11rb::CURRENT_TIME;
 
 use super::XcbConnection;
 use crate::{
-    Event, MouseCursor, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    Event, MouseCursor, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
     WindowScalePolicy,
 };
 
@@ -93,24 +87,7 @@ impl Drop for ParentHandle {
     }
 }
 
-pub(crate) struct WindowInner {
-    // GlContext should be dropped **before** XcbConnection is dropped
-    #[cfg(feature = "opengl")]
-    gl_context: Option<GlContext>,
-
-    pub(crate) xcb_connection: Rc<XcbConnection>,
-    pub(crate) window_id: XWindow,
-    pub(crate) window_info: WindowInfo,
-    visual_id: Visualid,
-    mouse_cursor: Cell<MouseCursor>,
-
-    pub(crate) close_requested: Cell<bool>,
-    pub(crate) is_focused: Cell<bool>,
-}
-
-pub struct Window<'a> {
-    pub(crate) inner: &'a WindowInner,
-}
+pub struct Window;
 
 // Hack to allow sending a RawWindowHandle between threads. Do not make public
 struct SendableRwh(RawWindowHandle);
@@ -119,11 +96,11 @@ unsafe impl Send for SendableRwh {}
 
 type WindowOpenResult = Result<SendableRwh, ()>;
 
-impl<'a> Window<'a> {
+impl Window {
     pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
-        P: HasRawWindowHandle,
-        H: WindowHandler + 'static,
+        P: HasWindowHandle,
+        H: for<'a> WindowHandler<'a>,
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
@@ -300,13 +277,11 @@ impl<'a> Window<'a> {
             gl_context,
         };
 
-        let mut window = crate::Window::new(Window { inner: &mut inner });
-
         let handler = build(&mut window);
 
         // Send an initial window resized event so the user is alerted of
         // the correct dpi scaling.
-        handler.on_event(&mut window, Event::Window(WindowEvent::Resized(window_info)));
+        handler.on_event(Event::Window(WindowEvent::Resized(window_info)));
 
         let _ = tx.send(Ok(SendableRwh(window.raw_window_handle())));
 
@@ -315,83 +290,9 @@ impl<'a> Window<'a> {
         Ok(())
     }
 
-    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) {
-        if self.inner.mouse_cursor.get() == mouse_cursor {
-            return;
-        }
-
-        let xid = self.inner.xcb_connection.get_cursor(mouse_cursor).unwrap();
-
-        if xid != 0 {
-            let _ = self.inner.xcb_connection.conn.change_window_attributes(
-                self.inner.window_id,
-                &ChangeWindowAttributesAux::new().cursor(xid),
-            );
-            let _ = self.inner.xcb_connection.conn.flush();
-        }
-
-        self.inner.mouse_cursor.set(mouse_cursor);
-    }
-
-    pub fn close(&self) {
-        self.inner.close_requested.set(true);
-    }
-
-    pub fn has_focus(&self) -> bool {
-        self.inner.is_focused.get()
-    }
-
-    pub fn focus(&self) {
-        let _ = self.inner.xcb_connection.conn.set_input_focus(
-            InputFocus::POINTER_ROOT,
-            self.inner.window_id,
-            CURRENT_TIME,
-        );
-        let _ = self.inner.xcb_connection.conn.flush();
-    }
-
-    pub fn resize(&self, size: Size) {
-        let scaling = self.inner.window_info.scale();
-        let new_window_info = WindowInfo::from_logical_size(size, scaling);
-
-        let _ = self.inner.xcb_connection.conn.configure_window(
-            self.inner.window_id,
-            &ConfigureWindowAux::new()
-                .width(new_window_info.physical_size().width)
-                .height(new_window_info.physical_size().height),
-        );
-        let _ = self.inner.xcb_connection.conn.flush();
-
-        // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
-        // and notify the window handler about it
-    }
-
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<&crate::gl::GlContext> {
+    pub fn gl_context(&self) -> Option<&GlContext> {
         self.inner.gl_context.as_ref()
-    }
-}
-
-unsafe impl<'a> HasRawWindowHandle for Window<'a> {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        let mut handle = XlibWindowHandle::empty();
-
-        handle.window = self.inner.window_id.into();
-        handle.visual_id = self.inner.visual_id.into();
-
-        RawWindowHandle::Xlib(handle)
-    }
-}
-
-unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
-    fn raw_display_handle(&self) -> RawDisplayHandle {
-        let display = self.inner.xcb_connection.conn.xlib_display();
-        let mut handle = XlibDisplayHandle::empty();
-
-        handle.display = display as *mut c_void;
-        handle.screen = self.inner.xcb_connection.conn.default_screen();
-
-        RawDisplayHandle::Xlib(handle)
     }
 }
 

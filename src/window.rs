@@ -1,10 +1,9 @@
-use raw_window_handle::{HasRawWindowHandle, HasWindowHandle};
-use std::marker::PhantomData;
-use std::process::Output;
-
-use crate::event::{Event, EventStatus};
+use crate::context::WindowContext;
+use crate::handler::WindowHandler;
+use crate::platform;
 use crate::window_open_options::WindowOpenOptions;
-use crate::{platform, MouseCursor, Size};
+use raw_window_handle::HasWindowHandle;
+use std::marker::PhantomData;
 
 pub struct WindowHandle {
     window_handle: platform::WindowHandle,
@@ -36,7 +35,7 @@ pub struct Window {
 impl Window {
     pub fn open_parented<P, H, B>(
         parent: &impl HasWindowHandle, options: WindowOpenOptions,
-        build: impl for<'a> FnOnce(WindowContext<'a>) -> H<'a>,
+        build: impl for<'a> FnOnce(WindowContext<'a>) -> H,
     ) -> WindowHandle
     where
         H: for<'a> WindowHandler<'a>,
