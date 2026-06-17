@@ -35,7 +35,7 @@ impl From<OpenError> for GlError {
 pub struct GlContext {
     glx: Glx,
     window: c_ulong,
-    connection: Rc<XcbConnection>,
+    connection: Rc<X11Connection>,
     context: GLXContext,
 }
 
@@ -63,7 +63,7 @@ impl GlContext {
     ///
     /// Use [Self::get_fb_config_and_visual] to create both of these things.
     pub fn create(
-        window: c_ulong, connection: Rc<XcbConnection>, config: FbConfig,
+        window: c_ulong, connection: Rc<X11Connection>, config: FbConfig,
     ) -> Result<GlContext, GlError> {
         let glx = Glx::open()?;
 
@@ -113,7 +113,7 @@ impl GlContext {
     /// This needs to be passed to [Self::create] along with a handle to a window that was created
     /// using the visual also returned from this function.
     pub fn get_fb_config_and_visual(
-        connection: &XcbConnection, config: GlConfig,
+        connection: &X11Connection, config: GlConfig,
     ) -> Result<(FbConfig, WindowConfig), GlError> {
         let glx = Glx::open()?;
 

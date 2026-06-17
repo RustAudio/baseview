@@ -1,12 +1,12 @@
-use std::cell::Cell;
 use std::error::Error;
+use std::num::NonZero;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use raw_window_handle::{HasRawWindowHandle, HasWindowHandle, RawWindowHandle, XlibWindowHandle};
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
@@ -14,19 +14,16 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::wrapper::ConnectionExt as _;
 
-use super::XcbConnection;
-use crate::{
-    Event, MouseCursor, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
-    WindowScalePolicy,
-};
-
+use super::X11Connection;
+use super::{event_loop::EventLoop, visual_info::WindowVisualConfig};
+use crate::context::WindowContext;
 #[cfg(feature = "opengl")]
 use crate::gl::*;
-
-use super::{event_loop::EventLoop, visual_info::WindowVisualConfig};
+use crate::platform::x11::window_shared::WindowInner;
+use crate::{Event, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy};
 
 pub struct WindowHandle {
-    raw_window_handle: Option<RawWindowHandle>,
+    window_id: Option<NonZero<x11rb::protocol::xproto::Window>>,
     event_loop_handle: Cell<Option<JoinHandle<()>>>,
     close_requested: Arc<AtomicBool>,
     is_open: Arc<AtomicBool>,
@@ -45,18 +42,6 @@ impl WindowHandle {
     }
 }
 
-unsafe impl HasRawWindowHandle for WindowHandle {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        if let Some(raw_window_handle) = self.raw_window_handle {
-            if self.is_open.load(Ordering::Relaxed) {
-                return raw_window_handle;
-            }
-        }
-
-        RawWindowHandle::Xlib(XlibWindowHandle::empty())
-    }
-}
-
 pub(crate) struct ParentHandle {
     close_requested: Arc<AtomicBool>,
     is_open: Arc<AtomicBool>,
@@ -67,7 +52,7 @@ impl ParentHandle {
         let close_requested = Arc::new(AtomicBool::new(false));
         let is_open = Arc::new(AtomicBool::new(true));
         let handle = WindowHandle {
-            raw_window_handle: None,
+            window_id: None,
             event_loop_handle: None.into(),
             close_requested: Arc::clone(&close_requested),
             is_open: Arc::clone(&is_open),
@@ -89,25 +74,20 @@ impl Drop for ParentHandle {
 
 pub struct Window;
 
-// Hack to allow sending a RawWindowHandle between threads. Do not make public
-struct SendableRwh(RawWindowHandle);
-
-unsafe impl Send for SendableRwh {}
-
-type WindowOpenResult = Result<SendableRwh, ()>;
+type WindowOpenResult = Result<NonZero<x11rb::protocol::xproto::Window>, ()>;
 
 impl Window {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
+    pub fn open_parented<H>(
+        parent: &impl HasWindowHandle, options: WindowOpenOptions,
+        build: impl for<'a> FnOnce(WindowContext<'a>) -> H + Send + 'static,
+    ) -> WindowHandle
     where
-        P: HasWindowHandle,
         H: for<'a> WindowHandler<'a>,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
     {
         // Convert parent into something that X understands
-        let parent_id = match parent.raw_window_handle() {
+        let parent_id = match parent.window_handle().unwrap().as_raw() {
             RawWindowHandle::Xlib(h) => h.window as u32,
-            RawWindowHandle::Xcb(h) => h.window,
+            RawWindowHandle::Xcb(h) => h.window.get(),
             h => panic!("unsupported parent handle type {:?}", h),
         };
 
@@ -119,16 +99,16 @@ impl Window {
         });
 
         let raw_window_handle = rx.recv().unwrap().unwrap();
-        window_handle.raw_window_handle = Some(raw_window_handle.0);
+        window_handle.window_id = Some(raw_window_handle);
         window_handle.event_loop_handle = Some(join_handle).into();
         window_handle
     }
 
-    pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
+    pub fn open_blocking<H>(
+        options: WindowOpenOptions,
+        build: impl for<'a> FnOnce(WindowContext<'a>) -> H + Send + 'static,
+    ) where
+        H: for<'a> WindowHandler<'a>,
     {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
@@ -143,18 +123,17 @@ impl Window {
         });
     }
 
-    fn window_thread<H, B>(
-        parent: Option<u32>, options: WindowOpenOptions, build: B,
+    fn window_thread<H>(
+        parent: Option<u32>, options: WindowOpenOptions,
+        build: impl for<'a> FnOnce(WindowContext<'a>) -> H + Send + 'static,
         tx: mpsc::SyncSender<WindowOpenResult>, parent_handle: Option<ParentHandle>,
     ) -> Result<(), Box<dyn Error>>
     where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
+        H: for<'a> WindowHandler<'a>,
     {
         // Connect to the X server
         // FIXME: baseview error type instead of unwrap()
-        let xcb_connection = XcbConnection::new()?;
+        let xcb_connection = X11Connection::new()?;
 
         // Setup xkbcommon
         let xkb_state = crate::wrappers::xkbcommon::XkbcommonState::new(&xcb_connection);
@@ -184,10 +163,13 @@ impl Window {
         #[cfg(not(feature = "opengl"))]
         let visual_info = WindowVisualConfig::find_best_visual_config(&xcb_connection)?;
 
-        let window_id = xcb_connection.conn.generate_id()?;
+        let Some(window_id) = NonZero::new(xcb_connection.conn.generate_id()?) else {
+            unreachable!();
+        };
+
         xcb_connection.conn.create_window(
             visual_info.visual_depth,
-            window_id,
+            window_id.get(),
             parent_id,
             0,                                         // x coordinate of the new window
             0,                                         // y coordinate of the new window
@@ -214,13 +196,13 @@ impl Window {
                 .colormap(visual_info.color_map)
                 .border_pixel(0),
         )?;
-        xcb_connection.conn.map_window(window_id)?;
+        xcb_connection.conn.map_window(window_id.get())?;
 
         // Change window title
         let title = options.title;
         xcb_connection.conn.change_property8(
             PropMode::REPLACE,
-            window_id,
+            window_id.get(),
             AtomEnum::WM_NAME,
             AtomEnum::STRING,
             title.as_bytes(),
@@ -228,7 +210,7 @@ impl Window {
 
         xcb_connection.conn.change_property32(
             PropMode::REPLACE,
-            window_id,
+            window_id.get(),
             xcb_connection.atoms.WM_PROTOCOLS,
             AtomEnum::ATOM,
             &[xcb_connection.atoms.WM_DELETE_WINDOW],
@@ -237,7 +219,7 @@ impl Window {
         // Enable drag and drop (TODO: Make this toggleable?)
         xcb_connection.conn.change_property32(
             PropMode::REPLACE,
-            window_id,
+            window_id.get(),
             xcb_connection.atoms.XdndAware,
             AtomEnum::ATOM,
             &[5u32], // Latest version; hasn't changed since 2002
@@ -253,7 +235,7 @@ impl Window {
         let gl_context = visual_info.fb_config.map(|fb_config| {
             use std::ffi::c_ulong;
 
-            let window = window_id as c_ulong;
+            let window = window_id.get() as c_ulong;
 
             // Because of the visual negotation we had to take some extra steps to create this context
             let context =
@@ -263,36 +245,26 @@ impl Window {
             GlContext::new(context)
         });
 
-        let mut inner = WindowInner {
+        let inner = Rc::new(WindowInner::new(
             xcb_connection,
             window_id,
             window_info,
-            visual_id: visual_info.visual_id,
-            mouse_cursor: Cell::new(MouseCursor::default()),
-
-            close_requested: Cell::new(false),
-            is_focused: false.into(),
-
+            visual_info.visual_id,
             #[cfg(feature = "opengl")]
             gl_context,
-        };
+        ));
 
-        let handler = build(&mut window);
+        let handler = build(WindowContext::new(Rc::clone(&inner)));
 
         // Send an initial window resized event so the user is alerted of
         // the correct dpi scaling.
         handler.on_event(Event::Window(WindowEvent::Resized(window_info)));
 
-        let _ = tx.send(Ok(SendableRwh(window.raw_window_handle())));
+        let _ = tx.send(Ok(window_id));
 
         EventLoop::new(inner, handler, parent_handle, xkb_state).run()?;
 
         Ok(())
-    }
-
-    #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<&GlContext> {
-        self.inner.gl_context.as_ref()
     }
 }
 

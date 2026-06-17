@@ -1,7 +1,7 @@
 mod xcb_connection;
 
 use std::rc::Rc;
-pub(crate) use xcb_connection::XcbConnection;
+pub(crate) use xcb_connection::X11Connection;
 
 mod window;
 pub use window::*;

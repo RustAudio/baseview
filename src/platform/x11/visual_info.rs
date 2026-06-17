@@ -1,4 +1,4 @@
-use super::xcb_connection::XcbConnection;
+use super::xcb_connection::X11Connection;
 use std::error::Error;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
@@ -19,7 +19,7 @@ pub(crate) struct WindowVisualConfig {
 impl WindowVisualConfig {
     #[cfg(feature = "opengl")]
     pub fn find_best_visual_config_for_gl(
-        connection: &XcbConnection, gl_config: Option<crate::gl::GlConfig>,
+        connection: &X11Connection, gl_config: Option<crate::gl::GlConfig>,
     ) -> Result<Self, Box<dyn Error>> {
         let Some(gl_config) = gl_config else { return Self::find_best_visual_config(connection) };
 
@@ -35,7 +35,7 @@ impl WindowVisualConfig {
         })
     }
 
-    pub fn find_best_visual_config(connection: &XcbConnection) -> Result<Self, Box<dyn Error>> {
+    pub fn find_best_visual_config(connection: &X11Connection) -> Result<Self, Box<dyn Error>> {
         match find_visual_for_depth(connection.screen(), 32) {
             None => Ok(Self::copy_from_parent()),
             Some(visual_id) => Ok(Self {
@@ -62,7 +62,7 @@ impl WindowVisualConfig {
 // For this 32-bit depth to work, you also need to define a color map and set a border
 // pixel: https://cgit.freedesktop.org/xorg/xserver/tree/dix/window.c#n818
 fn create_color_map(
-    connection: &XcbConnection, visual_id: Visualid,
+    connection: &X11Connection, visual_id: Visualid,
 ) -> Result<Colormap, Box<dyn Error>> {
     let colormap = connection.conn.generate_id()?;
     connection.conn.create_colormap(
