@@ -49,6 +49,19 @@ impl ExtendedUser32 {
     }
 }
 
+impl Clone for ExtendedUser32 {
+    fn clone(&self) -> Self {
+        let library = unsafe { LibraryModule::load(s!("user32.dll")).unwrap() };
+        Self {
+            _library: library,
+
+            set_thread_dpi_awareness_context: *self.set_thread_dpi_awareness_context,
+            adjust_window_rect_ex_for_dpi: *self.adjust_window_rect_ex_for_dpi,
+            get_dpi_for_window: *self.get_dpi_for_window,
+        }
+    }
+}
+
 struct LibraryModule(NonNull<c_void>);
 
 impl LibraryModule {

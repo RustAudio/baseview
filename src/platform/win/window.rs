@@ -633,27 +633,30 @@ impl Window<'_> {
 
         let is_open = Rc::new(Cell::new(true));
 
-        let parent_handle = ParentHandle { is_open: is_open.clone() };
+        let initializer = {
+            let parent_handle = ParentHandle { is_open: is_open.clone() };
+            let extended_user_32 = extended_user_32.clone();
 
-        let initializer = move |hwnd: HWnd| {
-            let window_state = Rc::new(WindowState::new(
-                hwnd.as_raw(),
-                window_size,
-                options.scale,
-                extended_user_32,
-            ));
+            move |hwnd: HWnd| {
+                let window_state = Rc::new(WindowState::new(
+                    hwnd.as_raw(),
+                    window_size,
+                    options.scale,
+                    extended_user_32,
+                ));
 
-            BaseviewWindow {
-                window_state,
-                initial_size: options.size,
-                handler_builder: Cell::new(Some(Box::new(|w| Box::new(build(w))))),
+                BaseviewWindow {
+                    window_state,
+                    initial_size: options.size,
+                    handler_builder: Cell::new(Some(Box::new(|w| Box::new(build(w))))),
 
-                _parent_handle: parent_handle,
-                _drop_target: None.into(),
-                _keyboard_hook: None.into(),
+                    _parent_handle: parent_handle,
+                    _drop_target: None.into(),
+                    _keyboard_hook: None.into(),
 
-                #[cfg(feature = "opengl")]
-                gl_config: options.gl_config,
+                    #[cfg(feature = "opengl")]
+                    gl_config: options.gl_config,
+                }
             }
         };
 
