@@ -17,8 +17,6 @@ use x11rb::wrapper::ConnectionExt as _;
 use super::X11Connection;
 use super::{event_loop::EventLoop, visual_info::WindowVisualConfig};
 use crate::context::WindowContext;
-#[cfg(feature = "opengl")]
-use crate::gl::*;
 use crate::platform::x11::window_shared::WindowInner;
 use crate::{Event, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy};
 
@@ -230,10 +228,10 @@ impl Window {
 
             // Because of the visual negotation we had to take some extra steps to create this context
             let context =
-                super::gl::GlContext::create(window, Rc::clone(&xcb_connection), fb_config)
+                super::gl::GlContextInner::create(window, Rc::clone(&xcb_connection), fb_config)
                     .expect("Could not create OpenGL context");
 
-            GlContext::new(context)
+            Rc::new(context)
         });
 
         let inner = Rc::new(WindowInner::new(

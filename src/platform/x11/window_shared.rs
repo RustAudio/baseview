@@ -1,4 +1,3 @@
-use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::X11Connection;
 use crate::{MouseCursor, Size, WindowInfo};
 use raw_window_handle::{DisplayHandle, XcbWindowHandle};
@@ -15,7 +14,7 @@ use x11rb::CURRENT_TIME;
 pub(crate) struct WindowInner {
     // GlContext should be dropped **before** XcbConnection is dropped
     #[cfg(feature = "opengl")]
-    gl_context: Option<crate::gl::GlContext>,
+    gl_context: Option<super::gl::GlContext>,
 
     pub(crate) connection: Rc<X11Connection>,
     pub(crate) window_id: NonZero<XWindow>,
@@ -30,7 +29,7 @@ pub(crate) struct WindowInner {
 impl WindowInner {
     pub(crate) fn new(
         connection: Rc<X11Connection>, window_id: NonZero<XWindow>, window_info: WindowInfo,
-        visual_id: Visualid, #[cfg(feature = "opengl")] gl_context: Option<crate::gl::GlContext>,
+        visual_id: Visualid, #[cfg(feature = "opengl")] gl_context: Option<super::gl::GlContext>,
     ) -> Self {
         Self {
             connection,
@@ -105,5 +104,10 @@ impl WindowInner {
 
     pub fn display_handle(&self) -> DisplayHandle<'_> {
         self.connection.display_handle()
+    }
+
+    #[cfg(feature = "opengl")]
+    pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
+        Some(crate::gl::GlContext::new(Rc::clone(self.gl_context.as_ref()?)))
     }
 }

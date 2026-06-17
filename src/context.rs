@@ -32,6 +32,11 @@ impl WindowContext {
     pub fn resize(&mut self, size: Size) {
         self.inner.resize(size);
     }
+
+    #[cfg(feature = "opengl")]
+    pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
+        self.inner.gl_context()
+    }
 }
 
 impl HasWindowHandle for WindowContext {

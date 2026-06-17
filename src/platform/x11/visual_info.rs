@@ -24,7 +24,7 @@ impl WindowVisualConfig {
         let Some(gl_config) = gl_config else { return Self::find_best_visual_config(connection) };
 
         let (fb_config, window_config) =
-            super::gl::GlContext::get_fb_config_and_visual(connection, gl_config)
+            super::gl::GlContextInner::get_fb_config_and_visual(connection, gl_config)
                 .expect("Could not fetch framebuffer config");
 
         Ok(Self {
