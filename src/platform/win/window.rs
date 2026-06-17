@@ -631,8 +631,6 @@ impl Window<'_> {
         let rect =
             dpi_ctx.client_area_to_nc_area(window_size.into(), style, Dpi::default()).unwrap();
 
-        drop(dpi_ctx);
-
         let is_open = Rc::new(Cell::new(true));
 
         let parent_handle = ParentHandle { is_open: is_open.clone() };
@@ -660,7 +658,8 @@ impl Window<'_> {
         };
 
         let hwnd =
-            create_window(&title, style, rect.size(), parent as *mut _, initializer).unwrap();
+            create_window(&title, style, rect.size(), parent as *mut _, &dpi_ctx, initializer)
+                .unwrap();
 
         // SAFETY: this handle should be safe to use
         let window = unsafe { HWnd::from_raw(hwnd) };
