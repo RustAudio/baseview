@@ -15,7 +15,7 @@ use x11rb::connection::Connection;
 use x11rb::protocol::Event as XEvent;
 
 pub(crate) struct EventLoop {
-    handler: Box<dyn WindowHandler<'static>>,
+    handler: Box<dyn WindowHandler>,
     window: Rc<WindowInner>,
     parent_handle: Option<ParentHandle>,
 
@@ -30,8 +30,8 @@ pub(crate) struct EventLoop {
 
 impl EventLoop {
     pub fn new(
-        window: Rc<WindowInner>, handler: impl WindowHandler<'static>,
-        parent_handle: Option<ParentHandle>, xkb_state: Option<XkbcommonState>,
+        window: Rc<WindowInner>, handler: impl WindowHandler, parent_handle: Option<ParentHandle>,
+        xkb_state: Option<XkbcommonState>,
     ) -> Self {
         Self {
             window,

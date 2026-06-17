@@ -7,8 +7,8 @@ use rtrb::{Consumer, RingBuffer};
 #[cfg(target_os = "macos")]
 use baseview::copy_to_clipboard;
 use baseview::{
-    Event, EventStatus, MouseEvent, PhyPoint, PhySize, Window, WindowEvent, WindowHandler,
-    WindowInfo, WindowOpenOptions,
+    Event, EventStatus, MouseEvent, PhyPoint, PhySize, Window, WindowContext, WindowEvent,
+    WindowHandler, WindowInfo, WindowOpenOptions,
 };
 
 #[derive(Debug, Clone)]
@@ -19,16 +19,16 @@ enum Message {
 struct OpenWindowExample {
     rx: RefCell<Consumer<Message>>,
 
-    _ctx: softbuffer::Context,
-    surface: RefCell<softbuffer::Surface>,
-    current_size: Cell<WindowInfo>,
-    mouse_pos: Cell<PhyPoint>,
-    is_cursor_inside: Cell<bool>,
-    damaged: Cell<bool>,
+    window_context: WindowContext,
+    surface: softbuffer::Surface<WindowContext, WindowContext>,
+    current_size: WindowInfo,
+    mouse_pos: PhyPoint,
+    is_cursor_inside: bool,
+    damaged: bool,
 }
 
 impl WindowHandler for OpenWindowExample {
-    fn on_frame(&self, _window: &mut Window) {
+    fn on_frame(&self) {
         if !self.damaged.get() {
             return;
         }
@@ -98,7 +98,7 @@ impl WindowHandler for OpenWindowExample {
         }
     }
 
-    fn on_event(&self, _window: &mut Window, event: Event) -> EventStatus {
+    fn on_event(&self, event: Event) -> EventStatus {
         match &event {
             #[cfg(target_os = "macos")]
             Event::Mouse(MouseEvent::ButtonPressed { .. }) => copy_to_clipboard("This is a test!"),
@@ -151,12 +151,13 @@ fn main() {
     });
 
     Window::open_blocking(window_open_options, |window| {
-        let ctx = unsafe { softbuffer::Context::new(window) }.unwrap();
-        let mut surface = unsafe { softbuffer::Surface::new(&ctx, window) }.unwrap();
+        let ctx = unsafe { softbuffer::Context::new(window.clone()) }.unwrap();
+        let mut surface = unsafe { softbuffer::Surface::new(&ctx, window.clone()) }.unwrap();
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         OpenWindowExample {
             _ctx: ctx,
+            window_context: window,
             surface: surface.into(),
             rx: rx.into(),
             current_size: WindowInfo::from_physical_size(PhySize::new(512, 512), 1.0).into(),

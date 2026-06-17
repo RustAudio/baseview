@@ -14,6 +14,7 @@ pub(crate) mod platform;
 pub mod gl;
 
 pub use clipboard::*;
+pub use context::WindowContext;
 pub use event::*;
 pub use handler::WindowHandler;
 pub use mouse_cursor::MouseCursor;

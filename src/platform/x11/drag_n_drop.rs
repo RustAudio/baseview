@@ -90,7 +90,7 @@ pub(crate) enum DragNDropState {
 
 impl DragNDropState {
     pub fn handle_enter_event(
-        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler<'static>,
+        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler,
         event: &ClientMessageEvent,
     ) -> Result<(), GetPropertyError> {
         let data = event.data.as_data32();
@@ -140,7 +140,7 @@ impl DragNDropState {
     }
 
     pub fn handle_position_event(
-        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler<'static>,
+        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler,
         event: &ClientMessageEvent,
     ) -> Result<(), ReplyError> {
         let event_data = event.data.as_data32();
@@ -237,7 +237,7 @@ impl DragNDropState {
     }
 
     pub fn handle_leave_event(
-        &mut self, handler: &mut dyn WindowHandler<'static>, event: &ClientMessageEvent,
+        &mut self, handler: &mut dyn WindowHandler, event: &ClientMessageEvent,
     ) {
         let data = event.data.as_data32();
         let event_source_window = data[0] as xproto::Window;
@@ -269,7 +269,7 @@ impl DragNDropState {
     }
 
     pub fn handle_drop_event(
-        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler<'static>,
+        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler,
         event: &ClientMessageEvent,
     ) -> Result<(), ConnectionError> {
         let data = event.data.as_data32();
@@ -384,7 +384,7 @@ impl DragNDropState {
     }
 
     pub fn handle_selection_notify_event(
-        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler<'static>,
+        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler,
         event: &SelectionNotifyEvent,
     ) -> Result<(), ConnectionError> {
         // Ignore the event if we weren't actually waiting for a selection notify event

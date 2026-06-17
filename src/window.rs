@@ -33,23 +33,17 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn open_parented<H>(
+    pub fn open_parented<H: WindowHandler>(
         parent: &impl HasWindowHandle, options: WindowOpenOptions,
-        build: impl for<'a> FnOnce(WindowContext<'a>) -> H + Send + 'static,
-    ) -> WindowHandle
-    where
-        H: for<'a> WindowHandler<'a>,
-    {
+        build: impl for<'a> FnOnce(WindowContext) -> H + Send + 'static,
+    ) -> WindowHandle {
         let window_handle = platform::Window::open_parented(parent, options, build);
         WindowHandle::new(window_handle)
     }
 
-    pub fn open_blocking<H>(
-        options: WindowOpenOptions,
-        build: impl for<'a> FnOnce(WindowContext<'a>) -> H + Send + 'static,
-    ) where
-        H: for<'a> WindowHandler<'a>,
-    {
+    pub fn open_blocking<H: WindowHandler>(
+        options: WindowOpenOptions, build: impl FnOnce(WindowContext) -> H + Send + 'static,
+    ) {
         platform::Window::open_blocking(options, build)
     }
 }

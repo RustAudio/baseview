@@ -77,13 +77,10 @@ pub struct Window;
 type WindowOpenResult = Result<NonZero<x11rb::protocol::xproto::Window>, ()>;
 
 impl Window {
-    pub fn open_parented<H>(
+    pub fn open_parented<H: WindowHandler>(
         parent: &impl HasWindowHandle, options: WindowOpenOptions,
-        build: impl for<'a> FnOnce(WindowContext<'a>) -> H + Send + 'static,
-    ) -> WindowHandle
-    where
-        H: for<'a> WindowHandler<'a>,
-    {
+        build: impl FnOnce(WindowContext) -> H + Send + 'static,
+    ) -> WindowHandle {
         // Convert parent into something that X understands
         let parent_id = match parent.window_handle().unwrap().as_raw() {
             RawWindowHandle::Xlib(h) => h.window as u32,
@@ -104,12 +101,9 @@ impl Window {
         window_handle
     }
 
-    pub fn open_blocking<H>(
-        options: WindowOpenOptions,
-        build: impl for<'a> FnOnce(WindowContext<'a>) -> H + Send + 'static,
-    ) where
-        H: for<'a> WindowHandler<'a>,
-    {
+    pub fn open_blocking<H: WindowHandler>(
+        options: WindowOpenOptions, build: impl FnOnce(WindowContext) -> H + Send + 'static,
+    ) {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
 
         let thread = thread::spawn(move || {
@@ -123,14 +117,11 @@ impl Window {
         });
     }
 
-    fn window_thread<H>(
+    fn window_thread<H: WindowHandler>(
         parent: Option<u32>, options: WindowOpenOptions,
-        build: impl for<'a> FnOnce(WindowContext<'a>) -> H + Send + 'static,
+        build: impl FnOnce(WindowContext) -> H + Send + 'static,
         tx: mpsc::SyncSender<WindowOpenResult>, parent_handle: Option<ParentHandle>,
-    ) -> Result<(), Box<dyn Error>>
-    where
-        H: for<'a> WindowHandler<'a>,
-    {
+    ) -> Result<(), Box<dyn Error>> {
         // Connect to the X server
         // FIXME: baseview error type instead of unwrap()
         let xcb_connection = X11Connection::new()?;

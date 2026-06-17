@@ -1,15 +1,16 @@
 use crate::{platform, MouseCursor, Size};
-use raw_window_handle::{HandleError, HasWindowHandle, WindowHandle};
-use std::marker::PhantomData;
+use raw_window_handle::{
+    DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
+};
 
-pub struct WindowContext<'a> {
+#[derive(Clone)]
+pub struct WindowContext {
     inner: platform::WindowContext,
-    _marker: PhantomData<&'a ()>,
 }
 
-impl WindowContext<'_> {
+impl WindowContext {
     pub(crate) fn new(inner: platform::WindowContext) -> Self {
-        Self { inner, _marker: PhantomData }
+        Self { inner }
     }
 
     pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) {
@@ -33,8 +34,14 @@ impl WindowContext<'_> {
     }
 }
 
-impl HasWindowHandle for WindowContext<'_> {
+impl HasWindowHandle for WindowContext {
     fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
-        todo!()
+        Ok(self.inner.window_handle())
+    }
+}
+
+impl HasDisplayHandle for WindowContext {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+        Ok(self.inner.display_handle())
     }
 }
