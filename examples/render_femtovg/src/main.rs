@@ -5,12 +5,13 @@ use baseview::{
 };
 use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
+use std::cell::{Cell, RefCell};
 
 struct FemtovgExample {
-    canvas: Canvas<OpenGl>,
-    current_size: WindowInfo,
-    current_mouse_position: PhyPoint,
-    damaged: bool,
+    canvas: RefCell<Canvas<OpenGl>>,
+    current_size: Cell<WindowInfo>,
+    current_mouse_position: Cell<PhyPoint>,
+    damaged: Cell<bool>,
 }
 
 impl FemtovgExample {
@@ -27,31 +28,34 @@ impl FemtovgExample {
 
         unsafe { context.make_not_current() };
         Self {
-            canvas,
-            current_size: WindowInfo::from_logical_size(Size { width: 512.0, height: 512.0 }, 1.0),
-            current_mouse_position: PhyPoint { x: 256, y: 256 },
-            damaged: true,
+            canvas: canvas.into(),
+            current_size: WindowInfo::from_logical_size(Size { width: 512.0, height: 512.0 }, 1.0)
+                .into(),
+            current_mouse_position: PhyPoint { x: 256, y: 256 }.into(),
+            damaged: true.into(),
         }
     }
 }
 
 impl WindowHandler for FemtovgExample {
-    fn on_frame(&mut self, window: &mut Window) {
-        if !self.damaged {
+    fn on_frame(&self, window: &mut Window) {
+        if !self.damaged.get() {
             return;
         }
 
         let context = window.gl_context().unwrap();
         unsafe { context.make_current() };
 
-        let screen_height = self.canvas.height();
-        let screen_width = self.canvas.width();
+        let mut canvas = self.canvas.borrow_mut();
+
+        let screen_height = canvas.height();
+        let screen_width = canvas.width();
 
         // Clear
-        self.canvas.clear_rect(0, 0, screen_width, screen_height, Color::rgb(0xAA, 0xAA, 0xAA));
+        canvas.clear_rect(0, 0, screen_width, screen_height, Color::rgb(0xAA, 0xAA, 0xAA));
 
         // Make big blue rectangle
-        self.canvas.clear_rect(
+        canvas.clear_rect(
             (screen_width as f32 * 0.1).floor() as u32,
             (screen_height as f32 * 0.1).floor() as u32,
             (screen_width as f32 * 0.8).floor() as u32,
@@ -60,28 +64,32 @@ impl WindowHandler for FemtovgExample {
         );
 
         // Make smol orange rectangle
-        self.canvas.clear_rect(
-            (self.current_mouse_position.x - 15).clamp(0, screen_width as i32 - 30) as u32,
-            (self.current_mouse_position.y - 15).clamp(0, screen_height as i32 - 30) as u32,
+        canvas.clear_rect(
+            (self.current_mouse_position.get().x - 15).clamp(0, screen_width as i32 - 30) as u32,
+            (self.current_mouse_position.get().y - 15).clamp(0, screen_height as i32 - 30) as u32,
             30,
             30,
             Color::rgbf(0.9, 0.3, 0.),
         );
 
         // Tell renderer to execute all drawing commands
-        self.canvas.flush();
+        canvas.flush();
         context.swap_buffers();
         unsafe { context.make_not_current() };
-        self.damaged = false;
+        self.damaged.set(false);
     }
 
-    fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
+    fn on_event(&self, _window: &mut Window, event: Event) -> EventStatus {
         match event {
             Event::Window(WindowEvent::Resized(size)) => {
                 let phy_size = size.physical_size();
-                self.current_size = size;
-                self.canvas.set_size(phy_size.width, phy_size.height, size.scale() as f32);
-                self.damaged = true;
+                self.current_size.set(size);
+                self.canvas.borrow_mut().set_size(
+                    phy_size.width,
+                    phy_size.height,
+                    size.scale() as f32,
+                );
+                self.damaged.set(true);
             }
             Event::Mouse(
                 MouseEvent::CursorMoved { position, .. }
@@ -89,8 +97,8 @@ impl WindowHandler for FemtovgExample {
                 | MouseEvent::DragMoved { position, .. }
                 | MouseEvent::DragDropped { position, .. },
             ) => {
-                self.current_mouse_position = position.to_physical(&self.current_size);
-                self.damaged = true;
+                self.current_mouse_position.set(position.to_physical(&self.current_size.get()));
+                self.damaged.set(true);
             }
             _ => {}
         };

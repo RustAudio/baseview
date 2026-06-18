@@ -33,13 +33,13 @@ use super::{event_loop::EventLoop, visual_info::WindowVisualConfig};
 
 pub struct WindowHandle {
     raw_window_handle: Option<RawWindowHandle>,
-    event_loop_handle: Option<JoinHandle<()>>,
+    event_loop_handle: Cell<Option<JoinHandle<()>>>,
     close_requested: Arc<AtomicBool>,
     is_open: Arc<AtomicBool>,
 }
 
 impl WindowHandle {
-    pub fn close(&mut self) {
+    pub fn close(&self) {
         self.close_requested.store(true, Ordering::Relaxed);
         if let Some(event_loop) = self.event_loop_handle.take() {
             let _ = event_loop.join();
@@ -74,7 +74,7 @@ impl ParentHandle {
         let is_open = Arc::new(AtomicBool::new(true));
         let handle = WindowHandle {
             raw_window_handle: None,
-            event_loop_handle: None,
+            event_loop_handle: None.into(),
             close_requested: Arc::clone(&close_requested),
             is_open: Arc::clone(&is_open),
         };
@@ -143,7 +143,7 @@ impl<'a> Window<'a> {
 
         let raw_window_handle = rx.recv().unwrap().unwrap();
         window_handle.raw_window_handle = Some(raw_window_handle.0);
-        window_handle.event_loop_handle = Some(join_handle);
+        window_handle.event_loop_handle = Some(join_handle).into();
         window_handle
     }
 
@@ -302,7 +302,7 @@ impl<'a> Window<'a> {
 
         let mut window = crate::Window::new(Window { inner: &mut inner });
 
-        let mut handler = build(&mut window);
+        let handler = build(&mut window);
 
         // Send an initial window resized event so the user is alerted of
         // the correct dpi scaling.
@@ -333,7 +333,7 @@ impl<'a> Window<'a> {
         self.inner.mouse_cursor.set(mouse_cursor);
     }
 
-    pub fn close(&mut self) {
+    pub fn close(&self) {
         self.inner.close_requested.set(true);
     }
 
@@ -350,7 +350,7 @@ impl<'a> Window<'a> {
         let _ = self.inner.xcb_connection.conn.flush();
     }
 
-    pub fn resize(&mut self, size: Size) {
+    pub fn resize(&self, size: Size) {
         let scaling = self.inner.window_info.scale();
         let new_window_info = WindowInfo::from_logical_size(size, scaling);
 

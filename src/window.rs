@@ -20,7 +20,7 @@ impl WindowHandle {
     }
 
     /// Close the window
-    pub fn close(&mut self) {
+    pub fn close(&self) {
         self.window_handle.close();
     }
 
@@ -38,8 +38,8 @@ unsafe impl HasRawWindowHandle for WindowHandle {
 }
 
 pub trait WindowHandler {
-    fn on_frame(&mut self, window: &mut Window);
-    fn on_event(&mut self, window: &mut Window, event: Event) -> EventStatus;
+    fn on_frame(&self, window: &mut Window);
+    fn on_event(&self, window: &mut Window, event: Event) -> EventStatus;
 }
 
 pub struct Window<'a> {
@@ -81,25 +81,25 @@ impl<'a> Window<'a> {
     }
 
     /// Close the window
-    pub fn close(&mut self) {
+    pub fn close(&self) {
         self.window.close();
     }
 
     /// Resize the window to the given size. The size is always in logical pixels. DPI scaling will
     /// automatically be accounted for.
-    pub fn resize(&mut self, size: Size) {
+    pub fn resize(&self, size: Size) {
         self.window.resize(size);
     }
 
-    pub fn set_mouse_cursor(&mut self, cursor: MouseCursor) {
+    pub fn set_mouse_cursor(&self, cursor: MouseCursor) {
         self.window.set_mouse_cursor(cursor);
     }
 
-    pub fn has_focus(&mut self) -> bool {
+    pub fn has_focus(&self) -> bool {
         self.window.has_focus()
     }
 
-    pub fn focus(&mut self) {
+    pub fn focus(&self) {
         self.window.focus()
     }
 
