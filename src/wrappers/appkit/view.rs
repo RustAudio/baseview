@@ -86,9 +86,9 @@ impl<V: ViewImpl> View<V> {
         ViewRef { view: self, inner: self.inner() }
     }
 
-    pub fn window_handle_from_weak(this: &Weak<Self>) -> Option<WindowHandle> {
+    pub fn window_handle_from_weak(this: &Weak<Self>) -> Option<WindowHandle<'_>> {
         let view = this.load()?;
-        let ns_view = NonNull::from_ref(&view.parent).cast();
+        let ns_view = NonNull::from(&view.parent).cast();
         let handle = AppKitWindowHandle::new(ns_view);
 
         Some(unsafe { WindowHandle::borrow_raw(handle.into()) })

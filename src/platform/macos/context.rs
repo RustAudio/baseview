@@ -1,4 +1,3 @@
-use crate::gl::GlContext;
 use crate::platform::macos::cursor::Cursor;
 use crate::platform::macos::view::BaseviewView;
 use crate::wrappers::appkit::{View, ViewRef};
@@ -65,15 +64,15 @@ impl WindowContext {
     }
 
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<GlContext> {
-        Some(GlContext::new(self.view.load()?.inner().gl_context.get()?.clone()))
+    pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
+        Some(crate::gl::GlContext::new(self.view.load()?.inner().gl_context.get()?.clone()))
     }
 
-    pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle> {
+    pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
         View::window_handle_from_weak(&self.view)
     }
 
-    pub fn display_handle(&self) -> DisplayHandle {
+    pub fn display_handle(&self) -> DisplayHandle<'_> {
         DisplayHandle::appkit()
     }
 }

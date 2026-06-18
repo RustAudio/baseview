@@ -31,7 +31,5 @@ pub fn extract_raw_window_handle(handle: WindowHandle) -> Option<Retained<NSView
         panic!("Not a macOS window");
     };
 
-    let parent_view = unsafe { Retained::retain(handle.ns_view.as_ptr() as *mut NSView) };
-
-    parent_view
+    unsafe { Retained::retain(handle.ns_view.as_ptr() as *mut NSView) }
 }

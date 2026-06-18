@@ -2,24 +2,16 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use objc2::rc::{autoreleasepool, Weak};
-use objc2::runtime::NSObjectProtocol;
 use objc2::MainThreadMarker;
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSPasteboard, NSPasteboardTypeString,
 };
 use objc2_foundation::NSString;
-use raw_window_handle::{
-    AppKitDisplayHandle, AppKitWindowHandle, HasRawDisplayHandle, HasRawWindowHandle,
-    HasWindowHandle, RawDisplayHandle, RawWindowHandle,
-};
+use raw_window_handle::HasWindowHandle;
 
-use super::cursor::Cursor;
-use crate::{MouseCursor, Size, WindowContext, WindowHandler, WindowInfo, WindowOpenOptions};
-
-#[cfg(feature = "opengl")]
-use crate::gl::GlContext;
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
-use crate::wrappers::appkit::{create_window, extract_raw_window_handle, View, ViewRef};
+use crate::wrappers::appkit::{create_window, extract_raw_window_handle, View};
+use crate::{WindowContext, WindowHandler, WindowInfo, WindowOpenOptions};
 
 pub struct WindowHandle {
     view: RefCell<Option<Weak<View<BaseviewView>>>>,
