@@ -638,11 +638,11 @@ impl Window<'_> {
     pub fn resize(&self, size: Size) {
         // `self.window_info` will be modified in response to the `WM_SIZE` event that
         // follows the `SetWindowPos()` call
-        let scaling = self.state.current_scale_factor.get();
-        let window_info = WindowInfo::from_logical_size(size, scaling);
+        let dpi = self.state.current_dpi.get();
+        let window_info = WindowInfo::from_logical_size(size, dpi.scale_factor());
         let new_size = window_info.physical_size();
 
-        self.hwnd().resize_and_activate(new_size, self.state.dw_style).unwrap();
+        self.hwnd().resize_and_activate(new_size, dpi, &self.state.user32).unwrap();
     }
 
     pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) {
