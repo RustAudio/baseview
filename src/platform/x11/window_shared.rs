@@ -6,8 +6,7 @@ use std::num::NonZero;
 use std::rc::Rc;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, InputFocus, Visualid,
-    Window as XWindow,
+    ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, InputFocus, Window as XWindow,
 };
 use x11rb::CURRENT_TIME;
 
@@ -19,7 +18,6 @@ pub(crate) struct WindowInner {
     pub(crate) connection: Rc<X11Connection>,
     pub(crate) window_id: NonZero<XWindow>,
     pub(crate) window_info: Cell<WindowInfo>,
-    visual_id: Visualid,
     mouse_cursor: Cell<MouseCursor>,
 
     pub(crate) close_requested: Cell<bool>,
@@ -29,13 +27,12 @@ pub(crate) struct WindowInner {
 impl WindowInner {
     pub(crate) fn new(
         connection: Rc<X11Connection>, window_id: NonZero<XWindow>, window_info: WindowInfo,
-        visual_id: Visualid, #[cfg(feature = "opengl")] gl_context: Option<super::gl::GlContext>,
+        #[cfg(feature = "opengl")] gl_context: Option<super::gl::GlContext>,
     ) -> Self {
         Self {
             connection,
             window_id,
             window_info: window_info.into(),
-            visual_id,
             mouse_cursor: MouseCursor::default().into(),
 
             close_requested: false.into(),

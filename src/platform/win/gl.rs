@@ -1,6 +1,6 @@
 use std::ffi::{c_void, CString, OsStr};
 use std::os::windows::ffi::OsStrExt;
-
+use std::rc::Rc;
 use windows_sys::{
     core::s,
     Win32::{
@@ -73,7 +73,9 @@ const WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB: i32 = 0x20A9;
 type WglSwapIntervalEXT = extern "system" fn(i32) -> i32;
 
 pub type CreationFailedError = ();
-pub struct GlContext {
+pub type GlContext = Rc<GlContextInner>;
+
+pub struct GlContextInner {
     hwnd: HWND,
     hdc: HDC,
     hglrc: HGLRC,
@@ -84,8 +86,8 @@ extern "C" {
     static __ImageBase: IMAGE_DOS_HEADER;
 }
 
-impl GlContext {
-    pub unsafe fn create(window: HWnd, config: GlConfig) -> Result<GlContext, GlError> {
+impl GlContextInner {
+    pub unsafe fn create(window: HWnd, config: GlConfig) -> Result<Self, GlError> {
         // Create temporary window and context to load function pointers
 
         let class_name_str = format!("raw-gl-context-window-{}", Uuid::new());
@@ -283,7 +285,7 @@ impl GlContext {
         wglSwapIntervalEXT.unwrap()(config.vsync as i32);
         wglMakeCurrent(hdc, std::ptr::null_mut());
 
-        Ok(GlContext { hwnd, hdc, hglrc, gl_library })
+        Ok(Self { hwnd, hdc, hglrc, gl_library })
     }
 
     pub unsafe fn make_current(&self) {
@@ -315,7 +317,7 @@ impl GlContext {
     }
 }
 
-impl Drop for GlContext {
+impl Drop for GlContextInner {
     fn drop(&mut self) {
         unsafe {
             wglMakeCurrent(std::ptr::null_mut(), std::ptr::null_mut());

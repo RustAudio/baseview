@@ -13,27 +13,23 @@ use windows_sys::Win32::{
     },
 };
 
-use std::cell::{Cell, OnceCell, Ref, RefCell};
+use std::cell::Cell;
 use std::num::NonZeroUsize;
 use std::ptr::null_mut;
 use std::rc::Rc;
 
-use raw_window_handle::{
-    HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, Win32WindowHandle,
-    WindowsDisplayHandle,
-};
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
-
-use super::*;
-use crate::{
-    Event, EventStatus, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size,
-    WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
-};
+pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
 use super::drop_target::DropTarget;
-use super::keyboard::KeyboardState;
+use super::*;
+use crate::platform::win::window_state::WindowState;
 use crate::wrappers::win32::cursor::SystemCursor;
+use crate::{
+    Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
+    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
+};
 
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
@@ -75,19 +71,6 @@ impl WindowHandle {
     }
 }
 
-unsafe impl HasRawWindowHandle for WindowHandle {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        if let Some(hwnd) = self.hwnd.get() {
-            let mut handle = Win32WindowHandle::empty();
-            handle.hwnd = hwnd;
-
-            RawWindowHandle::Win32(handle)
-        } else {
-            RawWindowHandle::Win32(Win32WindowHandle::empty())
-        }
-    }
-}
-
 struct ParentHandle {
     is_open: Rc<Cell<bool>>,
 }
@@ -98,7 +81,7 @@ impl Drop for ParentHandle {
     }
 }
 
-type HandlerBuilder = dyn FnOnce(&mut crate::Window) -> Box<dyn WindowHandler>;
+type HandlerBuilder = dyn FnOnce(crate::WindowContext) -> Box<dyn WindowHandler>;
 
 pub struct BaseviewWindow {
     window_state: Rc<WindowState>,
@@ -154,19 +137,17 @@ impl WindowImpl for BaseviewWindow {
 
         #[cfg(feature = "opengl")]
         if let Some(gl_config) = self.gl_config.clone() {
-            let gl_context = unsafe { gl::GlContext::create(window, gl_config) }
+            let gl_context = unsafe { gl::GlContextInner::create(window, gl_config) }
                 .expect("Could not create OpenGL context");
 
-            let Ok(()) = self.window_state.gl_context.set(crate::gl::GlContext::new(gl_context))
-            else {
+            let Ok(()) = self.window_state.gl_context.set(Rc::new(gl_context)) else {
                 unreachable!();
             };
         };
 
         let handler = {
-            let mut window = crate::Window::new(Window { state: window_state });
-
-            self.handler_builder.take().unwrap()(&mut window)
+            let context = crate::WindowContext::new(Rc::clone(&self.window_state));
+            self.handler_builder.take().unwrap()(context)
         };
         let Ok(()) = window_state.handler.set(handler) else { unreachable!() };
 
@@ -431,122 +412,34 @@ unsafe fn wnd_proc_inner(
     }
 }
 
-/// All data associated with the window.
-pub(crate) struct WindowState {
-    /// The HWND belonging to this window.
-    pub hwnd: HWND,
-    current_size: Cell<PhySize>,
-    current_dpi: Cell<Dpi>, // None if in non-system scale policy
-    keyboard_state: RefCell<KeyboardState>,
-    mouse_button_counter: Cell<usize>,
-    mouse_was_outside_window: Cell<bool>,
-    cursor_icon: Cell<MouseCursor>,
-    // Initialized late so the `Window` can hold a reference to this `WindowState`
-    handler: OnceCell<Box<dyn WindowHandler>>,
-    scale_policy: WindowScalePolicy,
+pub struct Window;
 
-    user32: ExtendedUser32,
-
-    #[cfg(feature = "opengl")]
-    pub gl_context: OnceCell<crate::gl::GlContext>,
-}
-
-impl WindowState {
-    pub fn new(
-        hwnd: HWND, current_size: PhySize, scale_policy: WindowScalePolicy, user32: ExtendedUser32,
-    ) -> Self {
-        Self {
-            hwnd,
-            current_dpi: Dpi::default().into(),
-            current_size: current_size.into(),
-            keyboard_state: RefCell::new(KeyboardState::new()),
-            mouse_button_counter: Cell::new(0),
-            mouse_was_outside_window: true.into(),
-            cursor_icon: Cell::new(MouseCursor::Default),
-            handler: OnceCell::new(),
-            scale_policy,
-            user32,
-
-            #[cfg(feature = "opengl")]
-            gl_context: OnceCell::new(),
-        }
-    }
-
-    pub(crate) fn handle_on_frame(&self) {
-        let Some(handler) = self.handler.get() else { return };
-        let mut window = crate::window::Window::new(Window { state: self });
-
-        handler.on_frame(&mut window)
-    }
-
-    pub(crate) fn handle_event(&self, event: Event) -> EventStatus {
-        let Some(handler) = self.handler.get() else {
-            return EventStatus::Ignored;
-        };
-
-        let mut window = crate::window::Window::new(Window { state: self });
-        handler.on_event(&mut window, event)
-    }
-
-    pub(crate) fn window_info(&self) -> WindowInfo {
-        WindowInfo::from_physical_size(self.current_size.get(), self.current_scale_factor())
-    }
-
-    fn current_scale_factor(&self) -> f64 {
-        match self.scale_policy {
-            WindowScalePolicy::ScaleFactor(scale) => scale,
-            WindowScalePolicy::SystemScaleFactor => self.current_dpi.get().scale_factor(),
-        }
-    }
-
-    pub(crate) fn keyboard_state(&self) -> Ref<'_, KeyboardState> {
-        self.keyboard_state.borrow()
-    }
-
-    fn send_resized(&self) {
-        self.handle_event(Event::Window(WindowEvent::Resized(self.window_info())));
-    }
-}
-
-pub struct Window<'a> {
-    state: &'a WindowState,
-}
-
-impl Window<'_> {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
-    where
-        P: HasRawWindowHandle,
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
-        let parent = match parent.raw_window_handle() {
+impl Window {
+    pub fn open_parented<H: WindowHandler>(
+        parent: &impl HasWindowHandle, options: WindowOpenOptions,
+        build: impl for<'a> FnOnce(crate::WindowContext) -> H + Send + 'static,
+    ) -> WindowHandle {
+        let parent = match parent.window_handle().unwrap().as_raw() {
             RawWindowHandle::Win32(h) => h.hwnd,
             h => panic!("unsupported parent handle {:?}", h),
         };
 
-        Self::open(true, parent, options, build)
+        Self::open(true, parent.get() as *mut _, options, build)
     }
 
-    pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
+    pub fn open_blocking<H: WindowHandler>(
+        options: WindowOpenOptions,
+        build: impl for<'a> FnOnce(crate::WindowContext) -> H + Send + 'static,
+    ) {
         let window_handle = Self::open(false, null_mut(), options, build);
 
         run_thread_message_loop_until(|| !window_handle.is_open()).unwrap();
     }
 
-    fn open<H, B>(
-        parented: bool, parent: HWND, options: WindowOpenOptions, build: B,
-    ) -> WindowHandle
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
+    fn open<H: WindowHandler>(
+        parented: bool, parent: HWND, options: WindowOpenOptions,
+        build: impl for<'a> FnOnce(crate::WindowContext) -> H + Send + 'static,
+    ) -> WindowHandle {
         let extended_user_32 = ExtendedUser32::load().unwrap();
         let title = HSTRING::from(options.title);
 
@@ -610,62 +503,6 @@ impl Window<'_> {
         window.show_and_activate();
 
         WindowHandle { hwnd: Some(hwnd).into(), is_open: Rc::clone(&is_open) }
-    }
-
-    pub fn close(&self) {
-        unsafe {
-            PostMessageW(self.state.hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
-        }
-    }
-
-    pub fn has_focus(&self) -> bool {
-        HWnd::get_focused_window() == self.state.hwnd
-    }
-
-    pub fn focus(&self) {
-        self.hwnd().set_focus().unwrap()
-    }
-
-    fn hwnd(&self) -> HWnd<'_> {
-        // SAFETY: this handle should be safe to use
-        unsafe { HWnd::from_raw(self.state.hwnd) }
-    }
-
-    pub fn resize(&self, size: Size) {
-        // `self.window_info` will be modified in response to the `WM_SIZE` event that
-        // follows the `SetWindowPos()` call
-        let dpi = self.state.current_dpi.get();
-        let window_info = WindowInfo::from_logical_size(size, dpi.scale_factor());
-        let new_size = window_info.physical_size();
-
-        self.hwnd().resize_and_activate(new_size, dpi, &self.state.user32).unwrap();
-    }
-
-    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) {
-        self.state.cursor_icon.set(mouse_cursor);
-        if let Ok(cursor) = SystemCursor::load(mouse_cursor) {
-            cursor.set()
-        }
-    }
-
-    #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<&crate::gl::GlContext> {
-        self.state.gl_context.get()
-    }
-}
-
-unsafe impl HasRawWindowHandle for Window<'_> {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        let mut handle = Win32WindowHandle::empty();
-        handle.hwnd = self.state.hwnd;
-
-        RawWindowHandle::Win32(handle)
-    }
-}
-
-unsafe impl HasRawDisplayHandle for Window<'_> {
-    fn raw_display_handle(&self) -> RawDisplayHandle {
-        RawDisplayHandle::Windows(WindowsDisplayHandle::empty())
     }
 }
 

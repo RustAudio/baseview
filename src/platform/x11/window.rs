@@ -239,7 +239,6 @@ impl Window {
             xcb_connection,
             window_id,
             window_info,
-            visual_info.visual_id,
             #[cfg(feature = "opengl")]
             gl_context,
         ));
