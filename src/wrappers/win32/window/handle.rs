@@ -2,7 +2,6 @@
 use crate::wrappers::win32::user32::ExtendedUser32;
 use crate::wrappers::win32::{Dpi, DpiAwarenessContext, Rect};
 use crate::PhySize;
-use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ptr::{null_mut, NonNull};
 use windows::Win32::System::Ole::IDropTarget;

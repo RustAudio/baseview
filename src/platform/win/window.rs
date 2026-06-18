@@ -16,7 +16,6 @@ use windows_sys::Win32::{
 use std::cell::Cell;
 use std::num::NonZeroUsize;
 use std::ptr::null_mut;
-use std::rc::Rc;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
