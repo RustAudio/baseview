@@ -28,7 +28,7 @@ pub struct WindowOpenOptions {
     pub scale: WindowScalePolicy,
 
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
-    /// access this context through [crate::Window::gl_context].
+    /// access this context through [crate::WindowContext::gl_context].
     ///
     /// By default, this is set to `None`.
     #[cfg(feature = "opengl")]

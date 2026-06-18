@@ -19,7 +19,6 @@ enum Message {
 struct OpenWindowExample {
     rx: RefCell<Consumer<Message>>,
 
-    window_context: WindowContext,
     surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
     current_size: Cell<WindowInfo>,
     mouse_pos: Cell<PhyPoint>,
@@ -151,12 +150,11 @@ fn main() {
     });
 
     Window::open_blocking(window_open_options, |window| {
-        let ctx = unsafe { softbuffer::Context::new(window.clone()) }.unwrap();
-        let mut surface = unsafe { softbuffer::Surface::new(&ctx, window.clone()) }.unwrap();
+        let ctx = softbuffer::Context::new(window.clone()).unwrap();
+        let mut surface = softbuffer::Surface::new(&ctx, window).unwrap();
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         OpenWindowExample {
-            window_context: window,
             surface: surface.into(),
             rx: rx.into(),
             current_size: WindowInfo::from_physical_size(PhySize::new(512, 512), 1.0).into(),
