@@ -3,7 +3,6 @@ use std::error::Error;
 use std::ops::Deref;
 use std::os::fd::{AsFd, BorrowedFd};
 use std::os::raw::c_int;
-use x11_dl::xlib::Display;
 use x11_dl::xlib_xcb::Xlib_xcb;
 use x11rb::xcb_ffi::XCBConnection;
 
@@ -49,10 +48,6 @@ impl XlibXcbConnection {
 
     pub fn default_screen(&self) -> c_int {
         self.xlib_connection.default_screen_index()
-    }
-
-    pub fn xlib_display(&self) -> *mut Display {
-        self.xlib_connection.as_raw()
     }
 
     pub fn xcb_connection(&self) -> &XCBConnection {

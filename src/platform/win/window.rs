@@ -154,11 +154,7 @@ impl WindowImpl for BaseviewWindow {
 
         #[cfg(feature = "opengl")]
         if let Some(gl_config) = self.gl_config.clone() {
-            let mut handle = Win32WindowHandle::empty();
-            handle.hwnd = hwnd;
-            let handle = RawWindowHandle::Win32(handle);
-
-            let gl_context = unsafe { gl::GlContext::create(&handle, gl_config) }
+            let gl_context = unsafe { gl::GlContext::create(window, gl_config) }
                 .expect("Could not create OpenGL context");
 
             let Ok(()) = self.window_state.gl_context.set(crate::gl::GlContext::new(gl_context))

@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::error::Error;
 use std::num::NonZero;
 use std::rc::Rc;

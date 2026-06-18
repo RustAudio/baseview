@@ -25,11 +25,9 @@ use windows_sys::{
     },
 };
 
-use raw_window_handle::RawWindowHandle;
-
 use crate::gl::*;
 use crate::wrappers::win32::uuid::Uuid;
-
+use crate::wrappers::win32::window::HWnd;
 // See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_create_context.txt
 
 type WglCreateContextAttribsARB = extern "system" fn(HDC, HGLRC, *const i32) -> HGLRC;
@@ -87,17 +85,7 @@ extern "C" {
 }
 
 impl GlContext {
-    pub unsafe fn create(parent: &RawWindowHandle, config: GlConfig) -> Result<GlContext, GlError> {
-        let handle = if let RawWindowHandle::Win32(handle) = parent {
-            handle
-        } else {
-            return Err(GlError::InvalidWindowHandle);
-        };
-
-        if handle.hwnd.is_null() {
-            return Err(GlError::InvalidWindowHandle);
-        }
-
+    pub unsafe fn create(window: HWnd, config: GlConfig) -> Result<GlContext, GlError> {
         // Create temporary window and context to load function pointers
 
         let class_name_str = format!("raw-gl-context-window-{}", Uuid::new());
@@ -188,7 +176,7 @@ impl GlContext {
 
         // Create actual context
 
-        let hwnd = handle.hwnd;
+        let hwnd = window.as_raw();
 
         let hdc = GetDC(hwnd);
 

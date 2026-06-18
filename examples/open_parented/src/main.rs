@@ -6,9 +6,9 @@ use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 
 struct ParentWindowHandler {
-    surface: softbuffer::Surface<WindowContext, WindowContext>,
-    current_size: PhySize,
-    damaged: bool,
+    surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
+    current_size: Cell<PhySize>,
+    damaged: Cell<bool>,
 
     _child_window: Option<WindowHandle>,
 }
@@ -70,9 +70,9 @@ impl WindowHandler for ParentWindowHandler {
 }
 
 struct ChildWindowHandler {
-    surface: softbuffer::Surface<WindowContext, WindowContext>,
-    current_size: PhySize,
-    damaged: bool,
+    surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
+    current_size: Cell<PhySize>,
+    damaged: Cell<bool>,
 }
 
 impl ChildWindowHandler {

@@ -44,8 +44,8 @@ pub enum Profile {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum GlError {
-    InvalidWindowHandle,
     VersionNotSupported,
     CreationFailed(CreationFailedError),
 }

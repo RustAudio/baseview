@@ -20,11 +20,11 @@ struct OpenWindowExample {
     rx: RefCell<Consumer<Message>>,
 
     window_context: WindowContext,
-    surface: softbuffer::Surface<WindowContext, WindowContext>,
-    current_size: WindowInfo,
-    mouse_pos: PhyPoint,
-    is_cursor_inside: bool,
-    damaged: bool,
+    surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
+    current_size: Cell<WindowInfo>,
+    mouse_pos: Cell<PhyPoint>,
+    is_cursor_inside: Cell<bool>,
+    damaged: Cell<bool>,
 }
 
 impl WindowHandler for OpenWindowExample {
@@ -156,7 +156,6 @@ fn main() {
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         OpenWindowExample {
-            _ctx: ctx,
             window_context: window,
             surface: surface.into(),
             rx: rx.into(),
