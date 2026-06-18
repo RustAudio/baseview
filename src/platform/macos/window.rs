@@ -10,11 +10,11 @@ use objc2_app_kit::{
 use objc2_foundation::NSString;
 use raw_window_handle::{
     AppKitDisplayHandle, AppKitWindowHandle, HasRawDisplayHandle, HasRawWindowHandle,
-    RawDisplayHandle, RawWindowHandle,
+    HasWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
 
 use super::cursor::Cursor;
-use crate::{MouseCursor, Size, WindowHandler, WindowInfo, WindowOpenOptions};
+use crate::{MouseCursor, Size, WindowContext, WindowHandler, WindowInfo, WindowOpenOptions};
 
 #[cfg(feature = "opengl")]
 use crate::gl::GlContext;
@@ -40,40 +40,16 @@ impl WindowHandle {
     }
 }
 
-unsafe impl HasRawWindowHandle for WindowHandle {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        let Some(view) = self.view.borrow().as_ref().and_then(|w| w.load()) else {
-            return AppKitWindowHandle::empty().into();
-        };
+pub struct Window;
 
-        view.raw_window_handle()
-    }
-}
-
-pub struct Window<'a> {
-    view: &'a View<BaseviewView>,
-    inner: &'a BaseviewView,
-}
-
-impl<'a> From<ViewRef<'a, BaseviewView>> for crate::Window<'a> {
-    fn from(value: ViewRef<'a, BaseviewView>) -> Self {
-        crate::Window::new(Window { view: value.view, inner: value.inner })
-    }
-}
-
-impl<'a> Window<'a> {
-    pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
-    where
-        P: HasRawWindowHandle,
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
+impl Window {
+    pub fn open_parented<H: WindowHandler>(
+        parent: &impl HasWindowHandle, options: WindowOpenOptions,
+        build: impl FnOnce(WindowContext) -> H + Send + 'static,
+    ) -> WindowHandle {
         autoreleasepool(|_| {
-            let (_parent_window, parent_view) =
-                extract_raw_window_handle(parent.raw_window_handle());
-
-            let Some(parent_view) = parent_view else {
+            let Some(parent_view) = extract_raw_window_handle(parent.window_handle().unwrap())
+            else {
                 panic!("Invalid window handle: ns_view is NULL");
             };
 
@@ -86,12 +62,9 @@ impl<'a> Window<'a> {
         })
     }
 
-    pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
-    where
-        H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
-        B: Send + 'static,
-    {
+    pub fn open_blocking<H: WindowHandler>(
+        options: WindowOpenOptions, build: impl FnOnce(WindowContext) -> H + Send + 'static,
+    ) {
         autoreleasepool(|_| {
             let Some(mtm) = MainThreadMarker::new() else {
                 panic!("macOS: open_blocking can only be called on the main thread!")
@@ -119,50 +92,6 @@ impl<'a> Window<'a> {
             app.run();
         })
     }
-
-    pub fn close(&self) {
-        BaseviewView::close(self.view.inner_ref());
-    }
-
-    pub fn has_focus(&self) -> bool {
-        let Some(window) = self.view.window() else {
-            return false;
-        };
-
-        if !window.isKeyWindow() {
-            return false;
-        }
-
-        let Some(first_responder) = window.firstResponder() else {
-            return false;
-        };
-
-        self.view.isEqual(Some(&*first_responder))
-    }
-
-    pub fn focus(&self) {
-        if let Some(window) = self.view.window() {
-            window.makeFirstResponder(Some(self.view));
-        }
-    }
-
-    pub fn resize(&self, size: Size) {
-        if self.inner.state.closed.get() {
-            return;
-        }
-
-        BaseviewView::resize(self.view.inner_ref(), size);
-    }
-
-    pub fn set_mouse_cursor(&self, cursor: MouseCursor) {
-        let native_cursor = Cursor::from(cursor);
-        self.view.addCursorRect_cursor(self.view.bounds(), &native_cursor.load());
-    }
-
-    #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<&GlContext> {
-        self.inner.gl_context.get()
-    }
 }
 
 pub(crate) struct WindowSharedState {
@@ -177,18 +106,6 @@ impl WindowSharedState {
             window_info: WindowInfo::from_logical_size(options.size, 1.0).into(),
             closed: false.into(),
         }
-    }
-}
-
-unsafe impl<'a> HasRawWindowHandle for Window<'a> {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        self.view.raw_window_handle()
-    }
-}
-
-unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
-    fn raw_display_handle(&self) -> RawDisplayHandle {
-        RawDisplayHandle::AppKit(AppKitDisplayHandle::empty())
     }
 }
 

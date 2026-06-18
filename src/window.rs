@@ -35,7 +35,7 @@ pub struct Window {
 impl Window {
     pub fn open_parented<H: WindowHandler>(
         parent: &impl HasWindowHandle, options: WindowOpenOptions,
-        build: impl for<'a> FnOnce(WindowContext) -> H + Send + 'static,
+        build: impl FnOnce(WindowContext) -> H + Send + 'static,
     ) -> WindowHandle {
         let window_handle = platform::Window::open_parented(parent, options, build);
         WindowHandle::new(window_handle)

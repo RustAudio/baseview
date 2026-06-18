@@ -4,10 +4,11 @@ use objc2::{msg_send, Encoding, Message, RefEncode};
 use objc2_app_kit::{NSDragOperation, NSDraggingInfo, NSEvent, NSView, NSWindow};
 use objc2_core_foundation::CGRect;
 use objc2_foundation::{NSNotification, NSPoint};
-use raw_window_handle::{AppKitWindowHandle, HasRawWindowHandle, RawWindowHandle};
+use raw_window_handle::{AppKitWindowHandle, WindowHandle};
 use std::ffi::{c_void, CStr};
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::ptr::NonNull;
 
 mod implementation;
 
@@ -83,6 +84,13 @@ impl<V: ViewImpl> View<V> {
     pub fn inner_ref(&self) -> ViewRef<'_, V> {
         ViewRef { view: self, inner: self.inner() }
     }
+
+    pub fn window_handle(&self) -> WindowHandle {
+        let ns_view = NonNull::from_ref(&self.parent).cast();
+        let handle = AppKitWindowHandle::new(ns_view);
+
+        unsafe { WindowHandle::borrow_raw(handle.into()) }
+    }
 }
 
 pub struct ViewInner<V> {
@@ -93,6 +101,8 @@ pub struct ViewRef<'a, V> {
     pub view: &'a View<V>,
     pub inner: &'a V,
 }
+
+impl<'a, V> ViewRef<'a, V> {}
 
 impl<'a, V> Clone for ViewRef<'a, V> {
     fn clone(&self) -> Self {
@@ -148,18 +158,4 @@ pub trait ViewImpl: Sized {
     fn key_down(this: ViewRef<Self>, event: &NSEvent);
     fn key_up(this: ViewRef<Self>, event: &NSEvent);
     fn flags_changed(this: ViewRef<Self>, event: &NSEvent);
-}
-
-unsafe impl<V: ViewImpl> HasRawWindowHandle for View<V> {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        let mut handle = AppKitWindowHandle::empty();
-
-        handle.ns_view = (&self.parent as *const NSView).cast_mut().cast();
-
-        if let Some(window) = self.window() {
-            handle.ns_window = Retained::as_ptr(&window).cast_mut().cast()
-        }
-
-        handle.into()
-    }
 }
