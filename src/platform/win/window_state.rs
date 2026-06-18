@@ -128,11 +128,11 @@ impl WindowState {
         Some(crate::gl::GlContext::new(Rc::clone(self.gl_context.get()?)))
     }
 
-    pub fn window_handle(&self) -> raw_window_handle::WindowHandle<'_> {
+    pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
         let Some(hwnd) = NonZeroIsize::new(self.hwnd as _) else { unreachable!() };
         let handle = Win32WindowHandle::new(hwnd);
         // TODO: add HINSTANCE
-        unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) }
+        Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
     }
 
     pub fn display_handle(&self) -> DisplayHandle<'_> {

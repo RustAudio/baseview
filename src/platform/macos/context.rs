@@ -6,6 +6,7 @@ use crate::{MouseCursor, Size};
 use objc2::rc::Weak;
 use objc2::runtime::NSObjectProtocol;
 use objc2::Message;
+use raw_window_handle::DisplayHandle;
 
 #[derive(Clone)]
 pub struct WindowContext {
@@ -66,5 +67,13 @@ impl WindowContext {
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<GlContext> {
         Some(GlContext::new(self.view.load()?.inner().gl_context.get()?.clone()))
+    }
+
+    pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle> {
+        View::window_handle_from_weak(&self.view)
+    }
+
+    pub fn display_handle(&self) -> DisplayHandle {
+        DisplayHandle::appkit()
     }
 }

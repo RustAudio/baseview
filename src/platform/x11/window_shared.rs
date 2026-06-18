@@ -94,9 +94,9 @@ impl WindowInner {
         // and notify the window handler about it
     }
 
-    pub fn window_handle(&self) -> raw_window_handle::WindowHandle<'_> {
+    pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
         let handle = XcbWindowHandle::new(self.window_id);
-        unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) }
+        Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
     }
 
     pub fn display_handle(&self) -> DisplayHandle<'_> {

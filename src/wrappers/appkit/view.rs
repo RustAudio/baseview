@@ -1,4 +1,5 @@
 use objc2::__framework_prelude::{Allocated, AnyClass, ProtocolObject, Retained};
+use objc2::rc::Weak;
 use objc2::runtime::AnyObject;
 use objc2::{msg_send, Encoding, Message, RefEncode};
 use objc2_app_kit::{NSDragOperation, NSDraggingInfo, NSEvent, NSView, NSWindow};
@@ -85,11 +86,12 @@ impl<V: ViewImpl> View<V> {
         ViewRef { view: self, inner: self.inner() }
     }
 
-    pub fn window_handle(&self) -> WindowHandle {
-        let ns_view = NonNull::from_ref(&self.parent).cast();
+    pub fn window_handle_from_weak(this: &Weak<Self>) -> Option<WindowHandle> {
+        let view = this.load()?;
+        let ns_view = NonNull::from_ref(&view.parent).cast();
         let handle = AppKitWindowHandle::new(ns_view);
 
-        unsafe { WindowHandle::borrow_raw(handle.into()) }
+        Some(unsafe { WindowHandle::borrow_raw(handle.into()) })
     }
 }
 

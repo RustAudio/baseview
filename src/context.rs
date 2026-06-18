@@ -41,7 +41,7 @@ impl WindowContext {
 
 impl HasWindowHandle for WindowContext {
     fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
-        Ok(self.inner.window_handle())
+        self.inner.window_handle().ok_or(HandleError::Unavailable)
     }
 }
 
