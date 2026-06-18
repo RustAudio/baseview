@@ -159,7 +159,7 @@ fn main() {
             _ctx: ctx,
             surface: surface.into(),
             rx: rx.into(),
-            current_size: WindowInfo::from_physical_size(PhySize::new(512, 512).into(), 1.0).into(),
+            current_size: WindowInfo::from_physical_size(PhySize::new(512, 512), 1.0).into(),
             mouse_pos: PhyPoint::new(0, 0).into(),
             is_cursor_inside: false.into(),
             damaged: true.into(),
