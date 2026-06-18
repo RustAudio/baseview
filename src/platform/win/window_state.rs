@@ -9,7 +9,6 @@ use crate::{
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, OnceCell, Ref, RefCell};
 use std::num::NonZeroIsize;
-use std::rc::Rc;
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
@@ -125,6 +124,7 @@ impl WindowState {
 
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
+        use std::rc::Rc;
         Some(crate::gl::GlContext::new(Rc::clone(self.gl_context.get()?)))
     }
 
