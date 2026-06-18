@@ -29,7 +29,7 @@ impl WindowContext {
         self.inner.focus();
     }
 
-    pub fn resize(&mut self, size: Size) {
+    pub fn resize(&self, size: Size) {
         self.inner.resize(size);
     }
 
