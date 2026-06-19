@@ -6,9 +6,10 @@ use rtrb::{Consumer, RingBuffer};
 
 #[cfg(target_os = "macos")]
 use baseview::copy_to_clipboard;
+use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::{
-    Event, EventStatus, MouseEvent, PhyPoint, PhySize, Window, WindowContext, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions,
+    Event, EventStatus, MouseEvent, Window, WindowContext, WindowEvent, WindowHandler,
+    WindowOpenOptions,
 };
 
 #[derive(Debug, Clone)]
@@ -18,10 +19,10 @@ enum Message {
 
 struct OpenWindowExample {
     rx: RefCell<Consumer<Message>>,
+    window_context: WindowContext,
 
     surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
-    current_size: Cell<WindowInfo>,
-    mouse_pos: Cell<PhyPoint>,
+    mouse_pos: Cell<PhysicalPosition<f64>>,
     is_cursor_inside: Cell<bool>,
     damaged: Cell<bool>,
 }
@@ -34,8 +35,8 @@ impl WindowHandler for OpenWindowExample {
 
         let mut surface = self.surface.borrow_mut();
         let mut pixels = surface.buffer_mut().unwrap();
-        let size = self.current_size.get().physical_size();
-        let scale_factor = self.current_size.get().scale();
+        let size = self.window_context.size();
+        let scale_factor = self.window_context.scale_factor();
         let (width, height) = (size.width, size.height);
 
         for index in 0..(width * height) {
@@ -75,11 +76,12 @@ impl WindowHandler for OpenWindowExample {
 
         if self.is_cursor_inside.get() {
             let rect_size = (25.0 * scale_factor) as i32;
+            let mouse_pos = self.mouse_pos.get().cast::<i32>();
 
-            let rect_x_start = (self.mouse_pos.get().x - rect_size).clamp(0, width as i32) as u32;
-            let rect_x_end = (self.mouse_pos.get().x + rect_size).clamp(0, width as i32) as u32;
-            let rect_y_start = (self.mouse_pos.get().y - rect_size).clamp(0, height as i32) as u32;
-            let rect_y_end = (self.mouse_pos.get().y + rect_size).clamp(0, height as i32) as u32;
+            let rect_x_start = (mouse_pos.x - rect_size).clamp(0, width as i32) as u32;
+            let rect_x_end = (mouse_pos.x + rect_size).clamp(0, width as i32) as u32;
+            let rect_y_start = (mouse_pos.y - rect_size).clamp(0, height as i32) as u32;
+            let rect_y_end = (mouse_pos.y + rect_size).clamp(0, height as i32) as u32;
 
             for x in rect_x_start..rect_x_end {
                 for y in rect_y_start..rect_y_end {
@@ -98,12 +100,11 @@ impl WindowHandler for OpenWindowExample {
     }
 
     fn on_event(&self, event: Event) -> EventStatus {
-        match &event {
+        match event {
             #[cfg(target_os = "macos")]
             Event::Mouse(MouseEvent::ButtonPressed { .. }) => copy_to_clipboard("This is a test!"),
             Event::Mouse(MouseEvent::CursorMoved { position, .. }) => {
-                let phy_pos = position.to_physical(&self.current_size.get());
-                self.mouse_pos.set(phy_pos);
+                self.mouse_pos.set(position);
                 self.damaged.set(true);
             }
             Event::Mouse(MouseEvent::CursorEntered) => {
@@ -114,14 +115,11 @@ impl WindowHandler for OpenWindowExample {
                 self.is_cursor_inside.set(false);
                 self.damaged.set(true);
             }
-            Event::Window(WindowEvent::Resized(info)) => {
-                println!("Resized: {:?}", info);
-                self.current_size.set(*info);
-
-                let new_size = info.physical_size();
+            Event::Window(WindowEvent::Resized { scale_factor, size }) => {
+                println!("Resized: {size:?}, scale: {scale_factor}");
 
                 if let (Some(width), Some(height)) =
-                    (NonZeroU32::new(new_size.width), NonZeroU32::new(new_size.height))
+                    (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
                 {
                     self.surface.borrow_mut().resize(width, height).unwrap();
                     self.damaged.set(true);
@@ -137,7 +135,7 @@ impl WindowHandler for OpenWindowExample {
 }
 
 fn main() {
-    let window_open_options = WindowOpenOptions::new().with_size(512.0, 512.0);
+    let window_open_options = WindowOpenOptions::new().with_size(LogicalSize::new(512.0, 512.0));
 
     let (mut tx, rx) = RingBuffer::new(128);
 
@@ -151,14 +149,14 @@ fn main() {
 
     Window::open_blocking(window_open_options, |window| {
         let ctx = softbuffer::Context::new(window.clone()).unwrap();
-        let mut surface = softbuffer::Surface::new(&ctx, window).unwrap();
+        let mut surface = softbuffer::Surface::new(&ctx, window.clone()).unwrap();
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         OpenWindowExample {
+            window_context: window,
             surface: surface.into(),
             rx: rx.into(),
-            current_size: WindowInfo::from_physical_size(PhySize::new(512, 512), 1.0).into(),
-            mouse_pos: PhyPoint::new(0, 0).into(),
+            mouse_pos: PhysicalPosition::new(0., 0.).into(),
             is_cursor_inside: false.into(),
             damaged: true.into(),
         }
