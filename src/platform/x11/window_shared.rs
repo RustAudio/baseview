@@ -1,5 +1,6 @@
 use crate::platform::X11Connection;
-use crate::{MouseCursor, Size, WindowInfo};
+use crate::MouseCursor;
+use dpi::{PhysicalPosition, PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, XcbWindowHandle};
 use std::cell::Cell;
 use std::num::NonZero;
@@ -17,7 +18,8 @@ pub(crate) struct WindowInner {
 
     pub(crate) connection: Rc<X11Connection>,
     pub(crate) window_id: NonZero<XWindow>,
-    pub(crate) window_info: Cell<WindowInfo>,
+    pub(crate) scaling_factor: Cell<f64>,
+    pub(crate) window_size: Cell<PhysicalSize<u16>>,
     mouse_cursor: Cell<MouseCursor>,
 
     pub(crate) close_requested: Cell<bool>,
@@ -26,13 +28,14 @@ pub(crate) struct WindowInner {
 
 impl WindowInner {
     pub(crate) fn new(
-        connection: Rc<X11Connection>, window_id: NonZero<XWindow>, window_info: WindowInfo,
-        #[cfg(feature = "opengl")] gl_context: Option<super::gl::GlContext>,
+        connection: Rc<X11Connection>, window_id: NonZero<XWindow>, window_size: PhysicalSize<u16>,
+        scale_factor: f64, #[cfg(feature = "opengl")] gl_context: Option<super::gl::GlContext>,
     ) -> Self {
         Self {
             connection,
             window_id,
-            window_info: window_info.into(),
+            window_size: window_size.into(),
+            scaling_factor: scale_factor.into(),
             mouse_cursor: MouseCursor::default().into(),
 
             close_requested: false.into(),
@@ -79,14 +82,13 @@ impl WindowInner {
     }
 
     pub fn resize(&self, size: Size) {
-        let scaling = self.window_info.get().scale();
-        let new_window_info = WindowInfo::from_logical_size(size, scaling);
+        let new_physical_size = size.to_physical::<u32>(self.scaling_factor.get());
 
         let _ = self.connection.conn.configure_window(
             self.window_id.get(),
             &ConfigureWindowAux::new()
-                .width(new_window_info.physical_size().width)
-                .height(new_window_info.physical_size().height),
+                .width(new_physical_size.width)
+                .height(new_physical_size.height),
         );
         let _ = self.connection.conn.flush();
 
@@ -106,5 +108,13 @@ impl WindowInner {
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
         Some(crate::gl::GlContext::new(Rc::clone(self.gl_context.as_ref()?)))
+    }
+
+    pub fn scale_factor(&self) -> f64 {
+        self.scaling_factor.get()
+    }
+
+    pub fn size(&self) -> PhysicalSize<u32> {
+        self.window_size.get().cast()
     }
 }

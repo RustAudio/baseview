@@ -1,4 +1,6 @@
+use dpi::PhysicalPosition;
 use keyboard_types::Modifiers;
+use percent_encoding::percent_decode;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::{
@@ -6,8 +8,6 @@ use std::{
     path::{Path, PathBuf},
     str::Utf8Error,
 };
-
-use percent_encoding::percent_decode;
 use x11rb::connection::Connection;
 use x11rb::errors::ReplyError;
 use x11rb::protocol::xproto::{Atom, ClientMessageEvent, SelectionNotifyEvent, Timestamp};
@@ -20,7 +20,7 @@ use x11rb::{
 use super::xcb_connection::{Atoms, GetPropertyError};
 use super::*;
 use crate::handler::WindowHandler;
-use crate::{DropData, Event, MouseEvent, PhyPoint};
+use crate::{DropData, Event, MouseEvent};
 use DragNDropState::*;
 
 /// The Drag-N-Drop session state of a `baseview` X11 window, for which it is the target.
@@ -55,7 +55,7 @@ pub(crate) enum DragNDropState {
         /// The source window the current drag session originates from.
         source_window: xproto::Window,
         /// The current position of the pointer, from the last received position event.
-        position: PhyPoint,
+        position: PhysicalPosition<i16>,
         /// The timestamp of the event we made the selection request from.
         ///
         /// This is either from the first position event, or from the drop event if it arrived first.
@@ -82,7 +82,7 @@ pub(crate) enum DragNDropState {
         protocol_version: u8,
         /// The source window the current drag session originates from.
         source_window: xproto::Window,
-        position: PhyPoint,
+        position: PhysicalPosition<i16>,
         data: DropData,
         requested_action: Option<DndAction>,
     },
@@ -187,7 +187,7 @@ impl DragNDropState {
                     protocol_version: *protocol_version,
                     requested_at: timestamp,
                     source_window: event_source_window,
-                    position: PhyPoint::new(0, 0),
+                    position: PhysicalPosition::new(0, 0),
                     requested_action,
                     dropped: false,
                 };
@@ -224,7 +224,7 @@ impl DragNDropState {
                 };
 
                 handler.on_event(Event::Mouse(MouseEvent::DragMoved {
-                    position: position.to_logical(&window.window_info.get()),
+                    position: position.cast(),
                     data: data.clone(),
                     // We don't get modifiers for drag n drop events.
                     modifiers: Modifiers::empty(),
@@ -330,7 +330,7 @@ impl DragNDropState {
                     source_window: event_source_window,
                     // We don't have usable position data. Maybe we'll receive a position later,
                     // but otherwise this will have to do.
-                    position: PhyPoint::new(0, 0),
+                    position: PhysicalPosition::new(0, 0),
                     requested_action: Some(DndAction::Private),
                     dropped: true,
                 };
@@ -372,7 +372,7 @@ impl DragNDropState {
                     send_finished_event(event_source_window, window, requested_action);
 
                 handler.on_event(Event::Mouse(MouseEvent::DragDropped {
-                    position: position.to_logical(&window.window_info.get()),
+                    position: position.cast(),
                     data,
                     // We don't get modifiers for drag n drop events.
                     modifiers: Modifiers::empty(),
@@ -426,8 +426,6 @@ impl DragNDropState {
                 // TODO: Log warning
             }
             Ok(data) => {
-                let logical_position = position.to_logical(&window.window_info.get());
-
                 // Inform the source that we are (still) accepting the drop.
 
                 // Handle the case where the user already dropped, but we only received the data later.
@@ -438,14 +436,14 @@ impl DragNDropState {
 
                     // Now that we have actual drop data, we can inform the handler about the drag AND drop events.
                     handler.on_event(Event::Mouse(MouseEvent::DragEntered {
-                        position: logical_position,
+                        position: position.cast(),
                         data: data.clone(),
                         // We don't get modifiers for drag n drop events.
                         modifiers: Modifiers::empty(),
                     }));
 
                     handler.on_event(Event::Mouse(MouseEvent::DragDropped {
-                        position: logical_position,
+                        position: position.cast(),
                         data: data.clone(),
                         // We don't get modifiers for drag n drop events.
                         modifiers: Modifiers::empty(),
@@ -466,7 +464,7 @@ impl DragNDropState {
 
                     // Now that we have actual drop data, we can inform the handler about the drag event.
                     handler.on_event(Event::Mouse(MouseEvent::DragEntered {
-                        position: logical_position,
+                        position: position.cast(),
                         data,
                         // We don't get modifiers for drag n drop events.
                         modifiers: Modifiers::empty(),
@@ -582,19 +580,22 @@ fn decode_xy(data: u32) -> (u16, u16) {
 
 fn translate_root_coordinates(
     window: &WindowInner, x: u16, y: u16,
-) -> Result<PhyPoint, ReplyError> {
+) -> Result<PhysicalPosition<i16>, ReplyError> {
     let root_id = window.connection.screen().root;
+    let x = x.try_into().unwrap_or(i16::MAX);
+    let y = y.try_into().unwrap_or(i16::MAX);
+
     if root_id == window.window_id.get() {
-        return Ok(PhyPoint::new(x as i32, y as i32));
+        return Ok(PhysicalPosition::new(x, y));
     }
 
     let reply = window
         .connection
         .conn
-        .translate_coordinates(root_id, window.window_id.get(), x as i16, y as i16)?
+        .translate_coordinates(root_id, window.window_id.get(), x, y)?
         .reply()?;
 
-    Ok(PhyPoint::new(reply.dst_x as i32, reply.dst_y as i32))
+    Ok(PhysicalPosition::new(reply.dst_x, reply.dst_y))
 }
 
 fn fetch_dnd_data(window: &WindowInner) -> Result<DropData, Box<dyn Error>> {

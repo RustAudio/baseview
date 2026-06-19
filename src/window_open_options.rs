@@ -1,4 +1,4 @@
-use crate::Size;
+use dpi::{LogicalSize, Size};
 
 #[cfg(feature = "opengl")]
 use crate::gl::GlConfig;
@@ -18,10 +18,7 @@ pub enum WindowScalePolicy {
 pub struct WindowOpenOptions {
     pub title: String,
 
-    /// The logical size of the window
-    ///
-    /// These dimensions will be scaled by the scaling policy specified in `scale`. Mouse
-    /// position will be passed back as logical coordinates.
+    /// The size of the window, either in physical or logical coordinates
     pub size: Size,
 
     /// The dpi scaling policy
@@ -48,8 +45,8 @@ impl WindowOpenOptions {
     }
 
     #[inline]
-    pub fn with_size(mut self, width: f64, height: f64) -> Self {
-        self.size = Size::new(width, height);
+    pub fn with_size(mut self, size: impl Into<Size>) -> Self {
+        self.size = size.into();
         self
     }
 
@@ -71,7 +68,7 @@ impl Default for WindowOpenOptions {
     fn default() -> Self {
         Self {
             title: String::from("baseview window"),
-            size: Size { width: 500.0, height: 400.0 },
+            size: LogicalSize { width: 500.0, height: 400.0 }.into(),
             scale: WindowScalePolicy::default(),
             #[cfg(feature = "opengl")]
             gl_config: None,
