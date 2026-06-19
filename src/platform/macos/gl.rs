@@ -17,6 +17,7 @@ use std::ffi::c_void;
 use std::ptr::NonNull;
 
 pub type CreationFailedError = ();
+#[derive(Clone)]
 pub struct GlContext {
     pub(crate) view: Retained<NSOpenGLView>,
     context: Retained<NSOpenGLContext>,

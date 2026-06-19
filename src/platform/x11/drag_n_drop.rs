@@ -19,7 +19,8 @@ use x11rb::{
 
 use super::xcb_connection::{Atoms, GetPropertyError};
 use super::*;
-use crate::{DropData, Event, MouseEvent, PhyPoint, WindowHandler};
+use crate::handler::WindowHandler;
+use crate::{DropData, Event, MouseEvent, PhyPoint};
 use DragNDropState::*;
 
 /// The Drag-N-Drop session state of a `baseview` X11 window, for which it is the target.
@@ -106,9 +107,9 @@ impl DragNDropState {
         let supported_types = if !has_more_types {
             &data[2..5]
         } else {
-            extra_types = window.xcb_connection.get_property(
+            extra_types = window.connection.get_property(
                 source_window,
-                window.xcb_connection.atoms.XdndTypeList,
+                window.connection.atoms.XdndTypeList,
                 xproto::Atom::from(xproto::AtomEnum::ATOM),
             )?;
 
@@ -116,8 +117,7 @@ impl DragNDropState {
         };
 
         // We only support the TextUriList type
-        let data_type_supported =
-            supported_types.contains(&window.xcb_connection.atoms.TextUriList);
+        let data_type_supported = supported_types.contains(&window.connection.atoms.TextUriList);
 
         // If there was an active drag session that we informed the handler about, we need to
         // generate the matching DragLeft before cancelling the previous session.
@@ -133,10 +133,7 @@ impl DragNDropState {
 
         // Do this at the end, in case the handler panics, so that it doesn't poison our internal state.
         if interrupted_active_drag {
-            handler.on_event(
-                &mut crate::Window::new(Window { inner: window }),
-                Event::Mouse(MouseEvent::DragLeft),
-            );
+            handler.on_event(Event::Mouse(MouseEvent::DragLeft));
         }
 
         Ok(())
@@ -180,8 +177,7 @@ impl DragNDropState {
                 // In version <2, action isn't specified
                 let requested_action = (*protocol_version >= 2).then_some(event_data[4] as Atom);
                 let requested_action = requested_action.map(|a| {
-                    DndAction::from_atom(a, &window.xcb_connection.atoms)
-                        .unwrap_or(DndAction::Private)
+                    DndAction::from_atom(a, &window.connection.atoms).unwrap_or(DndAction::Private)
                 });
 
                 request_convert_selection(window, timestamp)?;
@@ -224,18 +220,15 @@ impl DragNDropState {
                 *requested_action = if *protocol_version < 2 {
                     None
                 } else {
-                    DndAction::from_atom(event_data[4] as Atom, &window.xcb_connection.atoms)
+                    DndAction::from_atom(event_data[4] as Atom, &window.connection.atoms)
                 };
 
-                handler.on_event(
-                    &mut crate::Window::new(Window { inner: window }),
-                    Event::Mouse(MouseEvent::DragMoved {
-                        position: position.to_logical(&window.window_info),
-                        data: data.clone(),
-                        // We don't get modifiers for drag n drop events.
-                        modifiers: Modifiers::empty(),
-                    }),
-                );
+                handler.on_event(Event::Mouse(MouseEvent::DragMoved {
+                    position: position.to_logical(&window.window_info.get()),
+                    data: data.clone(),
+                    // We don't get modifiers for drag n drop events.
+                    modifiers: Modifiers::empty(),
+                }));
 
                 status_result?;
                 Ok(())
@@ -244,8 +237,7 @@ impl DragNDropState {
     }
 
     pub fn handle_leave_event(
-        &mut self, window: &WindowInner, handler: &mut dyn WindowHandler,
-        event: &ClientMessageEvent,
+        &mut self, handler: &mut dyn WindowHandler, event: &ClientMessageEvent,
     ) {
         let data = event.data.as_data32();
         let event_source_window = data[0] as xproto::Window;
@@ -272,10 +264,7 @@ impl DragNDropState {
 
         // Do this at the end, in case the handler panics, so that it doesn't poison our internal state.
         if left_active_drag {
-            handler.on_event(
-                &mut crate::Window::new(Window { inner: window }),
-                Event::Mouse(MouseEvent::DragLeft),
-            );
+            handler.on_event(Event::Mouse(MouseEvent::DragLeft));
         }
     }
 
@@ -382,15 +371,12 @@ impl DragNDropState {
                 let reply_result =
                     send_finished_event(event_source_window, window, requested_action);
 
-                handler.on_event(
-                    &mut crate::Window::new(Window { inner: window }),
-                    Event::Mouse(MouseEvent::DragDropped {
-                        position: position.to_logical(&window.window_info),
-                        data,
-                        // We don't get modifiers for drag n drop events.
-                        modifiers: Modifiers::empty(),
-                    }),
-                );
+                handler.on_event(Event::Mouse(MouseEvent::DragDropped {
+                    position: position.to_logical(&window.window_info.get()),
+                    data,
+                    // We don't get modifiers for drag n drop events.
+                    modifiers: Modifiers::empty(),
+                }));
 
                 reply_result
             }
@@ -415,7 +401,7 @@ impl DragNDropState {
         };
 
         // Ignore if this was meant for another window (?)
-        if event.requestor != window.window_id {
+        if event.requestor != window.window_id.get() {
             return Ok(());
         }
 
@@ -440,7 +426,7 @@ impl DragNDropState {
                 // TODO: Log warning
             }
             Ok(data) => {
-                let logical_position = position.to_logical(&window.window_info);
+                let logical_position = position.to_logical(&window.window_info.get());
 
                 // Inform the source that we are (still) accepting the drop.
 
@@ -451,25 +437,19 @@ impl DragNDropState {
                     let reply_result = send_finished_event(source_window, window, requested_action);
 
                     // Now that we have actual drop data, we can inform the handler about the drag AND drop events.
-                    handler.on_event(
-                        &mut crate::Window::new(Window { inner: window }),
-                        Event::Mouse(MouseEvent::DragEntered {
-                            position: logical_position,
-                            data: data.clone(),
-                            // We don't get modifiers for drag n drop events.
-                            modifiers: Modifiers::empty(),
-                        }),
-                    );
+                    handler.on_event(Event::Mouse(MouseEvent::DragEntered {
+                        position: logical_position,
+                        data: data.clone(),
+                        // We don't get modifiers for drag n drop events.
+                        modifiers: Modifiers::empty(),
+                    }));
 
-                    handler.on_event(
-                        &mut crate::Window::new(Window { inner: window }),
-                        Event::Mouse(MouseEvent::DragDropped {
-                            position: logical_position,
-                            data: data.clone(),
-                            // We don't get modifiers for drag n drop events.
-                            modifiers: Modifiers::empty(),
-                        }),
-                    );
+                    handler.on_event(Event::Mouse(MouseEvent::DragDropped {
+                        position: logical_position,
+                        data: data.clone(),
+                        // We don't get modifiers for drag n drop events.
+                        modifiers: Modifiers::empty(),
+                    }));
 
                     reply_result
                 } else {
@@ -485,15 +465,12 @@ impl DragNDropState {
                     let reply_result = send_status_event(source_window, window, requested_action);
 
                     // Now that we have actual drop data, we can inform the handler about the drag event.
-                    handler.on_event(
-                        &mut crate::Window::new(Window { inner: window }),
-                        Event::Mouse(MouseEvent::DragEntered {
-                            position: logical_position,
-                            data,
-                            // We don't get modifiers for drag n drop events.
-                            modifiers: Modifiers::empty(),
-                        }),
-                    );
+                    handler.on_event(Event::Mouse(MouseEvent::DragEntered {
+                        position: logical_position,
+                        data,
+                        // We don't get modifiers for drag n drop events.
+                        modifiers: Modifiers::empty(),
+                    }));
 
                     reply_result
                 }
@@ -505,13 +482,13 @@ impl DragNDropState {
 fn send_status_rejected(
     source_window: xproto::Window, window: &WindowInner,
 ) -> Result<(), ConnectionError> {
-    let conn = &window.xcb_connection;
+    let conn = &window.connection;
 
     let event = ClientMessageEvent {
         response_type: xproto::CLIENT_MESSAGE_EVENT,
         window: source_window,
         format: 32,
-        data: [window.window_id, 0, 0, 0, conn.atoms.None as _].into(),
+        data: [window.window_id.get(), 0, 0, 0, conn.atoms.None as _].into(),
         sequence: 0,
         type_: conn.atoms.XdndStatus,
     };
@@ -524,17 +501,16 @@ fn send_status_rejected(
 fn send_status_event(
     source_window: xproto::Window, window: &WindowInner, action: Option<DndAction>,
 ) -> Result<(), ConnectionError> {
-    let conn = &window.xcb_connection;
+    let conn = &window.connection;
 
-    let action = action
-        .map(|a| a.to_atom(&window.xcb_connection.atoms))
-        .unwrap_or(window.xcb_connection.atoms.None);
+    let action =
+        action.map(|a| a.to_atom(&window.connection.atoms)).unwrap_or(window.connection.atoms.None);
 
     let event = ClientMessageEvent {
         response_type: xproto::CLIENT_MESSAGE_EVENT,
         window: source_window,
         format: 32,
-        data: [window.window_id, 1, 0, 0, action as _].into(),
+        data: [window.window_id.get(), 1, 0, 0, action as _].into(),
         sequence: 0,
         type_: conn.atoms.XdndStatus,
     };
@@ -547,13 +523,13 @@ fn send_status_event(
 pub fn send_finished_rejected(
     source_window: xproto::Window, window: &WindowInner,
 ) -> Result<(), ConnectionError> {
-    let conn = &window.xcb_connection;
+    let conn = &window.connection;
 
     let event = ClientMessageEvent {
         response_type: xproto::CLIENT_MESSAGE_EVENT,
         window: source_window,
         format: 32,
-        data: [window.window_id, 1, window.xcb_connection.atoms.None as _, 0, 0].into(),
+        data: [window.window_id.get(), 1, window.connection.atoms.None as _, 0, 0].into(),
         sequence: 0,
         type_: conn.atoms.XdndFinished as _,
     };
@@ -566,16 +542,15 @@ pub fn send_finished_rejected(
 fn send_finished_event(
     source_window: xproto::Window, window: &WindowInner, action: Option<DndAction>,
 ) -> Result<(), ConnectionError> {
-    let conn = &window.xcb_connection;
-    let action = action
-        .map(|a| a.to_atom(&window.xcb_connection.atoms))
-        .unwrap_or(window.xcb_connection.atoms.None);
+    let conn = &window.connection;
+    let action =
+        action.map(|a| a.to_atom(&window.connection.atoms)).unwrap_or(window.connection.atoms.None);
 
     let event = ClientMessageEvent {
         response_type: xproto::CLIENT_MESSAGE_EVENT,
         window: source_window,
         format: 32,
-        data: [window.window_id, 1, action as _, 0, 0].into(),
+        data: [window.window_id.get(), 1, action as _, 0, 0].into(),
         sequence: 0,
         type_: conn.atoms.XdndFinished as _,
     };
@@ -588,10 +563,10 @@ fn send_finished_event(
 fn request_convert_selection(
     window: &WindowInner, timestamp: Option<Timestamp>,
 ) -> Result<(), ConnectionError> {
-    let conn = &window.xcb_connection;
+    let conn = &window.connection;
 
     conn.conn.convert_selection(
-        window.window_id,
+        window.window_id.get(),
         conn.atoms.XdndSelection,
         conn.atoms.TextUriList,
         conn.atoms.XdndSelection,
@@ -608,25 +583,28 @@ fn decode_xy(data: u32) -> (u16, u16) {
 fn translate_root_coordinates(
     window: &WindowInner, x: u16, y: u16,
 ) -> Result<PhyPoint, ReplyError> {
-    let root_id = window.xcb_connection.screen().root;
-    if root_id == window.window_id {
+    let root_id = window.connection.screen().root;
+    if root_id == window.window_id.get() {
         return Ok(PhyPoint::new(x as i32, y as i32));
     }
 
     let reply = window
-        .xcb_connection
+        .connection
         .conn
-        .translate_coordinates(root_id, window.window_id, x as i16, y as i16)?
+        .translate_coordinates(root_id, window.window_id.get(), x as i16, y as i16)?
         .reply()?;
 
     Ok(PhyPoint::new(reply.dst_x as i32, reply.dst_y as i32))
 }
 
 fn fetch_dnd_data(window: &WindowInner) -> Result<DropData, Box<dyn Error>> {
-    let conn = &window.xcb_connection;
+    let conn = &window.connection;
 
-    let data: Vec<u8> =
-        conn.get_property(window.window_id, conn.atoms.XdndSelection, conn.atoms.TextUriList)?;
+    let data: Vec<u8> = conn.get_property(
+        window.window_id.get(),
+        conn.atoms.XdndSelection,
+        conn.atoms.TextUriList,
+    )?;
 
     let path_list = parse_data(&data)?;
 

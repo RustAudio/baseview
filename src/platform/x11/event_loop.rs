@@ -16,7 +16,7 @@ use x11rb::protocol::Event as XEvent;
 
 pub(crate) struct EventLoop {
     handler: Box<dyn WindowHandler>,
-    window: WindowInner,
+    window: Rc<WindowInner>,
     parent_handle: Option<ParentHandle>,
 
     new_physical_size: Option<PhySize>,
@@ -30,8 +30,8 @@ pub(crate) struct EventLoop {
 
 impl EventLoop {
     pub fn new(
-        window: WindowInner, handler: impl WindowHandler + 'static,
-        parent_handle: Option<ParentHandle>, xkb_state: Option<XkbcommonState>,
+        window: Rc<WindowInner>, handler: impl WindowHandler, parent_handle: Option<ParentHandle>,
+        xkb_state: Option<XkbcommonState>,
     ) -> Self {
         Self {
             window,
@@ -52,15 +52,16 @@ impl EventLoop {
         // when they've all been coalesced.
         self.new_physical_size = None;
 
-        while let Some(event) = self.window.xcb_connection.conn.poll_for_event()? {
+        while let Some(event) = self.window.connection.conn.poll_for_event()? {
             self.handle_xcb_event(event);
         }
 
         if let Some(size) = self.new_physical_size.take() {
-            self.window.window_info =
-                WindowInfo::from_physical_size(size, self.window.window_info.scale());
+            self.window
+                .window_info
+                .set(WindowInfo::from_physical_size(size, self.window.window_info.get().scale()));
 
-            let window_info = self.window.window_info;
+            let window_info = self.window.window_info.get();
 
             self.handle_event(Event::Window(WindowEvent::Resized(window_info)));
         }
@@ -70,7 +71,7 @@ impl EventLoop {
 
     // Event loop
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        let connection = Rc::clone(&self.window.xcb_connection);
+        let connection = Rc::clone(&self.window.connection);
         let mut poller = ConnectionPoller::new(&connection.conn)?;
 
         let mut last_frame = Instant::now();
@@ -85,7 +86,7 @@ impl EventLoop {
             // if it's already time to draw a new frame.
             let next_frame = last_frame + self.frame_interval;
             if Instant::now() >= next_frame {
-                self.handler.on_frame(&mut crate::Window::new(Window { inner: &self.window }));
+                self.handler.on_frame();
                 last_frame = Instant::max(next_frame, Instant::now() - self.frame_interval);
             }
 
@@ -149,7 +150,7 @@ impl EventLoop {
                     return;
                 }
 
-                if event.data.as_data32()[0] == self.window.xcb_connection.atoms.WM_DELETE_WINDOW {
+                if event.data.as_data32()[0] == self.window.connection.atoms.WM_DELETE_WINDOW {
                     self.handle_close_requested();
                     return;
                 }
@@ -157,7 +158,7 @@ impl EventLoop {
                 ////
                 // drag n drop
                 ////
-                if event.type_ == self.window.xcb_connection.atoms.XdndEnter {
+                if event.type_ == self.window.connection.atoms.XdndEnter {
                     if let Err(_e) = self.drag_n_drop.handle_enter_event(
                         &self.window,
                         &mut *self.handler,
@@ -165,7 +166,7 @@ impl EventLoop {
                     ) {
                         // TODO: log warning
                     }
-                } else if event.type_ == self.window.xcb_connection.atoms.XdndPosition {
+                } else if event.type_ == self.window.connection.atoms.XdndPosition {
                     if let Err(_e) = self.drag_n_drop.handle_position_event(
                         &self.window,
                         &mut *self.handler,
@@ -173,19 +174,19 @@ impl EventLoop {
                     ) {
                         // TODO: log warning
                     }
-                } else if event.type_ == self.window.xcb_connection.atoms.XdndDrop {
+                } else if event.type_ == self.window.connection.atoms.XdndDrop {
                     if let Err(_e) =
                         self.drag_n_drop.handle_drop_event(&self.window, &mut *self.handler, &event)
                     {
                         // TODO: log warning
                     }
-                } else if event.type_ == self.window.xcb_connection.atoms.XdndLeave {
-                    self.drag_n_drop.handle_leave_event(&self.window, &mut *self.handler, &event);
+                } else if event.type_ == self.window.connection.atoms.XdndLeave {
+                    self.drag_n_drop.handle_leave_event(&mut *self.handler, &event);
                 }
             }
 
             XEvent::SelectionNotify(event) => {
-                if event.property == self.window.xcb_connection.atoms.XdndSelection {
+                if event.property == self.window.connection.atoms.XdndSelection {
                     if let Err(_e) = self.drag_n_drop.handle_selection_notify_event(
                         &self.window,
                         &mut *self.handler,
@@ -200,7 +201,7 @@ impl EventLoop {
                 let new_physical_size = PhySize::new(event.width as u32, event.height as u32);
 
                 if self.new_physical_size.is_some()
-                    || new_physical_size != self.window.window_info.physical_size()
+                    || new_physical_size != self.window.window_info.get().physical_size()
                 {
                     self.new_physical_size = Some(new_physical_size);
                 }
@@ -211,7 +212,7 @@ impl EventLoop {
             ////
             XEvent::MotionNotify(event) => {
                 let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
-                let logical_pos = physical_pos.to_logical(&self.window.window_info);
+                let logical_pos = physical_pos.to_logical(&self.window.window_info.get());
 
                 self.handle_event(Event::Mouse(MouseEvent::CursorMoved {
                     position: logical_pos,
@@ -224,7 +225,7 @@ impl EventLoop {
                 // since no `MOTION_NOTIFY` event is generated when `ENTER_NOTIFY` is generated,
                 // we generate a CursorMoved as well, so the mouse position from here isn't lost
                 let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
-                let logical_pos = physical_pos.to_logical(&self.window.window_info);
+                let logical_pos = physical_pos.to_logical(&self.window.window_info.get());
                 self.handle_event(Event::Mouse(MouseEvent::CursorMoved {
                     position: logical_pos,
                     modifiers: key_mods(event.state),
@@ -293,7 +294,7 @@ impl EventLoop {
     }
 
     fn handle_event(&mut self, event: Event) {
-        self.handler.on_event(&mut crate::Window::new(Window { inner: &self.window }), event);
+        self.handler.on_event(event);
     }
 
     fn handle_close_requested(&mut self) {

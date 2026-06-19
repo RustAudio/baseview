@@ -4,7 +4,7 @@ mod view;
 mod window;
 
 use objc2::rc::Retained;
-use objc2_app_kit::{NSView, NSWindow};
+use objc2_app_kit::NSView;
 use objc2_core_foundation::CFUUID;
 use std::ffi::CString;
 
@@ -13,7 +13,7 @@ pub use timer::TimerHandle;
 pub use view::*;
 pub use window::*;
 
-use raw_window_handle::RawWindowHandle;
+use raw_window_handle::{RawWindowHandle, WindowHandle};
 
 fn new_class_name(prefix: &str) -> CString {
     // PANIC: CFUUIDCreate is not documented to return NULL.
@@ -26,15 +26,10 @@ fn new_class_name(prefix: &str) -> CString {
     CString::new(class_name).unwrap()
 }
 
-pub fn extract_raw_window_handle(
-    handle: RawWindowHandle,
-) -> (Option<Retained<NSWindow>>, Option<Retained<NSView>>) {
-    let RawWindowHandle::AppKit(handle) = handle else {
+pub fn extract_raw_window_handle(handle: WindowHandle) -> Option<Retained<NSView>> {
+    let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
         panic!("Not a macOS window");
     };
 
-    let parent_window = unsafe { Retained::retain(handle.ns_window as *mut NSWindow) };
-    let parent_view = unsafe { Retained::retain(handle.ns_view as *mut NSView) };
-
-    (parent_window, parent_view)
+    unsafe { Retained::retain(handle.ns_view.as_ptr() as *mut NSView) }
 }

@@ -2,7 +2,6 @@
 use crate::wrappers::win32::user32::ExtendedUser32;
 use crate::wrappers::win32::{Dpi, DpiAwarenessContext, Rect};
 use crate::PhySize;
-use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ptr::{null_mut, NonNull};
 use windows::Win32::System::Ole::IDropTarget;
@@ -25,11 +24,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 ///
 /// The role of this type is to help safely encapsulating most of the unsafe Win32 HWND APIs.
 #[derive(Copy, Clone)]
-pub struct HWnd<'a>(HWND, PhantomData<&'a ()>);
+pub struct HWnd(HWND);
 
-impl HWnd<'_> {
+impl HWnd {
     pub unsafe fn from_raw(hwnd: HWND) -> Self {
-        Self(hwnd, PhantomData)
+        Self(hwnd)
     }
 
     pub fn as_raw(&self) -> HWND {

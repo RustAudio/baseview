@@ -6,4 +6,4 @@ publish = false
 
 [dependencies]
 baseview = { path = "../..", features = ["opengl"] }
-femtovg = "0.9.0"
+femtovg = "0.25.1"

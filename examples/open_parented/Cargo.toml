@@ -6,5 +6,4 @@ publish = false
 
 [dependencies]
 baseview = { path = "../.." }
-softbuffer = "0.3.4"
-rtrb = "0.3.4"
+softbuffer = "0.4.8"

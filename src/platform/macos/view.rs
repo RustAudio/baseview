@@ -2,6 +2,7 @@
 
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
+use crate::platform::macos::context::WindowContext;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
@@ -37,12 +38,13 @@ pub(crate) struct BaseviewView {
     parenting: ViewParentingType,
 
     #[cfg(feature = "opengl")]
-    pub(crate) gl_context: OnceCell<crate::gl::GlContext>,
+    pub(crate) gl_context: OnceCell<super::gl::GlContext>,
 }
 
 impl BaseviewView {
     pub fn new<H: WindowHandler + 'static>(
-        options: WindowOpenOptions, builder: impl FnOnce(&mut crate::Window) -> H,
+        options: WindowOpenOptions,
+        builder: impl FnOnce(crate::WindowContext) -> H + Send + 'static,
         parenting: ViewParentingType,
     ) -> (Retained<View<Self>>, Rc<WindowSharedState>) {
         let view_rect =
@@ -80,14 +82,14 @@ impl BaseviewView {
             #[cfg(feature = "opengl")]
             if let Some(gl_config) = options.gl_config {
                 let gl_context = super::gl::GlContext::create(view.view, gl_config).unwrap();
-                let gl_context = crate::gl::GlContext::new(gl_context);
                 let Ok(()) = view.gl_context.set(gl_context) else { unreachable!() };
             }
 
+            let context = WindowContext::new(view);
+            let handler = Box::new(builder(crate::WindowContext::new(context)));
+
             // Initialize handler
-            let Ok(()) = view.window_handler.set(Box::new(builder(&mut view.into()))) else {
-                unreachable!()
-            };
+            let Ok(()) = view.window_handler.set(handler) else { unreachable!() };
 
             // Set up anything that might trigger events to the handler
 
@@ -149,7 +151,7 @@ impl BaseviewView {
         // macOS.
         #[cfg(feature = "opengl")]
         if let Some(gl_context) = this.gl_context.get() {
-            gl_context.inner.resize(size);
+            gl_context.resize(size);
         }
 
         // If this is a standalone window then we'll also need to resize the window itself
@@ -168,13 +170,13 @@ impl BaseviewView {
             return EventStatus::Ignored;
         };
 
-        handler.on_event(&mut this.into(), event)
+        handler.on_event(event)
     }
 
     fn trigger_frame(this: ViewRef<Self>) {
         let Some(handler) = this.window_handler.get() else { return };
 
-        handler.on_frame(&mut this.into());
+        handler.on_frame();
     }
 
     fn fetch_view_size(view: &NSView) -> WindowInfo {
@@ -268,7 +270,7 @@ impl ViewImpl for BaseviewView {
         #[cfg(feature = "opengl")]
         {
             if let Some(gl_context) = this.gl_context.get() {
-                if *super_result == **gl_context.inner.0.view {
+                if *super_result == **gl_context.view {
                     return Some(this.view);
                 }
             }

@@ -1,6 +1,8 @@
+use raw_window_handle::{DisplayHandle, XcbDisplayHandle};
 use std::cell::RefCell;
 use std::collections::hash_map::{Entry, HashMap};
 use std::error::Error;
+use std::ptr::NonNull;
 use x11rb::connection::Connection;
 use x11rb::cursor::Handle as CursorHandle;
 use x11rb::protocol::xproto::{self, Cursor, Screen};
@@ -41,7 +43,7 @@ x11rb::atom_manager! {
 /// A very light abstraction around the XCB connection.
 ///
 /// Keeps track of the xcb connection itself and the xlib display ID that was used to connect.
-pub struct XcbConnection {
+pub struct X11Connection {
     pub(crate) conn: XlibXcbConnection,
     pub(crate) atoms: Atoms,
     pub(crate) resources: resource_manager::Database,
@@ -49,7 +51,7 @@ pub struct XcbConnection {
     pub(crate) cursor_cache: RefCell<HashMap<MouseCursor, u32>>,
 }
 
-impl XcbConnection {
+impl X11Connection {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let conn = XlibXcbConnection::open()?;
         let screen = conn.default_screen();
@@ -137,5 +139,13 @@ impl XcbConnection {
         &self, window: xproto::Window, property: xproto::Atom, property_type: xproto::Atom,
     ) -> Result<Vec<T>, GetPropertyError> {
         self::get_property::get_property(window, property, property_type, &self.conn)
+    }
+
+    pub fn display_handle(&self) -> DisplayHandle<'_> {
+        let raw_connection = self.conn.xcb_connection().get_raw_xcb_connection();
+        let Some(raw_connection) = NonNull::new(raw_connection) else { unreachable!() };
+        let handle = XcbDisplayHandle::new(Some(raw_connection), self.conn.default_screen());
+
+        unsafe { DisplayHandle::borrow_raw(handle.into()) }
     }
 }

@@ -32,10 +32,12 @@ impl From<OpenError> for GlError {
     }
 }
 
-pub struct GlContext {
+pub type GlContext = Rc<GlContextInner>;
+
+pub struct GlContextInner {
     glx: Glx,
     window: c_ulong,
-    connection: Rc<XcbConnection>,
+    connection: Rc<X11Connection>,
     context: GLXContext,
 }
 
@@ -47,13 +49,13 @@ pub struct FbConfig {
 }
 
 /// The configuration a window should be created with after calling
-/// [GlContext::get_fb_config_and_visual].
+/// [GlContextInner::get_fb_config_and_visual].
 pub struct WindowConfig {
     pub depth: u8,
     pub visual: u32,
 }
 
-impl GlContext {
+impl GlContextInner {
     /// Creating an OpenGL context under X11 works slightly different. Different OpenGL
     /// configurations require different framebuffer configurations, and to be able to use that
     /// context with a window the window needs to be created with a matching visual. This means that
@@ -63,8 +65,8 @@ impl GlContext {
     ///
     /// Use [Self::get_fb_config_and_visual] to create both of these things.
     pub fn create(
-        window: c_ulong, connection: Rc<XcbConnection>, config: FbConfig,
-    ) -> Result<GlContext, GlError> {
+        window: c_ulong, connection: Rc<X11Connection>, config: FbConfig,
+    ) -> Result<GlContextInner, GlError> {
         let glx = Glx::open()?;
 
         let xlib_connection = connection.conn.xlib_connection();
@@ -86,7 +88,8 @@ impl GlContext {
             )?;
 
             // Create context object here so that error or panic will properly free the context
-            let context = GlContext { glx, window, connection: Rc::clone(&connection), context };
+            let context =
+                GlContextInner { glx, window, connection: Rc::clone(&connection), context };
 
             unsafe {
                 context.glx.with_current_context(
@@ -113,7 +116,7 @@ impl GlContext {
     /// This needs to be passed to [Self::create] along with a handle to a window that was created
     /// using the visual also returned from this function.
     pub fn get_fb_config_and_visual(
-        connection: &XcbConnection, config: GlConfig,
+        connection: &X11Connection, config: GlConfig,
     ) -> Result<(FbConfig, WindowConfig), GlError> {
         let glx = Glx::open()?;
 
@@ -171,7 +174,7 @@ impl GlContext {
     }
 }
 
-impl Drop for GlContext {
+impl Drop for GlContextInner {
     fn drop(&mut self) {
         unsafe { self.glx.destroy_context(self.connection.conn.xlib_connection(), self.context) }
     }

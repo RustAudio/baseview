@@ -1,7 +1,6 @@
 use crate::platform::gl::*;
 use std::ffi::c_void;
 use std::marker::PhantomData;
-use std::panic::AssertUnwindSafe;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GlConfig {
@@ -45,22 +44,22 @@ pub enum Profile {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum GlError {
-    InvalidWindowHandle,
     VersionNotSupported,
     CreationFailed(CreationFailedError),
 }
 
+#[derive(Clone)]
 pub struct GlContext {
-    // AssertUnwindSafe should *not* be here, but this is needed for now to keep semver compatibility
-    // Remove this in 0.2
-    pub(crate) inner: AssertUnwindSafe<crate::platform::gl::GlContext>,
-    phantom: PhantomData<*mut ()>,
+    inner: crate::platform::gl::GlContext,
+    // To make sure this is !Send, !Sync, and !UnwindSafe on all platforms
+    phantom: PhantomData<(*mut (), &'static mut ())>,
 }
 
 impl GlContext {
     pub(crate) fn new(context: crate::platform::gl::GlContext) -> GlContext {
-        GlContext { inner: AssertUnwindSafe(context), phantom: PhantomData }
+        GlContext { inner: context, phantom: PhantomData }
     }
 
     pub unsafe fn make_current(&self) {

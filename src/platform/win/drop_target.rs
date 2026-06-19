@@ -13,9 +13,8 @@ use windows_sys::Win32::{
     Foundation::POINT, Graphics::Gdi::ScreenToClient, UI::Shell::DragQueryFileW,
 };
 
+use super::window_state::WindowState;
 use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent, PhyPoint, Point};
-
-use super::WindowState;
 
 #[implement(IDropTarget)]
 pub(crate) struct DropTarget {

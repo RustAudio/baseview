@@ -1,13 +1,12 @@
 use baseview::{
-    Event, EventStatus, PhySize, Window, WindowEvent, WindowHandle, WindowHandler,
+    Event, EventStatus, PhySize, Window, WindowContext, WindowEvent, WindowHandle, WindowHandler,
     WindowOpenOptions,
 };
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 
 struct ParentWindowHandler {
-    _ctx: softbuffer::Context,
-    surface: RefCell<softbuffer::Surface>,
+    surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
     current_size: Cell<PhySize>,
     damaged: Cell<bool>,
 
@@ -15,20 +14,19 @@ struct ParentWindowHandler {
 }
 
 impl ParentWindowHandler {
-    pub fn new(window: &mut Window) -> Self {
-        let ctx = unsafe { softbuffer::Context::new(window) }.unwrap();
-        let mut surface = unsafe { softbuffer::Surface::new(&ctx, window) }.unwrap();
+    pub fn new(window: WindowContext) -> Self {
+        let ctx = softbuffer::Context::new(window.clone()).unwrap();
+        let mut surface = softbuffer::Surface::new(&ctx, window.clone()).unwrap();
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         let window_open_options =
             WindowOpenOptions::new().with_size(256.0, 256.0).with_title("baseview child");
 
         let child_window =
-            Window::open_parented(window, window_open_options, ChildWindowHandler::new);
+            Window::open_parented(&window, window_open_options, ChildWindowHandler::new);
 
         // TODO: no way to query physical size initially?
         Self {
-            _ctx: ctx,
             surface: surface.into(),
             current_size: PhySize::new(512, 512).into(),
             damaged: true.into(),
@@ -38,7 +36,7 @@ impl ParentWindowHandler {
 }
 
 impl WindowHandler for ParentWindowHandler {
-    fn on_frame(&self, _window: &mut Window) {
+    fn on_frame(&self) {
         let mut surface = self.surface.borrow_mut();
         let mut buf = surface.buffer_mut().unwrap();
         if self.damaged.get() {
@@ -48,7 +46,7 @@ impl WindowHandler for ParentWindowHandler {
         buf.present().unwrap();
     }
 
-    fn on_event(&self, _window: &mut Window, event: Event) -> EventStatus {
+    fn on_event(&self, event: Event) -> EventStatus {
         match event {
             Event::Window(WindowEvent::Resized(info)) => {
                 println!("Parent Resized: {:?}", info);
@@ -72,21 +70,19 @@ impl WindowHandler for ParentWindowHandler {
 }
 
 struct ChildWindowHandler {
-    _ctx: softbuffer::Context,
-    surface: RefCell<softbuffer::Surface>,
+    surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
     current_size: Cell<PhySize>,
     damaged: Cell<bool>,
 }
 
 impl ChildWindowHandler {
-    pub fn new(window: &mut Window) -> Self {
-        let ctx = unsafe { softbuffer::Context::new(window) }.unwrap();
-        let mut surface = unsafe { softbuffer::Surface::new(&ctx, window) }.unwrap();
+    pub fn new(window: WindowContext) -> Self {
+        let ctx = softbuffer::Context::new(window.clone()).unwrap();
+        let mut surface = softbuffer::Surface::new(&ctx, window).unwrap();
         surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
 
         // TODO: no way to query physical size initially?
         Self {
-            _ctx: ctx,
             surface: surface.into(),
             current_size: PhySize::new(256, 256).into(),
             damaged: true.into(),
@@ -95,7 +91,7 @@ impl ChildWindowHandler {
 }
 
 impl WindowHandler for ChildWindowHandler {
-    fn on_frame(&self, _window: &mut Window) {
+    fn on_frame(&self) {
         let mut surface = self.surface.borrow_mut();
         let mut buf = surface.buffer_mut().unwrap();
         if self.damaged.get() {
@@ -105,7 +101,7 @@ impl WindowHandler for ChildWindowHandler {
         buf.present().unwrap();
     }
 
-    fn on_event(&self, _window: &mut Window, event: Event) -> EventStatus {
+    fn on_event(&self, event: Event) -> EventStatus {
         match event {
             Event::Window(WindowEvent::Resized(info)) => {
                 println!("Child Resized: {:?}", info);
