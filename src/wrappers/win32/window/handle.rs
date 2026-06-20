@@ -1,7 +1,7 @@
 ﻿use crate::wrappers::win32::style::WindowStyle;
 use crate::wrappers::win32::user32::ExtendedUser32;
 use crate::wrappers::win32::{Dpi, DpiAwarenessContext, Rect};
-use crate::PhySize;
+use dpi::PhysicalSize;
 use std::num::NonZeroUsize;
 use std::ptr::{null_mut, NonNull};
 use windows::Win32::System::Ole::IDropTarget;
@@ -117,7 +117,7 @@ impl HWnd {
         }
     }
 
-    pub fn resize_nc_and_activate(&self, size: PhySize) -> Result<()> {
+    pub fn resize_nc_and_activate(&self, size: PhysicalSize<u32>) -> Result<()> {
         let result = unsafe {
             SetWindowPos(
                 self.0,
@@ -138,7 +138,7 @@ impl HWnd {
     }
 
     pub fn resize_and_activate(
-        &self, client_size: PhySize, window_dpi: Dpi, user32: &ExtendedUser32,
+        &self, client_size: PhysicalSize<u32>, window_dpi: Dpi, user32: &ExtendedUser32,
     ) -> Result<()> {
         let dpi_ctx = DpiAwarenessContext::new(user32)?;
         let style = self.get_style()?;

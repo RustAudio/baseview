@@ -2,10 +2,8 @@ use crate::platform::win::keyboard::KeyboardState;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Dpi, ExtendedUser32};
-use crate::{
-    Event, EventStatus, MouseCursor, PhySize, Size, WindowEvent, WindowHandler, WindowInfo,
-    WindowScalePolicy,
-};
+use crate::{Event, EventStatus, MouseCursor, WindowEvent, WindowHandler, WindowScalePolicy};
+use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, OnceCell, Ref, RefCell};
 use std::num::NonZeroIsize;
@@ -16,7 +14,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 pub(crate) struct WindowState {
     /// The HWND belonging to this window.
     pub hwnd: HWND,
-    pub current_size: Cell<PhySize>,
+    pub current_size: Cell<PhysicalSize<u32>>,
     pub current_dpi: Cell<Dpi>, // None if in non-system scale policy
     pub keyboard_state: RefCell<KeyboardState>,
     pub mouse_button_counter: Cell<usize>,
@@ -34,7 +32,8 @@ pub(crate) struct WindowState {
 
 impl WindowState {
     pub fn new(
-        hwnd: HWND, current_size: PhySize, scale_policy: WindowScalePolicy, user32: ExtendedUser32,
+        hwnd: HWND, current_size: PhysicalSize<u32>, scale_policy: WindowScalePolicy,
+        user32: ExtendedUser32,
     ) -> Self {
         Self {
             hwnd,
@@ -67,11 +66,11 @@ impl WindowState {
         handler.on_event(event)
     }
 
-    pub(crate) fn window_info(&self) -> WindowInfo {
-        WindowInfo::from_physical_size(self.current_size.get(), self.current_scale_factor())
+    pub fn size(&self) -> PhysicalSize<u32> {
+        self.current_size.get()
     }
 
-    pub fn current_scale_factor(&self) -> f64 {
+    pub fn scale_factor(&self) -> f64 {
         match self.scale_policy {
             WindowScalePolicy::ScaleFactor(scale) => scale,
             WindowScalePolicy::SystemScaleFactor => self.current_dpi.get().scale_factor(),
@@ -83,7 +82,10 @@ impl WindowState {
     }
 
     pub fn send_resized(&self) {
-        self.handle_event(Event::Window(WindowEvent::Resized(self.window_info())));
+        self.handle_event(Event::Window(WindowEvent::Resized {
+            size: self.current_size.get(),
+            scale_factor: self.current_dpi.get().scale_factor(),
+        }));
     }
 
     pub fn close(&self) {
@@ -109,8 +111,7 @@ impl WindowState {
         // `self.window_info` will be modified in response to the `WM_SIZE` event that
         // follows the `SetWindowPos()` call
         let dpi = self.current_dpi.get();
-        let window_info = WindowInfo::from_logical_size(size, dpi.scale_factor());
-        let new_size = window_info.physical_size();
+        let new_size = size.to_physical(dpi.scale_factor());
 
         self.hwnd().resize_and_activate(new_size, dpi, &self.user32).unwrap();
     }
