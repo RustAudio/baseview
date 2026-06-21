@@ -7,7 +7,7 @@ use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
     DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowOpenOptions,
+    WindowHandler, WindowOpenOptions, WindowSize,
 };
 use dpi::{LogicalPosition, LogicalSize, Size};
 use objc2::__framework_prelude::Retained;
@@ -222,13 +222,9 @@ impl ViewImpl for BaseviewView {
             this.state.size.set(current_size);
             this.state.scale_factor.set(current_scale_factor);
 
-            Self::trigger_event(
-                this,
-                Event::Window(WindowEvent::Resized {
-                    size: current_size.to_physical(current_scale_factor),
-                    scale_factor: current_scale_factor,
-                }),
-            );
+            if let Some(handler) = this.window_handler.get() {
+                handler.resized(WindowSize::from_logical(current_size, current_scale_factor))
+            }
         }
     }
 

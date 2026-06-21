@@ -1,7 +1,7 @@
 use baseview::dpi::LogicalSize;
 use baseview::{
-    Event, EventStatus, Window, WindowContext, WindowEvent, WindowHandle, WindowHandler,
-    WindowOpenOptions,
+    Event, EventStatus, Window, WindowContext, WindowHandle, WindowHandler, WindowOpenOptions,
+    WindowSize,
 };
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
@@ -44,18 +44,19 @@ impl WindowHandler for ParentWindowHandler {
         buf.present().unwrap();
     }
 
+    fn resized(&self, new_size: WindowSize) {
+        println!("Parent Resized: {new_size:?}");
+
+        if let (Some(width), Some(height)) =
+            (NonZeroU32::new(new_size.physical.width), NonZeroU32::new(new_size.physical.height))
+        {
+            self.surface.borrow_mut().resize(width, height).unwrap();
+            self.damaged.set(true);
+        }
+    }
+
     fn on_event(&self, event: Event) -> EventStatus {
         match event {
-            Event::Window(WindowEvent::Resized { size, scale_factor }) => {
-                println!("Parent Resized: {size:?}, scale: {scale_factor}");
-
-                if let (Some(width), Some(height)) =
-                    (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
-                {
-                    self.surface.borrow_mut().resize(width, height).unwrap();
-                    self.damaged.set(true);
-                }
-            }
             Event::Mouse(e) => println!("Parent Mouse event: {:?}", e),
             Event::Keyboard(e) => println!("Parent Keyboard event: {:?}", e),
             Event::Window(e) => println!("Parent Window event: {:?}", e),
@@ -94,18 +95,19 @@ impl WindowHandler for ChildWindowHandler {
         buf.present().unwrap();
     }
 
+    fn resized(&self, new_size: WindowSize) {
+        println!("Child Resized: {new_size:?}");
+
+        if let (Some(width), Some(height)) =
+            (NonZeroU32::new(new_size.physical.width), NonZeroU32::new(new_size.physical.height))
+        {
+            self.surface.borrow_mut().resize(width, height).unwrap();
+            self.damaged.set(true);
+        }
+    }
+
     fn on_event(&self, event: Event) -> EventStatus {
         match event {
-            Event::Window(WindowEvent::Resized { size, scale_factor }) => {
-                println!("Child Resized: {size:?}, scale: {scale_factor}");
-
-                if let (Some(width), Some(height)) =
-                    (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
-                {
-                    self.surface.borrow_mut().resize(width, height).unwrap();
-                    self.damaged.set(true);
-                }
-            }
             Event::Mouse(e) => println!("Child Mouse event: {:?}", e),
             Event::Keyboard(e) => println!("Child Keyboard event: {:?}", e),
             Event::Window(e) => println!("Child Window event: {:?}", e),

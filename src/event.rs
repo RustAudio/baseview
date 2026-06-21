@@ -1,4 +1,4 @@
-use dpi::{PhysicalPosition, PhysicalSize};
+use dpi::PhysicalPosition;
 use keyboard_types::{KeyboardEvent, Modifiers};
 use std::path::PathBuf;
 
@@ -108,7 +108,6 @@ pub enum MouseEvent {
 
 #[derive(Debug, Clone)]
 pub enum WindowEvent {
-    Resized { size: PhysicalSize<u32>, scale_factor: f64 },
     Focused,
     Unfocused,
     WillClose,

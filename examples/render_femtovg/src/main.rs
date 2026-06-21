@@ -1,8 +1,8 @@
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::gl::{GlConfig, GlContext};
 use baseview::{
-    Event, EventStatus, MouseEvent, Window, WindowContext, WindowEvent, WindowHandler,
-    WindowOpenOptions,
+    Event, EventStatus, MouseEvent, Window, WindowContext, WindowHandler, WindowOpenOptions,
+    WindowSize,
 };
 use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
@@ -84,12 +84,14 @@ impl WindowHandler for FemtovgExample {
         self.damaged.set(false);
     }
 
+    fn resized(&self, new_size: WindowSize) {
+        let size = new_size.physical;
+        self.canvas.borrow_mut().set_size(size.width, size.height, new_size.scale_factor as f32);
+        self.damaged.set(true);
+    }
+
     fn on_event(&self, event: Event) -> EventStatus {
         match event {
-            Event::Window(WindowEvent::Resized { size, scale_factor }) => {
-                self.canvas.borrow_mut().set_size(size.width, size.height, scale_factor as f32);
-                self.damaged.set(true);
-            }
             Event::Mouse(
                 MouseEvent::CursorMoved { position, .. }
                 | MouseEvent::DragEntered { position, .. }
@@ -102,9 +104,9 @@ impl WindowHandler for FemtovgExample {
                 }
                 self.damaged.set(true);
             }
-            _ => {}
+            event => log_event(&event),
         };
-        log_event(&event);
+
         EventStatus::Captured
     }
 }

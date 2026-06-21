@@ -8,8 +8,8 @@ use rtrb::{Consumer, RingBuffer};
 use baseview::copy_to_clipboard;
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::{
-    Event, EventStatus, MouseEvent, Window, WindowContext, WindowEvent, WindowHandler,
-    WindowOpenOptions,
+    Event, EventStatus, MouseEvent, Window, WindowContext, WindowHandler, WindowOpenOptions,
+    WindowSize,
 };
 
 #[derive(Debug, Clone)]
@@ -28,6 +28,17 @@ struct OpenWindowExample {
 }
 
 impl WindowHandler for OpenWindowExample {
+    fn resized(&self, new_size: WindowSize) {
+        println!("Resized: {new_size:?}");
+
+        if let (Some(width), Some(height)) =
+            (NonZeroU32::new(new_size.physical.width), NonZeroU32::new(new_size.physical.height))
+        {
+            self.surface.borrow_mut().resize(width, height).unwrap();
+            self.damaged.set(true);
+        }
+    }
+
     fn on_frame(&self) {
         if !self.damaged.get() {
             return;
@@ -114,16 +125,6 @@ impl WindowHandler for OpenWindowExample {
             Event::Mouse(MouseEvent::CursorLeft) => {
                 self.is_cursor_inside.set(false);
                 self.damaged.set(true);
-            }
-            Event::Window(WindowEvent::Resized { scale_factor, size }) => {
-                println!("Resized: {size:?}, scale: {scale_factor}");
-
-                if let (Some(width), Some(height)) =
-                    (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
-                {
-                    self.surface.borrow_mut().resize(width, height).unwrap();
-                    self.damaged.set(true);
-                }
             }
             _ => {}
         }
