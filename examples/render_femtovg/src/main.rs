@@ -27,7 +27,7 @@ impl FemtovgExample {
         let mut canvas = Canvas::new(renderer).unwrap();
         let size = window_context.size();
 
-        canvas.set_size(size.width, size.height, window_context.scale_factor() as f32);
+        canvas.set_size(size.physical.width, size.physical.height, size.scale_factor as f32);
 
         unsafe { gl_context.make_not_current() };
         Self {

@@ -17,7 +17,7 @@ impl ParentWindowHandler {
     pub fn new(window: WindowContext) -> Self {
         let ctx = softbuffer::Context::new(window.clone()).unwrap();
         let mut surface = softbuffer::Surface::new(&ctx, window.clone()).unwrap();
-        let size = window.size();
+        let size = window.size().physical;
         surface
             .resize(NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap())
             .unwrap();
@@ -74,7 +74,7 @@ impl ChildWindowHandler {
     pub fn new(window: WindowContext) -> Self {
         let ctx = softbuffer::Context::new(window.clone()).unwrap();
         let mut surface = softbuffer::Surface::new(&ctx, window.clone()).unwrap();
-        let size = window.size();
+        let size = window.size().physical;
         surface
             .resize(NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap())
             .unwrap();

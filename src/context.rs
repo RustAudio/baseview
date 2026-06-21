@@ -1,4 +1,4 @@
-use crate::{platform, MouseCursor};
+use crate::{platform, MouseCursor, WindowSize};
 use dpi::{PhysicalPosition, PhysicalSize, Pixel, Size};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
@@ -38,7 +38,7 @@ impl WindowContext {
         self.inner.scale_factor()
     }
 
-    pub fn size(&self) -> PhysicalSize<u32> {
+    pub fn size(&self) -> WindowSize {
         self.inner.size()
     }
 

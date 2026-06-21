@@ -2,6 +2,7 @@ use crate::context::WindowContext;
 use crate::handler::WindowHandler;
 use crate::platform;
 use crate::window_open_options::WindowOpenOptions;
+use dpi::{LogicalSize, PhysicalSize, Pixel};
 use raw_window_handle::HasWindowHandle;
 use std::marker::PhantomData;
 
@@ -45,5 +46,34 @@ impl Window {
         options: WindowOpenOptions, build: impl FnOnce(WindowContext) -> H + Send + 'static,
     ) {
         platform::Window::open_blocking(options, build)
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct WindowSize {
+    pub physical: PhysicalSize<u32>,
+    pub logical: LogicalSize<f64>,
+    pub scale_factor: f64,
+}
+
+impl WindowSize {
+    pub fn from_physical(physical: PhysicalSize<u32>, scale_factor: f64) -> Self {
+        Self { physical, logical: physical.to_logical(scale_factor), scale_factor }
+    }
+
+    pub fn from_logical(logical: LogicalSize<f64>, scale_factor: f64) -> Self {
+        Self { physical: logical.to_physical(scale_factor), logical, scale_factor }
+    }
+}
+
+impl<P: Pixel> From<WindowSize> for PhysicalSize<P> {
+    fn from(size: WindowSize) -> Self {
+        size.physical.cast()
+    }
+}
+
+impl<P: Pixel> From<WindowSize> for LogicalSize<P> {
+    fn from(size: WindowSize) -> Self {
+        size.logical.cast()
     }
 }

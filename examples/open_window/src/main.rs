@@ -37,7 +37,7 @@ impl WindowHandler for OpenWindowExample {
         let mut pixels = surface.buffer_mut().unwrap();
         let size = self.window_context.size();
         let scale_factor = self.window_context.scale_factor();
-        let (width, height) = (size.width, size.height);
+        let (width, height) = (size.physical.width, size.physical.height);
 
         for index in 0..(width * height) {
             let x = index % width;

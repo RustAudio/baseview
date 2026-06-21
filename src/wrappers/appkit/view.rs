@@ -1,3 +1,4 @@
+use dpi::LogicalSize;
 use objc2::__framework_prelude::{Allocated, AnyClass, ProtocolObject, Retained};
 use objc2::rc::Weak;
 use objc2::runtime::AnyObject;
@@ -92,6 +93,16 @@ impl<V: ViewImpl> View<V> {
         let handle = AppKitWindowHandle::new(ns_view);
 
         Some(unsafe { WindowHandle::borrow_raw(handle.into()) })
+    }
+
+    pub fn size(&self) -> LogicalSize<f64> {
+        let size = self.bounds().size;
+        LogicalSize::new(size.width, size.height).cast()
+    }
+
+    pub fn backing_scale_factor(&self) -> f64 {
+        let Some(ns_window) = self.window() else { return 1.0 };
+        ns_window.backingScaleFactor()
     }
 }
 

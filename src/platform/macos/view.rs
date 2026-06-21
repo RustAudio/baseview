@@ -6,9 +6,10 @@ use crate::platform::macos::context::WindowContext;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
-    DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, Point, ScrollDelta, Size,
-    WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, ScrollDelta, WindowEvent,
+    WindowHandler, WindowOpenOptions,
 };
+use dpi::{LogicalPosition, LogicalSize, PhysicalPosition, Size};
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
@@ -45,12 +46,12 @@ impl BaseviewView {
     pub fn new<H: WindowHandler + 'static>(
         options: WindowOpenOptions,
         builder: impl FnOnce(crate::WindowContext) -> H + Send + 'static,
-        parenting: ViewParentingType,
+        parenting: ViewParentingType, final_size: LogicalSize<f64>,
     ) -> (Retained<View<Self>>, Rc<WindowSharedState>) {
         let view_rect =
-            NSRect::new(NSPoint::ZERO, NSSize::new(options.size.width, options.size.height));
+            NSRect::new(NSPoint::ZERO, NSSize::new(final_size.width, final_size.height));
 
-        let state = Rc::new(WindowSharedState::new(&options));
+        let state = Rc::new(WindowSharedState::new(final_size, 1.0));
 
         let inner = BaseviewView {
             state: state.clone(),
@@ -78,6 +79,9 @@ impl BaseviewView {
                     set_delegate(&owned_window, view.view);
                 }
             }
+
+            view.state.scale_factor.set(view.view.backing_scale_factor());
+            view.state.size.set(view.view.size());
 
             #[cfg(feature = "opengl")]
             if let Some(gl_config) = options.gl_config {
@@ -111,12 +115,6 @@ impl BaseviewView {
                 }
             });
             view.notification_center_observer.set(Some(observer));
-
-            // Send an initial Resized event so users get the correct scale factor and physical size.
-            Self::trigger_event(
-                view,
-                Event::Window(WindowEvent::Resized(Self::fetch_view_size(view.view))),
-            );
         });
 
         (view, state)
@@ -140,6 +138,7 @@ impl BaseviewView {
     }
 
     pub fn resize(this: ViewRef<Self>, size: Size) {
+        let size = size.to_logical::<f64>(this.view.backing_scale_factor());
         // NOTE: macOS gives you a personal rave if you pass in fractional pixels here. Even
         // though the size is in fractional pixels.
         let size = NSSize::new(size.width.round(), size.height.round());
@@ -178,19 +177,6 @@ impl BaseviewView {
 
         handler.on_frame();
     }
-
-    fn fetch_view_size(view: &NSView) -> WindowInfo {
-        let ns_window = view.window();
-
-        let scale_factor: f64 = ns_window.map(|w| w.backingScaleFactor()).unwrap_or(1.0);
-
-        let bounds = view.bounds();
-
-        WindowInfo::from_logical_size(
-            Size::new(bounds.size.width, bounds.size.height),
-            scale_factor,
-        )
-    }
 }
 
 impl Drop for BaseviewView {
@@ -225,14 +211,24 @@ impl ViewImpl for BaseviewView {
     }
 
     fn view_did_change_backing_properties(this: ViewRef<Self>) {
-        let new_window_info = Self::fetch_view_size(this.view);
-        let window_info = this.state.window_info.get();
+        let current_size = this.view.size();
+        let current_scale_factor = this.view.backing_scale_factor();
 
         // Only send the event when the window's size has actually changed to be in line with the
         // other platform implementations
-        if new_window_info.physical_size() != window_info.physical_size() {
-            this.state.window_info.set(new_window_info);
-            Self::trigger_event(this, Event::Window(WindowEvent::Resized(new_window_info)));
+        if this.state.scale_factor.get() != current_scale_factor
+            || this.state.size.get() != current_size
+        {
+            this.state.size.set(current_size);
+            this.state.scale_factor.set(current_scale_factor);
+
+            Self::trigger_event(
+                this,
+                Event::Window(WindowEvent::Resized {
+                    size: current_size.to_physical(current_scale_factor),
+                    scale_factor: current_scale_factor,
+                }),
+            );
         }
     }
 
@@ -322,7 +318,7 @@ impl ViewImpl for BaseviewView {
     fn mouse_moved(this: ViewRef<Self>, event: &NSEvent) {
         let point = this.view.convertPoint_fromView(event.locationInWindow(), None);
 
-        let position = Point { x: point.x, y: point.y };
+        let position = PhysicalPosition { x: point.x, y: point.y };
 
         Self::trigger_event(
             this,
@@ -359,7 +355,7 @@ impl ViewImpl for BaseviewView {
         let drop_data = get_drop_data(sender);
 
         let event = MouseEvent::DragEntered {
-            position: get_drag_position(sender),
+            position: get_drag_position(sender).to_physical(this.view.backing_scale_factor()),
             modifiers: make_modifiers(modifiers),
             data: drop_data,
         };
@@ -374,7 +370,7 @@ impl ViewImpl for BaseviewView {
         let drop_data = get_drop_data(sender);
 
         let event = MouseEvent::DragMoved {
-            position: get_drag_position(sender),
+            position: get_drag_position(sender).to_physical(this.view.backing_scale_factor()),
             modifiers: make_modifiers(modifiers),
             data: drop_data,
         };
@@ -398,7 +394,7 @@ impl ViewImpl for BaseviewView {
         let drop_data = get_drop_data(sender);
 
         let event = MouseEvent::DragDropped {
-            position: get_drag_position(sender),
+            position: get_drag_position(sender).to_physical(this.view.backing_scale_factor()),
             modifiers: make_modifiers(modifiers),
             data: drop_data,
         };
@@ -579,13 +575,13 @@ fn new_tracking_area(this: &NSView) -> Retained<NSTrackingArea> {
     }
 }
 
-fn get_drag_position(sender: Option<&ProtocolObject<dyn NSDraggingInfo>>) -> Point {
+fn get_drag_position(sender: Option<&ProtocolObject<dyn NSDraggingInfo>>) -> LogicalPosition<f64> {
     let point = match sender {
         Some(sender) => sender.draggingLocation(),
         None => NSPoint::ZERO,
     };
 
-    Point::new(point.x, point.y)
+    LogicalPosition::new(point.x, point.y)
 }
 
 fn get_drop_data(sender: Option<&ProtocolObject<dyn NSDraggingInfo>>) -> DropData {
