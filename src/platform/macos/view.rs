@@ -9,7 +9,7 @@ use crate::{
     DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, ScrollDelta, WindowEvent,
     WindowHandler, WindowOpenOptions,
 };
-use dpi::{LogicalPosition, LogicalSize, PhysicalPosition, Size};
+use dpi::{LogicalPosition, LogicalSize, Size};
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
@@ -318,12 +318,12 @@ impl ViewImpl for BaseviewView {
     fn mouse_moved(this: ViewRef<Self>, event: &NSEvent) {
         let point = this.view.convertPoint_fromView(event.locationInWindow(), None);
 
-        let position = PhysicalPosition { x: point.x, y: point.y };
+        let position = LogicalPosition { x: point.x, y: point.y };
 
         Self::trigger_event(
             this,
             Event::Mouse(MouseEvent::CursorMoved {
-                position,
+                position: position.to_physical(this.state.scale_factor.get()),
                 modifiers: make_modifiers(event.modifierFlags()),
             }),
         );
