@@ -1,4 +1,4 @@
-use dpi::{LogicalPosition, PhysicalPosition, PhysicalSize};
+use dpi::{PhysicalPosition, PhysicalSize};
 use keyboard_types::{KeyboardEvent, Modifiers};
 use std::path::PathBuf;
 

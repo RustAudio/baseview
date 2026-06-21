@@ -1,5 +1,5 @@
 use crate::{platform, MouseCursor, WindowSize};
-use dpi::{PhysicalPosition, PhysicalSize, Pixel, Size};
+use dpi::{Pixel, Size};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };

@@ -44,7 +44,7 @@ pub(crate) struct BaseviewView {
 
 impl BaseviewView {
     pub fn new<H: WindowHandler + 'static>(
-        options: WindowOpenOptions,
+        _options: WindowOpenOptions,
         builder: impl FnOnce(crate::WindowContext) -> H + Send + 'static,
         parenting: ViewParentingType, final_size: LogicalSize<f64>,
     ) -> (Retained<View<Self>>, Rc<WindowSharedState>) {
@@ -84,7 +84,7 @@ impl BaseviewView {
             view.state.size.set(view.view.size());
 
             #[cfg(feature = "opengl")]
-            if let Some(gl_config) = options.gl_config {
+            if let Some(gl_config) = _options.gl_config {
                 let gl_context = super::gl::GlContext::create(view.view, gl_config).unwrap();
                 let Ok(()) = view.gl_context.set(gl_context) else { unreachable!() };
             }

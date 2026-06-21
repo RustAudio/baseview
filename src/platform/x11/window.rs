@@ -1,4 +1,3 @@
-use dpi::Pixel;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::cell::Cell;
 use std::error::Error;
