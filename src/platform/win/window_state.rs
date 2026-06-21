@@ -2,7 +2,9 @@ use crate::platform::win::keyboard::KeyboardState;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Dpi, ExtendedUser32};
-use crate::{Event, EventStatus, MouseCursor, WindowEvent, WindowHandler, WindowScalePolicy};
+use crate::{
+    Event, EventStatus, MouseCursor, WindowEvent, WindowHandler, WindowScalePolicy, WindowSize,
+};
 use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, OnceCell, Ref, RefCell};
@@ -66,8 +68,8 @@ impl WindowState {
         handler.on_event(event)
     }
 
-    pub fn size(&self) -> PhysicalSize<u32> {
-        self.current_size.get()
+    pub fn size(&self) -> WindowSize {
+        WindowSize::from_physical(self.current_size.get(), self.scale_factor())
     }
 
     pub fn scale_factor(&self) -> f64 {

@@ -1,6 +1,6 @@
 use crate::platform::X11Connection;
-use crate::MouseCursor;
-use dpi::{PhysicalPosition, PhysicalSize, Size};
+use crate::{MouseCursor, WindowSize};
+use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, XcbWindowHandle};
 use std::cell::Cell;
 use std::num::NonZero;
@@ -114,7 +114,7 @@ impl WindowInner {
         self.scaling_factor.get()
     }
 
-    pub fn size(&self) -> PhysicalSize<u32> {
-        self.window_size.get().cast()
+    pub fn size(&self) -> WindowSize {
+        WindowSize::from_physical(self.window_size.get().cast(), self.scaling_factor.get())
     }
 }
