@@ -2,9 +2,7 @@ use crate::platform::win::keyboard::KeyboardState;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Dpi, ExtendedUser32};
-use crate::{
-    Event, EventStatus, MouseCursor, WindowEvent, WindowHandler, WindowScalePolicy, WindowSize,
-};
+use crate::{Event, EventStatus, MouseCursor, WindowHandler, WindowScalePolicy, WindowSize};
 use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, OnceCell, Ref, RefCell};
@@ -84,10 +82,10 @@ impl WindowState {
     }
 
     pub fn send_resized(&self) {
-        self.handle_event(Event::Window(WindowEvent::Resized {
-            size: self.current_size.get(),
-            scale_factor: self.current_dpi.get().scale_factor(),
-        }));
+        if let Some(handler) = self.handler.get() {
+            handler
+                .resized(WindowSize::from_physical(self.current_size.get(), self.scale_factor()));
+        }
     }
 
     pub fn close(&self) {

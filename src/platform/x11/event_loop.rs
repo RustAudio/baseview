@@ -4,7 +4,7 @@ use super::*;
 
 use crate::wrappers::connection_poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
-use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler};
+use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use dpi::{PhysicalPosition, PhysicalSize};
 use std::error::Error;
 use std::rc::Rc;
@@ -59,10 +59,7 @@ impl EventLoop {
 
             let scale_factor = self.window.scaling_factor.get();
 
-            self.handle_event(Event::Window(WindowEvent::Resized {
-                size: size.cast(),
-                scale_factor,
-            }));
+            self.handler.resized(WindowSize::from_physical(size.cast(), scale_factor));
         }
 
         Ok(())

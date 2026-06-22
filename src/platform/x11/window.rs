@@ -18,7 +18,7 @@ use super::X11Connection;
 use super::{event_loop::EventLoop, visual_info::WindowVisualConfig};
 use crate::context::WindowContext;
 use crate::platform::x11::window_shared::WindowInner;
-use crate::{Event, WindowEvent, WindowHandler, WindowOpenOptions, WindowScalePolicy};
+use crate::{WindowHandler, WindowOpenOptions, WindowScalePolicy, WindowSize};
 
 pub struct WindowHandle {
     window_id: Option<NonZero<x11rb::protocol::xproto::Window>>,
@@ -244,10 +244,7 @@ impl Window {
 
         // Send an initial window resized event so the user is alerted of
         // the correct dpi scaling.
-        handler.on_event(Event::Window(WindowEvent::Resized {
-            size: physical_size.cast(),
-            scale_factor: scaling,
-        }));
+        handler.resized(WindowSize::from_physical(physical_size.cast(), scaling));
 
         let _ = tx.send(Ok(window_id));
 

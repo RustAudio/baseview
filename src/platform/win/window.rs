@@ -27,7 +27,7 @@ use crate::platform::win::window_state::WindowState;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::{
     Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowOpenOptions,
-    WindowScalePolicy,
+    WindowScalePolicy, WindowSize,
 };
 
 use crate::wrappers::win32::window::*;
@@ -347,10 +347,9 @@ unsafe fn wnd_proc_inner(
 
             window_state.current_size.set(new_size);
 
-            window_state.handle_event(Event::Window(WindowEvent::Resized {
-                scale_factor: window_state.current_dpi.get().scale_factor(),
-                size: new_size,
-            }));
+            if let Some(handler) = window_state.handler.get() {
+                handler.resized(WindowSize::from_physical(new_size, window_state.scale_factor()))
+            }
 
             None
         }
