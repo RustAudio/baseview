@@ -274,6 +274,11 @@ impl BaseviewView {
 impl Drop for BaseviewView {
     fn drop(&mut self) {
         self.state.closed.set(true);
+        if self.state.cursor_hidden.get() {
+            unsafe {
+                let _: () = objc2::msg_send![objc2_app_kit::NSCursor::class(), unhide];
+            }
+        }
     }
 }
 
