@@ -1,8 +1,6 @@
-use std::path::PathBuf;
-
+use dpi::PhysicalPosition;
 use keyboard_types::{KeyboardEvent, Modifiers};
-
-use crate::{Point, WindowInfo};
+use std::path::PathBuf;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum MouseButton {
@@ -39,7 +37,7 @@ pub enum MouseEvent {
     /// The mouse cursor was moved
     CursorMoved {
         /// The logical coordinates of the mouse position
-        position: Point,
+        position: PhysicalPosition<f64>,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
     },
@@ -80,7 +78,7 @@ pub enum MouseEvent {
 
     DragEntered {
         /// The logical coordinates of the mouse position
-        position: Point,
+        position: PhysicalPosition<f64>,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
         /// Data being dragged
@@ -89,7 +87,7 @@ pub enum MouseEvent {
 
     DragMoved {
         /// The logical coordinates of the mouse position
-        position: Point,
+        position: PhysicalPosition<f64>,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
         /// Data being dragged
@@ -100,7 +98,7 @@ pub enum MouseEvent {
 
     DragDropped {
         /// The logical coordinates of the mouse position
-        position: Point,
+        position: PhysicalPosition<f64>,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
         /// Data being dragged
@@ -110,7 +108,6 @@ pub enum MouseEvent {
 
 #[derive(Debug, Clone)]
 pub enum WindowEvent {
-    Resized(WindowInfo),
     Focused,
     Unfocused,
     WillClose,

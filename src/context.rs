@@ -1,4 +1,5 @@
-use crate::{platform, MouseCursor, Size};
+use crate::{platform, MouseCursor, WindowSize};
+use dpi::{Pixel, Size};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
@@ -29,8 +30,16 @@ impl WindowContext {
         self.inner.focus();
     }
 
-    pub fn resize(&self, size: Size) {
-        self.inner.resize(size);
+    pub fn resize<P: Pixel>(&self, size: impl Into<Size>) {
+        self.inner.resize(size.into());
+    }
+
+    pub fn scale_factor(&self) -> f64 {
+        self.inner.scale_factor()
+    }
+
+    pub fn size(&self) -> WindowSize {
+        self.inner.size()
     }
 
     #[cfg(feature = "opengl")]

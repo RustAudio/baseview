@@ -1,3 +1,4 @@
+use dpi::PhysicalPosition;
 use std::cell::{Cell, RefCell};
 use std::ffi::OsString;
 use std::os::windows::prelude::OsStringExt;
@@ -14,7 +15,7 @@ use windows_sys::Win32::{
 };
 
 use super::window_state::WindowState;
-use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent, PhyPoint, Point};
+use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent};
 
 #[implement(IDropTarget)]
 pub(crate) struct DropTarget {
@@ -22,7 +23,7 @@ pub(crate) struct DropTarget {
 
     // These are cached since DragOver and DragLeave callbacks don't provide them,
     // and handling drag move events gets awkward on the client end otherwise
-    drag_position: Cell<Point>,
+    drag_position: Cell<PhysicalPosition<i32>>,
     drop_data: RefCell<DropData>,
 }
 
@@ -30,7 +31,7 @@ impl DropTarget {
     pub(crate) fn new(window_state: Weak<WindowState>) -> Self {
         Self {
             window_state,
-            drag_position: Cell::new(Point::new(0.0, 0.0)),
+            drag_position: Cell::new(PhysicalPosition::new(0, 0)),
             drop_data: RefCell::new(DropData::None),
         }
     }
@@ -63,8 +64,8 @@ impl DropTarget {
         };
         let mut pt = POINT { x: pt.x, y: pt.y };
         unsafe { ScreenToClient(window_state.hwnd, &mut pt as *mut POINT) };
-        let phy_point = PhyPoint::new(pt.x, pt.y);
-        self.drag_position.set(phy_point.to_logical(&window_state.window_info()));
+        let phy_point = PhysicalPosition::new(pt.x, pt.y);
+        self.drag_position.set(phy_point);
     }
 
     fn parse_drop_data(&self, data_object: &IDataObject) {
@@ -124,7 +125,7 @@ impl IDropTarget_Impl for DropTarget_Impl {
         self.parse_drop_data(pdataobj.unwrap());
 
         let event = MouseEvent::DragEntered {
-            position: self.drag_position.get(),
+            position: self.drag_position.get().cast(),
             modifiers,
             data: self.drop_data.borrow().clone(),
         };
@@ -146,7 +147,7 @@ impl IDropTarget_Impl for DropTarget_Impl {
         self.parse_coordinates(*pt);
 
         let event = MouseEvent::DragMoved {
-            position: self.drag_position.get(),
+            position: self.drag_position.get().cast(),
             modifiers,
             data: self.drop_data.borrow().clone(),
         };
@@ -175,7 +176,7 @@ impl IDropTarget_Impl for DropTarget_Impl {
         self.parse_drop_data(pdataobj.unwrap());
 
         let event = MouseEvent::DragDropped {
-            position: self.drag_position.get(),
+            position: self.drag_position.get().cast(),
             modifiers,
             data: self.drop_data.borrow().clone(),
         };

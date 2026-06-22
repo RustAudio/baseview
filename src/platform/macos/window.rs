@@ -1,17 +1,17 @@
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
-
+use dpi::LogicalSize;
 use objc2::rc::{autoreleasepool, Weak};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSPasteboard, NSPasteboardTypeString,
 };
-use objc2_foundation::NSString;
+use objc2_foundation::{NSSize, NSString};
 use raw_window_handle::HasWindowHandle;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
 use crate::wrappers::appkit::{create_window, extract_raw_window_handle, View};
-use crate::{WindowContext, WindowHandler, WindowInfo, WindowOpenOptions};
+use crate::{WindowContext, WindowHandler, WindowOpenOptions};
 
 pub struct WindowHandle {
     view: RefCell<Option<Weak<View<BaseviewView>>>>,
@@ -48,7 +48,11 @@ impl Window {
             let parenting =
                 ViewParentingType::Parented { parent_view: Weak::from_retained(&parent_view) };
 
-            let (ns_view, state) = BaseviewView::new(options, build, parenting);
+            let backing_scale_factor =
+                parent_view.window().map(|w| w.backingScaleFactor()).unwrap_or(1.0);
+            let final_size = options.size.to_logical(backing_scale_factor);
+
+            let (ns_view, state) = BaseviewView::new(options, build, parenting, final_size);
 
             WindowHandle { view: Some(Weak::from_retained(&ns_view)).into(), state }
         })
@@ -67,8 +71,14 @@ impl Window {
 
             let _ = app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
 
-            let window = create_window(options.size, mtm);
+            let initial_size = options.size.to_logical(1.0);
+            let window = create_window(initial_size, mtm);
             window.center();
+
+            let final_size = options.size.to_logical(window.backingScaleFactor());
+            if final_size != initial_size {
+                window.setContentSize(NSSize::new(final_size.width, final_size.height));
+            }
 
             let title = NSString::from_str(&options.title);
             window.setTitle(&title);
@@ -79,7 +89,7 @@ impl Window {
                 owned_window: Weak::from_retained(&window),
             };
 
-            let _ = BaseviewView::new(options, build, parenting);
+            let _ = BaseviewView::new(options, build, parenting, final_size);
 
             app.run();
         })
@@ -87,17 +97,14 @@ impl Window {
 }
 
 pub(crate) struct WindowSharedState {
-    /// The last known window info for this window.
-    pub window_info: Cell<WindowInfo>,
     pub closed: Cell<bool>,
+    pub size: Cell<LogicalSize<f64>>,
+    pub scale_factor: Cell<f64>,
 }
 
 impl WindowSharedState {
-    pub fn new(options: &WindowOpenOptions) -> Self {
-        Self {
-            window_info: WindowInfo::from_logical_size(options.size, 1.0).into(),
-            closed: false.into(),
-        }
+    pub fn new(size: LogicalSize<f64>, scale_factor: f64) -> Self {
+        Self { closed: false.into(), size: size.into(), scale_factor: scale_factor.into() }
     }
 }
 

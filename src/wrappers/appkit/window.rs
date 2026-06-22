@@ -1,11 +1,11 @@
 use crate::wrappers::appkit::{View, ViewImpl};
-use crate::Size;
+use dpi::LogicalSize;
 use objc2::rc::Retained;
 use objc2::{msg_send, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{NSBackingStoreType, NSWindow, NSWindowStyleMask};
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
-pub fn create_window(size: Size, mtm: MainThreadMarker) -> Retained<NSWindow> {
+pub fn create_window(size: LogicalSize<f64>, mtm: MainThreadMarker) -> Retained<NSWindow> {
     let rect = NSRect::new(NSPoint::ZERO, NSSize { width: size.width, height: size.height });
 
     // SAFETY: This is safe because of the setReleasedWhenClosed(false) below

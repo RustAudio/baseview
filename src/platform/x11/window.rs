@@ -1,3 +1,4 @@
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::cell::Cell;
 use std::error::Error;
 use std::num::NonZero;
@@ -6,8 +7,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
@@ -19,7 +18,7 @@ use super::X11Connection;
 use super::{event_loop::EventLoop, visual_info::WindowVisualConfig};
 use crate::context::WindowContext;
 use crate::platform::x11::window_shared::WindowInner;
-use crate::{Event, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy};
+use crate::{WindowHandler, WindowOpenOptions, WindowScalePolicy, WindowSize};
 
 pub struct WindowHandle {
     window_id: Option<NonZero<x11rb::protocol::xproto::Window>>,
@@ -144,7 +143,7 @@ impl Window {
             WindowScalePolicy::ScaleFactor(scale) => scale,
         };
 
-        let window_info = WindowInfo::from_logical_size(options.size, scaling);
+        let physical_size = options.size.to_physical(scaling);
 
         #[cfg(feature = "opengl")]
         let visual_info =
@@ -161,11 +160,11 @@ impl Window {
             visual_info.visual_depth,
             window_id.get(),
             parent_id,
-            0,                                         // x coordinate of the new window
-            0,                                         // y coordinate of the new window
-            window_info.physical_size().width as u16,  // window width
-            window_info.physical_size().height as u16, // window height
-            0,                                         // window border
+            0,                    // x coordinate of the new window
+            0,                    // y coordinate of the new window
+            physical_size.width,  // window width
+            physical_size.height, // window height
+            0,                    // window border
             WindowClass::INPUT_OUTPUT,
             visual_info.visual_id,
             &CreateWindowAux::new()
@@ -218,9 +217,6 @@ impl Window {
         xcb_connection.conn.flush()?;
         let xcb_connection = Rc::new(xcb_connection);
 
-        // TODO: These APIs could use a couple tweaks now that everything is internal and there is
-        //       no error handling anymore at this point. Everything is more or less unchanged
-        //       compared to when raw-gl-context was a separate crate.
         #[cfg(feature = "opengl")]
         let gl_context = visual_info.fb_config.map(|fb_config| {
             use std::ffi::c_ulong;
@@ -238,7 +234,8 @@ impl Window {
         let inner = Rc::new(WindowInner::new(
             xcb_connection,
             window_id,
-            window_info,
+            physical_size,
+            scaling,
             #[cfg(feature = "opengl")]
             gl_context,
         ));
@@ -247,7 +244,7 @@ impl Window {
 
         // Send an initial window resized event so the user is alerted of
         // the correct dpi scaling.
-        handler.on_event(Event::Window(WindowEvent::Resized(window_info)));
+        handler.resized(WindowSize::from_physical(physical_size.cast(), scaling));
 
         let _ = tx.send(Ok(window_id));
 

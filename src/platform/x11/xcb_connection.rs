@@ -81,33 +81,9 @@ impl X11Connection {
         }
     }
 
-    // Try to get the scaling with `get_scaling_xft` first.
-    // Only use this function as a fallback.
-    // If neither work, I guess just assume 96.0 and don't do any scaling.
-    fn get_scaling_screen_dimensions(&self) -> f64 {
-        // Figure out screen information
-        let screen = self.screen();
-
-        // Get the DPI from the screen struct
-        //
-        // there are 2.54 centimeters to an inch; so there are 25.4 millimeters.
-        // dpi = N pixels / (M millimeters / (25.4 millimeters / 1 inch))
-        //     = N pixels / (M inch / 25.4)
-        //     = N * 25.4 pixels / M inch
-        let width_px = screen.width_in_pixels as f64;
-        let width_mm = screen.width_in_millimeters as f64;
-        let height_px = screen.height_in_pixels as f64;
-        let height_mm = screen.height_in_millimeters as f64;
-        let _xres = width_px * 25.4 / width_mm;
-        let yres = height_px * 25.4 / height_mm;
-
-        // TODO: choose between `xres` and `yres`? (probably both are the same?)
-        yres / 96.0
-    }
-
     #[inline]
     pub fn get_scaling(&self) -> Result<f64, Box<dyn Error>> {
-        Ok(self.get_scaling_xft()?.unwrap_or(self.get_scaling_screen_dimensions()))
+        Ok(self.get_scaling_xft()?.unwrap_or(96.))
     }
 
     #[inline]

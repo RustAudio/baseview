@@ -13,11 +13,11 @@ use windows_sys::Win32::{
     },
 };
 
+use dpi::{PhysicalPosition, PhysicalSize, Size};
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::cell::Cell;
 use std::num::NonZeroUsize;
 use std::ptr::null_mut;
-
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
@@ -26,8 +26,8 @@ use super::*;
 use crate::platform::win::window_state::WindowState;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::{
-    Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
-    WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
+    Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowOpenOptions,
+    WindowScalePolicy, WindowSize,
 };
 
 use crate::wrappers::win32::window::*;
@@ -118,8 +118,7 @@ impl WindowImpl for BaseviewWindow {
                 // have no way to know where the window will end up.
                 // So, at window creation, we assume a DPI=96, and if it ends up wrong, we resize the window
                 // to the actual logical size the user desired.
-                let new_size = WindowInfo::from_logical_size(self.initial_size, dpi.scale_factor())
-                    .physical_size();
+                let new_size = self.initial_size.to_physical(dpi.scale_factor());
 
                 // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
                 // doesn't also emit Resized.
@@ -191,10 +190,8 @@ unsafe fn wnd_proc_inner(
             let x = (lparam & 0xFFFF) as i16 as i32;
             let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
 
-            let physical_pos = PhyPoint { x, y };
-            let logical_pos = physical_pos.to_logical(&window_state.window_info());
             let move_event = Event::Mouse(MouseEvent::CursorMoved {
-                position: logical_pos,
+                position: PhysicalPosition { x, y }.cast(),
                 modifiers: window_state
                     .keyboard_state
                     .borrow()
@@ -340,21 +337,19 @@ unsafe fn wnd_proc_inner(
             let width = (lparam & 0xFFFF) as u16 as u32;
             let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
 
-            let new_window_info = {
-                let new_size = PhySize { width, height };
-                let current_size = window_state.current_size.get();
+            let new_size = PhysicalSize { width, height };
+            let current_size = window_state.current_size.get();
 
-                // Only send the event if anything changed
-                if current_size == new_size {
-                    return None;
-                }
+            // Only send the event if anything changed
+            if current_size == new_size {
+                return None;
+            }
 
-                window_state.current_size.set(new_size);
+            window_state.current_size.set(new_size);
 
-                WindowInfo::from_physical_size(new_size, window_state.current_scale_factor())
-            };
-
-            window_state.handle_event(Event::Window(WindowEvent::Resized(new_window_info)));
+            if let Some(handler) = window_state.handler.get() {
+                handler.resized(WindowSize::from_physical(new_size, window_state.scale_factor()))
+            }
 
             None
         }
@@ -447,8 +442,7 @@ impl Window {
             WindowScalePolicy::ScaleFactor(scale) => scale,
         };
 
-        let window_size =
-            WindowInfo::from_logical_size(options.size, scaling_factor).physical_size();
+        let window_size = options.size.to_physical(scaling_factor);
 
         let style = if parented { WindowStyle::parented() } else { WindowStyle::embedded() };
         let dpi_ctx = DpiAwarenessContext::new(&extended_user_32).unwrap();

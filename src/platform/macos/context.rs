@@ -1,21 +1,24 @@
 use crate::platform::macos::cursor::Cursor;
 use crate::platform::macos::view::BaseviewView;
+use crate::platform::WindowSharedState;
 use crate::wrappers::appkit::{View, ViewRef};
-use crate::{MouseCursor, Size};
+use crate::{MouseCursor, WindowSize};
+use dpi::Size;
 use objc2::rc::Weak;
 use objc2::runtime::NSObjectProtocol;
 use objc2::Message;
 use raw_window_handle::DisplayHandle;
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct WindowContext {
     view: Weak<View<BaseviewView>>,
+    state: Rc<WindowSharedState>,
 }
 
 impl WindowContext {
     pub(crate) fn new(view: ViewRef<'_, BaseviewView>) -> Self {
-        view.view.retain();
-        Self { view: Weak::from_retained(&view.view.retain()) }
+        Self { view: Weak::from_retained(&view.view.retain()), state: Rc::clone(&view.state) }
     }
 
     pub fn close(&self) {
@@ -61,6 +64,14 @@ impl WindowContext {
         let Some(view) = self.view.load() else { return };
         let native_cursor = Cursor::from(cursor);
         view.addCursorRect_cursor(view.bounds(), &native_cursor.load());
+    }
+
+    pub fn size(&self) -> WindowSize {
+        WindowSize::from_logical(self.state.size.get(), self.state.scale_factor.get())
+    }
+
+    pub fn scale_factor(&self) -> f64 {
+        self.state.scale_factor.get()
     }
 
     #[cfg(feature = "opengl")]

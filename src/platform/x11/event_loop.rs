@@ -4,10 +4,8 @@ use super::*;
 
 use crate::wrappers::connection_poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
-use crate::{
-    Event, MouseButton, MouseEvent, PhyPoint, PhySize, ScrollDelta, WindowEvent, WindowHandler,
-    WindowInfo,
-};
+use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
+use dpi::{PhysicalPosition, PhysicalSize};
 use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -19,7 +17,7 @@ pub(crate) struct EventLoop {
     window: Rc<WindowInner>,
     parent_handle: Option<ParentHandle>,
 
-    new_physical_size: Option<PhySize>,
+    new_physical_size: Option<PhysicalSize<u16>>,
     frame_interval: Duration,
     event_loop_running: bool,
 
@@ -57,13 +55,11 @@ impl EventLoop {
         }
 
         if let Some(size) = self.new_physical_size.take() {
-            self.window
-                .window_info
-                .set(WindowInfo::from_physical_size(size, self.window.window_info.get().scale()));
+            self.window.window_size.set(size);
 
-            let window_info = self.window.window_info.get();
+            let scale_factor = self.window.scaling_factor.get();
 
-            self.handle_event(Event::Window(WindowEvent::Resized(window_info)));
+            self.handler.resized(WindowSize::from_physical(size.cast(), scale_factor));
         }
 
         Ok(())
@@ -198,10 +194,10 @@ impl EventLoop {
             }
 
             XEvent::ConfigureNotify(event) => {
-                let new_physical_size = PhySize::new(event.width as u32, event.height as u32);
+                let new_physical_size = PhysicalSize::new(event.width, event.height);
 
                 if self.new_physical_size.is_some()
-                    || new_physical_size != self.window.window_info.get().physical_size()
+                    || new_physical_size != self.window.window_size.get()
                 {
                     self.new_physical_size = Some(new_physical_size);
                 }
@@ -211,11 +207,10 @@ impl EventLoop {
             // mouse
             ////
             XEvent::MotionNotify(event) => {
-                let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
-                let logical_pos = physical_pos.to_logical(&self.window.window_info.get());
+                let physical_pos = PhysicalPosition::new(event.event_x, event.event_y);
 
                 self.handle_event(Event::Mouse(MouseEvent::CursorMoved {
-                    position: logical_pos,
+                    position: physical_pos.cast(),
                     modifiers: key_mods(event.state),
                 }));
             }
@@ -224,10 +219,9 @@ impl EventLoop {
                 self.handle_event(Event::Mouse(MouseEvent::CursorEntered));
                 // since no `MOTION_NOTIFY` event is generated when `ENTER_NOTIFY` is generated,
                 // we generate a CursorMoved as well, so the mouse position from here isn't lost
-                let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
-                let logical_pos = physical_pos.to_logical(&self.window.window_info.get());
+                let physical_pos = PhysicalPosition::new(event.event_x, event.event_y);
                 self.handle_event(Event::Mouse(MouseEvent::CursorMoved {
-                    position: logical_pos,
+                    position: physical_pos.cast(),
                     modifiers: key_mods(event.state),
                 }));
             }
