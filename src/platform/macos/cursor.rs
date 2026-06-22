@@ -9,6 +9,7 @@ use crate::MouseCursor;
 pub enum Cursor {
     Native(fn() -> Retained<NSCursor>),
     Undocumented(Sel),
+    Hidden,
 }
 
 impl From<MouseCursor> for Cursor {
@@ -60,19 +61,18 @@ impl From<MouseCursor> for Cursor {
                 Cursor::Undocumented(sel!(busyButClickableCursor))
             }
 
-            _ => Cursor::Native(NSCursor::arrowCursor),
-            // MouseCursor::Hidden => todo!(),
-            // MouseCursor::Move => todo!(),
-            // MouseCursor::AllScroll => todo!(),
-            // MouseCursor::Cell => todo!(),
+            MouseCursor::Move => Cursor::Native(NSCursor::arrowCursor),
+            MouseCursor::AllScroll => Cursor::Native(NSCursor::arrowCursor),
+            MouseCursor::Cell => Cursor::Native(NSCursor::crosshairCursor),
+            MouseCursor::Hidden => Cursor::Hidden,
         }
     }
 }
 
 impl Cursor {
-    pub fn load(&self) -> Retained<NSCursor> {
+    pub fn load(&self) -> Option<Retained<NSCursor>> {
         match self {
-            Cursor::Native(loader) => loader(),
+            Cursor::Native(loader) => Some(loader()),
             Cursor::Undocumented(sel) => {
                 let class = NSCursor::class();
 
@@ -80,14 +80,15 @@ impl Cursor {
                 let responds_to: bool = unsafe { msg_send![class, respondsToSelector: *sel] };
 
                 if !responds_to {
-                    return NSCursor::arrowCursor();
+                    return Some(NSCursor::arrowCursor());
                 }
 
                 let raw: *mut NSCursor = unsafe { class.send_message(*sel, ()) };
                 let cursor = unsafe { Retained::retain(raw) };
 
-                cursor.unwrap_or_else(NSCursor::arrowCursor)
+                Some(cursor.unwrap_or_else(NSCursor::arrowCursor))
             }
+            Cursor::Hidden => None,
         }
     }
 }
