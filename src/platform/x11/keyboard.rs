@@ -148,7 +148,7 @@ fn code_to_key(
         Code::Numpad9 => n(m, Key::Named(NamedKey::PageUp), "9"),
         Code::NumpadSubtract => a("-"),
         Code::NumpadAdd => a("+"),
-        Code::NumpadDecimal => n(m, Key::Delete, "."),
+        Code::NumpadDecimal => n(m, Key::Named(NamedKey::Delete), "."),
         Code::IntlBackslash => s(m, "\\", "|"),
         Code::F11 => Key::Named(NamedKey::F11),
         Code::F12 => Key::Named(NamedKey::F12),
