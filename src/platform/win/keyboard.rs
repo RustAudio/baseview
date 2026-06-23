@@ -490,7 +490,7 @@ impl KeyboardState {
                         if let Ok(s) = String::from_utf16(&self.stash_utf16) {
                             Key::Character(s)
                         } else {
-                            Key::Unidentified
+                            Key::Named(NamedKey::Unidentified)
                         }
                     };
                     self.stash_utf16.clear();
