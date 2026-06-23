@@ -19,7 +19,7 @@
 //! Conversion of platform keyboard event into cross-platform event.
 
 use crate::keyboard::code_to_location;
-use keyboard_types::{Code, Key, KeyState, KeyboardEvent, Modifiers};
+use keyboard_types::{Code, Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
 use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
 use std::cell::Cell;
 
@@ -192,7 +192,7 @@ fn code_to_key(code: Code) -> Option<Key> {
         Code::ControlLeft | Code::ControlRight => Key::Named(NamedKey::Control),
         Code::CapsLock => Key::Named(NamedKey::CapsLock),
         // kVK_ANSI_KeypadClear
-        Code::NumLock => Key::Named(NamedKey::Clear),
+        Code::NumLock => Key::Named(NamedKey::NumLock),
         Code::Fn => Key::Named(NamedKey::Fn),
         Code::F1 => Key::Named(NamedKey::F1),
         Code::F2 => Key::Named(NamedKey::F2),
