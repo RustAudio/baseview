@@ -45,6 +45,10 @@ impl Window {
                 panic!("Invalid window handle: ns_view is NULL");
             };
 
+            let Some(mtm) = MainThreadMarker::new() else {
+                panic!("macOS: open_blocking can only be called on the main thread!")
+            };
+
             let parenting =
                 ViewParentingType::Parented { parent_view: Weak::from_retained(&parent_view) };
 
@@ -52,7 +56,7 @@ impl Window {
                 parent_view.window().map(|w| w.backingScaleFactor()).unwrap_or(1.0);
             let final_size = options.size.to_logical(backing_scale_factor);
 
-            let (ns_view, state) = BaseviewView::new(options, build, parenting, final_size);
+            let (ns_view, state) = BaseviewView::new(options, build, parenting, final_size, mtm);
 
             WindowHandle { view: Some(Weak::from_retained(&ns_view)).into(), state }
         })
@@ -89,7 +93,7 @@ impl Window {
                 owned_window: Weak::from_retained(&window),
             };
 
-            let _ = BaseviewView::new(options, build, parenting, final_size);
+            let _ = BaseviewView::new(options, build, parenting, final_size, mtm);
 
             app.run();
         })

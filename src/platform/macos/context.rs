@@ -3,22 +3,28 @@ use crate::platform::macos::view::BaseviewView;
 use crate::platform::{PlatformHandle, WindowSharedState};
 use crate::wrappers::appkit::{View, ViewRef};
 use crate::{MouseCursor, WindowSize};
+use dispatch2::MainThreadBound;
 use dpi::Size;
 use objc2::rc::Weak;
 use objc2::runtime::NSObjectProtocol;
-use objc2::Message;
+use objc2::{MainThreadMarker, Message};
 use raw_window_handle::DisplayHandle;
 use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct WindowContext {
+    mtm: MainThreadMarker,
     view: Weak<View<BaseviewView>>,
     state: Rc<WindowSharedState>,
 }
 
 impl WindowContext {
     pub(crate) fn new(view: ViewRef<'_, BaseviewView>) -> Self {
-        Self { view: Weak::from_retained(&view.view.retain()), state: Rc::clone(&view.state) }
+        Self {
+            view: Weak::from_retained(&view.view.retain()),
+            state: Rc::clone(&view.state),
+            mtm: view.mtm,
+        }
     }
 
     pub fn close(&self) {
@@ -88,9 +94,6 @@ impl WindowContext {
     }
 
     pub fn platform_handle(&self) -> PlatformHandle {
-        Weak::from_retained(self.)
-        PlatformHandle {
-            view:
-        }
+        PlatformHandle { inner: MainThreadBound::new(self.view.clone(), self.mtm) }
     }
 }

@@ -4,30 +4,30 @@ mod keyboard;
 mod view;
 mod window;
 
-use crate::wrappers::appkit::RwhPinkyPromiseNSView;
+use crate::platform::macos::view::BaseviewView;
+use crate::wrappers::appkit::View;
 pub use context::WindowContext;
+use dispatch2::MainThreadBound;
 use objc2::rc::Weak;
-use raw_window_handle::{AppKitWindowHandle, DisplayHandle};
+use objc2::MainThreadMarker;
+use raw_window_handle::DisplayHandle;
 use std::fmt;
 use std::fmt::Formatter;
-use std::ptr::NonNull;
 pub use window::*;
 
 #[cfg(feature = "opengl")]
 pub mod gl;
 
-#[derive(Clone)]
 pub struct PlatformHandle {
-    view: Weak<RwhPinkyPromiseNSView>,
+    inner: MainThreadBound<Weak<View<BaseviewView>>>,
 }
 
 impl PlatformHandle {
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
-        let view = self.view.load()?;
-        let ns_view = NonNull::from(&view as &RwhPinkyPromiseNSView).cast();
-        let handle = AppKitWindowHandle::new(ns_view);
+        let mtm = MainThreadMarker::new()?;
+        let view = self.inner.get(mtm);
 
-        Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
+        View::window_handle_from_weak(view)
     }
 
     pub fn display_handle(&self) -> DisplayHandle<'_> {
@@ -35,15 +35,31 @@ impl PlatformHandle {
     }
 }
 
+impl Clone for PlatformHandle {
+    fn clone(&self) -> Self {
+        // upstream this in objc2/dispatch2 someday
+        // SAFETY: The use of this marker is only to access the thread-safe Retained impl
+        let mtm = unsafe { MainThreadMarker::new_unchecked() };
+        let view = self.inner.get(mtm);
+        Self { inner: MainThreadBound::new(view.clone(), mtm) }
+    }
+}
+
 impl fmt::Debug for PlatformHandle {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        struct PtrFmt<T>(T);
-        impl<T: fmt::Pointer> fmt::Debug for PtrFmt<T> {
+        struct PtrFmt<'a>(&'a PlatformHandle);
+        impl fmt::Debug for PtrFmt<'_> {
             fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-                fmt::Pointer::fmt(&self.0, f)
+                // upstream this in objc2/dispatch2 someday
+                // SAFETY: The use of this marker is only to access the thread-safe Retained impl
+                let mtm = unsafe { MainThreadMarker::new_unchecked() };
+                match self.0.inner.get(mtm).load() {
+                    Some(retained) => fmt::Pointer::fmt(&retained, f),
+                    _ => f.write_str("(gone)"),
+                }
             }
         }
 
-        f.debug_struct("PlatformHandle (AppKit)").field("ns_view", &PtrFmt(&self.view)).finish()
+        f.debug_struct("PlatformHandle (AppKit)").field("ns_view", &PtrFmt(&self)).finish()
     }
 }
