@@ -1,0 +1,10 @@
+[package]
+name = "render_wgpu"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+baseview = { path = "../..", features = ["opengl"] }
+wgpu = "29.0.3"
+pollster = "0.4.0"

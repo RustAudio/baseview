@@ -76,6 +76,7 @@ windows-core = { version = "=0.61.2" }
 objc2 = "0.6.4"
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString", "CFUUID", "block2", "objc2"] }
 block2 = "0.6.2"
+dispatch2 = "0.3.1"
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSEnumerator", "block2", "NSOperation"] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSApplication",
@@ -93,7 +94,7 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
 ] }
 
 [workspace]
-members = ["examples/open_parented", "examples/open_window", "examples/render_femtovg"]
+members = ["examples/open_parented", "examples/open_window", "examples/render_femtovg", "examples/render_wgpu"]
 
 [lints.clippy]
 missing-safety-doc = "allow"

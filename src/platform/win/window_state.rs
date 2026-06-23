@@ -1,4 +1,5 @@
 use crate::platform::win::keyboard::KeyboardState;
+use crate::platform::PlatformHandle;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Dpi, ExtendedUser32};
@@ -138,5 +139,10 @@ impl WindowState {
 
     pub fn display_handle(&self) -> DisplayHandle<'_> {
         DisplayHandle::windows()
+    }
+
+    pub fn platform_handle(&self) -> PlatformHandle {
+        let Some(hwnd) = NonZeroIsize::new(self.hwnd as _) else { unreachable!() };
+        PlatformHandle { hwnd }
     }
 }

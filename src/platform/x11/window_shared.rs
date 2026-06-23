@@ -1,10 +1,11 @@
 use crate::platform::X11Connection;
 use crate::{MouseCursor, WindowSize};
 use dpi::{PhysicalSize, Size};
-use raw_window_handle::{DisplayHandle, XcbWindowHandle};
+use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::cell::Cell;
 use std::num::NonZero;
 use std::rc::Rc;
+use std::sync::Arc;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, InputFocus, Window as XWindow,
@@ -97,12 +98,19 @@ impl WindowInner {
     }
 
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
-        let handle = XcbWindowHandle::new(self.window_id);
+        let handle = XlibWindowHandle::new(self.window_id.get() as _);
         Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
     }
 
     pub fn display_handle(&self) -> DisplayHandle<'_> {
-        self.connection.display_handle()
+        self.connection.conn.display_handle()
+    }
+
+    pub fn platform_handle(&self) -> super::PlatformHandle {
+        super::PlatformHandle {
+            connection: Arc::clone(&self.connection.conn),
+            window_id: self.window_id,
+        }
     }
 
     #[cfg(feature = "opengl")]

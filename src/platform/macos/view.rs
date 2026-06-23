@@ -13,7 +13,7 @@ use dpi::{LogicalPosition, LogicalSize, Size};
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
-use objc2::{msg_send, AllocAnyThread};
+use objc2::{msg_send, AllocAnyThread, MainThreadMarker};
 use objc2_app_kit::{
     NSApplication, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
     NSTrackingAreaOptions, NSView, NSWindow,
@@ -29,6 +29,7 @@ pub enum ViewParentingType {
 
 pub(crate) struct BaseviewView {
     pub(crate) state: Rc<WindowSharedState>,
+    pub(crate) mtm: MainThreadMarker,
     window_handler: OnceCell<Box<dyn WindowHandler>>,
 
     frame_timer: Cell<Option<TimerHandle>>,
@@ -46,7 +47,7 @@ impl BaseviewView {
     pub fn new<H: WindowHandler + 'static>(
         _options: WindowOpenOptions,
         builder: impl FnOnce(crate::WindowContext) -> H + Send + 'static,
-        parenting: ViewParentingType, final_size: LogicalSize<f64>,
+        parenting: ViewParentingType, final_size: LogicalSize<f64>, mtm: MainThreadMarker,
     ) -> (Retained<View<Self>>, Rc<WindowSharedState>) {
         let view_rect =
             NSRect::new(NSPoint::ZERO, NSSize::new(final_size.width, final_size.height));
@@ -54,6 +55,7 @@ impl BaseviewView {
         let state = Rc::new(WindowSharedState::new(final_size, 1.0));
 
         let inner = BaseviewView {
+            mtm,
             state: state.clone(),
 
             keyboard_state: KeyboardState::new(),
