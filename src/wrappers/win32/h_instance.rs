@@ -30,6 +30,9 @@ impl HInstance {
     }
 
     pub fn addr(&self) -> NonZeroIsize {
-        self.0.addr().cast_signed()
+        match NonZeroIsize::new(self.0.as_ptr() as isize) {
+            Some(addr) => addr,
+            None => unreachable!(),
+        }
     }
 }
