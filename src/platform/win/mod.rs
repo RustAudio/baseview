@@ -4,6 +4,9 @@ mod keyboard;
 mod window;
 mod window_state;
 
+use raw_window_handle::{DisplayHandle, Win32WindowHandle};
+use std::fmt::Debug;
+use std::num::NonZeroIsize;
 use std::rc::Rc;
 pub use window::*;
 
@@ -11,3 +14,26 @@ pub use window::*;
 pub mod gl;
 
 pub type WindowContext = Rc<window_state::WindowState>;
+
+#[derive(Clone)]
+pub struct PlatformHandle {
+    hwnd: NonZeroIsize,
+}
+
+impl PlatformHandle {
+    pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
+        let handle = Win32WindowHandle::new(self.hwnd);
+        // TODO: add HINSTANCE
+        Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
+    }
+
+    pub fn display_handle(&self) -> DisplayHandle<'_> {
+        DisplayHandle::windows()
+    }
+}
+
+impl Debug for PlatformHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PlatformHandle (Win32)").field("hwnd", &self.hwnd.get()).finish()
+    }
+}
