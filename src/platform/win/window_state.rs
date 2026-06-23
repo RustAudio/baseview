@@ -90,7 +90,7 @@ impl WindowState {
         }
     }
 
-    pub fn close(&self) {
+    pub fn request_close(&self) {
         unsafe {
             PostMessageW(self.hwnd, crate::platform::win::window::BV_WINDOW_MUST_CLOSE, 0, 0);
         }

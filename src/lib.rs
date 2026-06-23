@@ -13,7 +13,7 @@ pub(crate) mod platform;
 pub mod gl;
 
 pub use clipboard::*;
-pub use context::WindowContext;
+pub use context::{PlatformHandle, WindowContext};
 pub use dpi;
 pub use event::*;
 pub use handler::WindowHandler;

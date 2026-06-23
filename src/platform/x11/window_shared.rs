@@ -65,7 +65,7 @@ impl WindowInner {
         self.mouse_cursor.set(mouse_cursor);
     }
 
-    pub fn close(&self) {
+    pub fn request_close(&self) {
         self.close_requested.set(true);
     }
 

@@ -27,7 +27,7 @@ impl WindowContext {
         }
     }
 
-    pub fn close(&self) {
+    pub fn request_close(&self) {
         let Some(view) = self.view.load() else { return };
         BaseviewView::close(view.inner_ref());
     }

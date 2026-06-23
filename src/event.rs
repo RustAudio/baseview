@@ -15,7 +15,6 @@ pub enum MouseButton {
 
 /// A scroll movement.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[non_exhaustive]
 pub enum ScrollDelta {
     /// A line-based scroll movement
     Lines {
