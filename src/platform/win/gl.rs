@@ -4,7 +4,7 @@ use std::rc::Rc;
 use windows_sys::{
     core::s,
     Win32::{
-        Foundation::{FreeLibrary, HINSTANCE, HMODULE, HWND},
+        Foundation::{FreeLibrary, HMODULE, HWND},
         Graphics::{
             Gdi::{GetDC, ReleaseDC, HDC},
             OpenGL::{
@@ -14,10 +14,7 @@ use windows_sys::{
                 PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
             },
         },
-        System::{
-            LibraryLoader::{GetProcAddress, LoadLibraryA},
-            SystemServices::IMAGE_DOS_HEADER,
-        },
+        System::LibraryLoader::{GetProcAddress, LoadLibraryA},
         UI::WindowsAndMessaging::{
             CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, UnregisterClassW,
             CS_OWNDC, CW_USEDEFAULT, WNDCLASSW,
@@ -26,6 +23,7 @@ use windows_sys::{
 };
 
 use crate::gl::*;
+use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::uuid::Uuid;
 use crate::wrappers::win32::window::HWnd;
 // See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_create_context.txt
@@ -82,10 +80,6 @@ pub struct GlContextInner {
     gl_library: HMODULE,
 }
 
-extern "C" {
-    static __ImageBase: IMAGE_DOS_HEADER;
-}
-
 impl GlContextInner {
     pub unsafe fn create(window: HWnd, config: GlConfig) -> Result<Self, GlError> {
         // Create temporary window and context to load function pointers
@@ -94,12 +88,12 @@ impl GlContextInner {
         let mut class_name: Vec<u16> = OsStr::new(&class_name_str).encode_wide().collect();
         class_name.push(0);
 
-        let hinstance = &__ImageBase as *const IMAGE_DOS_HEADER as HINSTANCE;
+        let hinstance = HInstance::get_from_dll();
 
         let wnd_class = WNDCLASSW {
             style: CS_OWNDC,
             lpfnWndProc: Some(DefWindowProcW),
-            hInstance: hinstance,
+            hInstance: hinstance.as_raw(),
             lpszClassName: class_name.as_ptr(),
             ..std::mem::zeroed()
         };
@@ -120,7 +114,7 @@ impl GlContextInner {
             CW_USEDEFAULT,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
-            hinstance,
+            hinstance.as_raw(),
             std::ptr::null_mut(),
         );
 
@@ -148,7 +142,7 @@ impl GlContextInner {
         let hglrc_tmp = wglCreateContext(hdc_tmp);
         if hglrc_tmp.is_null() {
             ReleaseDC(hwnd_tmp, hdc_tmp);
-            UnregisterClassW(class as *const _, hinstance);
+            UnregisterClassW(class as *const _, hinstance.as_raw());
             DestroyWindow(hwnd_tmp);
             return Err(GlError::CreationFailed(()));
         }
@@ -173,7 +167,7 @@ impl GlContextInner {
         wglMakeCurrent(hdc_tmp, std::ptr::null_mut());
         wglDeleteContext(hglrc_tmp);
         ReleaseDC(hwnd_tmp, hdc_tmp);
-        UnregisterClassW(class as *const _, hinstance);
+        UnregisterClassW(class as *const _, hinstance.as_raw());
         DestroyWindow(hwnd_tmp);
 
         // Create actual context

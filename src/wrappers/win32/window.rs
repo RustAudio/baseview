@@ -54,7 +54,7 @@ pub fn create_window<W: WindowImpl>(
     title: &HSTRING, style: WindowStyle, nc_size: PhysicalSize<u32>, parent: HWND,
     _dpi_ctx: &DpiAwarenessContext, initializer: impl FnOnce(HWnd) -> W + 'static,
 ) -> Result<HWND> {
-    let instance = HInstance::get();
+    let instance = HInstance::get_from_dll();
     let window_class = RegisteredClass::register_new(instance, Some(wnd_proc::<W>))?;
 
     let data = WindowData::new(initializer, window_class.clone());
