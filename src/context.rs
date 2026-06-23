@@ -1,5 +1,5 @@
 use crate::{platform, MouseCursor, WindowSize};
-use dpi::{Pixel, Size};
+use dpi::Size;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
@@ -31,7 +31,7 @@ impl WindowContext {
         self.inner.focus();
     }
 
-    pub fn resize<P: Pixel>(&self, size: impl Into<Size>) {
+    pub fn resize(&self, size: impl Into<Size>) {
         self.inner.resize(size.into());
     }
 
