@@ -36,9 +36,9 @@ pub fn run_thread_message_loop_until(until: impl Fn() -> bool) -> Result<()> {
         let result = unsafe { GetMessageW(&mut msg, null_mut(), 0, 0) };
 
         match result {
-            -1 => return Err(Error::from_win32()), // -1 means error
-            0 => return Ok(()),                    // 0 means WM_QUIT was received
-            _ => {}                                // Nonzero means a message was retrieved
+            -1 => return Err(Error::from_thread()), // -1 means error
+            0 => return Ok(()),                     // 0 means WM_QUIT was received
+            _ => {}                                 // Nonzero means a message was retrieved
         }
 
         // SAFETY: The msg pointer is valid since it comes from a reference.

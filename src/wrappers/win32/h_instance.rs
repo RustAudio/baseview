@@ -22,7 +22,7 @@ impl HInstance {
         let Some(result) = NonNull::new(result) else {
             panic!(
                 "Failed to get HInstance pointer: GetModuleHandleW failed: {}",
-                Error::from_win32()
+                Error::from_thread()
             )
         };
 

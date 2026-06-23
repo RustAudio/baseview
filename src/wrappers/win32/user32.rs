@@ -67,7 +67,7 @@ struct LibraryModule(NonNull<c_void>);
 impl LibraryModule {
     pub unsafe fn load(module_name: PCSTR) -> Result<Self, Error> {
         let library = unsafe { LoadLibraryA(module_name.as_ptr()) };
-        let Some(library) = NonNull::new(library) else { return Err(Error::from_win32()) };
+        let Some(library) = NonNull::new(library) else { return Err(Error::from_thread()) };
 
         Ok(Self(library))
     }

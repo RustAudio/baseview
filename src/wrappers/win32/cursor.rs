@@ -23,7 +23,7 @@ impl SystemCursor {
 
         match NonNull::new(result) {
             Some(res) => Ok(Self(res)),
-            None => Err(Error::from_win32()),
+            None => Err(Error::from_thread()),
         }
     }
 

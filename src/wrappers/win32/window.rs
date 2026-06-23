@@ -77,7 +77,7 @@ pub fn create_window<W: WindowImpl>(
     };
 
     if hwnd.is_null() {
-        return Err(Error::from_win32());
+        return Err(Error::from_thread());
     }
 
     Ok(hwnd)

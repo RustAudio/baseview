@@ -35,7 +35,7 @@ impl<'a> DpiAwarenessContext<'a> {
             unsafe { set_thread_dpi_awareness_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
 
         if previous.is_null() {
-            return Err(Error::from_win32());
+            return Err(Error::from_thread());
         }
 
         Ok(DpiAwarenessContext { previous, user32 })
@@ -48,7 +48,7 @@ impl<'a> DpiAwarenessContext<'a> {
             let result = unsafe { AdjustWindowRectEx(&mut rect.0, style.style, 0, style.style_ex) };
 
             if result == 0 {
-                return Err(Error::from_win32());
+                return Err(Error::from_thread());
             }
 
             return Ok(rect);
@@ -61,7 +61,7 @@ impl<'a> DpiAwarenessContext<'a> {
         };
 
         if result == 0 {
-            return Err(Error::from_win32());
+            return Err(Error::from_thread());
         }
 
         Ok(rect)
