@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::ffi::CStr;
 use std::fmt::Formatter;
 use std::os::raw::c_int;
 use std::ptr::NonNull;
@@ -17,9 +18,18 @@ pub struct XlibConnection {
     default_screen: c_int,
 }
 
+// SAFETY: Xlib functions should be thread-safe, since we initialize it with XInitThreads below
+unsafe impl Send for XlibConnection {}
+// SAFETY: same as above
+unsafe impl Sync for XlibConnection {}
+
 impl XlibConnection {
     pub fn open() -> Result<Self, Box<dyn Error>> {
         let xlib = Box::new(Xlib::open()?);
+
+        if unsafe { (xlib.XInitThreads)() } == 0 {
+            return Err(InitThreadsFailedError.into());
+        }
 
         // SAFETY: It's always safe to call XOpenDisplay with a NULL display_name
         let ptr = unsafe { (xlib.XOpenDisplay)(core::ptr::null()) };
@@ -46,6 +56,11 @@ impl XlibConnection {
     /// Returns the index of the default screen for this X server.
     pub fn default_screen_index(&self) -> c_int {
         self.default_screen
+    }
+
+    pub fn display_string(&self) -> &CStr {
+        let ptr = unsafe { (self.xlib.XDisplayString)(self.display.as_ptr()) };
+        unsafe { CStr::from_ptr(ptr) }
     }
 
     /// Safe wrapper for XDefaultScreen
@@ -131,3 +146,12 @@ impl std::fmt::Display for DisplayOpenFailedError {
     }
 }
 impl Error for DisplayOpenFailedError {}
+
+#[derive(Debug)]
+struct InitThreadsFailedError;
+impl std::fmt::Display for InitThreadsFailedError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Failed to open X11 display connection: XOpenDisplay() failed")
+    }
+}
+impl Error for InitThreadsFailedError {}
