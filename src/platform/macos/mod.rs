@@ -60,6 +60,6 @@ impl fmt::Debug for PlatformHandle {
             }
         }
 
-        f.debug_struct("PlatformHandle (AppKit)").field("ns_view", &PtrFmt(&self)).finish()
+        f.debug_struct("PlatformHandle (AppKit)").field("ns_view", &PtrFmt(self)).finish()
     }
 }
