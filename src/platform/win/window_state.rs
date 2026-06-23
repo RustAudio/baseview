@@ -1,6 +1,7 @@
 use crate::platform::win::keyboard::KeyboardState;
 use crate::platform::PlatformHandle;
 use crate::wrappers::win32::cursor::SystemCursor;
+use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Dpi, ExtendedUser32};
 use crate::{Event, EventStatus, MouseCursor, WindowHandler, WindowScalePolicy, WindowSize};
@@ -132,8 +133,9 @@ impl WindowState {
 
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
         let Some(hwnd) = NonZeroIsize::new(self.hwnd as _) else { unreachable!() };
-        let handle = Win32WindowHandle::new(hwnd);
-        // TODO: add HINSTANCE
+        let mut handle = Win32WindowHandle::new(hwnd);
+        handle.hinstance = Some(HInstance::get_from_dll().addr());
+
         Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
     }
 

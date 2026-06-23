@@ -4,6 +4,7 @@ mod keyboard;
 mod window;
 mod window_state;
 
+use crate::wrappers::win32::h_instance::HInstance;
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::fmt::Debug;
 use std::num::NonZeroIsize;
@@ -22,8 +23,9 @@ pub struct PlatformHandle {
 
 impl PlatformHandle {
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
-        let handle = Win32WindowHandle::new(self.hwnd);
-        // TODO: add HINSTANCE
+        let mut handle = Win32WindowHandle::new(self.hwnd);
+        handle.hinstance = Some(HInstance::get_from_dll().addr());
+
         Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
     }
 
@@ -34,6 +36,9 @@ impl PlatformHandle {
 
 impl Debug for PlatformHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PlatformHandle (Win32)").field("hwnd", &self.hwnd.get()).finish()
+        f.debug_struct("PlatformHandle (Win32)")
+            .field("hwnd", &self.hwnd.get())
+            .field("hinstance", &HInstance::get_from_dll().addr().get())
+            .finish()
     }
 }
