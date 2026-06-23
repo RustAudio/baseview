@@ -104,6 +104,11 @@ impl<V: ViewImpl> View<V> {
         let Some(ns_window) = self.window() else { return 1.0 };
         ns_window.backingScaleFactor()
     }
+
+    pub fn retained_to_nsview(this: Retained<Self>) -> Retained<NSView> {
+        // SAFETY: Safe due to #[repr(C)] and just wrapping an NSView
+        unsafe { Retained::cast_unchecked(this) }
+    }
 }
 
 pub struct ViewInner<V> {

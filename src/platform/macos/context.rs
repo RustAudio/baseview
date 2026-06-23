@@ -1,6 +1,6 @@
 use crate::platform::macos::cursor::Cursor;
 use crate::platform::macos::view::BaseviewView;
-use crate::platform::WindowSharedState;
+use crate::platform::{PlatformHandle, WindowSharedState};
 use crate::wrappers::appkit::{View, ViewRef};
 use crate::{MouseCursor, WindowSize};
 use dpi::Size;
@@ -85,5 +85,12 @@ impl WindowContext {
 
     pub fn display_handle(&self) -> DisplayHandle<'_> {
         DisplayHandle::appkit()
+    }
+
+    pub fn platform_handle(&self) -> PlatformHandle {
+        Weak::from_retained(self.)
+        PlatformHandle {
+            view:
+        }
     }
 }
