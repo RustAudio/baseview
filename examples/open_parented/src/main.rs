@@ -60,6 +60,7 @@ impl WindowHandler for ParentWindowHandler {
             Event::Mouse(e) => println!("Parent Mouse event: {:?}", e),
             Event::Keyboard(e) => println!("Parent Keyboard event: {:?}", e),
             Event::Window(e) => println!("Parent Window event: {:?}", e),
+            _ => {}
         }
 
         EventStatus::Captured
@@ -111,6 +112,7 @@ impl WindowHandler for ChildWindowHandler {
             Event::Mouse(e) => println!("Child Mouse event: {:?}", e),
             Event::Keyboard(e) => println!("Child Keyboard event: {:?}", e),
             Event::Window(e) => println!("Child Window event: {:?}", e),
+            _ => {}
         }
 
         EventStatus::Captured

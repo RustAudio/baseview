@@ -3,6 +3,7 @@ use keyboard_types::{KeyboardEvent, Modifiers};
 use std::path::PathBuf;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum MouseButton {
     Left,
     Middle,
@@ -14,6 +15,7 @@ pub enum MouseButton {
 
 /// A scroll movement.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum ScrollDelta {
     /// A line-based scroll movement
     Lines {
@@ -33,6 +35,7 @@ pub enum ScrollDelta {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum MouseEvent {
     /// The mouse cursor was moved
     CursorMoved {
@@ -107,6 +110,7 @@ pub enum MouseEvent {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum WindowEvent {
     Focused,
     Unfocused,
@@ -114,12 +118,14 @@ pub enum WindowEvent {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum Event {
     Mouse(MouseEvent),
     Keyboard(KeyboardEvent),
     Window(WindowEvent),
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DropEffect {
     Copy,
@@ -128,6 +134,7 @@ pub enum DropEffect {
     Scroll,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub enum DropData {
     None,
@@ -143,6 +150,7 @@ pub enum DropData {
 /// or it isn't obviously useful. Currently, only [`Event::Keyboard`] variants
 /// are supported.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum EventStatus {
     /// Event was handled by your window and will not be sent back to the
     /// platform for further processing.
