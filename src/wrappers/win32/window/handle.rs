@@ -50,8 +50,8 @@ impl HWnd {
         }
 
         // We can't know if a return value of 0 is indicative of an error, or if it's just because the
-        // previous value was 0. So we check GetLastError instead (called by Error::from_win32).
-        let error = Error::from_win32();
+        // previous value was 0. So we check GetLastError instead (called by Error::from_thread).
+        let error = Error::from_thread();
         if error.code() == HRESULT(0) {
             return Ok(());
         }
@@ -69,8 +69,8 @@ impl HWnd {
         }
 
         // We can't know if a return value of 0 is indicative of an error, or if it's just because the
-        // value was actually 0. So we check GetLastError instead (called by Error::from_win32).
-        let error = Error::from_win32();
+        // value was actually 0. So we check GetLastError instead (called by Error::from_thread).
+        let error = Error::from_thread();
         if error.code() == HRESULT(0) {
             return Ok(result);
         }
@@ -92,7 +92,7 @@ impl HWnd {
 
         // SAFETY: This type guarantees the HWND is safe to use.
         match unsafe { get_dpi_for_window(self.0) } {
-            0 => Err(Error::from_win32()),
+            0 => Err(Error::from_thread()),
             dpi => Ok(Dpi(dpi)),
         }
     }
@@ -131,7 +131,7 @@ impl HWnd {
         };
 
         if result == 0 {
-            return Err(Error::from_win32());
+            return Err(Error::from_thread());
         }
 
         Ok(())
@@ -172,7 +172,7 @@ impl HWnd {
         };
 
         if result == 0 {
-            return Err(Error::from_win32());
+            return Err(Error::from_thread());
         }
 
         Ok(())
@@ -182,7 +182,7 @@ impl HWnd {
         let result = unsafe { SetTimer(self.0, timer_id.get(), elapse, None) };
 
         if result == 0 {
-            return Err(Error::from_win32());
+            return Err(Error::from_thread());
         }
 
         Ok(())
@@ -195,8 +195,8 @@ impl HWnd {
         }
 
         // We can't know if a return value of 0 is indicative of an error, or if it's just because the
-        // previous value was 0. So we check GetLastError instead (called by Error::from_win32).
-        let error = Error::from_win32();
+        // previous value was 0. So we check GetLastError instead (called by Error::from_thread).
+        let error = Error::from_thread();
         if error.code() == HRESULT(0) {
             return Ok(());
         }
@@ -208,7 +208,7 @@ impl HWnd {
         let result = unsafe { DestroyWindow(self.0) };
 
         if result == 0 {
-            return Err(Error::from_win32());
+            return Err(Error::from_thread());
         }
 
         Ok(())
@@ -240,7 +240,7 @@ impl HWnd {
         // SAFETY: eventtrack pointer comes from a reference, and the struct it points to is filled
         // correctly
         match unsafe { TrackMouseEvent(&mut track) } {
-            0 => Err(Error::from_win32()),
+            0 => Err(Error::from_thread()),
             _ => Ok(()),
         }
     }

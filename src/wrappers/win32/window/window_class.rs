@@ -34,7 +34,7 @@ impl RegisteredClass {
         let class_atom = unsafe { RegisterClassW(&class_info) };
 
         let Some(class_atom) = NonZeroU16::new(class_atom) else {
-            return Err(Error::from_win32());
+            return Err(Error::from_thread());
         };
 
         Ok(Self(Arc::new(RegisteredClassInner(class_atom, instance))))
