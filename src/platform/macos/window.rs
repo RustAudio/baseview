@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use objc2::rc::{autoreleasepool, Weak};
 use objc2::runtime::NSObjectProtocol;
-use objc2::MainThreadMarker;
+use objc2::{ClassType, MainThreadMarker};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSPasteboard, NSPasteboardTypeString,
 };
@@ -156,7 +156,21 @@ impl<'a> Window<'a> {
 
     pub fn set_mouse_cursor(&self, cursor: MouseCursor) {
         let native_cursor = Cursor::from(cursor);
-        self.view.addCursorRect_cursor(self.view.bounds(), &native_cursor.load());
+        unsafe {
+            if let Some(loaded_cursor) = native_cursor.load() {
+                if self.inner.state.cursor_hidden.get() {
+                    let _: () = objc2::msg_send![objc2_app_kit::NSCursor::class(), unhide];
+                    self.inner.state.cursor_hidden.set(false);
+                }
+                let _: () = objc2::msg_send![&loaded_cursor, set];
+                self.view.addCursorRect_cursor(self.view.bounds(), &loaded_cursor);
+            } else {
+                if !self.inner.state.cursor_hidden.get() {
+                    let _: () = objc2::msg_send![objc2_app_kit::NSCursor::class(), hide];
+                    self.inner.state.cursor_hidden.set(true);
+                }
+            }
+        }
     }
 
     #[cfg(feature = "opengl")]
@@ -169,6 +183,7 @@ pub(crate) struct WindowSharedState {
     /// The last known window info for this window.
     pub window_info: Cell<WindowInfo>,
     pub closed: Cell<bool>,
+    pub cursor_hidden: Cell<bool>,
 }
 
 impl WindowSharedState {
@@ -176,6 +191,7 @@ impl WindowSharedState {
         Self {
             window_info: WindowInfo::from_logical_size(options.size, 1.0).into(),
             closed: false.into(),
+            cursor_hidden: false.into(),
         }
     }
 }
