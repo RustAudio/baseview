@@ -151,7 +151,10 @@ fn main() {
     Window::open_blocking(window_open_options, |window| {
         let ctx = softbuffer::Context::new(window.clone()).unwrap();
         let mut surface = softbuffer::Surface::new(&ctx, window.clone()).unwrap();
-        surface.resize(NonZeroU32::new(512).unwrap(), NonZeroU32::new(512).unwrap()).unwrap();
+        let size = window.size().physical;
+        surface
+            .resize(NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap())
+            .unwrap();
 
         OpenWindowExample {
             window_context: window,
