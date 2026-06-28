@@ -1,0 +1,10 @@
+[package]
+name = "plugin_clack"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clack-plugin = "0.1.0"
+clack-extensions = { version = "0.1.0", features = ["gui", "clack-plugin"] }
+baseview = { path = "../.." }
+softbuffer = "0.4.8"
