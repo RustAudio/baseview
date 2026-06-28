@@ -2,7 +2,7 @@ use crate::context::WindowContext;
 use crate::handler::WindowHandler;
 use crate::platform;
 use crate::window_open_options::WindowOpenOptions;
-use dpi::{LogicalSize, PhysicalSize, Pixel};
+use dpi::{LogicalSize, PhysicalSize, Pixel, Size};
 use raw_window_handle::HasWindowHandle;
 use std::marker::PhantomData;
 
@@ -26,6 +26,38 @@ impl WindowHandle {
     /// if the window was closed/dropped.
     pub fn is_open(&self) -> bool {
         self.window_handle.is_open()
+    }
+
+    pub fn suggest_fallback_scale(&self, fallback_scale: Option<f64>) {
+        todo!()
+    }
+
+    pub fn resize(&self, size: impl Into<Size>) {
+        todo!()
+    }
+
+    pub fn size(&self) -> WindowSize {
+        todo!()
+    }
+
+    pub fn make_floating(&self) {
+        todo!()
+    }
+
+    pub fn set_parent(&self, parent: impl HasWindowHandle + 'static) {
+        todo!()
+    }
+
+    pub fn show(&self) {
+        todo!()
+    }
+
+    pub fn hide(&self) {
+        todo!()
+    }
+
+    pub fn set_title(&self, title: impl Into<String>) {
+        todo!()
     }
 }
 
