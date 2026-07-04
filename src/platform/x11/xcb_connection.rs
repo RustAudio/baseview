@@ -69,20 +69,13 @@ impl X11Connection {
         })
     }
 
-    // Try to get the scaling with this function first.
-    // If this gives you `None`, fall back to `get_scaling_screen_dimensions`.
-    // If neither work, I guess just assume 96.0 and don't do any scaling.
-    fn get_scaling_xft(&self) -> Result<Option<f64>, Box<dyn Error>> {
-        if let Some(dpi) = self.resources.get_value::<u32>("Xft.dpi", "")? {
-            Ok(Some(dpi as f64 / 96.0))
+    pub fn get_scaling(&self) -> f64 {
+        // If the WM didn't set any display scaling, assume a scaling factor of 1.0 (i.e. don't do any scaling)
+        if let Ok(Some(dpi)) = self.resources.get_value::<u32>("Xft.dpi", "") {
+            dpi as f64 / 96.0
         } else {
-            Ok(None)
+            1.0
         }
-    }
-
-    #[inline]
-    pub fn get_scaling(&self) -> Result<f64, Box<dyn Error>> {
-        Ok(self.get_scaling_xft()?.unwrap_or(96.))
     }
 
     #[inline]
