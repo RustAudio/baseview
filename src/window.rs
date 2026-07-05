@@ -4,6 +4,7 @@ use crate::platform;
 use crate::window_open_options::WindowOpenOptions;
 use dpi::{LogicalSize, PhysicalSize, Pixel, Size};
 use raw_window_handle::HasWindowHandle;
+use std::error::Error;
 use std::marker::PhantomData;
 
 pub struct WindowHandle {
@@ -13,13 +14,17 @@ pub struct WindowHandle {
 }
 
 impl WindowHandle {
-    fn new(window_handle: platform::WindowHandle) -> Self {
+    pub(crate) fn new(window_handle: platform::WindowHandle) -> Self {
         Self { window_handle, phantom: PhantomData }
     }
 
     /// Close the window
-    pub fn close(&self) {
+    pub fn close(self) {
         self.window_handle.close();
+    }
+
+    pub fn run_until_closed(self) -> Result<(), Box<dyn Error>> {
+        todo!()
     }
 
     /// Returns `true` if the window is still open, and returns `false`
@@ -44,7 +49,7 @@ impl WindowHandle {
         todo!()
     }
 
-    pub fn set_parent(&self, parent: impl HasWindowHandle + 'static) {
+    pub fn set_parent(&self, parent: &impl HasWindowHandle) {
         todo!()
     }
 

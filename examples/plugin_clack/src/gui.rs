@@ -1,11 +1,13 @@
 use crate::ExamplePluginMainThread;
 use crate::window_handler::OpenWindowExample;
+use baseview::dpi::{LogicalSize, PhysicalSize, Size};
 use baseview::{WindowBuilder, WindowHandle};
 use clack_extensions::gui::{
     AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, PluginGuiImpl,
     Window,
 };
 use clack_plugin::plugin::PluginError;
+use raw_window_handle::HasRawWindowHandle;
 
 pub struct ExamplePluginGui {
     handle: WindowHandle,
@@ -82,11 +84,26 @@ impl PluginGuiImpl for ExamplePluginMainThread {
     }
 
     fn set_size(&mut self, size: GuiSize) -> Result<(), PluginError> {
-        todo!()
+        let Some(gui) = &self.gui else {
+            return Err(PluginError::Message("Invalid GUI call: GUI is not created"));
+        };
+
+        let size = size_from_clap(size);
+        gui.handle.resize(size);
+        Ok(())
     }
 
     fn set_parent(&mut self, window: Window) -> Result<(), PluginError> {
-        todo!()
+        let Some(gui) = &self.gui else {
+            return Err(PluginError::Message("Invalid GUI call: GUI is not created"));
+        };
+
+        let handle = window.raw_window_handle()?;
+
+        let handle = unsafe { raw_window_handle::WindowHandle::borrow_raw(handle) };
+        gui.handle.set_parent(&handle);
+
+        Ok(())
     }
 
     fn set_transient(&mut self, window: Window) -> Result<(), PluginError> {
@@ -105,5 +122,16 @@ impl PluginGuiImpl for ExamplePluginMainThread {
 
     fn hide(&mut self) -> Result<(), PluginError> {
         todo!()
+    }
+}
+
+fn size_from_clap(size: GuiSize) -> Size {
+    let uses_logical =
+        matches!(GuiApiType::default_for_current_platform(), Some(a) if a.uses_logical_size());
+
+    if uses_logical {
+        Size::Logical(LogicalSize::new(size.width as _, size.height as _))
+    } else {
+        Size::Physical(PhysicalSize::new(size.width, size.height))
     }
 }
