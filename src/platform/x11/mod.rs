@@ -1,6 +1,6 @@
 mod xcb_connection;
 
-use raw_window_handle::{DisplayHandle, XcbWindowHandle};
+use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::fmt::Formatter;
 use std::num::NonZero;
 use std::rc::Rc;
@@ -34,7 +34,7 @@ pub struct PlatformHandle {
 
 impl PlatformHandle {
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
-        let handle = XcbWindowHandle::new(self.window_id);
+        let handle = XlibWindowHandle::new(self.window_id.get() as _);
         Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
     }
 
