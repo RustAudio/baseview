@@ -1,6 +1,6 @@
 [package]
 name = "baseview"
-version = "0.1.4"
+version = "0.2.0"
 authors = [
     "William Light <git@wrl.lhiaudio.com>",
     "Charles Saracco <crsaracco@gmail.com>",
@@ -25,13 +25,11 @@ rust-version = "1.82"
 [features]
 default = []
 opengl = [
-    "uuid",
     "objc2-core-foundation/CFBundle",
     "objc2-app-kit/NSOpenGL",
     "objc2-app-kit/NSOpenGLView",
     "objc2-app-kit/objc2-open-gl"
 ]
-uuid = [] # Deprecated; this feature was provided by the now unneeded uuid dependency
 
 [dependencies]
 keyboard-types = { version = "0.8.3" }
