@@ -236,6 +236,7 @@ impl Window {
             window_id,
             physical_size,
             scaling,
+            visual_info.visual_id.try_into()?,
             #[cfg(feature = "opengl")]
             gl_context,
         ));

@@ -30,16 +30,18 @@ pub mod gl;
 pub struct PlatformHandle {
     connection: Arc<XlibXcbConnection>,
     window_id: NonZero<x11rb::protocol::xproto::Window>,
+    visual_id: NonZero<x11rb::protocol::xproto::Visualid>,
 }
 
 impl PlatformHandle {
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
-        let handle = XcbWindowHandle::new(self.window_id);
+        let mut handle = XcbWindowHandle::new(self.window_id);
+        handle.visual_id = Some(self.visual_id);
         Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
     }
 
     pub fn display_handle(&self) -> DisplayHandle<'_> {
-        self.connection.display_handle()
+        self.connection.xcb_display_handle()
     }
 }
 

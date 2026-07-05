@@ -3,6 +3,7 @@ use baseview::{
     Event, EventStatus, Window, WindowContext, WindowHandler, WindowOpenOptions, WindowSize,
 };
 
+use log::LevelFilter;
 use std::cell::RefCell;
 
 struct WgpuExample {
@@ -30,6 +31,7 @@ impl WgpuExample {
                 force_fallback_adapter: false,
                 // Request an adapter which can render to our surface
                 compatible_surface: Some(&surface),
+                ..Default::default()
             })
             .await
             .expect("Failed to find an appropriate adapter");
@@ -182,7 +184,7 @@ impl WindowHandler for WgpuExample {
         }
 
         self.queue.submit(Some(encoder.finish()));
-        surface_texture.present();
+        self.queue.present(surface_texture);
     }
 
     fn resized(&self, new_size: WindowSize) {
@@ -203,6 +205,7 @@ impl WindowHandler for WgpuExample {
 }
 
 fn main() {
+    env_logger::builder().filter_level(LevelFilter::Debug).init();
     let window_open_options = WindowOpenOptions::new()
         .with_title("WGPU on Baseview")
         .with_size(LogicalSize::new(512, 512));

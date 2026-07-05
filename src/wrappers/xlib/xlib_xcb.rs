@@ -1,5 +1,5 @@
 use crate::wrappers::xlib::xlib_connection::XlibConnection;
-use raw_window_handle::{DisplayHandle, XlibDisplayHandle};
+use raw_window_handle::{DisplayHandle, XcbDisplayHandle, XlibDisplayHandle};
 use std::error::Error;
 use std::ops::Deref;
 use std::os::fd::{AsFd, BorrowedFd};
@@ -60,10 +60,18 @@ impl XlibXcbConnection {
         &self.xlib_connection
     }
 
-    pub fn display_handle(&self) -> DisplayHandle<'_> {
+    pub fn xlib_display_handle(&self) -> DisplayHandle<'_> {
         let raw_connection = self.xlib_connection.as_raw().cast();
         let Some(raw_connection) = NonNull::new(raw_connection) else { unreachable!() };
         let handle = XlibDisplayHandle::new(Some(raw_connection), self.default_screen());
+
+        unsafe { DisplayHandle::borrow_raw(handle.into()) }
+    }
+
+    pub fn xcb_display_handle(&self) -> DisplayHandle<'_> {
+        let raw_connection = self.xcb_connection.get_raw_xcb_connection();
+        let Some(raw_connection) = NonNull::new(raw_connection) else { unreachable!() };
+        let handle = XcbDisplayHandle::new(Some(raw_connection), self.default_screen());
 
         unsafe { DisplayHandle::borrow_raw(handle.into()) }
     }

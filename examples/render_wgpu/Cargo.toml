@@ -6,5 +6,7 @@ publish = false
 
 [dependencies]
 baseview = { path = "../..", features = ["opengl"] }
-wgpu = "29.0.3"
+wgpu = "30.0.0"
+env_logger = "0.11.11"
+log = "0.4.33"
 pollster = "0.4.0"
