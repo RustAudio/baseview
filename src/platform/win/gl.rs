@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CString, OsStr};
+use std::ffi::{c_void, CStr, CString, OsStr};
 use std::os::windows::ffi::OsStrExt;
 use std::rc::Rc;
 use windows_sys::{
@@ -307,8 +307,7 @@ impl GlContextInner {
         wglMakeCurrent(self.hdc, std::ptr::null_mut());
     }
 
-    pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        let symbol = CString::new(symbol).unwrap();
+    pub fn get_proc_address(&self, symbol: &CStr) -> *const c_void {
         let symbol_ptr = symbol.as_ptr().cast();
 
         let addr = unsafe {
