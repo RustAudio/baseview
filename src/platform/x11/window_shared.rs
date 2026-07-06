@@ -8,7 +8,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, InputFocus, Window as XWindow,
+    ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, InputFocus, Visualid,
+    Window as XWindow,
 };
 use x11rb::CURRENT_TIME;
 
@@ -22,6 +23,7 @@ pub(crate) struct WindowInner {
     pub(crate) scaling_factor: Cell<f64>,
     pub(crate) window_size: Cell<PhysicalSize<u16>>,
     mouse_cursor: Cell<MouseCursor>,
+    pub(crate) visual_id: NonZero<Visualid>,
 
     pub(crate) close_requested: Cell<bool>,
     pub(crate) is_focused: Cell<bool>,
@@ -30,11 +32,13 @@ pub(crate) struct WindowInner {
 impl WindowInner {
     pub(crate) fn new(
         connection: Rc<X11Connection>, window_id: NonZero<XWindow>, window_size: PhysicalSize<u16>,
-        scale_factor: f64, #[cfg(feature = "opengl")] gl_context: Option<super::gl::GlContext>,
+        scale_factor: f64, visual_id: NonZero<Visualid>,
+        #[cfg(feature = "opengl")] gl_context: Option<super::gl::GlContext>,
     ) -> Self {
         Self {
             connection,
             window_id,
+            visual_id,
             window_size: window_size.into(),
             scaling_factor: scale_factor.into(),
             mouse_cursor: MouseCursor::default().into(),
@@ -98,18 +102,20 @@ impl WindowInner {
     }
 
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
-        let handle = XlibWindowHandle::new(self.window_id.get() as _);
+        let mut handle = XlibWindowHandle::new(self.window_id.get() as _);
+        handle.visual_id = self.visual_id.get().into();
         Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
     }
 
     pub fn display_handle(&self) -> DisplayHandle<'_> {
-        self.connection.conn.display_handle()
+        self.connection.conn.xlib_display_handle()
     }
 
     pub fn platform_handle(&self) -> super::PlatformHandle {
         super::PlatformHandle {
             connection: Arc::clone(&self.connection.conn),
             window_id: self.window_id,
+            visual_id: self.visual_id,
         }
     }
 
