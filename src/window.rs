@@ -21,7 +21,7 @@ impl WindowHandle {
     }
 
     pub fn run_until_closed(self) -> Result<(), Box<dyn Error>> {
-        todo!()
+        self.window_handle.run_until_closed()
     }
 
     /// Returns `true` if the window is still open, and returns `false`
@@ -64,7 +64,7 @@ impl WindowHandle {
 }
 
 pub fn create_window<H: WindowHandler>(
-    builder: WindowBuilder, handler: impl FnOnce(WindowContext) -> H,
+    builder: WindowBuilder, handler: impl FnOnce(WindowContext) -> H + 'static,
 ) -> WindowHandle {
     WindowHandle::new(platform::Window::create_window(builder, handler))
 }

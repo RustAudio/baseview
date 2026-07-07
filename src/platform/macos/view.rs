@@ -6,8 +6,8 @@ use crate::platform::macos::context::WindowContext;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
-    DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowOpenOptions, WindowSize,
+    DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, ScrollDelta, WindowBuilder,
+    WindowEvent, WindowHandler, WindowOpenOptions, WindowSize,
 };
 use dpi::{LogicalPosition, LogicalSize, Size};
 use objc2::__framework_prelude::Retained;
@@ -45,8 +45,7 @@ pub(crate) struct BaseviewView {
 
 impl BaseviewView {
     pub fn new<H: WindowHandler + 'static>(
-        _options: WindowOpenOptions,
-        builder: impl FnOnce(crate::WindowContext) -> H + Send + 'static,
+        _options: WindowBuilder, builder: impl FnOnce(crate::WindowContext) -> H + 'static,
         parenting: ViewParentingType, final_size: LogicalSize<f64>, mtm: MainThreadMarker,
     ) -> (Retained<View<Self>>, Rc<WindowSharedState>) {
         let view_rect =

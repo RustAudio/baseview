@@ -9,6 +9,8 @@ pub struct WindowBuilder {
     pub host_handler: Option<Box<dyn HostHandler>>,
     pub parent: Option<Box<dyn HasWindowHandle>>,
     pub parented: bool,
+    #[cfg(feature = "opengl")]
+    pub gl_config: Option<crate::gl::GlConfig>,
 }
 
 impl WindowBuilder {
@@ -52,6 +54,8 @@ impl Default for WindowBuilder {
             host_handler: None,
             parent: None,
             parented: false,
+            #[cfg(feature = "opengl")]
+            gl_config: None,
         }
     }
 }

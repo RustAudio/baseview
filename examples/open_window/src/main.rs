@@ -8,8 +8,7 @@ use rtrb::{Consumer, RingBuffer};
 use baseview::copy_to_clipboard;
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::{
-    Event, EventStatus, MouseEvent, Window, WindowBuilder, WindowContext, WindowHandler,
-    WindowOpenOptions, WindowSize,
+    Event, EventStatus, MouseEvent, WindowBuilder, WindowContext, WindowHandler, WindowSize,
 };
 
 #[derive(Debug, Clone)]
