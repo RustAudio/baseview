@@ -4,13 +4,13 @@ use raw_window_handle::HasWindowHandle;
 use std::error::Error;
 use std::marker::PhantomData;
 
-pub struct WindowHandle {
+pub struct Window {
     window_handle: platform::Window,
     // so that WindowHandle is !Send on all platforms
     phantom: PhantomData<*mut ()>,
 }
 
-impl WindowHandle {
+impl Window {
     pub(crate) fn new(window_handle: platform::Window) -> Self {
         Self { window_handle, phantom: PhantomData }
     }
@@ -65,6 +65,6 @@ impl WindowHandle {
 
 pub fn create_window<H: WindowHandler>(
     builder: WindowBuilder, handler: impl FnOnce(WindowContext) -> H + 'static,
-) -> WindowHandle {
-    WindowHandle::new(platform::Window::create_window(builder, handler))
+) -> Window {
+    Window::new(platform::Window::create_window(builder, handler))
 }

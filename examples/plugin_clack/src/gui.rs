@@ -1,16 +1,16 @@
 use crate::ExamplePluginMainThread;
 use crate::window_handler::OpenWindowExample;
 use baseview::dpi::{LogicalSize, PhysicalSize, Size};
-use baseview::{WindowBuilder, WindowHandle};
+use baseview::{Window, WindowBuilder};
 use clack_extensions::gui::{
     AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, PluginGuiImpl,
-    Window,
+    Window as ClapWindow,
 };
 use clack_plugin::plugin::PluginError;
 use raw_window_handle::HasRawWindowHandle;
 
 pub struct ExamplePluginGui {
-    handle: WindowHandle,
+    handle: Window,
 }
 
 impl PluginGuiImpl for ExamplePluginMainThread {
@@ -27,7 +27,7 @@ impl PluginGuiImpl for ExamplePluginMainThread {
     }
 
     fn create(&mut self, _configuration: GuiConfiguration) -> Result<(), PluginError> {
-        let handle = WindowBuilder::new().build(OpenWindowExample::new); // TODO: handle errors
+        let handle = baseview::create_window(WindowBuilder::new(), OpenWindowExample::new);
 
         self.gui = Some(ExamplePluginGui { handle });
 
@@ -93,7 +93,7 @@ impl PluginGuiImpl for ExamplePluginMainThread {
         Ok(())
     }
 
-    fn set_parent(&mut self, window: Window) -> Result<(), PluginError> {
+    fn set_parent(&mut self, window: ClapWindow) -> Result<(), PluginError> {
         let Some(gui) = &self.gui else {
             return Err(PluginError::Message("Invalid GUI call: GUI is not created"));
         };
@@ -106,7 +106,7 @@ impl PluginGuiImpl for ExamplePluginMainThread {
         Ok(())
     }
 
-    fn set_transient(&mut self, window: Window) -> Result<(), PluginError> {
+    fn set_transient(&mut self, window: ClapWindow) -> Result<(), PluginError> {
         todo!() // Not supported yet
     }
 

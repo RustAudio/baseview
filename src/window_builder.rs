@@ -1,4 +1,4 @@
-use crate::{HostHandler, WindowContext, WindowHandle, WindowHandler};
+use crate::HostHandler;
 use dpi::{LogicalSize, Size};
 use raw_window_handle::HasWindowHandle;
 
@@ -7,7 +7,7 @@ pub struct WindowBuilder {
     pub title: Option<String>,
     pub size: Size,
     pub host_handler: Option<Box<dyn HostHandler>>,
-    pub parent: Option<Box<dyn HasWindowHandle>>,
+    pub parent: Option<Box<dyn HasWindowHandle + 'static>>,
     pub parented: bool,
     #[cfg(feature = "opengl")]
     pub gl_config: Option<crate::gl::GlConfig>,
@@ -23,13 +23,30 @@ impl WindowBuilder {
         self
     }
 
+    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+
+    #[cfg(feature = "opengl")]
+    pub fn with_gl(mut self) -> Self {
+        self.gl_config = Some(crate::gl::GlConfig::default());
+        self
+    }
+
+    #[cfg(feature = "opengl")]
+    pub fn with_gl_config(mut self, config: crate::gl::GlConfig) -> Self {
+        self.gl_config = Some(config);
+        self
+    }
+
     pub fn parented(mut self) -> Self {
         self.parented = true;
         self
     }
 
-    pub fn with_parent(mut self, parent: Box<dyn HasWindowHandle>) -> Self {
-        self.parent = Some(parent);
+    pub fn with_parent(mut self, parent: impl HasWindowHandle + 'static) -> Self {
+        self.parent = Some(Box::new(parent));
         self.parented = true;
         self
     }
@@ -37,12 +54,6 @@ impl WindowBuilder {
     pub fn hosted(mut self, handler: impl HostHandler) -> Self {
         self.host_handler = Some(Box::new(handler));
         self
-    }
-
-    pub fn build<H: WindowHandler>(
-        self, handler_builder: impl FnOnce(WindowContext) -> H + Send + 'static,
-    ) -> WindowHandle {
-        todo!()
     }
 }
 
