@@ -1,11 +1,13 @@
 use crate::{HostHandler, WindowContext, WindowHandle, WindowHandler};
 use dpi::{LogicalSize, Size};
+use raw_window_handle::HasWindowHandle;
 
 #[non_exhaustive]
 pub struct WindowBuilder {
     pub title: Option<String>,
     pub size: Size,
     pub host_handler: Option<Box<dyn HostHandler>>,
+    pub parent: Option<Box<dyn HasWindowHandle>>,
     pub parented: bool,
 }
 
@@ -14,12 +16,18 @@ impl WindowBuilder {
         Self::default()
     }
 
-    pub fn with_size(mut self, size: Size) -> Self {
-        self.size = size;
+    pub fn with_size(mut self, size: impl Into<Size>) -> Self {
+        self.size = size.into();
         self
     }
 
     pub fn parented(mut self) -> Self {
+        self.parented = true;
+        self
+    }
+
+    pub fn with_parent(mut self, parent: Box<dyn HasWindowHandle>) -> Self {
+        self.parent = Some(parent);
         self.parented = true;
         self
     }
@@ -42,6 +50,7 @@ impl Default for WindowBuilder {
             title: None,
             size: LogicalSize::new(420.0, 240.0).into(),
             host_handler: None,
+            parent: None,
             parented: false,
         }
     }

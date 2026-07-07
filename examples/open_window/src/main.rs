@@ -8,8 +8,8 @@ use rtrb::{Consumer, RingBuffer};
 use baseview::copy_to_clipboard;
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::{
-    Event, EventStatus, MouseEvent, Window, WindowContext, WindowHandler, WindowOpenOptions,
-    WindowSize,
+    Event, EventStatus, MouseEvent, Window, WindowBuilder, WindowContext, WindowHandler,
+    WindowOpenOptions, WindowSize,
 };
 
 #[derive(Debug, Clone)]
@@ -136,7 +136,7 @@ impl WindowHandler for OpenWindowExample {
 }
 
 fn main() {
-    let window_open_options = WindowOpenOptions::new().with_size(LogicalSize::new(512.0, 512.0));
+    let window_open_options = WindowBuilder::new().with_size(LogicalSize::new(512.0, 512.0));
 
     let (mut tx, rx) = RingBuffer::new(128);
 
@@ -148,7 +148,7 @@ fn main() {
         }
     });
 
-    Window::open_blocking(window_open_options, |window| {
+    baseview::create_window(window_open_options, |window| {
         let ctx = softbuffer::Context::new(window.clone()).unwrap();
         let mut surface = softbuffer::Surface::new(&ctx, window.clone()).unwrap();
         let size = window.size().physical;
@@ -164,7 +164,9 @@ fn main() {
             is_cursor_inside: false.into(),
             damaged: true.into(),
         }
-    });
+    })
+    .run_until_closed()
+    .unwrap();
 }
 
 fn log_event(event: &Event) {
