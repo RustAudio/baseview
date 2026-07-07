@@ -9,6 +9,8 @@ mod window;
 mod window_builder;
 mod window_open_options;
 
+mod size;
+
 pub(crate) mod platform;
 
 #[cfg(feature = "opengl")]
@@ -21,6 +23,7 @@ pub use event::*;
 pub use handler::WindowHandler;
 pub use host::HostHandler;
 pub use mouse_cursor::MouseCursor;
+pub use size::*;
 pub use window::*;
 pub use window_builder::*;
 pub use window_open_options::*;

@@ -19,7 +19,7 @@ pub struct WindowHandle {
 }
 
 impl WindowHandle {
-    pub fn close(&self) {
+    pub fn destroy(&self) {
         let Some(view) = self.view.take().and_then(|w| w.load()) else {
             return;
         };
