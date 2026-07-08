@@ -207,7 +207,9 @@ fn main() {
     let window_open_options =
         WindowBuilder::new().with_title("WGPU on Baseview").with_size(LogicalSize::new(512, 512));
 
-    baseview::create_window(window_open_options, |c| pollster::block_on(WgpuExample::new(c)));
+    baseview::create_window(window_open_options, |c| pollster::block_on(WgpuExample::new(c)))
+        .run_until_closed()
+        .unwrap();
 }
 
 fn log_event(event: &Event) {

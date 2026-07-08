@@ -37,5 +37,8 @@ impl HandleChannel {
 }
 
 pub fn thread_channel() -> (ThreadChannel, HandleChannel) {
-    todo!()
+    let (st, rt) = calloop::channel::channel();
+    let (send, recv) = mpsc::channel::<ThreadToHandleMessage>();
+
+    (ThreadChannel { send, recv: rt }, HandleChannel { recv, send: st })
 }

@@ -20,14 +20,12 @@ pub(crate) struct EventLoop {
     window: Rc<WindowInner>,
 
     new_physical_size: Option<PhysicalSize<u16>>,
-    event_loop_running: bool,
 
     frame_timer: RegistrationToken,
     loop_handle: LoopHandle<'static, Self>,
     loop_signal: LoopSignal,
 
     drag_n_drop: DragNDropState,
-
     xkb_state: Option<XkbcommonState>,
 }
 
@@ -43,7 +41,7 @@ impl EventLoop {
             .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| e.handle_frame(i))
             .unwrap();
 
-        loop_handle.disable(&frame_timer).unwrap();
+        //loop_handle.disable(&frame_timer).unwrap();
 
         loop_handle
             .insert_source(
@@ -57,7 +55,6 @@ impl EventLoop {
             loop_signal: inner.get_signal(),
             handler,
             frame_timer,
-            event_loop_running: false,
             new_physical_size: None,
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
@@ -323,7 +320,7 @@ impl EventLoop {
     fn handle_must_close(&mut self) {
         self.handle_event(Event::Window(WindowEvent::WillClose));
 
-        self.event_loop_running = false;
+        self.loop_signal.stop();
     }
 }
 
