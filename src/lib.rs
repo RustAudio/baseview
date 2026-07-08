@@ -7,7 +7,6 @@ mod keyboard;
 mod mouse_cursor;
 mod window;
 mod window_builder;
-mod window_open_options;
 
 mod size;
 
@@ -26,6 +25,5 @@ pub use mouse_cursor::MouseCursor;
 pub use size::*;
 pub use window::*;
 pub use window_builder::*;
-pub use window_open_options::*;
 
 pub(crate) mod wrappers;

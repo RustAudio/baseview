@@ -1,4 +1,5 @@
-use crate::HostHandler;
+use super::*;
+use crate::platform::ParentWindowHandle;
 use dpi::{LogicalSize, Size};
 use raw_window_handle::HasWindowHandle;
 
@@ -6,11 +7,10 @@ use raw_window_handle::HasWindowHandle;
 pub struct WindowBuilder {
     pub title: Option<String>,
     pub size: Size,
-    pub host_handler: Option<Box<dyn HostHandler>>,
-    pub parent: Option<Box<dyn HasWindowHandle + 'static>>,
-    pub parented: bool,
+    parented: bool,
+    parent: Option<ParentWindowHandle>,
     #[cfg(feature = "opengl")]
-    pub gl_config: Option<crate::gl::GlConfig>,
+    gl_config: Option<gl::GlConfig>,
 }
 
 impl WindowBuilder {
@@ -45,14 +45,9 @@ impl WindowBuilder {
         self
     }
 
-    pub fn with_parent(mut self, parent: impl HasWindowHandle + 'static) -> Self {
-        self.parent = Some(Box::new(parent));
+    pub fn with_parent(mut self, parent: &impl HasWindowHandle) -> Self {
+        self.parent = Some(ParentWindowHandle::extract(parent));
         self.parented = true;
-        self
-    }
-
-    pub fn hosted(mut self, handler: impl HostHandler) -> Self {
-        self.host_handler = Some(Box::new(handler));
         self
     }
 }
@@ -62,7 +57,6 @@ impl Default for WindowBuilder {
         Self {
             title: None,
             size: LogicalSize::new(420.0, 240.0).into(),
-            host_handler: None,
             parent: None,
             parented: false,
             #[cfg(feature = "opengl")]

@@ -1,6 +1,6 @@
 mod xcb_connection;
 
-use raw_window_handle::{DisplayHandle, XcbWindowHandle};
+use raw_window_handle::{DisplayHandle, HasWindowHandle, XcbWindowHandle};
 use std::fmt::Formatter;
 use std::num::NonZero;
 use std::rc::Rc;
@@ -15,6 +15,8 @@ mod drag_n_drop;
 mod event_loop;
 mod keyboard;
 mod visual_info;
+mod window_thread;
+mod window_thread_channel;
 
 mod window_shared;
 
@@ -54,5 +56,15 @@ impl std::fmt::Debug for PlatformHandle {
             .field("connection", &display_string)
             .field("window_id", &self.window_id.get())
             .finish()
+    }
+}
+
+pub struct ParentWindowHandle {
+    window_id: u32,
+}
+
+impl ParentWindowHandle {
+    pub fn extract(window: &impl HasWindowHandle) -> Self {
+        todo!()
     }
 }

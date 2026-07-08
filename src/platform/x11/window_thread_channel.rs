@@ -1,0 +1,35 @@
+use calloop::LoopSignal;
+use std::num::NonZeroU32;
+use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
+
+enum ThreadToHandleMessage {
+    WindowCreated { window_id: NonZeroU32, loop_signal: LoopSignal },
+}
+
+enum HandleToThreadMessage {}
+
+pub struct ThreadChannel {
+    pub send: mpsc::Sender<ThreadToHandleMessage>,
+    pub recv: calloop::channel::Channel<HandleToThreadMessage>,
+}
+
+pub struct HandleChannel {
+    pub recv: Receiver<ThreadToHandleMessage>,
+    pub send: calloop::channel::Sender<HandleToThreadMessage>,
+}
+
+impl HandleChannel {
+    pub fn wait_for_create(&mut self) -> (NonZeroU32, LoopSignal) {
+        loop {
+            let msg = self.recv.recv().unwrap();
+            if let ThreadToHandleMessage::WindowCreated { window_id, loop_signal } = msg {
+                return (window_id, loop_signal);
+            }
+        }
+    }
+}
+
+pub fn thread_channel() -> (ThreadChannel, HandleChannel) {
+    todo!()
+}
