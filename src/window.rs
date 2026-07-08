@@ -1,4 +1,5 @@
 use super::*;
+use crate::handler::WindowHandlerBuilder;
 use dpi::Size;
 use raw_window_handle::HasWindowHandle;
 use std::error::Error;
@@ -64,7 +65,7 @@ impl Window {
 }
 
 pub fn create_window<H: WindowHandler>(
-    builder: WindowBuilder, handler: impl FnOnce(WindowContext) -> H + 'static,
+    builder: WindowBuilder, handler: impl FnOnce(WindowContext) -> H + Send + 'static,
 ) -> Window {
-    Window::new(platform::Window::create_window(builder, handler))
+    Window::new(platform::Window::create_window(builder, WindowHandlerBuilder::new(handler)))
 }

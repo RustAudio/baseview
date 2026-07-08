@@ -8,9 +8,9 @@ pub struct WindowBuilder {
     pub title: Option<String>,
     pub size: Size,
     parented: bool,
-    parent: Option<ParentWindowHandle>,
+    pub(crate) parent: Option<ParentWindowHandle>,
     #[cfg(feature = "opengl")]
-    gl_config: Option<gl::GlConfig>,
+    pub(crate) gl_config: Option<gl::GlConfig>,
 }
 
 impl WindowBuilder {

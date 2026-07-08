@@ -1,12 +1,6 @@
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use std::cell::Cell;
 use std::error::Error;
 use std::num::NonZero;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::thread::{self, JoinHandle};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
@@ -14,128 +8,43 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::wrapper::ConnectionExt as _;
 
+use super::visual_info::WindowVisualConfig;
 use super::X11Connection;
-use super::{event_loop::EventLoop, visual_info::WindowVisualConfig};
-use crate::context::WindowContext;
+use crate::handler::WindowHandlerBuilder;
 use crate::platform::x11::window_shared::WindowInner;
-use crate::{WindowBuilder, WindowHandler, WindowSize};
+use crate::platform::x11::window_thread::WindowThreadHandle;
+use crate::{WindowBuilder, WindowHandler};
 
-impl WindowHandle {
-    pub fn close(&self) {
-        self.close_requested.store(true, Ordering::Relaxed);
-        if let Some(event_loop) = self.event_loop_handle.take() {
-            let _ = event_loop.join();
-        }
+pub struct Window {
+    thread: WindowThreadHandle,
+}
+
+impl Window {
+    pub fn create_window(builder: WindowBuilder, handler: WindowHandlerBuilder) -> Self {
+        Self { thread: WindowThreadHandle::start(builder, handler).unwrap() }
     }
 
     pub fn is_open(&self) -> bool {
-        self.is_open.load(Ordering::Relaxed)
-    }
-}
-
-pub(crate) struct ParentHandle {
-    close_requested: Arc<AtomicBool>,
-    is_open: Arc<AtomicBool>,
-}
-
-impl ParentHandle {
-    pub fn new() -> (Self, WindowHandle) {
-        let close_requested = Arc::new(AtomicBool::new(false));
-        let is_open = Arc::new(AtomicBool::new(true));
-        let handle = WindowHandle {
-            window_id: None,
-            event_loop_handle: None.into(),
-            close_requested: Arc::clone(&close_requested),
-            is_open: Arc::clone(&is_open),
-        };
-
-        (Self { close_requested, is_open }, handle)
+        todo!()
     }
 
-    pub fn parent_did_drop(&self) -> bool {
-        self.close_requested.load(Ordering::Relaxed)
-    }
-}
-
-impl Drop for ParentHandle {
-    fn drop(&mut self) {
-        self.is_open.store(false, Ordering::Relaxed);
-    }
-}
-
-pub struct Window;
-
-type WindowOpenResult = Result<NonZero<x11rb::protocol::xproto::Window>, ()>;
-
-impl Window {
-    pub fn open_parented<H: WindowHandler>(
-        parent: &impl HasWindowHandle, options: WindowOpenOptions,
-        build: impl FnOnce(WindowContext) -> H + Send + 'static,
-    ) -> WindowHandle {
-        // Convert parent into something that X understands
-        let parent_id = match parent.window_handle().unwrap().as_raw() {
-            RawWindowHandle::Xlib(h) => h.window as u32,
-            RawWindowHandle::Xcb(h) => h.window.get(),
-            h => panic!("unsupported parent handle type {:?}", h),
-        };
-
-        let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
-        let (parent_handle, mut window_handle) = ParentHandle::new();
-        let join_handle = thread::spawn(move || {
-            Self::window_thread(Some(parent_id), options, build, tx.clone(), Some(parent_handle))
-                .unwrap();
-        });
-
-        let raw_window_handle = rx.recv().unwrap().unwrap();
-        window_handle.window_id = Some(raw_window_handle);
-        window_handle.event_loop_handle = Some(join_handle).into();
-        window_handle
+    pub fn destroy(self) {
+        todo!()
     }
 
-    pub fn open_blocking<H: WindowHandler>(
-        options: WindowOpenOptions, build: impl FnOnce(WindowContext) -> H + Send + 'static,
-    ) {
-        let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
-
-        let thread = thread::spawn(move || {
-            Self::window_thread(None, options, build, tx, None).unwrap();
-        });
-
-        let _ = rx.recv().unwrap().unwrap();
-
-        thread.join().unwrap_or_else(|err| {
-            eprintln!("Window thread panicked: {:#?}", err);
-        });
-    }
-
-    fn window_thread<H: WindowHandler>(
-        parent: Option<u32>, options: WindowBuilder,
-        build: impl FnOnce(WindowContext) -> H + Send + 'static,
-        tx: mpsc::SyncSender<WindowOpenResult>, parent_handle: Option<ParentHandle>,
-    ) -> Result<(), Box<dyn Error>> {
-        // Connect to the X server
-        let xcb_connection = Rc::new(X11Connection::new()?);
-        // Setup xkbcommon
-        let xkb_state = crate::wrappers::xkbcommon::XkbcommonState::new(&xcb_connection);
-
-        let inner = create_window_inner(options, xcb_connection, parent)?;
-
-        let handler = build(WindowContext::new(Rc::clone(&inner)));
-
-        let _ = tx.send(Ok(inner.window_id));
-
-        EventLoop::new(inner, handler, parent_handle, xkb_state).run()?;
+    pub fn run_until_closed(self) -> Result<(), Box<dyn Error>> {
+        self.thread.join();
 
         Ok(())
     }
 }
 
 pub fn create_window_inner(
-    options: WindowBuilder, xcb_connection: Rc<X11Connection>, parent: Option<u32>,
+    options: WindowBuilder, xcb_connection: Rc<X11Connection>,
 ) -> Result<Rc<WindowInner>, Box<dyn Error>> {
     // Get screen information
     let screen = xcb_connection.screen();
-    let parent_id = parent.unwrap_or(screen.root);
+    let parent_id = options.parent.map(|p| p.window_id).unwrap_or(screen.root);
 
     let gc_id = xcb_connection.conn.generate_id()?;
     xcb_connection.conn.create_gc(

@@ -1,6 +1,6 @@
 mod xcb_connection;
 
-use raw_window_handle::{DisplayHandle, HasWindowHandle, XcbWindowHandle};
+use raw_window_handle::{DisplayHandle, HasWindowHandle, RawWindowHandle, XcbWindowHandle};
 use std::fmt::Formatter;
 use std::num::NonZero;
 use std::rc::Rc;
@@ -65,6 +65,12 @@ pub struct ParentWindowHandle {
 
 impl ParentWindowHandle {
     pub fn extract(window: &impl HasWindowHandle) -> Self {
-        todo!()
+        let window_id = match window.window_handle().unwrap().as_raw() {
+            RawWindowHandle::Xlib(h) => h.window as u32,
+            RawWindowHandle::Xcb(h) => h.window.get(),
+            h => panic!("unsupported parent handle type {:?}", h),
+        };
+
+        Self { window_id }
     }
 }

@@ -24,7 +24,7 @@ impl ParentWindowHandler {
         let window_open_options = WindowBuilder::new()
             .with_size(LogicalSize::new(256, 256))
             .with_title("baseview child")
-            .with_parent(window);
+            .with_parent(&window);
 
         let child_window = baseview::create_window(window_open_options, ChildWindowHandler::new);
 

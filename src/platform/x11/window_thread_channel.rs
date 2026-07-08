@@ -14,6 +14,12 @@ pub struct ThreadChannel {
     pub recv: calloop::channel::Channel<HandleToThreadMessage>,
 }
 
+impl ThreadChannel {
+    pub fn send_create(&mut self, window_id: NonZeroU32, loop_signal: LoopSignal) {
+        self.send.send(ThreadToHandleMessage::WindowCreated { window_id, loop_signal }).unwrap();
+    }
+}
+
 pub struct HandleChannel {
     pub recv: Receiver<ThreadToHandleMessage>,
     pub send: calloop::channel::Sender<HandleToThreadMessage>,
