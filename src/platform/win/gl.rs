@@ -240,7 +240,24 @@ impl GlContextInner {
             );
         }
 
+        // if no num_formats are found which happens in Wine for child windows, use fallback
         if num_formats == 0 {
+            let fallback_pfd = PIXELFORMATDESCRIPTOR {
+                nSize: std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16,
+                nVersion: 1,
+                dwFlags: PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
+                iPixelType: PFD_TYPE_RGBA,
+                cColorBits: 32,
+                cAlphaBits: config.alpha_bits,
+                cDepthBits: config.depth_bits,
+                cStencilBits: config.stencil_bits,
+                iLayerType: PFD_MAIN_PLANE as u8,
+                ..std::mem::zeroed()
+            };
+            pixel_format = ChoosePixelFormat(hdc, &fallback_pfd);
+        }
+
+        if pixel_format == 0 {
             ReleaseDC(hwnd, hdc);
             return Err(GlError::CreationFailed(()));
         }
