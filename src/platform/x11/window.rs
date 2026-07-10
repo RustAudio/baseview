@@ -18,7 +18,7 @@ use super::{event_loop::EventLoop, visual_info::WindowVisualConfig};
 use crate::context::WindowContext;
 use crate::handler::WindowHandlerBuilder;
 use crate::platform::x11::window_shared::WindowInner;
-use crate::{WindowHandler, WindowOpenOptions, WindowScalePolicy, WindowSize};
+use crate::{WindowOpenOptions, WindowScalePolicy, WindowSize};
 
 pub struct WindowHandle {
     window_id: Option<NonZero<x11rb::protocol::xproto::Window>>,
