@@ -98,8 +98,8 @@ pub struct Window;
 type WindowOpenResult = Result<NonZero<x11rb::protocol::xproto::Window>, ()>;
 
 impl Window {
-    fn window_thread<H: WindowHandler>(
-        options: WindowOpenOptions, build: impl FnOnce(WindowContext) -> H + Send + 'static,
+    fn window_thread(
+        options: WindowOpenOptions, build: WindowHandlerBuilder,
         tx: mpsc::SyncSender<WindowOpenResult>, parent_handle: Option<ParentHandle>,
     ) -> Result<(), Box<dyn Error>> {
         // Connect to the X server
@@ -223,7 +223,7 @@ impl Window {
             gl_context,
         ));
 
-        let handler = build(WindowContext::new(Rc::clone(&inner)));
+        let handler = build.build(WindowContext::new(Rc::clone(&inner)));
 
         // Send an initial window resized event so the user is alerted of
         // the correct dpi scaling.

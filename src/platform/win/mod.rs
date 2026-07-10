@@ -44,6 +44,7 @@ impl Debug for PlatformHandle {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParentWindowHandle {
     handle: HWnd,
 }

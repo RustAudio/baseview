@@ -57,6 +57,7 @@ impl std::fmt::Debug for PlatformHandle {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParentWindowHandle {
     window_id: u32,
 }

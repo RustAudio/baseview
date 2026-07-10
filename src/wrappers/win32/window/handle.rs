@@ -23,7 +23,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 /// a handle from this type might still return an "invalid handle" error).
 ///
 /// The role of this type is to help safely encapsulating most of the unsafe Win32 HWND APIs.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub struct HWnd(HWND);
 
 impl HWnd {
