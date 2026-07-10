@@ -1,26 +1,83 @@
 use dpi::LogicalSize;
-use objc2::rc::{autoreleasepool, Weak};
+use objc2::rc::{autoreleasepool, Retained, Weak};
 use objc2::MainThreadMarker;
-use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSPasteboard, NSPasteboardTypeString,
-};
+use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardTypeString, NSView, NSWindow};
 use objc2_foundation::{NSSize, NSString};
-use raw_window_handle::HasWindowHandle;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
+use std::error::Error;
 use std::rc::Rc;
 
+use crate::handler::WindowHandlerBuilder;
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
-use crate::wrappers::appkit::{create_window, extract_raw_window_handle, View};
-use crate::{WindowContext, WindowHandler, WindowOpenOptions};
+use crate::wrappers::appkit::{create_window, View};
+use crate::*;
 
 pub struct WindowHandle {
-    view: RefCell<Option<Weak<View<BaseviewView>>>>,
+    mtm: MainThreadMarker,
+    view: Weak<View<BaseviewView>>,
+    window: Option<Retained<NSWindow>>,
     state: Rc<WindowSharedState>,
 }
 
 impl WindowHandle {
+    pub fn create_window(mut options: WindowOpenOptions, handler: WindowHandlerBuilder) -> Self {
+        autoreleasepool(|_| {
+            let Some(mtm) = MainThreadMarker::new() else {
+                panic!("macOS: Windows can only be created on the main thread!")
+            };
+
+            // Creates the global NSApplication instance, if it doesn't exist yet
+            let _ = NSApplication::sharedApplication(mtm);
+
+            if let Some(parent) = options.parent.take() {
+                return Self::create_window_parented(options, handler, parent.view, mtm);
+            }
+
+            Self::create_window_standalone(options, handler, mtm)
+        })
+    }
+
+    pub fn create_window_parented(
+        builder: WindowOpenOptions, handler: WindowHandlerBuilder, parent_view: Retained<NSView>,
+        mtm: MainThreadMarker,
+    ) -> Self {
+        let parenting =
+            ViewParentingType::Parented { parent_view: Weak::from_retained(&parent_view) };
+
+        let backing_scale_factor =
+            parent_view.window().map(|w| w.backingScaleFactor()).unwrap_or(1.0);
+        let final_size = builder.size.to_logical(backing_scale_factor);
+
+        let (ns_view, state) = BaseviewView::new(builder, handler, parenting, final_size, mtm);
+
+        Self { mtm, state, window: None, view: Weak::from_retained(&ns_view) }
+    }
+
+    pub fn create_window_standalone(
+        builder: WindowOpenOptions, handler: WindowHandlerBuilder, mtm: MainThreadMarker,
+    ) -> Self {
+        let app = NSApplication::sharedApplication(mtm);
+        let window = create_window_with_options(&builder, mtm);
+
+        let final_size = window.contentRectForFrameRect(window.frame()).size;
+        let final_size = LogicalSize::new(final_size.width, final_size.height);
+
+        let parenting = ViewParentingType::Windowed {
+            running_app: Weak::from_retained(&app),
+            owned_window: Weak::from_retained(&window),
+        };
+
+        let (view, state) = BaseviewView::new(builder, handler, parenting, final_size, mtm);
+
+        Self { mtm, state, view: Weak::from_retained(&view), window: Some(window) }
+    }
+
+    pub fn run_until_closed(self) {
+        NSApplication::sharedApplication(self.mtm).run();
+    }
+
     pub fn close(&self) {
-        let Some(view) = self.view.take().and_then(|w| w.load()) else {
+        let Some(view) = self.view.load() else {
             return;
         };
 
@@ -32,72 +89,23 @@ impl WindowHandle {
     }
 }
 
-pub struct Window;
+fn create_window_with_options(
+    options: &WindowOpenOptions, mtm: MainThreadMarker,
+) -> Retained<NSWindow> {
+    let initial_size = options.size.to_logical(1.0);
+    let window = create_window(initial_size, mtm);
+    window.center();
 
-impl Window {
-    pub fn open_parented<H: WindowHandler>(
-        parent: &impl HasWindowHandle, options: WindowOpenOptions,
-        build: impl FnOnce(WindowContext) -> H + Send + 'static,
-    ) -> WindowHandle {
-        autoreleasepool(|_| {
-            let Some(parent_view) = extract_raw_window_handle(parent.window_handle().unwrap())
-            else {
-                panic!("Invalid window handle: ns_view is NULL");
-            };
-
-            let Some(mtm) = MainThreadMarker::new() else {
-                panic!("macOS: open_blocking can only be called on the main thread!")
-            };
-
-            let parenting =
-                ViewParentingType::Parented { parent_view: Weak::from_retained(&parent_view) };
-
-            let backing_scale_factor =
-                parent_view.window().map(|w| w.backingScaleFactor()).unwrap_or(1.0);
-            let final_size = options.size.to_logical(backing_scale_factor);
-
-            let (ns_view, state) = BaseviewView::new(options, build, parenting, final_size, mtm);
-
-            WindowHandle { view: Some(Weak::from_retained(&ns_view)).into(), state }
-        })
+    let final_size = options.size.to_logical(window.backingScaleFactor());
+    if final_size != initial_size {
+        window.setContentSize(NSSize::new(final_size.width, final_size.height));
     }
 
-    pub fn open_blocking<H: WindowHandler>(
-        options: WindowOpenOptions, build: impl FnOnce(WindowContext) -> H + Send + 'static,
-    ) {
-        autoreleasepool(|_| {
-            let Some(mtm) = MainThreadMarker::new() else {
-                panic!("macOS: open_blocking can only be called on the main thread!")
-            };
+    let title = NSString::from_str(&options.title);
+    window.setTitle(&title);
 
-            // Creates the global NSApplication instance, if it doesn't exist yet
-            let app = NSApplication::sharedApplication(mtm);
-
-            let _ = app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
-
-            let initial_size = options.size.to_logical(1.0);
-            let window = create_window(initial_size, mtm);
-            window.center();
-
-            let final_size = options.size.to_logical(window.backingScaleFactor());
-            if final_size != initial_size {
-                window.setContentSize(NSSize::new(final_size.width, final_size.height));
-            }
-
-            let title = NSString::from_str(&options.title);
-            window.setTitle(&title);
-            window.makeKeyAndOrderFront(None);
-
-            let parenting = ViewParentingType::Windowed {
-                running_app: Weak::from_retained(&app),
-                owned_window: Weak::from_retained(&window),
-            };
-
-            let _ = BaseviewView::new(options, build, parenting, final_size, mtm);
-
-            app.run();
-        })
-    }
+    window.makeKeyAndOrderFront(None);
+    window
 }
 
 pub(crate) struct WindowSharedState {

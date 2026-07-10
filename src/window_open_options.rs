@@ -2,6 +2,7 @@ use dpi::{LogicalSize, Size};
 
 #[cfg(feature = "opengl")]
 use crate::gl::GlConfig;
+use crate::platform::ParentWindowHandle;
 
 /// The dpi scaling policy of the window
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
@@ -24,6 +25,8 @@ pub struct WindowOpenOptions {
 
     /// The dpi scaling policy
     pub scale: WindowScalePolicy,
+
+    pub(crate) parent: Option<ParentWindowHandle>,
 
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
     /// access this context through [crate::WindowContext::gl_context].
@@ -71,6 +74,7 @@ impl Default for WindowOpenOptions {
             title: String::from("baseview window"),
             size: LogicalSize { width: 500.0, height: 400.0 }.into(),
             scale: WindowScalePolicy::default(),
+            parent: None,
             #[cfg(feature = "opengl")]
             gl_config: None,
         }
