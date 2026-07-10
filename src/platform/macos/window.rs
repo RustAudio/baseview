@@ -4,7 +4,6 @@ use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardTypeString, NSView, NSWindow};
 use objc2_foundation::{NSSize, NSString};
 use std::cell::Cell;
-use std::error::Error;
 use std::rc::Rc;
 
 use crate::handler::WindowHandlerBuilder;
@@ -15,7 +14,7 @@ use crate::*;
 pub struct WindowHandle {
     mtm: MainThreadMarker,
     view: Weak<View<BaseviewView>>,
-    window: Option<Retained<NSWindow>>,
+    _window: Option<Retained<NSWindow>>,
     state: Rc<WindowSharedState>,
 }
 
@@ -50,7 +49,7 @@ impl WindowHandle {
 
         let (ns_view, state) = BaseviewView::new(builder, handler, parenting, final_size, mtm);
 
-        Self { mtm, state, window: None, view: Weak::from_retained(&ns_view) }
+        Self { mtm, state, _window: None, view: Weak::from_retained(&ns_view) }
     }
 
     pub fn create_window_standalone(
@@ -69,7 +68,7 @@ impl WindowHandle {
 
         let (view, state) = BaseviewView::new(builder, handler, parenting, final_size, mtm);
 
-        Self { mtm, state, view: Weak::from_retained(&view), window: Some(window) }
+        Self { mtm, state, view: Weak::from_retained(&view), _window: Some(window) }
     }
 
     pub fn run_until_closed(self) {

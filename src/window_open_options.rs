@@ -1,8 +1,8 @@
-use dpi::{LogicalSize, Size};
-
 #[cfg(feature = "opengl")]
 use crate::gl::GlConfig;
 use crate::platform::ParentWindowHandle;
+use dpi::{LogicalSize, Size};
+use raw_window_handle::HasWindowHandle;
 
 /// The dpi scaling policy of the window
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
@@ -57,6 +57,12 @@ impl WindowOpenOptions {
     #[inline]
     pub fn with_scale_policy(mut self, scale: WindowScalePolicy) -> Self {
         self.scale = scale;
+        self
+    }
+
+    #[inline]
+    pub fn with_parent(mut self, parent: &impl HasWindowHandle) -> Self {
+        self.parent = Some(ParentWindowHandle::extract(parent));
         self
     }
 
