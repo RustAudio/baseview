@@ -30,8 +30,8 @@ use crate::wrappers::win32::{
     WindowStyle,
 };
 use crate::{
-    Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowOpenOptions,
-    WindowScalePolicy, WindowSize,
+    Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowOpenOptions, WindowScalePolicy,
+    WindowSize,
 };
 
 #[allow(non_snake_case)]
