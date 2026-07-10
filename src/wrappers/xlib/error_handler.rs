@@ -135,7 +135,7 @@ impl Debug for XLibError {
 
 impl Display for XLibError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "XLib error: {} (error code {})", &self.display_name, self.inner.error_code)
+        write!(f, "XLib error: {} (error code {})", self.display_name, self.inner.error_code)
     }
 }
 
