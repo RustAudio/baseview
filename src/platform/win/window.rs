@@ -82,8 +82,6 @@ impl Drop for ParentHandle {
     }
 }
 
-type HandlerBuilder = dyn FnOnce(crate::WindowContext) -> Box<dyn WindowHandler>;
-
 pub struct BaseviewWindow {
     window_state: Rc<WindowState>,
     initial_size: Size,
