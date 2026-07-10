@@ -14,26 +14,24 @@ use windows_sys::Win32::{
 };
 
 use dpi::{PhysicalPosition, PhysicalSize, Size};
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::cell::Cell;
 use std::num::NonZeroUsize;
-use std::ptr::null_mut;
 
 pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
 use super::drop_target::DropTarget;
 use super::*;
+use crate::handler::WindowHandlerBuilder;
 use crate::platform::win::window_state::WindowState;
 use crate::wrappers::win32::cursor::SystemCursor;
-use crate::{
-    Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowOpenOptions,
-    WindowScalePolicy, WindowSize,
-};
-
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessContext, ExtendedUser32, Rect,
     WindowStyle,
+};
+use crate::{
+    Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowOpenOptions,
+    WindowScalePolicy, WindowSize,
 };
 
 #[allow(non_snake_case)]
@@ -57,6 +55,10 @@ pub struct WindowHandle {
 }
 
 impl WindowHandle {
+    pub fn run_until_closed(self) {
+        run_thread_message_loop_until(|| !self.is_open()).unwrap();
+    }
+
     pub fn close(&self) {
         if let Some(hwnd) = self.hwnd.take() {
             unsafe {
@@ -86,7 +88,7 @@ pub struct BaseviewWindow {
     window_state: Rc<WindowState>,
     initial_size: Size,
 
-    handler_builder: Cell<Option<Box<HandlerBuilder>>>,
+    handler_builder: Cell<Option<WindowHandlerBuilder>>,
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
     _parent_handle: ParentHandle,
@@ -145,7 +147,7 @@ impl WindowImpl for BaseviewWindow {
 
         let handler = {
             let context = crate::WindowContext::new(Rc::clone(&self.window_state));
-            self.handler_builder.take().unwrap()(context)
+            self.handler_builder.take().unwrap().build(context)
         };
         let Ok(()) = window_state.handler.set(handler) else { unreachable!() };
 
@@ -406,34 +408,8 @@ unsafe fn wnd_proc_inner(
     }
 }
 
-pub struct Window;
-
-impl Window {
-    pub fn open_parented<H: WindowHandler>(
-        parent: &impl HasWindowHandle, options: WindowOpenOptions,
-        build: impl for<'a> FnOnce(crate::WindowContext) -> H + Send + 'static,
-    ) -> WindowHandle {
-        let parent = match parent.window_handle().unwrap().as_raw() {
-            RawWindowHandle::Win32(h) => h.hwnd,
-            h => panic!("unsupported parent handle {:?}", h),
-        };
-
-        Self::open(true, parent.get() as *mut _, options, build)
-    }
-
-    pub fn open_blocking<H: WindowHandler>(
-        options: WindowOpenOptions,
-        build: impl for<'a> FnOnce(crate::WindowContext) -> H + Send + 'static,
-    ) {
-        let window_handle = Self::open(false, null_mut(), options, build);
-
-        run_thread_message_loop_until(|| !window_handle.is_open()).unwrap();
-    }
-
-    fn open<H: WindowHandler>(
-        parented: bool, parent: HWND, options: WindowOpenOptions,
-        build: impl for<'a> FnOnce(crate::WindowContext) -> H + Send + 'static,
-    ) -> WindowHandle {
+impl WindowHandle {
+    pub fn create_window(options: WindowOpenOptions, build: WindowHandlerBuilder) -> WindowHandle {
         let extended_user_32 = ExtendedUser32::load().unwrap();
         let title = HSTRING::from(options.title);
 
@@ -444,7 +420,11 @@ impl Window {
 
         let window_size = options.size.to_physical(scaling_factor);
 
-        let style = if parented { WindowStyle::parented() } else { WindowStyle::embedded() };
+        let style = if options.parent.is_some() {
+            WindowStyle::parented()
+        } else {
+            WindowStyle::embedded()
+        };
         let dpi_ctx = DpiAwarenessContext::new(&extended_user_32).unwrap();
 
         let rect =
@@ -467,7 +447,7 @@ impl Window {
                 BaseviewWindow {
                     window_state,
                     initial_size: options.size,
-                    handler_builder: Cell::new(Some(Box::new(|w| Box::new(build(w))))),
+                    handler_builder: Cell::new(Some(build)),
 
                     _parent_handle: parent_handle,
                     _drop_target: None.into(),
@@ -479,9 +459,10 @@ impl Window {
             }
         };
 
+        let parent = options.parent.map(|p| p.handle);
+
         let hwnd =
-            create_window(&title, style, rect.size(), parent as *mut _, &dpi_ctx, initializer)
-                .unwrap();
+            create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer).unwrap();
 
         // SAFETY: this handle should be safe to use
         let window = unsafe { HWnd::from_raw(hwnd) };
