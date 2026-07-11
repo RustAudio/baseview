@@ -188,8 +188,7 @@ extern "C-unwind" fn view_did_change_backing_properties<V: ViewImpl>(
 extern "C-unwind" fn hit_test<V: ViewImpl>(
     this: &View<V>, _sel: Sel, point: NSPoint,
 ) -> Option<&NSView> {
-    let Some(inner) = this.inner_ref() else { return None };
-    V::hit_test(inner, point)
+    V::hit_test(this.inner_ref()?, point)
 }
 
 extern "C-unwind" fn view_will_move_to_window<V: ViewImpl>(
