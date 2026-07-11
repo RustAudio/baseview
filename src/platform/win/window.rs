@@ -4,11 +4,11 @@ use windows_sys::Win32::{
     UI::{
         Controls::WM_MOUSELEAVE,
         WindowsAndMessaging::{
-            PostMessageW, HTCLIENT, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_DPICHANGED,
-            WM_INPUTLANGCHANGE, WM_KEYDOWN, WM_KEYUP, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP,
-            WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-            WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS, WM_SIZE, WM_SYSCHAR,
-            WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP,
+            HTCLIENT, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_DPICHANGED, WM_INPUTLANGCHANGE,
+            WM_KEYDOWN, WM_KEYUP, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+            WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN,
+            WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN,
+            WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP,
         },
     },
 };
@@ -50,7 +50,7 @@ const WIN_FRAME_TIMER: NonZeroUsize = match NonZeroUsize::new(4242) {
 };
 
 pub struct WindowHandle {
-    hwnd: Cell<Option<HWND>>,
+    hwnd: Cell<Option<HWnd>>,
     is_open: Rc<Cell<bool>>,
 }
 
@@ -59,16 +59,16 @@ impl WindowHandle {
         run_thread_message_loop_until(|| !self.is_open()).unwrap();
     }
 
-    pub fn close(&self) {
-        if let Some(hwnd) = self.hwnd.take() {
-            unsafe {
-                PostMessageW(hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
-            }
-        }
-    }
-
     pub fn is_open(&self) -> bool {
         self.is_open.get()
+    }
+}
+
+impl Drop for WindowHandle {
+    fn drop(&mut self) {
+        if let Some(hwnd) = self.hwnd.take() {
+            let _ = hwnd.destroy();
+        }
     }
 }
 
@@ -474,7 +474,7 @@ impl WindowHandle {
 
         window.show_and_activate();
 
-        WindowHandle { hwnd: Some(hwnd).into(), is_open: Rc::clone(&is_open) }
+        WindowHandle { hwnd: Some(window).into(), is_open: Rc::clone(&is_open) }
     }
 }
 
