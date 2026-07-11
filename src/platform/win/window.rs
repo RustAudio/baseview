@@ -1,6 +1,6 @@
 use windows_core::{ComObject, Result, HSTRING};
 use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
+    Foundation::{LPARAM, LRESULT, RECT, WPARAM},
     UI::{
         Controls::WM_MOUSELEAVE,
         WindowsAndMessaging::{
