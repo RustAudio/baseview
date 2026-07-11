@@ -1,4 +1,3 @@
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::cell::Cell;
 use std::error::Error;
 use std::num::NonZero;
@@ -17,8 +16,9 @@ use x11rb::wrapper::ConnectionExt as _;
 use super::X11Connection;
 use super::{event_loop::EventLoop, visual_info::WindowVisualConfig};
 use crate::context::WindowContext;
+use crate::handler::WindowHandlerBuilder;
 use crate::platform::x11::window_shared::WindowInner;
-use crate::{WindowHandler, WindowOpenOptions, WindowScalePolicy, WindowSize};
+use crate::{WindowOpenOptions, WindowScalePolicy, WindowSize};
 
 pub struct WindowHandle {
     window_id: Option<NonZero<x11rb::protocol::xproto::Window>>,
@@ -28,6 +28,29 @@ pub struct WindowHandle {
 }
 
 impl WindowHandle {
+    pub fn create_window(
+        options: WindowOpenOptions, handler: WindowHandlerBuilder,
+    ) -> WindowHandle {
+        let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
+        let (parent_handle, mut window_handle) = ParentHandle::new();
+        let join_handle = thread::spawn(move || {
+            Window::window_thread(options, handler, tx.clone(), Some(parent_handle)).unwrap();
+        });
+
+        let raw_window_handle = rx.recv().unwrap().unwrap();
+        window_handle.window_id = Some(raw_window_handle);
+        window_handle.event_loop_handle = Some(join_handle).into();
+        window_handle
+    }
+
+    pub fn run_until_closed(self) {
+        let Some(thread) = self.event_loop_handle.take() else { return };
+
+        thread.join().unwrap_or_else(|err| {
+            eprintln!("Window thread panicked: {:#?}", err);
+        });
+    }
+
     pub fn close(&self) {
         self.close_requested.store(true, Ordering::Relaxed);
         if let Some(event_loop) = self.event_loop_handle.take() {
@@ -75,49 +98,8 @@ pub struct Window;
 type WindowOpenResult = Result<NonZero<x11rb::protocol::xproto::Window>, ()>;
 
 impl Window {
-    pub fn open_parented<H: WindowHandler>(
-        parent: &impl HasWindowHandle, options: WindowOpenOptions,
-        build: impl FnOnce(WindowContext) -> H + Send + 'static,
-    ) -> WindowHandle {
-        // Convert parent into something that X understands
-        let parent_id = match parent.window_handle().unwrap().as_raw() {
-            RawWindowHandle::Xlib(h) => h.window as u32,
-            RawWindowHandle::Xcb(h) => h.window.get(),
-            h => panic!("unsupported parent handle type {:?}", h),
-        };
-
-        let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
-        let (parent_handle, mut window_handle) = ParentHandle::new();
-        let join_handle = thread::spawn(move || {
-            Self::window_thread(Some(parent_id), options, build, tx.clone(), Some(parent_handle))
-                .unwrap();
-        });
-
-        let raw_window_handle = rx.recv().unwrap().unwrap();
-        window_handle.window_id = Some(raw_window_handle);
-        window_handle.event_loop_handle = Some(join_handle).into();
-        window_handle
-    }
-
-    pub fn open_blocking<H: WindowHandler>(
-        options: WindowOpenOptions, build: impl FnOnce(WindowContext) -> H + Send + 'static,
-    ) {
-        let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
-
-        let thread = thread::spawn(move || {
-            Self::window_thread(None, options, build, tx, None).unwrap();
-        });
-
-        let _ = rx.recv().unwrap().unwrap();
-
-        thread.join().unwrap_or_else(|err| {
-            eprintln!("Window thread panicked: {:#?}", err);
-        });
-    }
-
-    fn window_thread<H: WindowHandler>(
-        parent: Option<u32>, options: WindowOpenOptions,
-        build: impl FnOnce(WindowContext) -> H + Send + 'static,
+    fn window_thread(
+        options: WindowOpenOptions, build: WindowHandlerBuilder,
         tx: mpsc::SyncSender<WindowOpenResult>, parent_handle: Option<ParentHandle>,
     ) -> Result<(), Box<dyn Error>> {
         // Connect to the X server
@@ -129,7 +111,7 @@ impl Window {
 
         // Get screen information
         let screen = xcb_connection.screen();
-        let parent_id = parent.unwrap_or(screen.root);
+        let parent_id = options.parent.map(|p| p.window_id).unwrap_or(screen.root);
 
         let gc_id = xcb_connection.conn.generate_id()?;
         xcb_connection.conn.create_gc(
@@ -241,7 +223,7 @@ impl Window {
             gl_context,
         ));
 
-        let handler = build(WindowContext::new(Rc::clone(&inner)));
+        let handler = build.build(WindowContext::new(Rc::clone(&inner)));
 
         // Send an initial window resized event so the user is alerted of
         // the correct dpi scaling.

@@ -28,12 +28,12 @@ pub(crate) struct EventLoop {
 
 impl EventLoop {
     pub fn new(
-        window: Rc<WindowInner>, handler: impl WindowHandler, parent_handle: Option<ParentHandle>,
-        xkb_state: Option<XkbcommonState>,
+        window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
+        parent_handle: Option<ParentHandle>, xkb_state: Option<XkbcommonState>,
     ) -> Self {
         Self {
             window,
-            handler: Box::new(handler),
+            handler,
             parent_handle,
             frame_interval: Duration::from_millis(15),
             event_loop_running: false,
