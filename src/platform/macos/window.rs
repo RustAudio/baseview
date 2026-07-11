@@ -18,6 +18,16 @@ pub struct WindowHandle {
     state: Rc<WindowSharedState>,
 }
 
+impl Drop for WindowHandle {
+    fn drop(&mut self) {
+        let Some(view) = self.view.take() else { return };
+        let Some(view) = view.load() else { return };
+        let Some(view) = view.inner_ref() else { return };
+
+        BaseviewView::close(view);
+    }
+}
+
 impl WindowHandle {
     pub fn create_window(mut options: WindowOpenOptions, handler: WindowHandlerBuilder) -> Self {
         autoreleasepool(|_| {

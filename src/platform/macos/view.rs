@@ -106,14 +106,18 @@ impl BaseviewView {
             let timer_view = Weak::new(view.view);
             view.frame_timer.set(TimerHandle::new(0.015, move || {
                 if let Some(view) = timer_view.load() {
-                    Self::trigger_frame(view.inner_ref());
+                    if let Some(view) = view.inner_ref() {
+                        Self::trigger_frame(view);
+                    }
                 }
             }));
 
             let notifier_view = Weak::new(view.view);
             let observer = NotificationCenterObserver::register_window_key_change(move |n| {
                 if let Some(view) = notifier_view.load() {
-                    BaseviewView::handle_notification(view.inner_ref(), n);
+                    if let Some(view) = view.inner_ref() {
+                        BaseviewView::handle_notification(view, n);
+                    }
                 }
             });
             view.notification_center_observer.set(Some(observer));

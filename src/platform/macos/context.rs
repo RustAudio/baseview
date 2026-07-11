@@ -29,7 +29,8 @@ impl WindowContext {
 
     pub fn request_close(&self) {
         let Some(view) = self.view.load() else { return };
-        BaseviewView::close(view.inner_ref());
+        let Some(view) = view.inner_ref() else { return };
+        BaseviewView::close(view);
     }
 
     pub fn has_focus(&self) -> bool {
@@ -58,7 +59,7 @@ impl WindowContext {
 
     pub fn resize(&self, size: Size) {
         let Some(view) = self.view.load() else { return };
-        let view = view.inner_ref();
+        let Some(view) = view.inner_ref() else { return };
         if view.inner.state.closed.get() {
             return;
         }
@@ -82,7 +83,7 @@ impl WindowContext {
 
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
-        Some(crate::gl::GlContext::new(self.view.load()?.inner().gl_context.get()?.clone()))
+        Some(crate::gl::GlContext::new(self.view.load()?.inner()?.gl_context.get()?.clone()))
     }
 
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
