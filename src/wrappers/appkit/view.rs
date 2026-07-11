@@ -51,7 +51,7 @@ impl<V: ViewImpl> View<V> {
 
         let view: Retained<View<V>> = unsafe { msg_send![view, initWithFrame: frame] };
 
-        init(view.inner_ref());
+        init(view.inner_ref().unwrap());
 
         view
     }
@@ -68,23 +68,28 @@ impl<V: ViewImpl> View<V> {
         let ivar = class.instance_variable(BASEVIEW_STATE_IVAR).unwrap();
         let ivar = unsafe { ivar.load_ptr::<*mut c_void>(this) };
         let raw = unsafe { ivar.read() };
+
+        if raw.is_null() {
+            return;
+        }
+
         let inner = unsafe { Box::<ViewInner<V>>::from_raw(raw.cast()) };
         unsafe { ivar.write(core::ptr::null_mut()) };
         drop(inner);
     }
 
-    fn get_inner(&self) -> &ViewInner<V> {
+    fn get_inner(&self) -> Option<&ViewInner<V>> {
         let ivar = self.class().instance_variable(BASEVIEW_STATE_IVAR).unwrap();
         let ivar = unsafe { ivar.load::<*mut c_void>(self) };
-        unsafe { ivar.cast::<ViewInner<V>>().as_ref() }.unwrap()
+        unsafe { ivar.cast::<ViewInner<V>>().as_ref() }
     }
 
-    pub fn inner(&self) -> &V {
-        &self.get_inner().inner
+    pub fn inner(&self) -> Option<&V> {
+        Some(&self.get_inner()?.inner)
     }
 
-    pub fn inner_ref(&self) -> ViewRef<'_, V> {
-        ViewRef { view: self, inner: self.inner() }
+    pub fn inner_ref(&self) -> Option<ViewRef<'_, V>> {
+        Some(ViewRef { view: self, inner: self.inner()? })
     }
 
     pub fn window_handle_from_weak(this: &Weak<Self>) -> Option<WindowHandle<'_>> {

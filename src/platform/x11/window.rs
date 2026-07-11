@@ -51,15 +51,17 @@ impl WindowHandle {
         });
     }
 
-    pub fn close(&self) {
+    pub fn is_open(&self) -> bool {
+        self.is_open.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for WindowHandle {
+    fn drop(&mut self) {
         self.close_requested.store(true, Ordering::Relaxed);
         if let Some(event_loop) = self.event_loop_handle.take() {
             let _ = event_loop.join();
         }
-    }
-
-    pub fn is_open(&self) -> bool {
-        self.is_open.load(Ordering::Relaxed)
     }
 }
 
