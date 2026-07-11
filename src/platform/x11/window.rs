@@ -13,7 +13,7 @@ use super::X11Connection;
 use crate::handler::WindowHandlerBuilder;
 use crate::platform::x11::window_shared::WindowInner;
 use crate::platform::x11::window_thread::WindowThreadHandle;
-use crate::{WindowBuilder, WindowHandler};
+use crate::WindowBuilder;
 
 pub struct Window {
     thread: WindowThreadHandle,
@@ -25,10 +25,6 @@ impl Window {
     }
 
     pub fn is_open(&self) -> bool {
-        todo!()
-    }
-
-    pub fn destroy(self) {
         todo!()
     }
 

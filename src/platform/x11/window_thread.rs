@@ -10,7 +10,7 @@ use std::rc::Rc;
 use std::thread::JoinHandle;
 
 pub struct WindowThreadHandle {
-    join_handle: JoinHandle<()>,
+    join_handle: Option<JoinHandle<()>>,
     channel: HandleChannel,
     window_id: NonZeroU32,
     loop_signal: LoopSignal,
@@ -27,11 +27,29 @@ impl WindowThreadHandle {
 
         let (wid, sig) = handle_channel.wait_for_create();
 
-        Ok(Self { join_handle, channel: handle_channel, window_id: wid, loop_signal: sig })
+        Ok(Self {
+            join_handle: Some(join_handle),
+            channel: handle_channel,
+            window_id: wid,
+            loop_signal: sig,
+        })
     }
 
-    pub fn join(self) {
-        self.join_handle.join().unwrap();
+    pub fn join(mut self) {
+        if let Some(handle) = self.join_handle.take() {
+            handle.join().unwrap();
+        }
+    }
+}
+
+impl Drop for WindowThreadHandle {
+    fn drop(&mut self) {
+        self.loop_signal.stop();
+        self.loop_signal.wakeup();
+
+        if let Some(handle) = self.join_handle.take() {
+            handle.join().unwrap();
+        }
     }
 }
 

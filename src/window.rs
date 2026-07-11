@@ -6,62 +6,73 @@ use std::error::Error;
 use std::marker::PhantomData;
 
 pub struct Window {
-    window_handle: platform::Window,
+    inner: platform::Window,
     // so that WindowHandle is !Send on all platforms
     phantom: PhantomData<*mut ()>,
 }
 
 impl Window {
-    pub(crate) fn new(window_handle: platform::Window) -> Self {
-        Self { window_handle, phantom: PhantomData }
+    pub(crate) fn new(inner: platform::Window) -> Self {
+        Self { inner, phantom: PhantomData }
     }
 
     /// Close the window
+    #[inline]
     pub fn close(self) {
-        self.window_handle.destroy();
+        drop(self);
     }
 
+    #[inline]
     pub fn run_until_closed(self) -> Result<(), Box<dyn Error>> {
-        self.window_handle.run_until_closed()
+        self.inner.run_until_closed()
     }
 
     /// Returns `true` if the window is still open, and returns `false`
     /// if the window was closed/dropped.
+    #[inline]
     pub fn is_open(&self) -> bool {
-        self.window_handle.is_open()
+        self.inner.is_open()
     }
 
+    /*
     pub fn suggest_fallback_scale(&self, fallback_scale: Option<f64>) {
         todo!()
     }
 
+    #[inline]
     pub fn resize(&self, size: impl Into<Size>) {
         todo!()
     }
 
+    #[inline]
     pub fn size(&self) -> WindowSize {
         todo!()
     }
 
+    #[inline]
     pub fn make_floating(&self) {
         todo!()
     }
 
+    #[inline]
     pub fn set_parent(&self, parent: &impl HasWindowHandle) {
         todo!()
     }
 
+    #[inline]
     pub fn show(&self) {
         todo!()
     }
 
+    #[inline]
     pub fn hide(&self) {
         todo!()
     }
 
+    #[inline]
     pub fn set_title(&self, title: impl Into<String>) {
         todo!()
-    }
+    }*/
 }
 
 pub fn create_window<H: WindowHandler>(
