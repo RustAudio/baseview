@@ -20,8 +20,7 @@ pub struct WindowHandle {
 
 impl Drop for WindowHandle {
     fn drop(&mut self) {
-        let Some(view) = self.view.take() else { return };
-        let Some(view) = view.load() else { return };
+        let Some(view) = self.view.load() else { return };
         let Some(view) = view.inner_ref() else { return };
 
         BaseviewView::close(view);
@@ -83,14 +82,6 @@ impl WindowHandle {
 
     pub fn run_until_closed(self) {
         NSApplication::sharedApplication(self.mtm).run();
-    }
-
-    pub fn close(&self) {
-        let Some(view) = self.view.load() else {
-            return;
-        };
-
-        BaseviewView::close(view.inner_ref());
     }
 
     pub fn is_open(&self) -> bool {
