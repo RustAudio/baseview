@@ -20,8 +20,8 @@ impl WindowHandle {
     }
 
     /// Close the window
-    pub fn close(&self) {
-        self.window_handle.close();
+    pub fn close(self) {
+        drop(self)
     }
 
     /// Returns `true` if the window is still open, and returns `false`

@@ -162,125 +162,150 @@ extern "C-unwind" fn accepts_first_mouse(_this: &NSView, _sel: Sel, _event: &NSE
 }
 
 extern "C-unwind" fn become_first_responder<V: ViewImpl>(this: &View<V>, _sel: Sel) -> Bool {
-    V::become_first_responder(this.inner_ref()).into()
+    let Some(inner) = this.inner_ref() else { return false.into() };
+    V::become_first_responder(inner).into()
 }
 
 extern "C-unwind" fn resign_first_responder<V: ViewImpl>(this: &View<V>, _sel: Sel) -> Bool {
-    V::resign_first_responder(this.inner_ref()).into()
+    let Some(inner) = this.inner_ref() else { return true.into() };
+    V::resign_first_responder(inner).into()
 }
 
 extern "C-unwind" fn window_should_close<V: ViewImpl>(
     this: &View<V>, _: Sel, _sender: &AnyObject,
 ) -> Bool {
-    V::window_should_close(this.inner_ref()).into()
+    let Some(inner) = this.inner_ref() else { return true.into() };
+    V::window_should_close(inner).into()
 }
 
 extern "C-unwind" fn view_did_change_backing_properties<V: ViewImpl>(
     this: &View<V>, _: Sel, _: &AnyObject,
 ) {
-    V::view_did_change_backing_properties(this.inner_ref());
+    let Some(inner) = this.inner_ref() else { return };
+    V::view_did_change_backing_properties(inner);
 }
 
 extern "C-unwind" fn hit_test<V: ViewImpl>(
     this: &View<V>, _sel: Sel, point: NSPoint,
 ) -> Option<&NSView> {
-    V::hit_test(this.inner_ref(), point)
+    V::hit_test(this.inner_ref()?, point)
 }
 
 extern "C-unwind" fn view_will_move_to_window<V: ViewImpl>(
     this: &View<V>, _self: Sel, new_window: Option<&NSWindow>,
 ) {
-    V::view_will_move_to_window(this.inner_ref(), new_window);
+    let Some(inner) = this.inner_ref() else { return };
+    V::view_will_move_to_window(inner, new_window);
 }
 
 extern "C-unwind" fn update_tracking_areas<V: ViewImpl>(this: &View<V>, _self: Sel, _: &AnyObject) {
-    V::update_tracking_areas(this.inner_ref());
+    let Some(inner) = this.inner_ref() else { return };
+    V::update_tracking_areas(inner);
 }
 
 extern "C-unwind" fn mouse_moved<V: ViewImpl>(this: &View<V>, _sel: Sel, event: &NSEvent) {
-    V::mouse_moved(this.inner_ref(), event);
+    let Some(inner) = this.inner_ref() else { return };
+    V::mouse_moved(inner, event);
 }
 
 extern "C-unwind" fn scroll_wheel<V: ViewImpl>(this: &View<V>, _: Sel, event: &NSEvent) {
-    V::scroll_wheel(this.inner_ref(), event);
+    let Some(inner) = this.inner_ref() else { return };
+    V::scroll_wheel(inner, event);
 }
 
 extern "C-unwind" fn dragging_entered<V: ViewImpl>(
     this: &View<V>, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) -> NSDragOperation {
-    V::dragging_entered(this.inner_ref(), sender)
+    let Some(inner) = this.inner_ref() else { return NSDragOperation::None };
+    V::dragging_entered(inner, sender)
 }
 
 extern "C-unwind" fn dragging_updated<V: ViewImpl>(
     this: &View<V>, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) -> NSDragOperation {
-    V::dragging_updated(this.inner_ref(), sender)
+    let Some(inner) = this.inner_ref() else { return NSDragOperation::None };
+    V::dragging_updated(inner, sender)
 }
 
 extern "C-unwind" fn prepare_for_drag_operation<V: ViewImpl>(
     this: &View<V>, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) -> Bool {
-    V::prepare_for_drag_operation(this.inner_ref(), sender).into()
+    let Some(inner) = this.inner_ref() else { return false.into() };
+    V::prepare_for_drag_operation(inner, sender).into()
 }
 
 extern "C-unwind" fn perform_drag_operation<V: ViewImpl>(
     this: &View<V>, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) -> Bool {
-    V::perform_drag_operation(this.inner_ref(), sender).into()
+    let Some(inner) = this.inner_ref() else { return false.into() };
+    V::perform_drag_operation(inner, sender).into()
 }
 
 extern "C-unwind" fn dragging_exited<V: ViewImpl>(
     this: &View<V>, _sel: Sel, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
 ) {
-    V::dragging_exited(this.inner_ref(), sender)
+    let Some(inner) = this.inner_ref() else { return };
+    V::dragging_exited(inner, sender)
 }
 
 extern "C-unwind" fn handle_notification<V: ViewImpl>(
     this: &View<V>, _cmd: Sel, notification: &NSNotification,
 ) {
-    V::handle_notification(this.inner_ref(), notification)
+    let Some(inner) = this.inner_ref() else { return };
+    V::handle_notification(inner, notification)
 }
 
 extern "C-unwind" fn mouse_entered<V: ViewImpl>(this: &View<V>, _: Sel, _: &AnyObject) {
-    V::mouse_entered(this.inner_ref());
+    let Some(inner) = this.inner_ref() else { return };
+    V::mouse_entered(inner);
 }
 
 extern "C-unwind" fn mouse_exited<V: ViewImpl>(this: &View<V>, _: Sel, _: &AnyObject) {
-    V::mouse_exited(this.inner_ref());
+    let Some(inner) = this.inner_ref() else { return };
+    V::mouse_exited(inner);
 }
 
 extern "C-unwind" fn key_down<V: ViewImpl>(this: &View<V>, _: Sel, event: &NSEvent) {
-    V::key_down(this.inner_ref(), event);
+    let Some(inner) = this.inner_ref() else { return };
+    V::key_down(inner, event);
 }
 
 extern "C-unwind" fn key_up<V: ViewImpl>(this: &View<V>, _: Sel, event: &NSEvent) {
-    V::key_up(this.inner_ref(), event);
+    let Some(inner) = this.inner_ref() else { return };
+    V::key_up(inner, event);
 }
 
 extern "C-unwind" fn flags_changed<V: ViewImpl>(this: &View<V>, _: Sel, event: &NSEvent) {
-    V::flags_changed(this.inner_ref(), event);
+    let Some(inner) = this.inner_ref() else { return };
+    V::flags_changed(inner, event);
 }
 
 extern "C-unwind" fn mouse_down<V: ViewImpl>(this: &View<V>, _sel: Sel, event: &NSEvent) {
-    V::mouse_down(this.inner_ref(), event);
+    let Some(inner) = this.inner_ref() else { return };
+    V::mouse_down(inner, event);
 }
 
 extern "C-unwind" fn mouse_up<V: ViewImpl>(this: &View<V>, _sel: Sel, event: &NSEvent) {
-    V::mouse_up(this.inner_ref(), event);
+    let Some(inner) = this.inner_ref() else { return };
+    V::mouse_up(inner, event);
 }
 
 extern "C-unwind" fn right_mouse_down<V: ViewImpl>(this: &View<V>, _sel: Sel, event: &NSEvent) {
-    V::right_mouse_down(this.inner_ref(), event);
+    let Some(inner) = this.inner_ref() else { return };
+    V::right_mouse_down(inner, event);
 }
 
 extern "C-unwind" fn right_mouse_up<V: ViewImpl>(this: &View<V>, _sel: Sel, event: &NSEvent) {
-    V::right_mouse_up(this.inner_ref(), event);
+    let Some(inner) = this.inner_ref() else { return };
+    V::right_mouse_up(inner, event);
 }
 
 extern "C-unwind" fn other_mouse_down<V: ViewImpl>(this: &View<V>, _sel: Sel, event: &NSEvent) {
-    V::other_mouse_down(this.inner_ref(), event);
+    let Some(inner) = this.inner_ref() else { return };
+    V::other_mouse_down(inner, event);
 }
 
 extern "C-unwind" fn other_mouse_up<V: ViewImpl>(this: &View<V>, _sel: Sel, event: &NSEvent) {
-    V::other_mouse_up(this.inner_ref(), event);
+    let Some(inner) = this.inner_ref() else { return };
+    V::other_mouse_up(inner, event);
 }
