@@ -5,7 +5,8 @@ mod window;
 mod window_state;
 
 use crate::wrappers::win32::h_instance::HInstance;
-use raw_window_handle::{DisplayHandle, Win32WindowHandle};
+use crate::wrappers::win32::window::HWnd;
+use raw_window_handle::{DisplayHandle, HasWindowHandle, RawWindowHandle, Win32WindowHandle};
 use std::fmt::Debug;
 use std::num::NonZeroIsize;
 use std::rc::Rc;
@@ -40,5 +41,21 @@ impl Debug for PlatformHandle {
             .field("hwnd", &self.hwnd.get())
             .field("hinstance", &HInstance::get_from_dll().addr().get())
             .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParentWindowHandle {
+    handle: HWnd,
+}
+
+impl ParentWindowHandle {
+    pub fn extract(parent: &impl HasWindowHandle) -> Self {
+        let parent = match parent.window_handle().unwrap().as_raw() {
+            RawWindowHandle::Win32(h) => h.hwnd,
+            h => panic!("unsupported parent handle {:?}", h),
+        };
+
+        Self { handle: unsafe { HWnd::from_raw(parent.get() as _) } }
     }
 }

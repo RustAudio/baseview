@@ -2,6 +2,7 @@
 
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
+use crate::handler::WindowHandlerBuilder;
 use crate::platform::macos::context::WindowContext;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
@@ -44,10 +45,9 @@ pub(crate) struct BaseviewView {
 }
 
 impl BaseviewView {
-    pub fn new<H: WindowHandler + 'static>(
-        _options: WindowOpenOptions,
-        builder: impl FnOnce(crate::WindowContext) -> H + Send + 'static,
-        parenting: ViewParentingType, final_size: LogicalSize<f64>, mtm: MainThreadMarker,
+    pub fn new(
+        _options: WindowOpenOptions, builder: WindowHandlerBuilder, parenting: ViewParentingType,
+        final_size: LogicalSize<f64>, mtm: MainThreadMarker,
     ) -> (Retained<View<Self>>, Rc<WindowSharedState>) {
         let view_rect =
             NSRect::new(NSPoint::ZERO, NSSize::new(final_size.width, final_size.height));
@@ -92,7 +92,7 @@ impl BaseviewView {
             }
 
             let context = WindowContext::new(view);
-            let handler = Box::new(builder(crate::WindowContext::new(context)));
+            let handler = builder.build(crate::WindowContext::new(context));
 
             // Initialize handler
             let Ok(()) = view.window_handler.set(handler) else { unreachable!() };

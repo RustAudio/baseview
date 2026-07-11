@@ -60,7 +60,7 @@ pub trait WindowImpl: 'static {
 /// For any non-trivial operations (e.g. window resizing, GL context creation, etc.), put them in
 /// [`WindowImpl::after_create`] instead.
 pub fn create_window<W: WindowImpl>(
-    title: &HSTRING, style: WindowStyle, nc_size: PhysicalSize<u32>, parent: HWND,
+    title: &HSTRING, style: WindowStyle, nc_size: PhysicalSize<u32>, parent: Option<HWnd>,
     _dpi_ctx: &DpiAwarenessContext, initializer: impl FnOnce(HWnd) -> W + 'static,
 ) -> Result<HWnd> {
     let instance = HInstance::get_from_dll();
@@ -78,7 +78,7 @@ pub fn create_window<W: WindowImpl>(
             0,
             nc_size.width.try_into().unwrap_or(i32::MAX),
             nc_size.height.try_into().unwrap_or(i32::MAX),
-            parent,
+            parent.map(|p| p.as_raw()).unwrap_or(null_mut()),
             null_mut(),
             instance.as_raw(),
             Rc::into_raw(data).cast(),

@@ -1,7 +1,5 @@
 use baseview::dpi::{LogicalSize, PhysicalSize};
-use baseview::{
-    Event, EventStatus, Window, WindowContext, WindowHandler, WindowOpenOptions, WindowSize,
-};
+use baseview::{Event, EventStatus, WindowContext, WindowHandler, WindowOpenOptions, WindowSize};
 
 use log::LevelFilter;
 use std::cell::RefCell;
@@ -210,7 +208,8 @@ fn main() {
         .with_title("WGPU on Baseview")
         .with_size(LogicalSize::new(512, 512));
 
-    Window::open_blocking(window_open_options, |c| pollster::block_on(WgpuExample::new(c)));
+    baseview::create_window(window_open_options, |c| pollster::block_on(WgpuExample::new(c)))
+        .run_until_closed();
 }
 
 fn log_event(event: &Event) {

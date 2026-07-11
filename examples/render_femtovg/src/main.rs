@@ -1,8 +1,7 @@
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::gl::{GlConfig, GlContext};
 use baseview::{
-    Event, EventStatus, MouseEvent, Window, WindowContext, WindowHandler, WindowOpenOptions,
-    WindowSize,
+    Event, EventStatus, MouseEvent, WindowContext, WindowHandler, WindowOpenOptions, WindowSize,
 };
 use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
@@ -117,7 +116,7 @@ fn main() {
         .with_size(LogicalSize::new(512, 512))
         .with_gl_config(GlConfig { alpha_bits: 8, ..GlConfig::default() });
 
-    Window::open_blocking(window_open_options, FemtovgExample::new);
+    baseview::create_window(window_open_options, FemtovgExample::new).run_until_closed();
 }
 
 fn log_event(event: &Event) {

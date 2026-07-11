@@ -5,12 +5,14 @@ mod view;
 mod window;
 
 use crate::platform::macos::view::BaseviewView;
-use crate::wrappers::appkit::View;
+use crate::wrappers::appkit::{extract_raw_window_handle, View};
 pub use context::WindowContext;
 use dispatch2::MainThreadBound;
+use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::MainThreadMarker;
-use raw_window_handle::DisplayHandle;
+use objc2_app_kit::NSView;
+use raw_window_handle::{DisplayHandle, HasWindowHandle};
 use std::fmt;
 use std::fmt::Formatter;
 pub use window::*;
@@ -61,5 +63,16 @@ impl fmt::Debug for PlatformHandle {
         }
 
         f.debug_struct("PlatformHandle (AppKit)").field("ns_view", &PtrFmt(self)).finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParentWindowHandle {
+    view: Retained<NSView>,
+}
+
+impl ParentWindowHandle {
+    pub fn extract(window: &impl HasWindowHandle) -> Self {
+        Self { view: extract_raw_window_handle(window.window_handle().unwrap()).unwrap() }
     }
 }
