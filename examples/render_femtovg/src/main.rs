@@ -6,6 +6,7 @@ use baseview::{
 use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
 use std::cell::{Cell, RefCell};
+use std::ffi::CString;
 
 struct FemtovgExample {
     window_context: WindowContext,
@@ -20,8 +21,10 @@ impl FemtovgExample {
         let gl_context = window_context.gl_context().unwrap();
         unsafe { gl_context.make_current() };
 
-        let renderer =
-            unsafe { OpenGl::new_from_function(|s| gl_context.get_proc_address(s)) }.unwrap();
+        let renderer = unsafe {
+            OpenGl::new_from_function(|s| gl_context.get_proc_address(&CString::new(s).unwrap()))
+        }
+        .unwrap();
 
         let mut canvas = Canvas::new(renderer).unwrap();
         let size = window_context.size();

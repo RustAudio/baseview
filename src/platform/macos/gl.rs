@@ -11,9 +11,9 @@ use objc2_app_kit::{
     NSOpenGLPixelFormat, NSOpenGLProfileVersion3_2Core, NSOpenGLProfileVersion4_1Core,
     NSOpenGLProfileVersionLegacy, NSOpenGLView, NSView,
 };
-use objc2_core_foundation::{CFBundle, CFString};
+use objc2_core_foundation::{CFBundle, CFString, CFStringBuiltInEncodings};
 use objc2_foundation::NSSize;
-use std::ffi::c_void;
+use std::ffi::{c_void, CStr};
 use std::ptr::NonNull;
 
 pub type CreationFailedError = ();
@@ -103,8 +103,19 @@ impl GlContext {
         NSOpenGLContext::clearCurrentContext();
     }
 
-    pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        let symbol_name = CFString::from_str(symbol);
+    pub fn get_proc_address(&self, symbol: &CStr) -> *const c_void {
+        // SAFETY: The string pointer is valid
+        let symbol_name = unsafe {
+            CFString::with_bytes(
+                None,
+                symbol.as_ptr().cast(),
+                symbol.count_bytes().try_into().unwrap(),
+                CFStringBuiltInEncodings::EncodingUTF8.0,
+                false,
+            )
+        }
+        .unwrap();
+
         let framework_name = CFString::from_static_str("com.apple.opengl");
         let framework = CFBundle::bundle_with_identifier(Some(&framework_name)).unwrap();
 

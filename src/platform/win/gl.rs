@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CString};
+use std::ffi::{c_void, CStr};
 use std::num::NonZeroI32;
 use std::rc::Rc;
 use windows_core::{s, PCSTR};
@@ -79,8 +79,7 @@ impl GlContextInner {
         let _ = self.wgl_ctx.make_not_current();
     }
 
-    pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        let symbol = CString::new(symbol).unwrap();
+    pub fn get_proc_address(&self, symbol: &CStr) -> *const c_void {
         let symbol_ptr = symbol.as_ptr().cast();
 
         if let Some(addr) = unsafe { wglGetProcAddress(symbol_ptr) } {

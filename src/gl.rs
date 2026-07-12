@@ -1,5 +1,5 @@
 use crate::platform::gl::*;
-use std::ffi::c_void;
+use std::ffi::{c_void, CStr};
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -70,7 +70,7 @@ impl GlContext {
         self.inner.make_not_current();
     }
 
-    pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
+    pub fn get_proc_address(&self, symbol: &CStr) -> *const c_void {
         self.inner.get_proc_address(symbol)
     }
 

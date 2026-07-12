@@ -4,7 +4,7 @@ use crate::wrappers::glx::*;
 use crate::wrappers::xlib::{XErrorHandler, XLibError};
 
 use crate::platform::x11::xcb_window::XcbWindow;
-use std::ffi::{c_ulong, c_void, CString};
+use std::ffi::{c_ulong, c_void, CStr};
 use std::rc::Rc;
 use x11_dl::error::OpenError;
 use x11_dl::glx::GLXContext;
@@ -165,10 +165,8 @@ impl GlContextInner {
         self.window.get().into()
     }
 
-    pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
-        let symbol = CString::new(symbol).unwrap();
-
-        match self.glx.get_proc_address(&symbol) {
+    pub fn get_proc_address(&self, symbol: &CStr) -> *const c_void {
+        match self.glx.get_proc_address(symbol) {
             Some(ptr) => ptr.as_ptr(),
             None => std::ptr::null(),
         }
