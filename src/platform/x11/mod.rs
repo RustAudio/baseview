@@ -2,7 +2,7 @@ mod xcb_connection;
 
 use raw_window_handle::{DisplayHandle, HasWindowHandle, RawWindowHandle, XcbWindowHandle};
 use std::fmt::Formatter;
-use std::num::NonZero;
+use std::num::{NonZero, NonZeroU32};
 use std::rc::Rc;
 use std::sync::Arc;
 pub(crate) use xcb_connection::X11Connection;
@@ -15,6 +15,7 @@ mod drag_n_drop;
 mod event_loop;
 mod keyboard;
 mod visual_info;
+mod xcb_window;
 
 mod window_shared;
 
@@ -59,14 +60,14 @@ impl std::fmt::Debug for PlatformHandle {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParentWindowHandle {
-    window_id: u32,
+    window_id: NonZeroU32,
 }
 
 impl ParentWindowHandle {
     pub fn extract(window: &impl HasWindowHandle) -> Self {
         let window_id = match window.window_handle().unwrap().as_raw() {
-            RawWindowHandle::Xlib(h) => h.window as u32,
-            RawWindowHandle::Xcb(h) => h.window.get(),
+            RawWindowHandle::Xlib(h) => NonZeroU32::new(h.window.try_into().unwrap()).unwrap(),
+            RawWindowHandle::Xcb(h) => h.window,
             h => panic!("unsupported parent handle type {:?}", h),
         };
 

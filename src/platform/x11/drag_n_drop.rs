@@ -401,7 +401,7 @@ impl DragNDropState {
         };
 
         // Ignore if this was meant for another window (?)
-        if event.requestor != window.window_id.get() {
+        if event.requestor != window.xcb_window.id().get() {
             return Ok(());
         }
 
@@ -486,7 +486,7 @@ fn send_status_rejected(
         response_type: xproto::CLIENT_MESSAGE_EVENT,
         window: source_window,
         format: 32,
-        data: [window.window_id.get(), 0, 0, 0, conn.atoms.None as _].into(),
+        data: [window.xcb_window.id().get(), 0, 0, 0, conn.atoms.None as _].into(),
         sequence: 0,
         type_: conn.atoms.XdndStatus,
     };
@@ -508,7 +508,7 @@ fn send_status_event(
         response_type: xproto::CLIENT_MESSAGE_EVENT,
         window: source_window,
         format: 32,
-        data: [window.window_id.get(), 1, 0, 0, action as _].into(),
+        data: [window.xcb_window.id().get(), 1, 0, 0, action as _].into(),
         sequence: 0,
         type_: conn.atoms.XdndStatus,
     };
@@ -527,7 +527,7 @@ pub fn send_finished_rejected(
         response_type: xproto::CLIENT_MESSAGE_EVENT,
         window: source_window,
         format: 32,
-        data: [window.window_id.get(), 1, window.connection.atoms.None as _, 0, 0].into(),
+        data: [window.xcb_window.id().get(), 1, window.connection.atoms.None as _, 0, 0].into(),
         sequence: 0,
         type_: conn.atoms.XdndFinished as _,
     };
@@ -548,7 +548,7 @@ fn send_finished_event(
         response_type: xproto::CLIENT_MESSAGE_EVENT,
         window: source_window,
         format: 32,
-        data: [window.window_id.get(), 1, action as _, 0, 0].into(),
+        data: [window.xcb_window.id().get(), 1, action as _, 0, 0].into(),
         sequence: 0,
         type_: conn.atoms.XdndFinished as _,
     };
@@ -564,7 +564,7 @@ fn request_convert_selection(
     let conn = &window.connection;
 
     conn.conn.convert_selection(
-        window.window_id.get(),
+        window.xcb_window.id().get(),
         conn.atoms.XdndSelection,
         conn.atoms.TextUriList,
         conn.atoms.XdndSelection,
@@ -585,14 +585,14 @@ fn translate_root_coordinates(
     let x = x.try_into().unwrap_or(i16::MAX);
     let y = y.try_into().unwrap_or(i16::MAX);
 
-    if root_id == window.window_id.get() {
+    if root_id == window.xcb_window.id().get() {
         return Ok(PhysicalPosition::new(x, y));
     }
 
     let reply = window
         .connection
         .conn
-        .translate_coordinates(root_id, window.window_id.get(), x, y)?
+        .translate_coordinates(root_id, window.xcb_window.id().get(), x, y)?
         .reply()?;
 
     Ok(PhysicalPosition::new(reply.dst_x, reply.dst_y))
@@ -602,7 +602,7 @@ fn fetch_dnd_data(window: &WindowInner) -> Result<DropData, Box<dyn Error>> {
     let conn = &window.connection;
 
     let data: Vec<u8> = conn.get_property(
-        window.window_id.get(),
+        window.xcb_window.id().get(),
         conn.atoms.XdndSelection,
         conn.atoms.TextUriList,
     )?;

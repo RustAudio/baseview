@@ -1,3 +1,4 @@
+use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::X11Connection;
 use crate::{MouseCursor, WindowSize};
 use dpi::{PhysicalSize, Size};
@@ -9,7 +10,6 @@ use std::sync::Arc;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, InputFocus, Visualid,
-    Window as XWindow,
 };
 use x11rb::CURRENT_TIME;
 
@@ -18,8 +18,8 @@ pub(crate) struct WindowInner {
     #[cfg(feature = "opengl")]
     gl_context: Option<super::gl::GlContext>,
 
+    pub(crate) xcb_window: XcbWindow,
     pub(crate) connection: Rc<X11Connection>,
-    pub(crate) window_id: NonZero<XWindow>,
     pub(crate) scaling_factor: Cell<f64>,
     pub(crate) window_size: Cell<PhysicalSize<u16>>,
     mouse_cursor: Cell<MouseCursor>,
@@ -31,13 +31,13 @@ pub(crate) struct WindowInner {
 
 impl WindowInner {
     pub(crate) fn new(
-        connection: Rc<X11Connection>, window_id: NonZero<XWindow>, window_size: PhysicalSize<u16>,
+        connection: Rc<X11Connection>, xcb_window: XcbWindow, window_size: PhysicalSize<u16>,
         scale_factor: f64, visual_id: NonZero<Visualid>,
         #[cfg(feature = "opengl")] gl_context: Option<super::gl::GlContext>,
     ) -> Self {
         Self {
             connection,
-            window_id,
+            xcb_window,
             visual_id,
             window_size: window_size.into(),
             scaling_factor: scale_factor.into(),
@@ -60,7 +60,7 @@ impl WindowInner {
 
         if xid != 0 {
             let _ = self.connection.conn.change_window_attributes(
-                self.window_id.get(),
+                self.xcb_window.id().get(),
                 &ChangeWindowAttributesAux::new().cursor(xid),
             );
             let _ = self.connection.conn.flush();
@@ -80,7 +80,7 @@ impl WindowInner {
     pub fn focus(&self) {
         let _ = self.connection.conn.set_input_focus(
             InputFocus::POINTER_ROOT,
-            self.window_id,
+            self.xcb_window.id(),
             CURRENT_TIME,
         );
         let _ = self.connection.conn.flush();
@@ -90,7 +90,7 @@ impl WindowInner {
         let new_physical_size = size.to_physical::<u32>(self.scaling_factor.get());
 
         let _ = self.connection.conn.configure_window(
-            self.window_id.get(),
+            self.xcb_window.id().get(),
             &ConfigureWindowAux::new()
                 .width(new_physical_size.width)
                 .height(new_physical_size.height),
@@ -102,7 +102,7 @@ impl WindowInner {
     }
 
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
-        let mut handle = XlibWindowHandle::new(self.window_id.get() as _);
+        let mut handle = XlibWindowHandle::new(self.xcb_window.id().get() as _);
         handle.visual_id = self.visual_id.get().into();
         Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
     }
@@ -114,7 +114,7 @@ impl WindowInner {
     pub fn platform_handle(&self) -> super::PlatformHandle {
         super::PlatformHandle {
             connection: Arc::clone(&self.connection.conn),
-            window_id: self.window_id,
+            window_id: self.xcb_window.id(),
             visual_id: self.visual_id,
         }
     }
