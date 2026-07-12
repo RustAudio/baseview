@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CStr, CString, OsStr};
+use std::ffi::{c_void, CStr, OsStr};
 use std::os::windows::ffi::OsStrExt;
 use std::rc::Rc;
 use windows_sys::{
