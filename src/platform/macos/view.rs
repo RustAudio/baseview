@@ -20,7 +20,7 @@ use objc2_app_kit::{
     NSTrackingAreaOptions, NSView, NSWindow,
 };
 use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
-use std::cell::{Cell, OnceCell};
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 pub enum ViewParentingType {
@@ -31,7 +31,7 @@ pub enum ViewParentingType {
 pub(crate) struct BaseviewView {
     pub(crate) state: Rc<WindowSharedState>,
     pub(crate) mtm: MainThreadMarker,
-    window_handler: OnceCell<Box<dyn WindowHandler>>,
+    window_handler: WindowHandlerContainer,
 
     frame_timer: Cell<Option<TimerHandle>>,
     notification_center_observer: Cell<Option<NotificationCenterObserver>>,
@@ -41,7 +41,7 @@ pub(crate) struct BaseviewView {
     parenting: ViewParentingType,
 
     #[cfg(feature = "opengl")]
-    pub(crate) gl_context: OnceCell<super::gl::GlContext>,
+    pub(crate) gl_context: std::cell::OnceCell<super::gl::GlContext>,
 }
 
 impl BaseviewView {
@@ -60,12 +60,12 @@ impl BaseviewView {
 
             keyboard_state: KeyboardState::new(),
             frame_timer: None.into(),
-            window_handler: OnceCell::new(),
+            window_handler: WindowHandlerContainer::new(),
             notification_center_observer: None.into(),
             parenting,
 
             #[cfg(feature = "opengl")]
-            gl_context: OnceCell::new(),
+            gl_context: std::cell::OnceCell::new(),
         };
 
         let view = View::new(view_rect, inner, |view| {
@@ -95,7 +95,7 @@ impl BaseviewView {
             let handler = builder.build(crate::WindowContext::new(context));
 
             // Initialize handler
-            let Ok(()) = view.window_handler.set(handler) else { unreachable!() };
+            view.window_handler.set(handler);
 
             // Set up anything that might trigger events to the handler
 
@@ -129,6 +129,9 @@ impl BaseviewView {
     pub fn close(this: ViewRef<Self>) {
         this.state.closed.set(true);
         this.view.removeFromSuperview();
+        this.notification_center_observer.take();
+        this.frame_timer.take();
+        this.window_handler.destroy();
 
         if let ViewParentingType::Windowed { owned_window: parent_window, running_app } =
             &this.parenting
@@ -171,17 +174,11 @@ impl BaseviewView {
 
     /// Trigger the event immediately and return the event status.
     fn trigger_event(this: ViewRef<Self>, event: Event) -> EventStatus {
-        let Some(handler) = this.window_handler.get() else {
-            return EventStatus::Ignored;
-        };
-
-        handler.on_event(event)
+        this.window_handler.use_handler(|h| h.on_event(event)).unwrap_or(EventStatus::Ignored)
     }
 
     fn trigger_frame(this: ViewRef<Self>) {
-        let Some(handler) = this.window_handler.get() else { return };
-
-        handler.on_frame();
+        this.window_handler.use_handler(|h| h.on_frame());
     }
 }
 
@@ -228,9 +225,9 @@ impl ViewImpl for BaseviewView {
             this.state.size.set(current_size);
             this.state.scale_factor.set(current_scale_factor);
 
-            if let Some(handler) = this.window_handler.get() {
-                handler.resized(WindowSize::from_logical(current_size, current_scale_factor))
-            }
+            this.window_handler.use_handler(|h| {
+                h.resized(WindowSize::from_logical(current_size, current_scale_factor))
+            });
         }
     }
 
@@ -617,5 +614,43 @@ fn on_event(this: ViewRef<BaseviewView>, event: MouseEvent) -> NSDragOperation {
         EventStatus::AcceptDrop(DropEffect::Link) => NSDragOperation::Link,
         EventStatus::AcceptDrop(DropEffect::Scroll) => NSDragOperation::Generic,
         _ => NSDragOperation::None,
+    }
+}
+
+pub struct WindowHandlerContainer {
+    inner: RefCell<Option<Box<dyn WindowHandler>>>,
+    must_be_destroyed: Cell<bool>,
+}
+
+impl WindowHandlerContainer {
+    pub fn new() -> WindowHandlerContainer {
+        Self { inner: RefCell::new(None), must_be_destroyed: false.into() }
+    }
+
+    pub fn use_handler<T>(&self, user: impl FnOnce(&dyn WindowHandler) -> T) -> Option<T> {
+        let returned = {
+            let inner = self.inner.try_borrow().ok()?;
+            user(inner.as_ref()?.as_ref())
+        };
+
+        if self.must_be_destroyed.get() {
+            if let Ok(mut inner) = self.inner.try_borrow_mut() {
+                *inner = None;
+            }
+        }
+
+        Some(returned)
+    }
+
+    pub fn set(&self, handler: Box<dyn WindowHandler>) {
+        self.inner.replace(Some(handler));
+        self.must_be_destroyed.set(false);
+    }
+
+    pub fn destroy(&self) {
+        match self.inner.try_borrow_mut() {
+            Ok(mut inner) => *inner = None,
+            Err(_) => self.must_be_destroyed.set(true),
+        }
     }
 }
