@@ -8,17 +8,14 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{
-    AtomEnum, ConnectionExt, CreateGCAux, CreateWindowAux, EventMask, PropMode, WindowClass,
-};
-use x11rb::wrapper::ConnectionExt as _;
 
 use super::X11Connection;
 use super::{event_loop::EventLoop, visual_info::WindowVisualConfig};
-use crate::context::WindowContext;
 use crate::handler::WindowHandlerBuilder;
 use crate::platform::x11::window_shared::WindowInner;
-use crate::{WindowOpenOptions, WindowScalePolicy, WindowSize};
+use crate::platform::x11::xcb_window::XcbWindow;
+use crate::wrappers::xkbcommon::XkbcommonState;
+use crate::*;
 
 pub struct WindowHandle {
     window_id: Option<NonZero<x11rb::protocol::xproto::Window>>,
@@ -105,22 +102,10 @@ impl Window {
         tx: mpsc::SyncSender<WindowOpenResult>, parent_handle: Option<ParentHandle>,
     ) -> Result<(), Box<dyn Error>> {
         // Connect to the X server
-        // FIXME: baseview error type instead of unwrap()
         let xcb_connection = X11Connection::new()?;
 
         // Setup xkbcommon
-        let xkb_state = crate::wrappers::xkbcommon::XkbcommonState::new(&xcb_connection);
-
-        // Get screen information
-        let screen = xcb_connection.screen();
-        let parent_id = options.parent.map(|p| p.window_id).unwrap_or(screen.root);
-
-        let gc_id = xcb_connection.conn.generate_id()?;
-        xcb_connection.conn.create_gc(
-            gc_id,
-            parent_id,
-            &CreateGCAux::new().foreground(screen.black_pixel).graphics_exposures(0),
-        )?;
+        let xkb_state = XkbcommonState::new(&xcb_connection);
 
         let scaling = match options.scale {
             WindowScalePolicy::SystemScaleFactor => xcb_connection.get_scaling(),
@@ -136,88 +121,33 @@ impl Window {
         #[cfg(not(feature = "opengl"))]
         let visual_info = WindowVisualConfig::find_best_visual_config(&xcb_connection)?;
 
-        let Some(window_id) = NonZero::new(xcb_connection.conn.generate_id()?) else {
-            unreachable!();
-        };
+        let xcb_connection = Rc::new(xcb_connection);
 
-        xcb_connection.conn.create_window(
-            visual_info.visual_depth,
-            window_id.get(),
-            parent_id,
-            0,                    // x coordinate of the new window
-            0,                    // y coordinate of the new window
-            physical_size.width,  // window width
-            physical_size.height, // window height
-            0,                    // window border
-            WindowClass::INPUT_OUTPUT,
-            visual_info.visual_id,
-            &CreateWindowAux::new()
-                .event_mask(
-                    EventMask::EXPOSURE
-                        | EventMask::POINTER_MOTION
-                        | EventMask::BUTTON_PRESS
-                        | EventMask::BUTTON_RELEASE
-                        | EventMask::KEY_PRESS
-                        | EventMask::KEY_RELEASE
-                        | EventMask::STRUCTURE_NOTIFY
-                        | EventMask::ENTER_WINDOW
-                        | EventMask::LEAVE_WINDOW
-                        | EventMask::FOCUS_CHANGE,
-                )
-                // As mentioned above, these two values are needed to be able to create a window
-                // with a depth of 32-bits when the parent window has a different depth
-                .colormap(visual_info.color_map)
-                .border_pixel(0),
-        )?;
-        xcb_connection.conn.map_window(window_id.get())?;
-
-        // Change window title
-        let title = options.title;
-        xcb_connection.conn.change_property8(
-            PropMode::REPLACE,
-            window_id.get(),
-            AtomEnum::WM_NAME,
-            AtomEnum::STRING,
-            title.as_bytes(),
+        let x_window = XcbWindow::new(
+            Rc::clone(&xcb_connection),
+            physical_size,
+            &visual_info,
+            options.parent.map(|p| p.window_id),
         )?;
 
-        xcb_connection.conn.change_property32(
-            PropMode::REPLACE,
-            window_id.get(),
-            xcb_connection.atoms.WM_PROTOCOLS,
-            AtomEnum::ATOM,
-            &[xcb_connection.atoms.WM_DELETE_WINDOW],
-        )?;
-
-        // Enable drag and drop (TODO: Make this toggleable?)
-        xcb_connection.conn.change_property32(
-            PropMode::REPLACE,
-            window_id.get(),
-            xcb_connection.atoms.XdndAware,
-            AtomEnum::ATOM,
-            &[5u32], // Latest version; hasn't changed since 2002
-        )?;
+        x_window.map_window()?;
+        x_window.set_title(&options.title)?;
+        x_window.enable_wm_protocols()?;
+        x_window.enable_dnd_protocols()?;
 
         xcb_connection.conn.flush()?;
-        let xcb_connection = Rc::new(xcb_connection);
 
         #[cfg(feature = "opengl")]
         let gl_context = visual_info.fb_config.map(|fb_config| {
-            use std::ffi::c_ulong;
-
-            let window = window_id.get() as c_ulong;
-
             // Because of the visual negotation we had to take some extra steps to create this context
-            let context =
-                super::gl::GlContextInner::create(window, Rc::clone(&xcb_connection), fb_config)
-                    .expect("Could not create OpenGL context");
-
-            Rc::new(context)
+            super::gl::GlContextInner::create(&x_window, Rc::clone(&xcb_connection), fb_config)
+                .expect("Could not create OpenGL context")
         });
 
+        let window_id = x_window.id();
         let inner = Rc::new(WindowInner::new(
             xcb_connection,
-            window_id,
+            x_window,
             physical_size,
             scaling,
             visual_info.visual_id.try_into()?,
@@ -226,10 +156,6 @@ impl Window {
         ));
 
         let handler = build.build(WindowContext::new(Rc::clone(&inner)));
-
-        // Send an initial window resized event so the user is alerted of
-        // the correct dpi scaling.
-        handler.resized(WindowSize::from_physical(physical_size.cast(), scaling));
 
         let _ = tx.send(Ok(window_id));
 

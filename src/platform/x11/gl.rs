@@ -3,8 +3,8 @@ use crate::gl::*;
 use crate::wrappers::glx::*;
 use crate::wrappers::xlib::{XErrorHandler, XLibError};
 
-use std::ffi::{c_void, CString};
-use std::os::raw::c_ulong;
+use crate::platform::x11::xcb_window::XcbWindow;
+use std::ffi::{c_ulong, c_void, CString};
 use std::rc::Rc;
 use x11_dl::error::OpenError;
 use x11_dl::glx::GLXContext;
@@ -36,7 +36,7 @@ pub type GlContext = Rc<GlContextInner>;
 
 pub struct GlContextInner {
     glx: Glx,
-    window: c_ulong,
+    window: NonZeroU32,
     connection: Rc<X11Connection>,
     context: GLXContext,
 }
@@ -65,8 +65,8 @@ impl GlContextInner {
     ///
     /// Use [Self::get_fb_config_and_visual] to create both of these things.
     pub fn create(
-        window: c_ulong, connection: Rc<X11Connection>, config: FbConfig,
-    ) -> Result<GlContextInner, GlError> {
+        window: &XcbWindow, connection: Rc<X11Connection>, config: FbConfig,
+    ) -> Result<Rc<GlContextInner>, GlError> {
         let glx = Glx::open()?;
 
         let xlib_connection = connection.conn.xlib_connection();
@@ -87,20 +87,25 @@ impl GlContextInner {
                 error_handler,
             )?;
 
+            let window_id = window.id().get().into();
             // Create context object here so that error or panic will properly free the context
-            let context =
-                GlContextInner { glx, window, connection: Rc::clone(&connection), context };
+            let context = GlContextInner {
+                glx,
+                window: window.id(),
+                connection: Rc::clone(&connection),
+                context,
+            };
 
             unsafe {
                 context.glx.with_current_context(
                     xlib_connection,
-                    window,
+                    window_id,
                     context.context,
                     error_handler,
                     || {
                         swap_interval(
                             xlib_connection.as_raw(),
-                            window,
+                            window_id,
                             config.gl_config.vsync as i32,
                         );
                         error_handler.check()
@@ -108,7 +113,7 @@ impl GlContextInner {
                 )??;
             }
 
-            Ok(context)
+            Ok(Rc::new(context))
         })
     }
 
@@ -142,7 +147,7 @@ impl GlContextInner {
             self.glx
                 .make_current(
                     self.connection.conn.xlib_connection(),
-                    self.window,
+                    self.window_id(),
                     self.context,
                     error_handler,
                 )
@@ -154,6 +159,10 @@ impl GlContextInner {
         XErrorHandler::handle(self.connection.conn.xlib_connection(), |error_handler| {
             self.glx.clear_current(self.connection.conn.xlib_connection(), error_handler).unwrap();
         })
+    }
+
+    fn window_id(&self) -> c_ulong {
+        self.window.get().into()
     }
 
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
@@ -168,7 +177,11 @@ impl GlContextInner {
     pub fn swap_buffers(&self) {
         XErrorHandler::handle(self.connection.conn.xlib_connection(), |error_handler| {
             self.glx
-                .swap_buffers(self.connection.conn.xlib_connection(), self.window, error_handler)
+                .swap_buffers(
+                    self.connection.conn.xlib_connection(),
+                    self.window_id(),
+                    error_handler,
+                )
                 .unwrap()
         })
     }
