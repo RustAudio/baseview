@@ -20,7 +20,12 @@ pub unsafe fn create_view_class<V: ViewImpl>() -> &'static AnyClass {
     // any class definitions lying around when the plugin is closed.
     let class_name = new_class_name("BaseviewNSView_");
 
-    let mut class = ClassBuilder::new(&class_name, NSView::class()).unwrap();
+    let Some(mut class) = ClassBuilder::new(&class_name, NSView::class()) else {
+        panic!(
+            "Failed to construct new class '{}' using ClassBuilder",
+            class_name.to_string_lossy()
+        );
+    };
 
     // SAFETY: All of these function signatures are correct
     unsafe {

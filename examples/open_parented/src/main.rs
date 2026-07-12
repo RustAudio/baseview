@@ -1,6 +1,7 @@
 use baseview::dpi::LogicalSize;
 use baseview::{
-    Event, EventStatus, WindowContext, WindowHandle, WindowHandler, WindowOpenOptions, WindowSize,
+    Event, EventStatus, HandlerError, WindowContext, WindowHandle, WindowHandler,
+    WindowOpenOptions, WindowSize,
 };
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
@@ -13,22 +14,25 @@ struct ParentWindowHandler {
 }
 
 impl ParentWindowHandler {
-    pub fn new(window: WindowContext) -> Self {
-        let ctx = softbuffer::Context::new(window.clone()).unwrap();
-        let mut surface = softbuffer::Surface::new(&ctx, window.clone()).unwrap();
+    pub fn new(window: WindowContext) -> Result<Self, HandlerError> {
+        let ctx = softbuffer::Context::new(window.clone())?;
+        let mut surface = softbuffer::Surface::new(&ctx, window.clone())?;
         let size = window.size().physical;
         surface
-            .resize(NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap())
-            .unwrap();
+            .resize(NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap())?;
 
         let window_open_options = WindowOpenOptions::new()
             .with_size(LogicalSize::new(256, 256))
             .with_parent(&window)
             .with_title("baseview child");
 
-        let child_window = baseview::create_window(window_open_options, ChildWindowHandler::new);
+        let child_window = baseview::create_window(window_open_options, ChildWindowHandler::new)?;
 
-        Self { surface: surface.into(), damaged: true.into(), _child_window: Some(child_window) }
+        Ok(Self {
+            surface: surface.into(),
+            damaged: true.into(),
+            _child_window: Some(child_window),
+        })
     }
 }
 
@@ -72,15 +76,14 @@ struct ChildWindowHandler {
 }
 
 impl ChildWindowHandler {
-    pub fn new(window: WindowContext) -> Self {
-        let ctx = softbuffer::Context::new(window.clone()).unwrap();
-        let mut surface = softbuffer::Surface::new(&ctx, window.clone()).unwrap();
+    pub fn new(window: WindowContext) -> Result<Self, HandlerError> {
+        let ctx = softbuffer::Context::new(window.clone())?;
+        let mut surface = softbuffer::Surface::new(&ctx, window.clone())?;
         let size = window.size().physical;
         surface
-            .resize(NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap())
-            .unwrap();
+            .resize(NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap())?;
 
-        Self { surface: surface.into(), damaged: true.into() }
+        Ok(Self { surface: surface.into(), damaged: true.into() })
     }
 }
 
@@ -121,5 +124,7 @@ impl WindowHandler for ChildWindowHandler {
 fn main() {
     let window_open_options = WindowOpenOptions::new().with_size(LogicalSize::new(512.0, 512.0));
 
-    baseview::create_window(window_open_options, ParentWindowHandler::new).run_until_closed();
+    baseview::create_window(window_open_options, ParentWindowHandler::new)
+        .unwrap()
+        .run_until_closed();
 }

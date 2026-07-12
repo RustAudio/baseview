@@ -155,15 +155,16 @@ fn main() {
             .resize(NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap())
             .unwrap();
 
-        OpenWindowExample {
+        Ok(OpenWindowExample {
             window_context: window,
             surface: surface.into(),
             rx: rx.into(),
             mouse_pos: PhysicalPosition::new(0., 0.).into(),
             is_cursor_inside: false.into(),
             damaged: true.into(),
-        }
+        })
     })
+    .unwrap()
     .run_until_closed();
 }
 

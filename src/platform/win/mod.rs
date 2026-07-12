@@ -1,4 +1,5 @@
 mod drop_target;
+mod error;
 mod hook;
 mod keyboard;
 mod window;
@@ -6,9 +7,13 @@ mod window_state;
 
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
-use raw_window_handle::{DisplayHandle, HasWindowHandle, RawWindowHandle, Win32WindowHandle};
-use std::fmt::Debug;
+pub use error::{Error, Result};
+use raw_window_handle::{
+    DisplayHandle, HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle,
+};
+use std::fmt::{Debug, Display, Formatter};
 use std::num::NonZeroIsize;
+use std::ptr::NonNull;
 use std::rc::Rc;
 pub use window::*;
 
@@ -50,12 +55,38 @@ pub struct ParentWindowHandle {
 }
 
 impl ParentWindowHandle {
-    pub fn extract(parent: &impl HasWindowHandle) -> Self {
-        let parent = match parent.window_handle().unwrap().as_raw() {
+    pub fn extract(
+        parent: &impl HasWindowHandle,
+    ) -> core::result::Result<Self, ParentWindowHandleError> {
+        let parent = match parent.window_handle()?.as_raw() {
             RawWindowHandle::Win32(h) => h.hwnd,
-            h => panic!("unsupported parent handle {:?}", h),
+            h => return Err(ParentWindowHandleError::UnsupportedWindowHandleType(h)),
         };
 
-        Self { handle: unsafe { HWnd::from_raw(parent.get() as _) } }
+        let parent = NonNull::new(parent.get() as _).unwrap();
+
+        Ok(Self { handle: unsafe { HWnd::from_raw(parent) } })
+    }
+}
+
+pub enum ParentWindowHandleError {
+    HandleError(HandleError),
+    UnsupportedWindowHandleType(RawWindowHandle),
+}
+
+impl From<HandleError> for ParentWindowHandleError {
+    fn from(err: HandleError) -> Self {
+        Self::HandleError(err)
+    }
+}
+
+impl Display for ParentWindowHandleError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParentWindowHandleError::HandleError(e) => Display::fmt(e, f),
+            ParentWindowHandleError::UnsupportedWindowHandleType(h) => {
+                write!(f, "Unsupported window handle type on Win32: {h:?}")
+            }
+        }
     }
 }

@@ -1,13 +1,15 @@
 mod context;
 mod cursor;
+mod error;
 mod keyboard;
 mod view;
 mod window;
 
 use crate::platform::macos::view::BaseviewView;
-use crate::wrappers::appkit::{extract_raw_window_handle, View};
+use crate::wrappers::appkit::{extract_raw_window_handle, ParentWindowHandleError, View};
 pub use context::WindowContext;
 use dispatch2::MainThreadBound;
+pub use error::Error;
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::MainThreadMarker;
@@ -16,6 +18,7 @@ use raw_window_handle::{DisplayHandle, HasWindowHandle};
 use std::fmt;
 use std::fmt::Formatter;
 pub use window::*;
+pub(crate) type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(feature = "opengl")]
 pub mod gl;
@@ -72,7 +75,11 @@ pub struct ParentWindowHandle {
 }
 
 impl ParentWindowHandle {
-    pub fn extract(window: &impl HasWindowHandle) -> Self {
-        Self { view: extract_raw_window_handle(window.window_handle().unwrap()).unwrap() }
+    pub fn extract(
+        window: &impl HasWindowHandle,
+    ) -> core::result::Result<Self, ParentWindowHandleError> {
+        let view = extract_raw_window_handle(window.window_handle()?)?;
+
+        Ok(Self { view })
     }
 }

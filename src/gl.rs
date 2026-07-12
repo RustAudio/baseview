@@ -1,4 +1,3 @@
-use crate::platform::gl::*;
 use std::ffi::{c_void, CStr};
 use std::marker::PhantomData;
 
@@ -41,13 +40,6 @@ impl Default for GlConfig {
 pub enum Profile {
     Compatibility,
     Core,
-}
-
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum GlError {
-    VersionNotSupported,
-    CreationFailed(CreationFailedError),
 }
 
 #[derive(Clone)]

@@ -6,10 +6,10 @@ use crate::wrappers::connection_poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use dpi::{PhysicalPosition, PhysicalSize};
-use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
+use x11rb::errors::ConnectionError;
 use x11rb::protocol::Event as XEvent;
 
 pub(crate) struct EventLoop {
@@ -44,7 +44,7 @@ impl EventLoop {
     }
 
     #[inline]
-    fn drain_xcb_events(&mut self) -> Result<(), Box<dyn Error>> {
+    fn drain_xcb_events(&mut self) -> core::result::Result<(), ConnectionError> {
         // the X server has a tendency to send spurious/extraneous configure notify events when a
         // window is resized, and we need to batch those together and just send one resize event
         // when they've all been coalesced.
@@ -66,7 +66,7 @@ impl EventLoop {
     }
 
     // Event loop
-    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn run(&mut self) -> Result<()> {
         let connection = Rc::clone(&self.window.connection);
         let mut poller = ConnectionPoller::new(&connection.conn)?;
 
@@ -91,7 +91,7 @@ impl EventLoop {
             self.drain_xcb_events()?;
 
             // FIXME: handle errors
-            if let PollStatus::ReadAvailable = poller.wait(next_frame).unwrap() {
+            if let PollStatus::ReadAvailable = poller.wait(next_frame)? {
                 self.drain_xcb_events()?;
             }
 

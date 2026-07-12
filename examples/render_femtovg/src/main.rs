@@ -1,7 +1,8 @@
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::gl::{GlConfig, GlContext};
 use baseview::{
-    Event, EventStatus, MouseEvent, WindowContext, WindowHandler, WindowOpenOptions, WindowSize,
+    Event, EventStatus, HandlerError, MouseEvent, WindowContext, WindowHandler, WindowOpenOptions,
+    WindowSize,
 };
 use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
@@ -17,28 +18,27 @@ struct FemtovgExample {
 }
 
 impl FemtovgExample {
-    fn new(window_context: WindowContext) -> Self {
+    fn new(window_context: WindowContext) -> Result<Self, HandlerError> {
         let gl_context = window_context.gl_context().unwrap();
         unsafe { gl_context.make_current() };
 
         let renderer = unsafe {
             OpenGl::new_from_function(|s| gl_context.get_proc_address(&CString::new(s).unwrap()))
-        }
-        .unwrap();
+        }?;
 
-        let mut canvas = Canvas::new(renderer).unwrap();
+        let mut canvas = Canvas::new(renderer)?;
         let size = window_context.size();
 
         canvas.set_size(size.physical.width, size.physical.height, size.scale_factor as f32);
 
         unsafe { gl_context.make_not_current() };
-        Self {
+        Ok(Self {
             gl_context,
             window_context,
             canvas: canvas.into(),
             damaged: true.into(),
             current_mouse_position: Cell::new(PhysicalPosition::default()),
-        }
+        })
     }
 }
 
@@ -119,7 +119,7 @@ fn main() {
         .with_size(LogicalSize::new(512, 512))
         .with_gl_config(GlConfig { alpha_bits: 8, ..GlConfig::default() });
 
-    baseview::create_window(window_open_options, FemtovgExample::new).run_until_closed();
+    baseview::create_window(window_open_options, FemtovgExample::new).unwrap().run_until_closed();
 }
 
 fn log_event(event: &Event) {

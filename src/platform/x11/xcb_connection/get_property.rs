@@ -41,34 +41,40 @@ use std::error::Error;
 use std::ffi::c_int;
 use std::fmt;
 use std::mem;
-use std::sync::Arc;
 
 use bytemuck::Pod;
-
-use x11rb::errors::ReplyError;
+use x11rb::errors::{ConnectionError, ReplyError};
 use x11rb::protocol::xproto::{self, ConnectionExt};
 use x11rb::xcb_ffi::XCBConnection;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum GetPropertyError {
-    X11rbError(Arc<ReplyError>),
+    ConnectionError(ConnectionError),
+    ReplyError(ReplyError),
     TypeMismatch(xproto::Atom),
     FormatMismatch(c_int),
-}
-
-impl<T: Into<ReplyError>> From<T> for GetPropertyError {
-    fn from(e: T) -> Self {
-        Self::X11rbError(Arc::new(e.into()))
-    }
 }
 
 impl fmt::Display for GetPropertyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GetPropertyError::X11rbError(err) => err.fmt(f),
             GetPropertyError::TypeMismatch(err) => write!(f, "type mismatch: {err}"),
             GetPropertyError::FormatMismatch(err) => write!(f, "format mismatch: {err}"),
+            GetPropertyError::ConnectionError(e) => e.fmt(f),
+            GetPropertyError::ReplyError(e) => e.fmt(f),
         }
+    }
+}
+
+impl From<ConnectionError> for GetPropertyError {
+    fn from(e: ConnectionError) -> Self {
+        GetPropertyError::ConnectionError(e)
+    }
+}
+
+impl From<ReplyError> for GetPropertyError {
+    fn from(e: ReplyError) -> Self {
+        GetPropertyError::ReplyError(e)
     }
 }
 
@@ -161,12 +167,12 @@ impl<'a, T: Pod> PropIterator<'a, T> {
 
         // Make sure that the reply is of the correct type.
         if reply.type_ != self.property_type {
-            return Err(GetPropertyError::TypeMismatch(reply.type_));
+            return Err(GetPropertyError::TypeMismatch(reply.type_).into());
         }
 
         // Make sure that the reply is of the correct format.
         if reply.format != self.format {
-            return Err(GetPropertyError::FormatMismatch(reply.format.into()));
+            return Err(GetPropertyError::FormatMismatch(reply.format.into()).into());
         }
 
         // Append the data to the output.

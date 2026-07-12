@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::hash_map::{Entry, HashMap};
-use std::error::Error;
 use std::sync::Arc;
 use x11rb::connection::Connection;
 use x11rb::cursor::Handle as CursorHandle;
@@ -8,6 +7,7 @@ use x11rb::protocol::xproto::{self, Cursor, Screen};
 use x11rb::resource_manager;
 
 use super::cursor;
+use crate::platform::*;
 use crate::wrappers::xlib::XlibXcbConnection;
 use crate::MouseCursor;
 
@@ -51,7 +51,7 @@ pub struct X11Connection {
 }
 
 impl X11Connection {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
+    pub fn new() -> Result<Self> {
         let conn = XlibXcbConnection::open()?;
         let screen = conn.default_screen();
         let xcb_conn = conn.xcb_connection();
@@ -79,7 +79,7 @@ impl X11Connection {
     }
 
     #[inline]
-    pub fn get_cursor(&self, cursor: MouseCursor) -> Result<Cursor, Box<dyn Error>> {
+    pub fn get_cursor(&self, cursor: MouseCursor) -> Result<Cursor> {
         // PANIC: this function is the only point where we access the cache, and we never call
         // external functions that may make a reentrant call to this function
         let mut cursor_cache = self.cursor_cache.borrow_mut();
@@ -105,7 +105,7 @@ impl X11Connection {
 
     pub fn get_property<T: bytemuck::Pod>(
         &self, window: xproto::Window, property: xproto::Atom, property_type: xproto::Atom,
-    ) -> Result<Vec<T>, GetPropertyError> {
-        self::get_property::get_property(window, property, property_type, &self.conn)
+    ) -> core::result::Result<Vec<T>, GetPropertyError> {
+        get_property::get_property(window, property, property_type, &self.conn)
     }
 }

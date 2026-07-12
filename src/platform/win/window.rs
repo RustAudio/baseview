@@ -1,4 +1,4 @@
-use windows_core::{ComObject, Result, HSTRING};
+use windows_core::{ComObject, HSTRING};
 use windows_sys::Win32::{
     Foundation::{LPARAM, LRESULT, RECT, WPARAM},
     UI::{
@@ -23,6 +23,7 @@ use super::drop_target::DropTarget;
 use super::*;
 use crate::handler::WindowHandlerBuilder;
 use crate::platform::win::window_state::WindowState;
+use crate::platform::Error;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
@@ -98,7 +99,7 @@ pub struct BaseviewWindow {
 }
 
 impl WindowImpl for BaseviewWindow {
-    fn after_create(&self, window: HWnd) -> Result<()> {
+    fn after_create(&self, window: HWnd) -> core::result::Result<(), Error> {
         let hwnd = window.as_raw();
         let window_state = &self.window_state;
 
@@ -145,7 +146,7 @@ impl WindowImpl for BaseviewWindow {
 
         let handler = {
             let context = crate::WindowContext::new(Rc::clone(&self.window_state));
-            self.handler_builder.take().unwrap().build(context)
+            self.handler_builder.take().unwrap().build(context)?
         };
         let Ok(()) = window_state.handler.set(handler) else { unreachable!() };
 
@@ -407,8 +408,10 @@ unsafe fn wnd_proc_inner(
 }
 
 impl WindowHandle {
-    pub fn create_window(options: WindowOpenOptions, build: WindowHandlerBuilder) -> WindowHandle {
-        let extended_user_32 = ExtendedUser32::load().unwrap();
+    pub fn create_window(
+        options: WindowOpenOptions, build: WindowHandlerBuilder,
+    ) -> Result<WindowHandle> {
+        let extended_user_32 = ExtendedUser32::load()?;
         let title = HSTRING::from(options.title);
 
         let scaling_factor = match options.scale {
@@ -423,10 +426,9 @@ impl WindowHandle {
         } else {
             WindowStyle::embedded()
         };
-        let dpi_ctx = DpiAwarenessContext::new(&extended_user_32).unwrap();
+        let dpi_ctx = DpiAwarenessContext::new(&extended_user_32)?;
 
-        let rect =
-            dpi_ctx.client_area_to_nc_area(window_size.into(), style, Dpi::default()).unwrap();
+        let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, Dpi::default())?;
 
         let is_open = Rc::new(Cell::new(true));
 
@@ -455,19 +457,18 @@ impl WindowHandle {
 
         let parent = options.parent.map(|p| p.handle);
 
-        let window =
-            create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer).unwrap();
+        let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
 
         // FIXME: this SetTimer call could be in after_create, but for some reason it changes the ordering
         // for a parent+child window situation, which results in the parent drawing over the child.
         // This timer should be replaced by proper window redrawing/damage/vsync handling, but this
         // would be a breaking change, so we'll do that later.
         // TODO: create a new timer instead of hard-coding a specific ID
-        window.set_timer(WIN_FRAME_TIMER, 15).unwrap();
+        window.set_timer(WIN_FRAME_TIMER, 15)?;
 
         window.show_and_activate();
 
-        WindowHandle { hwnd: Some(window).into(), is_open: Rc::clone(&is_open) }
+        Ok(WindowHandle { hwnd: Some(window).into(), is_open: Rc::clone(&is_open) })
     }
 }
 

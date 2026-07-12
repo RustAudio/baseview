@@ -1,5 +1,4 @@
 use std::cell::Cell;
-use std::error::Error;
 use std::num::NonZero;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -7,13 +6,12 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use x11rb::connection::Connection;
-
 use super::X11Connection;
 use super::{event_loop::EventLoop, visual_info::WindowVisualConfig};
 use crate::handler::WindowHandlerBuilder;
 use crate::platform::x11::window_shared::WindowInner;
 use crate::platform::x11::xcb_window::XcbWindow;
+use crate::platform::Result;
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::*;
 
@@ -27,17 +25,18 @@ pub struct WindowHandle {
 impl WindowHandle {
     pub fn create_window(
         options: WindowOpenOptions, handler: WindowHandlerBuilder,
-    ) -> WindowHandle {
+    ) -> Result<WindowHandle> {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
         let (parent_handle, mut window_handle) = ParentHandle::new();
         let join_handle = thread::spawn(move || {
+            // TODO: properly handle crashes here
             Window::window_thread(options, handler, tx.clone(), Some(parent_handle)).unwrap();
         });
 
-        let raw_window_handle = rx.recv().unwrap().unwrap();
+        let raw_window_handle = rx.recv().unwrap()?;
         window_handle.window_id = Some(raw_window_handle);
         window_handle.event_loop_handle = Some(join_handle).into();
-        window_handle
+        Ok(window_handle)
     }
 
     pub fn run_until_closed(self) {
@@ -94,13 +93,13 @@ impl Drop for ParentHandle {
 
 pub struct Window;
 
-type WindowOpenResult = Result<NonZero<x11rb::protocol::xproto::Window>, ()>;
+type WindowOpenResult = Result<NonZero<x11rb::protocol::xproto::Window>>;
 
 impl Window {
     fn window_thread(
         options: WindowOpenOptions, build: WindowHandlerBuilder,
         tx: mpsc::SyncSender<WindowOpenResult>, parent_handle: Option<ParentHandle>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<()> {
         // Connect to the X server
         let xcb_connection = X11Connection::new()?;
 
@@ -130,19 +129,29 @@ impl Window {
             options.parent.map(|p| p.window_id),
         )?;
 
-        x_window.map_window()?;
-        x_window.set_title(&options.title)?;
-        x_window.enable_wm_protocols()?;
-        x_window.enable_dnd_protocols()?;
+        let cookies = [
+            x_window.map_window()?,
+            x_window.set_title(&options.title)?,
+            x_window.enable_wm_protocols()?,
+            x_window.enable_dnd_protocols()?,
+        ];
 
-        xcb_connection.conn.flush()?;
+        for cookie in cookies {
+            cookie.check()?;
+        }
 
         #[cfg(feature = "opengl")]
-        let gl_context = visual_info.fb_config.map(|fb_config| {
-            // Because of the visual negotation we had to take some extra steps to create this context
-            super::gl::GlContextInner::create(&x_window, Rc::clone(&xcb_connection), fb_config)
-                .expect("Could not create OpenGL context")
-        });
+        let gl_context = match visual_info.fb_config {
+            None => None,
+            Some(fb_config) => {
+                // Because of the visual negotation we had to take some extra steps to create this context
+                Some(super::gl::GlContextInner::create(
+                    &x_window,
+                    Rc::clone(&xcb_connection),
+                    fb_config,
+                )?)
+            }
+        };
 
         let window_id = x_window.id();
         let inner = Rc::new(WindowInner::new(
@@ -150,7 +159,7 @@ impl Window {
             x_window,
             physical_size,
             scaling,
-            visual_info.visual_id.try_into()?,
+            visual_info.visual_id,
             #[cfg(feature = "opengl")]
             gl_context,
         ));

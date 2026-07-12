@@ -1,8 +1,10 @@
 mod xcb_connection;
 
-use raw_window_handle::{DisplayHandle, HasWindowHandle, RawWindowHandle, XcbWindowHandle};
-use std::fmt::Formatter;
-use std::num::{NonZero, NonZeroU32};
+use raw_window_handle::{
+    DisplayHandle, HandleError, HasWindowHandle, RawWindowHandle, XcbWindowHandle,
+};
+use std::fmt::{Display, Formatter};
+use std::num::{NonZero, NonZeroU32, TryFromIntError};
 use std::rc::Rc;
 use std::sync::Arc;
 pub(crate) use xcb_connection::X11Connection;
@@ -12,12 +14,16 @@ pub use window::*;
 
 mod cursor;
 mod drag_n_drop;
+mod error;
 mod event_loop;
 mod keyboard;
 mod visual_info;
 mod xcb_window;
 
 mod window_shared;
+
+pub use error::{CookieExt as _, Error};
+pub(crate) type Result<T> = std::result::Result<T, Error>;
 
 use crate::platform::x11::window_shared::WindowInner;
 use crate::wrappers::xlib::XlibXcbConnection;
@@ -31,13 +37,13 @@ pub mod gl;
 pub struct PlatformHandle {
     connection: Arc<XlibXcbConnection>,
     window_id: NonZero<x11rb::protocol::xproto::Window>,
-    visual_id: NonZero<x11rb::protocol::xproto::Visualid>,
+    visual_id: x11rb::protocol::xproto::Visualid,
 }
 
 impl PlatformHandle {
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
         let mut handle = XcbWindowHandle::new(self.window_id);
-        handle.visual_id = Some(self.visual_id);
+        handle.visual_id = NonZero::new(self.visual_id);
         Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
     }
 
@@ -64,13 +70,49 @@ pub struct ParentWindowHandle {
 }
 
 impl ParentWindowHandle {
-    pub fn extract(window: &impl HasWindowHandle) -> Self {
-        let window_id = match window.window_handle().unwrap().as_raw() {
-            RawWindowHandle::Xlib(h) => NonZeroU32::new(h.window.try_into().unwrap()).unwrap(),
+    pub fn extract(
+        window: &impl HasWindowHandle,
+    ) -> core::result::Result<Self, ParentWindowHandleError> {
+        let window_id = match window.window_handle()?.as_raw() {
+            RawWindowHandle::Xlib(h) => {
+                NonZeroU32::new(h.window.try_into()?).ok_or(ParentWindowHandleError::NullId)?
+            }
             RawWindowHandle::Xcb(h) => h.window,
-            h => panic!("unsupported parent handle type {:?}", h),
+            h => Err(ParentWindowHandleError::UnsupportedWindowHandleType(h))?,
         };
 
-        Self { window_id }
+        Ok(Self { window_id })
+    }
+}
+
+pub enum ParentWindowHandleError {
+    HandleError(HandleError),
+    UnsupportedWindowHandleType(RawWindowHandle),
+    InvalidU32(TryFromIntError),
+    NullId,
+}
+
+impl From<HandleError> for ParentWindowHandleError {
+    fn from(value: HandleError) -> Self {
+        Self::HandleError(value)
+    }
+}
+
+impl From<TryFromIntError> for ParentWindowHandleError {
+    fn from(value: TryFromIntError) -> Self {
+        Self::InvalidU32(value)
+    }
+}
+
+impl Display for ParentWindowHandleError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParentWindowHandleError::HandleError(e) => e.fmt(f),
+            ParentWindowHandleError::UnsupportedWindowHandleType(h) => {
+                write!(f, "Unsupported window handle type on X11: {h:?}")
+            }
+            ParentWindowHandleError::InvalidU32(e) => write!(f, "Invalid window XID: {e}"),
+            ParentWindowHandleError::NullId => f.write_str("Window XID is zero"),
+        }
     }
 }

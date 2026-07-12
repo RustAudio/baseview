@@ -1,5 +1,7 @@
 use baseview::dpi::{LogicalSize, PhysicalSize};
-use baseview::{Event, EventStatus, WindowContext, WindowHandler, WindowOpenOptions, WindowSize};
+use baseview::{
+    Event, EventStatus, HandlerError, WindowContext, WindowHandler, WindowOpenOptions, WindowSize,
+};
 
 use log::LevelFilter;
 use std::cell::RefCell;
@@ -16,12 +18,12 @@ struct WgpuExample {
 }
 
 impl WgpuExample {
-    async fn new(context: WindowContext) -> Self {
+    async fn new(context: WindowContext) -> Result<Self, HandlerError> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
             Box::new(context.platform_handle()),
         ));
 
-        let surface = instance.create_surface(context.platform_handle()).unwrap();
+        let surface = instance.create_surface(context.platform_handle())?;
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -31,8 +33,7 @@ impl WgpuExample {
                 compatible_surface: Some(&surface),
                 ..Default::default()
             })
-            .await
-            .expect("Failed to find an appropriate adapter");
+            .await?;
 
         // Create the logical device and command queue
         let (device, queue) = adapter
@@ -44,8 +45,7 @@ impl WgpuExample {
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                 ..Default::default()
             })
-            .await
-            .expect("Failed to create device");
+            .await?;
 
         const SHADER: &str = "
             const VERTS = array(
@@ -116,7 +116,7 @@ impl WgpuExample {
         let surface_config = surface.get_default_config(&adapter, width, height).unwrap();
         surface.configure(&device, &surface_config);
 
-        Self {
+        Ok(Self {
             window_context: context,
 
             instance,
@@ -125,7 +125,7 @@ impl WgpuExample {
             queue,
             surface: surface.into(),
             surface_config: surface_config.into(),
-        }
+        })
     }
 }
 
@@ -209,6 +209,7 @@ fn main() {
         .with_size(LogicalSize::new(512, 512));
 
     baseview::create_window(window_open_options, |c| pollster::block_on(WgpuExample::new(c)))
+        .unwrap()
         .run_until_closed();
 }
 
