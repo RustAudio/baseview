@@ -6,7 +6,7 @@ use std::sync::Arc;
 use windows_core::{Error, Result, HSTRING};
 use windows_sys::core::PCWSTR;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    LoadCursorW, RegisterClassW, UnregisterClassW, CS_OWNDC, IDC_ARROW, WNDCLASSW, WNDPROC,
+    LoadCursorW, RegisterClassW, UnregisterClassW, IDC_ARROW, WNDCLASSW, WNDPROC,
 };
 
 #[derive(Clone)]
@@ -22,7 +22,7 @@ impl RegisteredClass {
             hInstance: instance.as_raw(),
             lpszClassName: class_name.as_ptr(),
 
-            style: CS_OWNDC, // TODO: this is very suspicious
+            style: 0,
             cbClsExtra: 0,
             cbWndExtra: 0,
             hIcon: null_mut(),                                      // Default icon

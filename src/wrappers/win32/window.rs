@@ -3,6 +3,12 @@ mod handle;
 mod proc;
 mod window_class;
 
+#[cfg(feature = "opengl")]
+mod dc;
+
+#[cfg(feature = "opengl")]
+pub use dc::*;
+
 use data::WindowData;
 use dpi::PhysicalSize;
 pub use handle::HWnd;
@@ -16,7 +22,7 @@ use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::style::WindowStyle;
 use crate::wrappers::win32::DpiAwarenessContext;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW;
+use windows_sys::Win32::UI::WindowsAndMessaging::{CreateWindowExW, CW_USEDEFAULT};
 
 pub trait WindowImpl: 'static {
     /// Called during the processing of the WM_CREATE message, but after this type was properly
@@ -81,4 +87,31 @@ pub fn create_window<W: WindowImpl>(
     let hwnd = unsafe { HWnd::from_raw(hwnd) };
 
     Ok(hwnd)
+}
+
+pub fn with_dummy_window<T>(handler: impl FnOnce(HWnd) -> Result<T>) -> Result<T> {
+    let instance = HInstance::get_from_dll();
+    let window_class = RegisteredClass::register_new(instance, None)?;
+    let hwnd = unsafe {
+        CreateWindowExW(
+            0,
+            window_class.as_atom_ptr(),
+            null_mut(),
+            0,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            null_mut(),
+            null_mut(),
+            instance.as_raw(),
+            null_mut(),
+        )
+    };
+
+    if hwnd.is_null() {
+        return Err(Error::from_thread());
+    }
+
+    handler(hwnd)
 }
