@@ -52,7 +52,7 @@ const WIN_FRAME_TIMER: NonZeroUsize = match NonZeroUsize::new(4242) {
 };
 
 pub struct WindowHandle {
-    hwnd: Cell<Option<HWND>>,
+    hwnd: Cell<Option<HWnd>>,
     is_open: Rc<Cell<bool>>,
 }
 
@@ -60,7 +60,7 @@ impl WindowHandle {
     pub fn close(&self) {
         if let Some(hwnd) = self.hwnd.take() {
             unsafe {
-                PostMessageW(hwnd, BV_WINDOW_MUST_CLOSE, 0, 0);
+                PostMessageW(hwnd.as_raw(), BV_WINDOW_MUST_CLOSE, 0, 0);
             }
         }
     }
@@ -127,7 +127,7 @@ impl WindowImpl for BaseviewWindow {
             }
         }
 
-        let drop_target = ComObject::new(DropTarget::new(Rc::downgrade(window_state)));
+        let drop_target = ComObject::new(DropTarget::new(Rc::downgrade(window_state), window));
         self._drop_target.set(Some(drop_target.clone()));
 
         ole_initialize()?;
@@ -457,12 +457,8 @@ impl Window {
             let extended_user_32 = extended_user_32.clone();
 
             move |hwnd: HWnd| {
-                let window_state = Rc::new(WindowState::new(
-                    hwnd.as_raw(),
-                    window_size,
-                    options.scale,
-                    extended_user_32,
-                ));
+                let window_state =
+                    Rc::new(WindowState::new(hwnd, window_size, options.scale, extended_user_32));
 
                 BaseviewWindow {
                     window_state,
@@ -479,12 +475,9 @@ impl Window {
             }
         };
 
-        let hwnd =
+        let window =
             create_window(&title, style, rect.size(), parent as *mut _, &dpi_ctx, initializer)
                 .unwrap();
-
-        // SAFETY: this handle should be safe to use
-        let window = unsafe { HWnd::from_raw(hwnd) };
 
         // FIXME: this SetTimer call could be in after_create, but for some reason it changes the ordering
         // for a parent+child window situation, which results in the parent drawing over the child.
@@ -495,7 +488,7 @@ impl Window {
 
         window.show_and_activate();
 
-        WindowHandle { hwnd: Some(hwnd).into(), is_open: Rc::clone(&is_open) }
+        WindowHandle { hwnd: Some(window).into(), is_open: Rc::clone(&is_open) }
     }
 }
 
