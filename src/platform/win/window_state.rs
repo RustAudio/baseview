@@ -9,13 +9,12 @@ use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, OnceCell, Ref, RefCell};
 use std::num::NonZeroIsize;
-use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 /// All data associated with the window.
 pub(crate) struct WindowState {
     /// The HWND belonging to this window.
-    pub hwnd: HWND,
+    pub hwnd: HWnd,
     pub current_size: Cell<PhysicalSize<u32>>,
     pub current_dpi: Cell<Dpi>, // None if in non-system scale policy
     pub keyboard_state: RefCell<KeyboardState>,
@@ -34,7 +33,7 @@ pub(crate) struct WindowState {
 
 impl WindowState {
     pub fn new(
-        hwnd: HWND, current_size: PhysicalSize<u32>, scale_policy: WindowScalePolicy,
+        hwnd: HWnd, current_size: PhysicalSize<u32>, scale_policy: WindowScalePolicy,
         user32: ExtendedUser32,
     ) -> Self {
         Self {
@@ -92,21 +91,21 @@ impl WindowState {
 
     pub fn request_close(&self) {
         unsafe {
-            PostMessageW(self.hwnd, crate::platform::win::window::BV_WINDOW_MUST_CLOSE, 0, 0);
+            PostMessageW(
+                self.hwnd.as_raw(),
+                crate::platform::win::window::BV_WINDOW_MUST_CLOSE,
+                0,
+                0,
+            );
         }
     }
 
     pub fn has_focus(&self) -> bool {
-        HWnd::get_focused_window() == self.hwnd
+        HWnd::get_focused_window() == self.hwnd.as_raw()
     }
 
     pub fn focus(&self) {
-        self.hwnd().set_focus().unwrap()
-    }
-
-    fn hwnd(&self) -> HWnd {
-        // SAFETY: this handle should be safe to use
-        unsafe { HWnd::from_raw(self.hwnd) }
+        self.hwnd.set_focus().unwrap()
     }
 
     pub fn resize(&self, size: Size) {
@@ -115,7 +114,7 @@ impl WindowState {
         let dpi = self.current_dpi.get();
         let new_size = size.to_physical(dpi.scale_factor());
 
-        self.hwnd().resize_and_activate(new_size, dpi, &self.user32).unwrap();
+        self.hwnd.resize_and_activate(new_size, dpi, &self.user32).unwrap();
     }
 
     pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) {
@@ -132,7 +131,7 @@ impl WindowState {
     }
 
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
-        let Some(hwnd) = NonZeroIsize::new(self.hwnd as _) else { unreachable!() };
+        let Some(hwnd) = NonZeroIsize::new(self.hwnd.as_raw() as _) else { unreachable!() };
         let mut handle = Win32WindowHandle::new(hwnd);
         handle.hinstance = Some(HInstance::get_from_dll().addr());
 
@@ -144,7 +143,7 @@ impl WindowState {
     }
 
     pub fn platform_handle(&self) -> PlatformHandle {
-        let Some(hwnd) = NonZeroIsize::new(self.hwnd as _) else { unreachable!() };
+        let Some(hwnd) = NonZeroIsize::new(self.hwnd.as_raw() as _) else { unreachable!() };
         PlatformHandle { hwnd }
     }
 }

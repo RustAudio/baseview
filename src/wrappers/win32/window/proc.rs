@@ -11,6 +11,7 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
     window: HWND, message_code: u32, w_param: WPARAM, l_param: LPARAM,
 ) -> LRESULT {
     let handle_default = || unsafe { DefWindowProcW(window, message_code, w_param, l_param) };
+    let Some(window) = NonNull::new(window) else { return -1 };
     let window = unsafe { HWnd::from_raw(window) };
 
     match message_code {

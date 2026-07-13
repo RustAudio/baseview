@@ -10,15 +10,15 @@ use windows::Win32::System::Com::{IDataObject, DVASPECT_CONTENT, FORMATETC, TYME
 use windows::Win32::System::Ole::*;
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows_core::Ref;
-use windows_sys::Win32::{
-    Foundation::POINT, Graphics::Gdi::ScreenToClient, UI::Shell::DragQueryFileW,
-};
+use windows_sys::Win32::UI::Shell::DragQueryFileW;
 
 use super::window_state::WindowState;
+use crate::wrappers::win32::window::HWnd;
 use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent};
 
 #[implement(IDropTarget)]
 pub(crate) struct DropTarget {
+    hwnd: HWnd,
     window_state: Weak<WindowState>,
 
     // These are cached since DragOver and DragLeave callbacks don't provide them,
@@ -28,8 +28,9 @@ pub(crate) struct DropTarget {
 }
 
 impl DropTarget {
-    pub(crate) fn new(window_state: Weak<WindowState>) -> Self {
+    pub(crate) fn new(window_state: Weak<WindowState>, hwnd: HWnd) -> Self {
         Self {
+            hwnd,
             window_state,
             drag_position: Cell::new(PhysicalPosition::new(0, 0)),
             drop_data: RefCell::new(DropData::None),
@@ -42,29 +43,27 @@ impl DropTarget {
             return;
         };
 
-        unsafe {
-            let event = Event::Mouse(event);
-            let event_status = window_state.handle_event(event);
+        let event = Event::Mouse(event);
+        let event_status = window_state.handle_event(event);
 
-            if let Some(pdwEffect) = pdwEffect {
-                match event_status {
-                    EventStatus::AcceptDrop(DropEffect::Copy) => *pdwEffect = DROPEFFECT_COPY,
-                    EventStatus::AcceptDrop(DropEffect::Move) => *pdwEffect = DROPEFFECT_MOVE,
-                    EventStatus::AcceptDrop(DropEffect::Link) => *pdwEffect = DROPEFFECT_LINK,
-                    EventStatus::AcceptDrop(DropEffect::Scroll) => *pdwEffect = DROPEFFECT_SCROLL,
-                    _ => *pdwEffect = DROPEFFECT_NONE,
-                }
-            }
+        let effect = match event_status {
+            EventStatus::AcceptDrop(DropEffect::Copy) => DROPEFFECT_COPY,
+            EventStatus::AcceptDrop(DropEffect::Move) => DROPEFFECT_MOVE,
+            EventStatus::AcceptDrop(DropEffect::Link) => DROPEFFECT_LINK,
+            EventStatus::AcceptDrop(DropEffect::Scroll) => DROPEFFECT_SCROLL,
+            _ => DROPEFFECT_NONE,
+        };
+
+        if let Some(pdwEffect) = pdwEffect {
+            unsafe { pdwEffect.write(effect) };
         }
     }
 
     fn parse_coordinates(&self, pt: POINTL) {
-        let Some(window_state) = self.window_state.upgrade() else {
+        let Ok(phy_point) = self.hwnd.screen_to_client(PhysicalPosition::new(pt.x, pt.y)) else {
             return;
         };
-        let mut pt = POINT { x: pt.x, y: pt.y };
-        unsafe { ScreenToClient(window_state.hwnd, &mut pt as *mut POINT) };
-        let phy_point = PhysicalPosition::new(pt.x, pt.y);
+
         self.drag_position.set(phy_point);
     }
 

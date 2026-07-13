@@ -7,7 +7,7 @@ use data::WindowData;
 use dpi::PhysicalSize;
 pub use handle::HWnd;
 pub use proc::wnd_proc;
-use std::ptr::null_mut;
+use std::ptr::{null_mut, NonNull};
 use std::rc::Rc;
 use window_class::RegisteredClass;
 use windows_core::{Error, Result, HSTRING};
@@ -53,7 +53,7 @@ pub trait WindowImpl: 'static {
 pub fn create_window<W: WindowImpl>(
     title: &HSTRING, style: WindowStyle, nc_size: PhysicalSize<u32>, parent: HWND,
     _dpi_ctx: &DpiAwarenessContext, initializer: impl FnOnce(HWnd) -> W + 'static,
-) -> Result<HWND> {
+) -> Result<HWnd> {
     let instance = HInstance::get_from_dll();
     let window_class = RegisteredClass::register_new(instance, Some(wnd_proc::<W>))?;
 
@@ -76,9 +76,9 @@ pub fn create_window<W: WindowImpl>(
         )
     };
 
-    if hwnd.is_null() {
-        return Err(Error::from_thread());
-    }
+    let Some(hwnd) = NonNull::new(hwnd) else { return Err(Error::from_thread()) };
+    // SAFETY: This Hwnd is valid since it came from CreateWindowExW
+    let hwnd = unsafe { HWnd::from_raw(hwnd) };
 
     Ok(hwnd)
 }
