@@ -109,9 +109,9 @@ pub fn with_dummy_window<T>(handler: impl FnOnce(HWnd) -> Result<T>) -> Result<T
         )
     };
 
-    if hwnd.is_null() {
-        return Err(Error::from_thread());
-    }
+    let Some(hwnd) = NonNull::new(hwnd) else { return Err(Error::from_thread()) };
+    // SAFETY: This Hwnd is valid since it came from CreateWindowExW
+    let hwnd = unsafe { HWnd::from_raw(hwnd) };
 
     handler(hwnd)
 }
