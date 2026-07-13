@@ -1,3 +1,4 @@
+use crate::gl::GlConfig;
 use crate::wrappers::win32::window::HWnd;
 use std::ffi::c_void;
 use std::num::{NonZero, NonZeroI32};
@@ -5,9 +6,9 @@ use std::ptr::{null_mut, NonNull};
 use windows_core::{Error, Result};
 use windows_sys::Win32::Graphics::Gdi::{GetDC, HDC};
 use windows_sys::Win32::Graphics::OpenGL::{
-    wglCreateContext, wglDeleteContext, wglGetCurrentContext, wglMakeCurrent, ChoosePixelFormat,
-    DescribePixelFormat, SetPixelFormat, PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE,
-    PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
+    wglCreateContext, wglDeleteContext, wglGetCurrentContext, wglGetProcAddress, wglMakeCurrent,
+    ChoosePixelFormat, DescribePixelFormat, SetPixelFormat, SwapBuffers, PFD_DOUBLEBUFFER,
+    PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
 };
 
 pub struct OwnDeviceContext {
@@ -23,7 +24,7 @@ impl OwnDeviceContext {
         Ok(Self { inner: dc })
     }
 
-    fn as_raw(&self) -> HDC {
+    pub fn as_raw(&self) -> HDC {
         self.inner.as_ptr()
     }
 
@@ -79,6 +80,15 @@ impl OwnDeviceContext {
         let ctx = NonNull::new(ctx).ok_or_else(Error::from_thread)?;
 
         Ok(WglContext { inner: ctx })
+    }
+
+    pub fn swap_buffers(&self) -> Result<()> {
+        let result = unsafe { SwapBuffers(self.as_raw()) };
+        if result == 0 {
+            return Err(Error::from_thread());
+        }
+
+        Ok(())
     }
 }
 
@@ -156,6 +166,14 @@ impl Default for PixelFormat {
 }
 
 impl PixelFormat {
+    pub fn from_config(config: &GlConfig) -> Self {
+        Self {
+            alpha_bits: config.alpha_bits,
+            depth_bits: config.depth_bits,
+            stencil_bits: config.stencil_bits,
+        }
+    }
+
     pub fn to_raw_descriptor(&self) -> PIXELFORMATDESCRIPTOR {
         PIXELFORMATDESCRIPTOR {
             nSize: size_of::<PIXELFORMATDESCRIPTOR>() as u16,

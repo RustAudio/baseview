@@ -3,26 +3,17 @@ use std::rc::Rc;
 use windows_sys::{
     core::s,
     Win32::{
-        Foundation::{FreeLibrary, HMODULE, HWND},
-        Graphics::{
-            Gdi::{GetDC, ReleaseDC, HDC},
-            OpenGL::{
-                wglCreateContext, wglDeleteContext, wglGetProcAddress, wglMakeCurrent,
-                ChoosePixelFormat, DescribePixelFormat, SetPixelFormat, SwapBuffers, HGLRC,
-                PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL,
-                PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
-            },
-        },
+        Foundation::{FreeLibrary, HMODULE},
+        Graphics::OpenGL::{wglGetProcAddress, wglMakeCurrent},
         System::LibraryLoader::{GetProcAddress, LoadLibraryA},
-        UI::WindowsAndMessaging::{DestroyWindow, UnregisterClassW},
     },
 };
 
 use crate::gl::*;
-use crate::wrappers::win32::window::{with_dummy_window, HWnd, PixelFormat};
-// See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_create_context.txt
-
-type WglCreateContextAttribsARB = extern "system" fn(HDC, HGLRC, *const i32) -> HGLRC;
+use crate::wrappers::win32::window::{
+    with_dummy_window, HWnd, MissingExtensionFunctionError, OwnDeviceContext, PixelFormat,
+    WglContext, WglExtra,
+};
 
 const WGL_CONTEXT_MAJOR_VERSION_ARB: i32 = 0x2091;
 const WGL_CONTEXT_MINOR_VERSION_ARB: i32 = 0x2092;
@@ -30,11 +21,6 @@ const WGL_CONTEXT_PROFILE_MASK_ARB: i32 = 0x9126;
 
 const WGL_CONTEXT_CORE_PROFILE_BIT_ARB: i32 = 0x00000001;
 const WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB: i32 = 0x00000002;
-
-// See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_pixel_format.txt
-
-type WglChoosePixelFormatARB =
-    extern "system" fn(HDC, *const i32, *const f32, u32, *mut i32, *mut u32) -> i32;
 
 const WGL_DRAW_TO_WINDOW_ARB: i32 = 0x2001;
 const WGL_ACCELERATION_ARB: i32 = 0x2003;
@@ -60,11 +46,18 @@ const WGL_SAMPLES_ARB: i32 = 0x2042;
 
 const WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB: i32 = 0x20A9;
 
-// See https://www.khronos.org/registry/OpenGL/extensions/EXT/WGL_EXT_swap_control.txt
+#[derive(Debug)]
+pub enum CreationFailedError {
+    Win32(windows_core::Error),
+    MissingWglExtension(MissingExtensionFunctionError),
+}
 
-type WglSwapIntervalEXT = extern "system" fn(i32) -> i32;
+impl From<windows_core::Error> for CreationFailedError {
+    fn from(err: windows_core::Error) -> Self {
+        CreationFailedError::Win32(err)
+    }
+}
 
-pub type CreationFailedError = windows_core::Error;
 pub type GlContext = Rc<GlContextInner>;
 
 impl From<CreationFailedError> for GlError {
@@ -73,48 +66,23 @@ impl From<CreationFailedError> for GlError {
     }
 }
 
-#[allow(non_snake_case)]
-struct WglExtra {
-    wglCreateContextAttribsARB: Option<WglCreateContextAttribsARB>,
-    wglChoosePixelFormatARB: Option<WglChoosePixelFormatARB>,
-    wglSwapIntervalEXT: Option<WglSwapIntervalEXT>,
-}
-
-impl WglExtra {
-    pub fn load() -> Self {
-        unsafe {
-            Self {
-                wglCreateContextAttribsARB: wglGetProcAddress(s!("wglCreateContextAttribsARB"))
-                    .map(|addr| std::mem::transmute(addr)),
-                wglChoosePixelFormatARB: wglGetProcAddress(s!("wglChoosePixelFormatARB"))
-                    .map(|addr| std::mem::transmute(addr)),
-                wglSwapIntervalEXT: wglGetProcAddress(s!("wglSwapIntervalEXT"))
-                    .map(|addr| std::mem::transmute(addr)),
-            }
-        }
-    }
-}
-
 pub struct GlContextInner {
-    hwnd: HWND,
-    hdc: HDC,
-    hglrc: HGLRC,
+    hwnd: HWnd,
+    hdc: OwnDeviceContext,
+    hglrc: WglContext,
     gl_library: HMODULE,
 }
 
 impl GlContextInner {
     pub unsafe fn create(window: HWnd, config: GlConfig) -> Result<Self, GlError> {
         // Create temporary window and context to load function pointers
-
         let extra = with_dummy_window(|hwnd_tmp| {
             let hdc = hwnd_tmp.get_own_dc()?;
             hdc.set_pixel_format(&PixelFormat::default())?;
 
             let wgl_ctx = hdc.create_wgl_context()?;
-            wgl_ctx.make_current(&hdc)?;
-
-            Ok(WglExtra::load())
-        })?;
+            wgl_ctx.with_current(&hdc, || WglExtra::load())
+        })??;
 
         // Create actual context
 
@@ -145,7 +113,7 @@ impl GlContextInner {
         let mut pixel_format = 0;
         let mut num_formats = 0;
         extra.wglChoosePixelFormatARB.unwrap()(
-            hdc,
+            hdc.as_raw(),
             pixel_format_attribs.as_ptr(),
             std::ptr::null(),
             1,
@@ -177,7 +145,7 @@ impl GlContextInner {
             ];
 
             extra.wglChoosePixelFormatARB.unwrap()(
-                hdc,
+                hdc.as_raw(),
                 pixel_format_attribs_fallback.as_ptr(),
                 std::ptr::null(),
                 1,
@@ -188,36 +156,10 @@ impl GlContextInner {
 
         // if no num_formats are found which happens in Wine for child windows, use fallback
         if num_formats == 0 {
-            let fallback_pfd = PIXELFORMATDESCRIPTOR {
-                nSize: std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16,
-                nVersion: 1,
-                dwFlags: PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
-                iPixelType: PFD_TYPE_RGBA,
-                cColorBits: 32,
-                cAlphaBits: config.alpha_bits,
-                cDepthBits: config.depth_bits,
-                cStencilBits: config.stencil_bits,
-                iLayerType: PFD_MAIN_PLANE as u8,
-                ..std::mem::zeroed()
-            };
-            pixel_format = ChoosePixelFormat(hdc, &fallback_pfd);
-        }
-
-        if pixel_format == 0 {
-            ReleaseDC(hwnd, hdc);
-            return Err(GlError::CreationFailed(()));
+            hdc.set_pixel_format(&PixelFormat::from_config(&config))?;
         }
 
         hdc.set_pixel_format_from_index(pixel_format)?;
-
-        let mut pfd: PIXELFORMATDESCRIPTOR = std::mem::zeroed();
-        DescribePixelFormat(
-            hdc,
-            pixel_format,
-            std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u32,
-            &mut pfd,
-        );
-        SetPixelFormat(hdc, pixel_format, &pfd);
 
         let profile_mask = match config.profile {
             Profile::Core => WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
@@ -251,11 +193,11 @@ impl GlContextInner {
     }
 
     pub unsafe fn make_current(&self) {
-        wglMakeCurrent(self.hdc, self.hglrc);
+        let _ = self.hglrc.make_current(&self.hdc);
     }
 
     pub unsafe fn make_not_current(&self) {
-        wglMakeCurrent(self.hdc, std::ptr::null_mut());
+        let _ = self.hglrc.make_not_current();
     }
 
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
@@ -273,18 +215,13 @@ impl GlContextInner {
     }
 
     pub fn swap_buffers(&self) {
-        unsafe {
-            SwapBuffers(self.hdc);
-        }
+        let _ = self.hdc.swap_buffers();
     }
 }
 
 impl Drop for GlContextInner {
     fn drop(&mut self) {
         unsafe {
-            wglMakeCurrent(std::ptr::null_mut(), std::ptr::null_mut());
-            wglDeleteContext(self.hglrc);
-            ReleaseDC(self.hwnd, self.hdc);
             FreeLibrary(self.gl_library);
         }
     }

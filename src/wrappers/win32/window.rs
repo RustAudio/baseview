@@ -5,9 +5,12 @@ mod window_class;
 
 #[cfg(feature = "opengl")]
 mod dc;
-
 #[cfg(feature = "opengl")]
 pub use dc::*;
+#[cfg(feature = "opengl")]
+mod wgl;
+#[cfg(feature = "opengl")]
+pub use wgl::*;
 
 use data::WindowData;
 use dpi::PhysicalSize;
