@@ -25,7 +25,7 @@ use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::style::WindowStyle;
 use crate::wrappers::win32::DpiAwarenessContext;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::UI::WindowsAndMessaging::{CreateWindowExW, CW_USEDEFAULT};
+use windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW;
 
 pub trait WindowImpl: 'static {
     /// Called during the processing of the WM_CREATE message, but after this type was properly
@@ -94,6 +94,8 @@ pub fn create_window<W: WindowImpl>(
 
 #[cfg(feature = "opengl")]
 pub fn with_dummy_window<T>(handler: impl FnOnce(HWnd) -> Result<T>) -> Result<T> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::CW_USEDEFAULT;
+
     let instance = HInstance::get_from_dll();
     let window_class = RegisteredClass::register_new(instance, None)?;
     let hwnd = unsafe {
