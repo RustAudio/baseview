@@ -100,20 +100,26 @@ impl WglExtra {
     pub fn load() -> Result<Self, MissingExtensionFunctionError> {
         unsafe {
             Ok(Self {
-                wglCreateContextAttribsARB: transmute(Self::load_fn(
-                    c"wglCreateContextAttribsARB",
+                wglCreateContextAttribsARB: transmute::<*const c_void, WglCreateContextAttribsARB>(
+                    Self::load_fn(c"wglCreateContextAttribsARB")?,
+                ),
+                wglChoosePixelFormatARB: transmute::<*const c_void, WglChoosePixelFormatARB>(
+                    Self::load_fn(c"wglChoosePixelFormatARB")?,
+                ),
+                wglSwapIntervalEXT: transmute::<*const c_void, WglSwapIntervalEXT>(Self::load_fn(
+                    c"wglSwapIntervalEXT",
                 )?),
-                wglChoosePixelFormatARB: transmute(Self::load_fn(c"wglChoosePixelFormatARB")?),
-                wglSwapIntervalEXT: transmute(Self::load_fn(c"wglSwapIntervalEXT")?),
             })
         }
     }
 
-    fn load_fn(
-        name: &'static CStr,
-    ) -> Result<unsafe extern "system" fn() -> isize, MissingExtensionFunctionError> {
-        unsafe { wglGetProcAddress(name.as_ptr() as *const u8) }
-            .ok_or_else(|| MissingExtensionFunctionError { name })
+    fn load_fn(name: &'static CStr) -> Result<*const c_void, MissingExtensionFunctionError> {
+        let ptr = unsafe { wglGetProcAddress(name.as_ptr() as *const u8) };
+
+        match ptr {
+            Some(ptr) => Ok(ptr as *const c_void),
+            None => Err(MissingExtensionFunctionError { name }),
+        }
     }
 
     pub fn create_context_for_config(

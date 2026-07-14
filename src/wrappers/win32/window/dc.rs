@@ -114,7 +114,7 @@ impl PixelFormat {
         }
     }
 
-    pub fn to_raw_descriptor(&self) -> PIXELFORMATDESCRIPTOR {
+    pub fn to_raw_descriptor(self) -> PIXELFORMATDESCRIPTOR {
         PIXELFORMATDESCRIPTOR {
             nSize: size_of::<PIXELFORMATDESCRIPTOR>() as u16,
             nVersion: 1,
