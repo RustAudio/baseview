@@ -93,8 +93,6 @@ impl WindowHandler for OpenWindowExample {
 
     fn on_event(&self, event: Event) -> EventStatus {
         match event {
-            #[cfg(target_os = "macos")]
-            Event::Mouse(MouseEvent::ButtonPressed { .. }) => copy_to_clipboard("This is a test!"),
             Event::Mouse(MouseEvent::CursorMoved { position, .. }) => {
                 self.mouse_pos.set(position);
                 self.damaged.set(true);
