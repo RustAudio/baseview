@@ -1,6 +1,5 @@
 ﻿use crate::wrappers::win32::style::WindowStyle;
 use crate::wrappers::win32::user32::ExtendedUser32;
-use crate::wrappers::win32::window::OwnDeviceContext;
 use crate::wrappers::win32::{Dpi, DpiAwarenessContext, Rect};
 use dpi::{PhysicalPosition, PhysicalSize};
 use std::ffi::c_void;
@@ -259,7 +258,8 @@ impl HWnd {
         Ok(PhysicalPosition::new(pt.x, pt.y))
     }
 
-    pub fn get_own_dc(&self) -> Result<OwnDeviceContext> {
-        OwnDeviceContext::from_window(*self)
+    #[cfg(feature = "opengl")]
+    pub fn get_own_dc(&self) -> Result<super::OwnDeviceContext> {
+        super::OwnDeviceContext::from_window(*self)
     }
 }

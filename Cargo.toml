@@ -25,6 +25,8 @@ rust-version = "1.82"
 [features]
 default = []
 opengl = [
+    "windows/Win32_Graphics_OpenGL",
+    "windows-sys/Win32_Graphics_OpenGL",
     "objc2-core-foundation/CFBundle",
     "objc2-app-kit/NSOpenGL",
     "objc2-app-kit/NSOpenGLView",
@@ -47,7 +49,6 @@ bytemuck = "1.25.0"
 [target.'cfg(target_os="windows")'.dependencies]
 windows = { version = "0.62.2", features = [
     "Win32_Graphics_Gdi",
-    "Win32_Graphics_OpenGL",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Ole",
     "Win32_System_SystemServices",
@@ -55,7 +56,6 @@ windows = { version = "0.62.2", features = [
 ] }
 windows-sys = { version = "0.61.2", features = [
     "Win32_Graphics_Gdi",
-    "Win32_Graphics_OpenGL",
     "Win32_System_Rpc",
     "Win32_System_LibraryLoader",
     "Win32_System_Ole",
