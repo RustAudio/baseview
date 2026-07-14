@@ -1,14 +1,14 @@
 use crate::gl::GlConfig;
-use crate::wrappers::win32::window::HWnd;
+use crate::wrappers::win32::window::{HWnd, WglContext};
 use std::ffi::c_void;
 use std::num::{NonZero, NonZeroI32};
-use std::ptr::{null_mut, NonNull};
+use std::ptr::NonNull;
 use windows_core::{Error, Result};
 use windows_sys::Win32::Graphics::Gdi::{GetDC, HDC};
 use windows_sys::Win32::Graphics::OpenGL::{
-    wglCreateContext, wglDeleteContext, wglGetCurrentContext, wglGetProcAddress, wglMakeCurrent,
-    ChoosePixelFormat, DescribePixelFormat, SetPixelFormat, SwapBuffers, PFD_DOUBLEBUFFER,
-    PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
+    wglCreateContext, ChoosePixelFormat, DescribePixelFormat, SetPixelFormat, SwapBuffers,
+    PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA,
+    PIXELFORMATDESCRIPTOR,
 };
 
 pub struct OwnDeviceContext {
@@ -89,66 +89,6 @@ impl OwnDeviceContext {
         }
 
         Ok(())
-    }
-}
-
-pub struct WglContext {
-    inner: NonNull<c_void>,
-}
-
-impl WglContext {
-    pub unsafe fn make_current(&self, dc: &OwnDeviceContext) -> Result<()> {
-        let result = unsafe { wglMakeCurrent(dc.as_raw(), self.inner.as_ptr()) };
-        if result == 0 {
-            return Err(Error::from_thread());
-        }
-
-        Ok(())
-    }
-
-    pub unsafe fn make_not_current(&self) -> Result<()> {
-        let current = unsafe { wglGetCurrentContext() };
-
-        if current.is_null() {
-            return Ok(());
-        };
-
-        if current != self.inner.as_ptr() {
-            return Ok(());
-        };
-
-        let result = unsafe { wglMakeCurrent(null_mut(), null_mut()) };
-        if result == 0 {
-            return Err(Error::from_thread());
-        }
-
-        Ok(())
-    }
-
-    pub fn with_current<T>(&self, dc: &OwnDeviceContext, f: impl FnOnce() -> T) -> Result<T> {
-        struct Guard<'a>(&'a WglContext);
-        impl<'a> Drop for Guard<'a> {
-            fn drop(&mut self) {
-                let _ = unsafe { self.0.make_not_current() };
-            }
-        }
-
-        unsafe { self.make_current(dc)? };
-
-        let _guard = Guard(self);
-
-        let result = f();
-
-        drop(_guard);
-
-        Ok(result)
-    }
-}
-
-impl Drop for WglContext {
-    fn drop(&mut self) {
-        let _ = unsafe { self.make_not_current() };
-        unsafe { wglDeleteContext(self.inner.as_ptr()) }; // TODO: warn on error
     }
 }
 
