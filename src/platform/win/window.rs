@@ -135,7 +135,7 @@ impl WindowImpl for BaseviewWindow {
 
         #[cfg(feature = "opengl")]
         if let Some(gl_config) = self.gl_config.clone() {
-            let gl_context = unsafe { gl::GlContextInner::create(window, gl_config) }
+            let gl_context = gl::GlContextInner::create(window, gl_config)
                 .expect("Could not create OpenGL context");
 
             let Ok(()) = self.window_state.gl_context.set(Rc::new(gl_context)) else {

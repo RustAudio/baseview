@@ -44,8 +44,8 @@ pub struct GlContextInner {
 }
 
 impl GlContextInner {
-    pub unsafe fn create(window: HWnd, config: GlConfig) -> Result<Self, CreationFailedError> {
-        let gl_library = LibraryModule::load(s!("opengl32.dll"))?;
+    pub fn create(window: HWnd, config: GlConfig) -> Result<Self, CreationFailedError> {
+        let gl_library = unsafe { LibraryModule::load(s!("opengl32.dll"))? };
 
         // Create temporary window and context to load function pointers
         let extra = with_dummy_window(|hwnd_tmp| {
