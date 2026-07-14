@@ -1,10 +1,9 @@
+use crate::wrappers::win32::LibraryModule;
 use std::ffi::c_void;
 use std::mem::transmute;
-use std::ptr::NonNull;
-use windows_core::{s, Error, PCSTR};
+use windows_core::{s, Error};
 use windows_sys::core::BOOL;
-use windows_sys::Win32::Foundation::{FreeLibrary, HWND, RECT};
-use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+use windows_sys::Win32::Foundation::{HWND, RECT};
 use windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT;
 use windows_sys::Win32::UI::WindowsAndMessaging::{WINDOW_EX_STYLE, WINDOW_STYLE};
 
@@ -59,28 +58,5 @@ impl Clone for ExtendedUser32 {
             adjust_window_rect_ex_for_dpi: self.adjust_window_rect_ex_for_dpi,
             get_dpi_for_window: self.get_dpi_for_window,
         }
-    }
-}
-
-struct LibraryModule(NonNull<c_void>);
-
-impl LibraryModule {
-    pub unsafe fn load(module_name: PCSTR) -> Result<Self, Error> {
-        let library = unsafe { LoadLibraryA(module_name.as_ptr()) };
-        let Some(library) = NonNull::new(library) else { return Err(Error::from_thread()) };
-
-        Ok(Self(library))
-    }
-
-    pub unsafe fn get_proc_address(&self, name: PCSTR) -> Option<*const c_void> {
-        let addr = unsafe { GetProcAddress(self.0.as_ptr(), name.as_ptr()) };
-
-        addr.map(|f| f as _)
-    }
-}
-
-impl Drop for LibraryModule {
-    fn drop(&mut self) {
-        unsafe { FreeLibrary(self.0.as_ptr()) };
     }
 }

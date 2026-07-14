@@ -1,340 +1,121 @@
-use std::ffi::{c_void, CString, OsStr};
-use std::os::windows::ffi::OsStrExt;
+use std::ffi::{c_void, CString};
+use std::num::NonZeroI32;
 use std::rc::Rc;
-use windows_sys::{
-    core::s,
-    Win32::{
-        Foundation::{FreeLibrary, HMODULE, HWND},
-        Graphics::{
-            Gdi::{GetDC, ReleaseDC, HDC},
-            OpenGL::{
-                wglCreateContext, wglDeleteContext, wglGetProcAddress, wglMakeCurrent,
-                ChoosePixelFormat, DescribePixelFormat, SetPixelFormat, SwapBuffers, HGLRC,
-                PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL,
-                PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
-            },
-        },
-        System::LibraryLoader::{GetProcAddress, LoadLibraryA},
-        UI::WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, UnregisterClassW,
-            CS_OWNDC, CW_USEDEFAULT, WNDCLASSW,
-        },
-    },
-};
+use windows_core::{s, PCSTR};
+use windows_sys::Win32::Graphics::OpenGL::wglGetProcAddress;
 
 use crate::gl::*;
-use crate::wrappers::win32::h_instance::HInstance;
-use crate::wrappers::win32::uuid::Uuid;
-use crate::wrappers::win32::window::HWnd;
-// See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_create_context.txt
+use crate::wrappers::win32::window::{
+    with_dummy_window, HWnd, MissingExtensionFunctionError, OwnDeviceContext, PixelFormat,
+    PixelFormatAttribs, WglContext, WglExtra,
+};
+use crate::wrappers::win32::LibraryModule;
 
-type WglCreateContextAttribsARB = extern "system" fn(HDC, HGLRC, *const i32) -> HGLRC;
+#[derive(Debug)]
+pub enum CreationFailedError {
+    Win32(windows_core::Error),
+    MissingWglExtension(MissingExtensionFunctionError),
+}
 
-const WGL_CONTEXT_MAJOR_VERSION_ARB: i32 = 0x2091;
-const WGL_CONTEXT_MINOR_VERSION_ARB: i32 = 0x2092;
-const WGL_CONTEXT_PROFILE_MASK_ARB: i32 = 0x9126;
+impl From<windows_core::Error> for CreationFailedError {
+    fn from(err: windows_core::Error) -> Self {
+        CreationFailedError::Win32(err)
+    }
+}
 
-const WGL_CONTEXT_CORE_PROFILE_BIT_ARB: i32 = 0x00000001;
-const WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB: i32 = 0x00000002;
+impl From<MissingExtensionFunctionError> for CreationFailedError {
+    fn from(err: MissingExtensionFunctionError) -> Self {
+        CreationFailedError::MissingWglExtension(err)
+    }
+}
 
-// See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_pixel_format.txt
-
-type WglChoosePixelFormatARB =
-    extern "system" fn(HDC, *const i32, *const f32, u32, *mut i32, *mut u32) -> i32;
-
-const WGL_DRAW_TO_WINDOW_ARB: i32 = 0x2001;
-const WGL_ACCELERATION_ARB: i32 = 0x2003;
-const WGL_SUPPORT_OPENGL_ARB: i32 = 0x2010;
-const WGL_DOUBLE_BUFFER_ARB: i32 = 0x2011;
-const WGL_PIXEL_TYPE_ARB: i32 = 0x2013;
-const WGL_RED_BITS_ARB: i32 = 0x2015;
-const WGL_GREEN_BITS_ARB: i32 = 0x2017;
-const WGL_BLUE_BITS_ARB: i32 = 0x2019;
-const WGL_ALPHA_BITS_ARB: i32 = 0x201B;
-const WGL_DEPTH_BITS_ARB: i32 = 0x2022;
-const WGL_STENCIL_BITS_ARB: i32 = 0x2023;
-
-const WGL_FULL_ACCELERATION_ARB: i32 = 0x2027;
-const WGL_TYPE_RGBA_ARB: i32 = 0x202B;
-
-// See https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_multisample.txt
-
-const WGL_SAMPLE_BUFFERS_ARB: i32 = 0x2041;
-const WGL_SAMPLES_ARB: i32 = 0x2042;
-
-// See https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_framebuffer_sRGB.txt
-
-const WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB: i32 = 0x20A9;
-
-// See https://www.khronos.org/registry/OpenGL/extensions/EXT/WGL_EXT_swap_control.txt
-
-type WglSwapIntervalEXT = extern "system" fn(i32) -> i32;
-
-pub type CreationFailedError = ();
 pub type GlContext = Rc<GlContextInner>;
 
+impl From<CreationFailedError> for GlError {
+    fn from(e: CreationFailedError) -> Self {
+        GlError::CreationFailed(e)
+    }
+}
+
 pub struct GlContextInner {
-    hwnd: HWND,
-    hdc: HDC,
-    hglrc: HGLRC,
-    gl_library: HMODULE,
+    hdc: OwnDeviceContext,
+    wgl_ctx: WglContext,
+    gl_library: LibraryModule,
 }
 
 impl GlContextInner {
-    pub unsafe fn create(window: HWnd, config: GlConfig) -> Result<Self, GlError> {
+    pub fn create(window: HWnd, config: GlConfig) -> Result<Self, CreationFailedError> {
+        let gl_library = unsafe { LibraryModule::load(s!("opengl32.dll"))? };
+
         // Create temporary window and context to load function pointers
+        let extra = with_dummy_window(|hwnd_tmp| {
+            let hdc = hwnd_tmp.get_own_dc()?;
+            hdc.set_pixel_format(&PixelFormat::default())?;
 
-        let class_name_str = format!("raw-gl-context-window-{}", Uuid::new());
-        let mut class_name: Vec<u16> = OsStr::new(&class_name_str).encode_wide().collect();
-        class_name.push(0);
-
-        let hinstance = HInstance::get_from_dll();
-
-        let wnd_class = WNDCLASSW {
-            style: CS_OWNDC,
-            lpfnWndProc: Some(DefWindowProcW),
-            hInstance: hinstance.as_raw(),
-            lpszClassName: class_name.as_ptr(),
-            ..std::mem::zeroed()
-        };
-
-        let class = RegisterClassW(&wnd_class);
-        if class == 0 {
-            return Err(GlError::CreationFailed(()));
-        }
-
-        let hwnd_tmp = CreateWindowExW(
-            0,
-            class as *const _,
-            [0].as_ptr(),
-            0,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            hinstance.as_raw(),
-            std::ptr::null_mut(),
-        );
-
-        if hwnd_tmp.is_null() {
-            return Err(GlError::CreationFailed(()));
-        }
-
-        let hdc_tmp = GetDC(hwnd_tmp);
-
-        let pfd_tmp = PIXELFORMATDESCRIPTOR {
-            nSize: std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16,
-            nVersion: 1,
-            dwFlags: PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
-            iPixelType: PFD_TYPE_RGBA,
-            cColorBits: 32,
-            cAlphaBits: 8,
-            cDepthBits: 24,
-            cStencilBits: 8,
-            iLayerType: PFD_MAIN_PLANE as u8,
-            ..std::mem::zeroed()
-        };
-
-        SetPixelFormat(hdc_tmp, ChoosePixelFormat(hdc_tmp, &pfd_tmp), &pfd_tmp);
-
-        let hglrc_tmp = wglCreateContext(hdc_tmp);
-        if hglrc_tmp.is_null() {
-            ReleaseDC(hwnd_tmp, hdc_tmp);
-            UnregisterClassW(class as *const _, hinstance.as_raw());
-            DestroyWindow(hwnd_tmp);
-            return Err(GlError::CreationFailed(()));
-        }
-
-        wglMakeCurrent(hdc_tmp, hglrc_tmp);
-
-        #[allow(non_snake_case)]
-        let wglCreateContextAttribsARB: Option<WglCreateContextAttribsARB> = {
-            wglGetProcAddress(s!("wglCreateContextAttribsARB"))
-                .map(|addr| std::mem::transmute(addr))
-        };
-
-        #[allow(non_snake_case)]
-        let wglChoosePixelFormatARB: Option<WglChoosePixelFormatARB> = {
-            wglGetProcAddress(s!("wglChoosePixelFormatARB")).map(|addr| std::mem::transmute(addr))
-        };
-
-        #[allow(non_snake_case)]
-        let wglSwapIntervalEXT: Option<WglSwapIntervalEXT> =
-            { wglGetProcAddress(s!("wglSwapIntervalEXT")).map(|addr| std::mem::transmute(addr)) };
-
-        wglMakeCurrent(hdc_tmp, std::ptr::null_mut());
-        wglDeleteContext(hglrc_tmp);
-        ReleaseDC(hwnd_tmp, hdc_tmp);
-        UnregisterClassW(class as *const _, hinstance.as_raw());
-        DestroyWindow(hwnd_tmp);
+            let wgl_ctx = hdc.create_wgl_context()?;
+            wgl_ctx.with_current(&hdc, WglExtra::load)
+        })??;
 
         // Create actual context
-
-        let hwnd = window.as_raw();
-
-        let hdc = GetDC(hwnd);
-
-        // Try to choose pixel format with requested config
-        #[rustfmt::skip]
-        let pixel_format_attribs = [
-            WGL_DRAW_TO_WINDOW_ARB, 1,
-            WGL_ACCELERATION_ARB, WGL_FULL_ACCELERATION_ARB,
-            WGL_SUPPORT_OPENGL_ARB, 1,
-            WGL_DOUBLE_BUFFER_ARB, config.double_buffer as i32,
-            WGL_PIXEL_TYPE_ARB, WGL_TYPE_RGBA_ARB,
-            WGL_RED_BITS_ARB, config.red_bits as i32,
-            WGL_GREEN_BITS_ARB, config.green_bits as i32,
-            WGL_BLUE_BITS_ARB, config.blue_bits as i32,
-            WGL_ALPHA_BITS_ARB, config.alpha_bits as i32,
-            WGL_DEPTH_BITS_ARB, config.depth_bits as i32,
-            WGL_STENCIL_BITS_ARB, config.stencil_bits as i32,
-            WGL_SAMPLE_BUFFERS_ARB, config.samples.is_some() as i32,
-            WGL_SAMPLES_ARB, config.samples.unwrap_or(0) as i32,
-            WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB, config.srgb as i32,
-            0,
-        ];
-
-        let mut pixel_format = 0;
-        let mut num_formats = 0;
-        wglChoosePixelFormatARB.unwrap()(
-            hdc,
-            pixel_format_attribs.as_ptr(),
-            std::ptr::null(),
-            1,
-            &mut pixel_format,
-            &mut num_formats,
-        );
-
-        // If no matching format found and sRGB was requested, try again without sRGB
-        if num_formats == 0 && config.srgb {
-            eprintln!("Warning: sRGB framebuffer not supported, falling back to non-sRGB");
-
-            #[rustfmt::skip]
-            let pixel_format_attribs_fallback = [
-                WGL_DRAW_TO_WINDOW_ARB, 1,
-                WGL_ACCELERATION_ARB, WGL_FULL_ACCELERATION_ARB,
-                WGL_SUPPORT_OPENGL_ARB, 1,
-                WGL_DOUBLE_BUFFER_ARB, config.double_buffer as i32,
-                WGL_PIXEL_TYPE_ARB, WGL_TYPE_RGBA_ARB,
-                WGL_RED_BITS_ARB, config.red_bits as i32,
-                WGL_GREEN_BITS_ARB, config.green_bits as i32,
-                WGL_BLUE_BITS_ARB, config.blue_bits as i32,
-                WGL_ALPHA_BITS_ARB, config.alpha_bits as i32,
-                WGL_DEPTH_BITS_ARB, config.depth_bits as i32,
-                WGL_STENCIL_BITS_ARB, config.stencil_bits as i32,
-                WGL_SAMPLE_BUFFERS_ARB, config.samples.is_some() as i32,
-                WGL_SAMPLES_ARB, config.samples.unwrap_or(0) as i32,
-                // WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB omitted
-                0,
-            ];
-
-            wglChoosePixelFormatARB.unwrap()(
-                hdc,
-                pixel_format_attribs_fallback.as_ptr(),
-                std::ptr::null(),
-                1,
-                &mut pixel_format,
-                &mut num_formats,
-            );
+        let hdc = window.get_own_dc()?;
+        match find_wgl_pixel_format(&extra, &hdc, &config) {
+            Some(format) => hdc.set_pixel_format_from_index(format)?,
+            // if no formats are found, which happens in Wine for child windows, use fallback
+            None => hdc.set_pixel_format(&PixelFormat::from_config(&config))?,
         }
 
-        // if no num_formats are found which happens in Wine for child windows, use fallback
-        if num_formats == 0 {
-            let fallback_pfd = PIXELFORMATDESCRIPTOR {
-                nSize: std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16,
-                nVersion: 1,
-                dwFlags: PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
-                iPixelType: PFD_TYPE_RGBA,
-                cColorBits: 32,
-                cAlphaBits: config.alpha_bits,
-                cDepthBits: config.depth_bits,
-                cStencilBits: config.stencil_bits,
-                iLayerType: PFD_MAIN_PLANE as u8,
-                ..std::mem::zeroed()
-            };
-            pixel_format = ChoosePixelFormat(hdc, &fallback_pfd);
-        }
+        let wgl_ctx = extra.create_context_for_config(&hdc, &config)?;
 
-        if pixel_format == 0 {
-            ReleaseDC(hwnd, hdc);
-            return Err(GlError::CreationFailed(()));
-        }
+        wgl_ctx.with_current(&hdc, || extra.set_vsync(config.vsync))??;
 
-        let mut pfd: PIXELFORMATDESCRIPTOR = std::mem::zeroed();
-        DescribePixelFormat(
-            hdc,
-            pixel_format,
-            std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u32,
-            &mut pfd,
-        );
-        SetPixelFormat(hdc, pixel_format, &pfd);
-
-        let profile_mask = match config.profile {
-            Profile::Core => WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-            Profile::Compatibility => WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
-        };
-
-        #[rustfmt::skip]
-        let ctx_attribs = [
-            WGL_CONTEXT_MAJOR_VERSION_ARB, config.version.0 as i32,
-            WGL_CONTEXT_MINOR_VERSION_ARB, config.version.1 as i32,
-            WGL_CONTEXT_PROFILE_MASK_ARB, profile_mask,
-            0
-        ];
-
-        let hglrc =
-            wglCreateContextAttribsARB.unwrap()(hdc, std::ptr::null_mut(), ctx_attribs.as_ptr());
-        if hglrc.is_null() {
-            return Err(GlError::CreationFailed(()));
-        }
-
-        let gl_library = LoadLibraryA(s!("opengl32.dll"));
-
-        wglMakeCurrent(hdc, hglrc);
-        wglSwapIntervalEXT.unwrap()(config.vsync as i32);
-        wglMakeCurrent(hdc, std::ptr::null_mut());
-
-        Ok(Self { hwnd, hdc, hglrc, gl_library })
+        Ok(Self { hdc, wgl_ctx, gl_library })
     }
 
     pub unsafe fn make_current(&self) {
-        wglMakeCurrent(self.hdc, self.hglrc);
+        let _ = self.wgl_ctx.make_current(&self.hdc);
     }
 
     pub unsafe fn make_not_current(&self) {
-        wglMakeCurrent(self.hdc, std::ptr::null_mut());
+        let _ = self.wgl_ctx.make_not_current();
     }
 
     pub fn get_proc_address(&self, symbol: &str) -> *const c_void {
         let symbol = CString::new(symbol).unwrap();
         let symbol_ptr = symbol.as_ptr().cast();
 
-        let addr = unsafe {
-            wglGetProcAddress(symbol_ptr).or_else(|| GetProcAddress(self.gl_library, symbol_ptr))
-        };
-
-        match addr {
-            Some(addr) => addr as *const c_void,
-            None => std::ptr::null(),
+        if let Some(addr) = unsafe { wglGetProcAddress(symbol_ptr) } {
+            return addr as *const c_void;
         }
+
+        let symbol_ptr = PCSTR::from_raw(symbol_ptr);
+        if let Some(addr) = unsafe { self.gl_library.get_proc_address(symbol_ptr) } {
+            return addr;
+        }
+
+        core::ptr::null()
     }
 
     pub fn swap_buffers(&self) {
-        unsafe {
-            SwapBuffers(self.hdc);
-        }
+        let _ = self.hdc.swap_buffers();
     }
 }
 
-impl Drop for GlContextInner {
-    fn drop(&mut self) {
-        unsafe {
-            wglMakeCurrent(std::ptr::null_mut(), std::ptr::null_mut());
-            wglDeleteContext(self.hglrc);
-            ReleaseDC(self.hwnd, self.hdc);
-            FreeLibrary(self.gl_library);
-        }
-    }
+fn find_wgl_pixel_format(
+    extra: &WglExtra, dc: &OwnDeviceContext, config: &GlConfig,
+) -> Option<NonZeroI32> {
+    let mut format_attribs = PixelFormatAttribs::from_config(config);
+
+    // TODO: log errors
+    if let Ok(Some(format)) = extra.choose_pixel_format_from_attribs(&format_attribs, dc) {
+        return Some(format);
+    };
+
+    eprintln!("Warning: sRGB framebuffer not supported, falling back to non-sRGB");
+    format_attribs.set_without_srgb_ext();
+
+    if let Ok(Some(format)) = extra.choose_pixel_format_from_attribs(&format_attribs, dc) {
+        return Some(format);
+    };
+
+    None
 }

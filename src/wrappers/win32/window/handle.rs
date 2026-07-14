@@ -257,4 +257,9 @@ impl HWnd {
 
         Ok(PhysicalPosition::new(pt.x, pt.y))
     }
+
+    #[cfg(feature = "opengl")]
+    pub fn get_own_dc(&self) -> Result<super::OwnDeviceContext> {
+        super::OwnDeviceContext::from_window(*self)
+    }
 }
