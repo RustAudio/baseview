@@ -94,10 +94,10 @@ pub fn create_window<W: WindowImpl>(
 
 #[cfg(feature = "opengl")]
 pub fn with_dummy_window<T>(handler: impl FnOnce(HWnd) -> Result<T>) -> Result<T> {
-    use windows_sys::Win32::UI::WindowsAndMessaging::CW_USEDEFAULT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{DefWindowProcW, CW_USEDEFAULT};
 
     let instance = HInstance::get_from_dll();
-    let window_class = RegisteredClass::register_new(instance, None)?;
+    let window_class = RegisteredClass::register_new(instance, Some(DefWindowProcW))?;
     let hwnd = unsafe {
         CreateWindowExW(
             0,
