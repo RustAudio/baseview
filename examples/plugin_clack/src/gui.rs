@@ -1,5 +1,5 @@
-use crate::ExamplePluginMainThread;
 use crate::window_handler::OpenWindowExample;
+use crate::ExamplePluginMainThread;
 use baseview::dpi::PhysicalSize;
 use baseview::gl::GlConfig;
 use baseview::{Window, WindowHandle, WindowOpenOptions};
