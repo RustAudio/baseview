@@ -92,6 +92,7 @@ pub fn create_window<W: WindowImpl>(
     Ok(hwnd)
 }
 
+#[cfg(feature = "opengl")]
 pub fn with_dummy_window<T>(handler: impl FnOnce(HWnd) -> Result<T>) -> Result<T> {
     let instance = HInstance::get_from_dll();
     let window_class = RegisteredClass::register_new(instance, None)?;
