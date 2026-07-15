@@ -626,7 +626,7 @@ fn fetch_dnd_data(window: &WindowInner) -> Result<Option<DropData>, ConnectionEr
         Ok(data) => data,
         Err(GetPropertyError::ConnectionError(e)) => return Err(e),
         Err(e) => {
-            warn!(e);
+            warn!("{}", e);
             return Ok(None);
         }
     };
@@ -634,7 +634,7 @@ fn fetch_dnd_data(window: &WindowInner) -> Result<Option<DropData>, ConnectionEr
     match parse_data(&data) {
         Ok(path_list) => Ok(Some(DropData::Files(path_list))),
         Err(e) => {
-            warn!(e);
+            warn!("{}", e);
             Ok(None)
         }
     }

@@ -145,7 +145,7 @@ pub trait CookieExt {
 impl<T: RequestConnection> CookieExt for VoidCookie<'_, T> {
     fn check_warn(self) {
         if let Err(e) = self.check() {
-            warn!(e);
+            warn!("{}", e);
         }
     }
 }
@@ -159,7 +159,7 @@ impl<R: TryParse, C: RequestConnection> ReplyExt<R> for Cookie<'_, C, R> {
         match self.reply() {
             Ok(r) => Some(r),
             Err(e) => {
-                warn!(e);
+                warn!("{}", e);
                 None
             }
         }
