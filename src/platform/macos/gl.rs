@@ -139,12 +139,14 @@ impl GlContext {
         Ok(GlContext { view, context, gl_bundle })
     }
 
-    pub unsafe fn make_current(&self) {
+    pub unsafe fn make_current(&self) -> Result<()> {
         self.context.makeCurrentContext();
+        Ok(())
     }
 
-    pub unsafe fn make_not_current(&self) {
+    pub unsafe fn make_not_current(&self) -> Result<()> {
         NSOpenGLContext::clearCurrentContext();
+        Ok(())
     }
 
     pub fn get_proc_address(&self, symbol: &CStr) -> *const c_void {
@@ -170,9 +172,10 @@ impl GlContext {
         self.gl_bundle.function_pointer_for_name(Some(&symbol_name))
     }
 
-    pub fn swap_buffers(&self) {
+    pub fn swap_buffers(&self) -> Result<()> {
         self.context.flushBuffer();
         self.view.setNeedsDisplay(true);
+        Ok(())
     }
 
     /// On macOS the `NSOpenGLView` needs to be resized separtely from our main view.
