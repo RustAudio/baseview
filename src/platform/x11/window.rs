@@ -12,7 +12,6 @@ use crate::handler::WindowHandlerBuilder;
 use crate::platform::x11::window_shared::WindowInner;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::Result;
-use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::*;
 
 pub struct WindowHandle {
@@ -28,13 +27,25 @@ impl WindowHandle {
     ) -> Result<WindowHandle> {
         let (tx, rx) = mpsc::sync_channel::<WindowOpenResult>(1);
         let (parent_handle, mut window_handle) = ParentHandle::new();
-        let join_handle = thread::spawn(move || {
-            // TODO: properly handle crashes here
-            Window::window_thread(options, handler, tx.clone(), Some(parent_handle)).unwrap();
-        });
 
-        let raw_window_handle = rx.recv().unwrap()?;
-        window_handle.window_id = Some(raw_window_handle);
+        let join_handle =
+            thread::spawn(move || match create_window(options, handler, Some(parent_handle)) {
+                Ok(ev_loop) => {
+                    tx.send(Ok(ev_loop.window_id())).unwrap();
+                    ev_loop.run()
+                }
+                Err(e) => {
+                    tx.send(Err(format!("{}", e))).unwrap();
+                }
+            });
+
+        let id = match rx.recv() {
+            Ok(Ok(id)) => id,
+            Err(e) => return Err(super::Error::ChannelError(e)),
+            Ok(Err(s)) => return Err(super::error::Error::CreationFailed(s)),
+        };
+
+        window_handle.window_id = Some(id);
         window_handle.event_loop_handle = Some(join_handle).into();
         Ok(window_handle)
     }
@@ -91,87 +102,74 @@ impl Drop for ParentHandle {
     }
 }
 
-pub struct Window;
+type WindowOpenResult = core::result::Result<NonZero<x11rb::protocol::xproto::Window>, String>;
 
-type WindowOpenResult = Result<NonZero<x11rb::protocol::xproto::Window>>;
+fn create_window(
+    options: WindowOpenOptions, build: WindowHandlerBuilder, parent_handle: Option<ParentHandle>,
+) -> Result<EventLoop> {
+    // Connect to the X server
+    let xcb_connection = X11Connection::new()?;
 
-impl Window {
-    fn window_thread(
-        options: WindowOpenOptions, build: WindowHandlerBuilder,
-        tx: mpsc::SyncSender<WindowOpenResult>, parent_handle: Option<ParentHandle>,
-    ) -> Result<()> {
-        // Connect to the X server
-        let xcb_connection = X11Connection::new()?;
+    let scaling = match options.scale {
+        WindowScalePolicy::SystemScaleFactor => xcb_connection.get_scaling(),
+        WindowScalePolicy::ScaleFactor(scale) => scale,
+    };
 
-        // Setup xkbcommon
-        let xkb_state = XkbcommonState::new(&xcb_connection);
+    let physical_size = options.size.to_physical(scaling);
 
-        let scaling = match options.scale {
-            WindowScalePolicy::SystemScaleFactor => xcb_connection.get_scaling(),
-            WindowScalePolicy::ScaleFactor(scale) => scale,
-        };
+    #[cfg(feature = "opengl")]
+    let visual_info =
+        WindowVisualConfig::find_best_visual_config_for_gl(&xcb_connection, options.gl_config)?;
 
-        let physical_size = options.size.to_physical(scaling);
+    #[cfg(not(feature = "opengl"))]
+    let visual_info = WindowVisualConfig::find_best_visual_config(&xcb_connection)?;
 
-        #[cfg(feature = "opengl")]
-        let visual_info =
-            WindowVisualConfig::find_best_visual_config_for_gl(&xcb_connection, options.gl_config)?;
+    let xcb_connection = Rc::new(xcb_connection);
 
-        #[cfg(not(feature = "opengl"))]
-        let visual_info = WindowVisualConfig::find_best_visual_config(&xcb_connection)?;
+    let x_window = XcbWindow::new(
+        Rc::clone(&xcb_connection),
+        physical_size,
+        &visual_info,
+        options.parent.map(|p| p.window_id),
+    )?;
 
-        let xcb_connection = Rc::new(xcb_connection);
+    let cookies = [
+        x_window.map_window()?,
+        x_window.set_title(&options.title)?,
+        x_window.enable_wm_protocols()?,
+        x_window.enable_dnd_protocols()?,
+    ];
 
-        let x_window = XcbWindow::new(
-            Rc::clone(&xcb_connection),
-            physical_size,
-            &visual_info,
-            options.parent.map(|p| p.window_id),
-        )?;
-
-        let cookies = [
-            x_window.map_window()?,
-            x_window.set_title(&options.title)?,
-            x_window.enable_wm_protocols()?,
-            x_window.enable_dnd_protocols()?,
-        ];
-
-        for cookie in cookies {
-            cookie.check()?;
-        }
-
-        #[cfg(feature = "opengl")]
-        let gl_context = match visual_info.fb_config {
-            None => None,
-            Some(fb_config) => {
-                // Because of the visual negotation we had to take some extra steps to create this context
-                Some(super::gl::GlContextInner::create(
-                    &x_window,
-                    Rc::clone(&xcb_connection),
-                    fb_config,
-                )?)
-            }
-        };
-
-        let window_id = x_window.id();
-        let inner = Rc::new(WindowInner::new(
-            xcb_connection,
-            x_window,
-            physical_size,
-            scaling,
-            visual_info.visual_id,
-            #[cfg(feature = "opengl")]
-            gl_context,
-        ));
-
-        let handler = build.build(WindowContext::new(Rc::clone(&inner)))?;
-
-        let _ = tx.send(Ok(window_id));
-
-        EventLoop::new(inner, handler, parent_handle, xkb_state).run()?;
-
-        Ok(())
+    for cookie in cookies {
+        cookie.check()?;
     }
+
+    #[cfg(feature = "opengl")]
+    let gl_context = match visual_info.fb_config {
+        None => None,
+        Some(fb_config) => {
+            // Because of the visual negotation we had to take some extra steps to create this context
+            Some(super::gl::GlContextInner::create(
+                &x_window,
+                Rc::clone(&xcb_connection),
+                fb_config,
+            )?)
+        }
+    };
+
+    let inner = Rc::new(WindowInner::new(
+        xcb_connection,
+        x_window,
+        physical_size,
+        scaling,
+        visual_info.visual_id,
+        #[cfg(feature = "opengl")]
+        gl_context,
+    ));
+
+    let handler = build.build(WindowContext::new(Rc::clone(&inner)))?;
+
+    Ok(EventLoop::new(inner, handler, parent_handle))
 }
 
 pub fn copy_to_clipboard(_data: &str) {

@@ -29,9 +29,10 @@ pub(crate) struct EventLoop {
 impl EventLoop {
     pub fn new(
         window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
-        parent_handle: Option<ParentHandle>, xkb_state: Option<XkbcommonState>,
+        parent_handle: Option<ParentHandle>,
     ) -> Self {
         Self {
+            xkb_state: XkbcommonState::new(&window.connection),
             window,
             handler,
             parent_handle,
@@ -39,8 +40,11 @@ impl EventLoop {
             event_loop_running: false,
             new_physical_size: None,
             drag_n_drop: DragNDropState::NoCurrentSession,
-            xkb_state,
         }
+    }
+
+    pub fn window_id(&self) -> NonZeroU32 {
+        self.window.xcb_window.id()
     }
 
     #[inline]
@@ -66,7 +70,7 @@ impl EventLoop {
     }
 
     // Event loop
-    pub fn run(&mut self) -> Result<()> {
+    pub fn run(mut self) {
         let connection = Rc::clone(&self.window.connection);
         let mut poller = ConnectionPoller::new(&connection.conn)?;
 
@@ -112,8 +116,6 @@ impl EventLoop {
         }
 
         poller.delete()?;
-
-        Ok(())
     }
 
     fn handle_xcb_event(&mut self, event: XEvent) {

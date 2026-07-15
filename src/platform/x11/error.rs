@@ -3,6 +3,7 @@ use crate::platform::x11::xcb_connection::GetPropertyError;
 use crate::tracing::warn;
 use crate::wrappers::xlib::{DisplayOpenFailedError, InitThreadsFailedError};
 use crate::HandlerError;
+use std::sync::mpsc::RecvError;
 use x11_dl::error::OpenError;
 use x11rb::connection::RequestConnection;
 use x11rb::cookie::{Cookie, VoidCookie};
@@ -11,6 +12,7 @@ use x11rb::x11_utils::{TryParse, X11Error};
 
 #[derive(Debug)]
 pub enum Error {
+    CreationFailed(String),
     Io(std::io::Error),
     DylibOpen(OpenError),
     InitThreadsFailed(InitThreadsFailedError),
@@ -22,6 +24,7 @@ pub enum Error {
     Connect(ConnectError),
     DisplayOpenFailed(DisplayOpenFailedError),
     Handler(HandlerError),
+    ChannelError(RecvError),
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
     #[cfg(feature = "opengl")]
