@@ -32,7 +32,7 @@ impl WindowHandle {
             thread::spawn(move || match create_window(options, handler, Some(parent_handle)) {
                 Ok(ev_loop) => {
                     tx.send(Ok(ev_loop.window_id())).unwrap();
-                    ev_loop.run()
+                    ev_loop.run().unwrap();
                 }
                 Err(e) => {
                     tx.send(Err(format!("{}", e))).unwrap();

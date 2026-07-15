@@ -70,7 +70,7 @@ impl EventLoop {
     }
 
     // Event loop
-    pub fn run(mut self) {
+    pub fn run(mut self) -> Result<()> {
         let connection = Rc::clone(&self.window.connection);
         let mut poller = ConnectionPoller::new(&connection.conn)?;
 
@@ -116,6 +116,8 @@ impl EventLoop {
         }
 
         poller.delete()?;
+
+        Ok(())
     }
 
     fn handle_xcb_event(&mut self, event: XEvent) {
