@@ -22,6 +22,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Handler(e) => Some(e.source()),
+            #[cfg(feature = "opengl")]
             _ => None,
         }
     }
