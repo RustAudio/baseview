@@ -2,7 +2,15 @@ use super::*;
 use crate::platform::Result;
 
 pub trait WindowHandler: 'static {
+    /// Requests the handler to draw a new frame.
+    ///
+    /// If this returns an error, the window will be considered unable to render its contents, and
+    /// will be subsequently closed.
     fn on_frame(&self) -> core::result::Result<(), HandlerError>;
+    /// Informs the handler that the window has been resized.
+    ///
+    /// If this returns an error, the resize operation will be reverted in order to keep the current
+    /// size.
     fn resized(&self, new_size: WindowSize) -> core::result::Result<(), HandlerError>;
     fn on_event(&self, event: Event) -> EventStatus;
 }
