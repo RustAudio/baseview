@@ -8,6 +8,7 @@ use std::rc::Rc;
 
 use crate::handler::WindowHandlerBuilder;
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
+use crate::platform::Result;
 use crate::wrappers::appkit::{create_window, View};
 use crate::*;
 
