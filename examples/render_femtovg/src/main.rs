@@ -47,7 +47,7 @@ impl WindowHandler for FemtovgExample {
         }
 
         let context = &self.gl_context;
-        unsafe { context.make_current() };
+        unsafe { context.make_current()? };
 
         let mut canvas = self.canvas.borrow_mut();
 
@@ -79,8 +79,8 @@ impl WindowHandler for FemtovgExample {
 
         // Tell renderer to execute all drawing commands
         canvas.flush();
-        context.swap_buffers();
-        unsafe { context.make_not_current() };
+        context.swap_buffers()?;
+        unsafe { context.make_not_current()? };
         self.damaged.set(false);
 
         Ok(())
