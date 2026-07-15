@@ -20,18 +20,6 @@ pub enum CreationFailedError {
     OpenError(OpenError),
 }
 
-impl From<XLibError> for GlError {
-    fn from(e: XLibError) -> Self {
-        GlError::CreationFailed(CreationFailedError::X11Error(e))
-    }
-}
-
-impl From<OpenError> for GlError {
-    fn from(e: OpenError) -> Self {
-        GlError::CreationFailed(CreationFailedError::OpenError(e))
-    }
-}
-
 pub type GlContext = Rc<GlContextInner>;
 
 pub struct GlContextInner {

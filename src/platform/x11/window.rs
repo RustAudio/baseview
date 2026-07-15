@@ -164,7 +164,7 @@ impl Window {
             gl_context,
         ));
 
-        let handler = build.build(WindowContext::new(Rc::clone(&inner)));
+        let handler = build.build(WindowContext::new(Rc::clone(&inner)))?;
 
         let _ = tx.send(Ok(window_id));
 

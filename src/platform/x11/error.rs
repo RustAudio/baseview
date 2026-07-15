@@ -2,6 +2,7 @@ use crate::platform::x11::drag_n_drop::ParseError;
 use crate::platform::x11::xcb_connection::GetPropertyError;
 use crate::tracing::warn;
 use crate::wrappers::xlib::{DisplayOpenFailedError, InitThreadsFailedError};
+use crate::HandlerError;
 use x11_dl::error::OpenError;
 use x11rb::connection::RequestConnection;
 use x11rb::cookie::{Cookie, VoidCookie};
@@ -20,6 +21,7 @@ pub enum Error {
     GetProperty(GetPropertyError),
     Connect(ConnectError),
     DisplayOpenFailed(DisplayOpenFailedError),
+    Handler(HandlerError),
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
     #[cfg(feature = "opengl")]
@@ -71,6 +73,12 @@ impl From<ConnectionError> for Error {
 impl From<X11Error> for Error {
     fn from(value: X11Error) -> Self {
         Self::X11(value)
+    }
+}
+
+impl From<HandlerError> for Error {
+    fn from(value: HandlerError) -> Self {
+        Self::Handler(value)
     }
 }
 
