@@ -167,12 +167,12 @@ impl<'a, T: Pod> PropIterator<'a, T> {
 
         // Make sure that the reply is of the correct type.
         if reply.type_ != self.property_type {
-            return Err(GetPropertyError::TypeMismatch(reply.type_).into());
+            return Err(GetPropertyError::TypeMismatch(reply.type_));
         }
 
         // Make sure that the reply is of the correct format.
         if reply.format != self.format {
-            return Err(GetPropertyError::FormatMismatch(reply.format.into()).into());
+            return Err(GetPropertyError::FormatMismatch(reply.format.into()));
         }
 
         // Append the data to the output.

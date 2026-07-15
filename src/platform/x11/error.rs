@@ -24,7 +24,7 @@ pub enum Error {
     Connect(ConnectError),
     DisplayOpenFailed(DisplayOpenFailedError),
     Handler(HandlerError),
-    ChannelError(RecvError),
+    Channel(RecvError),
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
     #[cfg(feature = "opengl")]

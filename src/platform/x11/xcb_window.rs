@@ -67,10 +67,10 @@ impl XcbWindow {
     pub fn resize(
         &self, size: PhysicalSize<u32>,
     ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
-        Ok(self.connection.conn.configure_window(
+        self.connection.conn.configure_window(
             self.id().get(),
             &ConfigureWindowAux::new().width(size.width).height(size.height),
-        )?)
+        )
     }
 
     pub fn set_title(&self, title: &str) -> Result<VoidCookie<'_, XCBConnection>, ReplyOrIdError> {

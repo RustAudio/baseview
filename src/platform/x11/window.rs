@@ -41,7 +41,7 @@ impl WindowHandle {
 
         let id = match rx.recv() {
             Ok(Ok(id)) => id,
-            Err(e) => return Err(super::Error::ChannelError(e)),
+            Err(e) => return Err(super::Error::Channel(e)),
             Ok(Err(s)) => return Err(super::error::Error::CreationFailed(s)),
         };
 
