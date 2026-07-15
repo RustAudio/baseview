@@ -1,7 +1,14 @@
 use std::fmt::{Debug, Display, Formatter};
 
-pub type Result<T> = std::result::Result<T, Error>;
-
+/// An error that can occur during window creation or manipulation.
+///
+/// This error type is opaque: you can only get error information from its [`Display`] implementation.
+///
+/// Which errors can occur on which operations can greatly vary between platforms. For instance on X11,
+/// the connection to the server can be lost, or the X server can send an invalid message, which is
+/// not possible on e.g. Windows or macOS.
+///
+/// This is the general Baseview error type.
 pub struct Error {
     inner: crate::platform::Error,
 }
@@ -27,6 +34,12 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
+/// An error that can be returned from a [`WindowHandler`](crate::WindowHandler).
+///
+/// This type does not implement the [`Error`] trait: instead it can be created from any kind of
+/// [`Error`] type, using its [`From`] implementation and/or the `?` operator.
+///
+/// [`Error`]: std::error::Error
 pub struct HandlerError {
     inner: Box<dyn std::error::Error + 'static>,
 }

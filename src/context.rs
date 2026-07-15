@@ -19,7 +19,7 @@ impl WindowContext {
     }
 
     /// Sets the [`MouseCursor`] icon to be displayed when the mouse cursor hovers this window.
-    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) -> Result<()> {
+    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) -> Result<(), Error> {
         self.inner.set_mouse_cursor(mouse_cursor)?;
         Ok(())
     }
@@ -40,7 +40,7 @@ impl WindowContext {
     }
 
     /// Focuses this window.
-    pub fn focus(&self) -> Result<()> {
+    pub fn focus(&self) -> Result<(), Error> {
         self.inner.focus()?;
         Ok(())
     }
@@ -49,7 +49,7 @@ impl WindowContext {
     ///
     /// The given `size` can either be in [physical](dpi::PhysicalSize) or
     /// [logical](dpi::LogicalSize) pixels.
-    pub fn resize(&self, size: impl Into<Size>) -> Result<()> {
+    pub fn resize(&self, size: impl Into<Size>) -> Result<(), Error> {
         self.inner.resize(size.into())?;
         Ok(())
     }

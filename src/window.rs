@@ -33,8 +33,8 @@ impl WindowHandle {
 
 pub fn create_window<H: WindowHandler>(
     builder: WindowOpenOptions,
-    handler: impl FnOnce(WindowContext) -> core::result::Result<H, HandlerError> + Send + 'static,
-) -> Result<WindowHandle> {
+    handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
+) -> Result<WindowHandle, Error> {
     Ok(WindowHandle::new(platform::WindowHandle::create_window(
         builder,
         WindowHandlerBuilder::new(handler),
