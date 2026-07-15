@@ -1,4 +1,7 @@
+#![allow(non_snake_case)]
+
 use crate::gl::{GlConfig, Profile};
+use crate::tracing::warn;
 use crate::wrappers::win32::window::OwnDeviceContext;
 use std::ffi::{c_void, CStr};
 use std::fmt::{Display, Formatter};
@@ -6,6 +9,8 @@ use std::mem::transmute;
 use std::num::NonZeroI32;
 use std::ptr::{null_mut, NonNull};
 use windows_core::Error;
+use windows_sys::s;
+use windows_sys::Win32::Foundation::PROC;
 use windows_sys::Win32::Graphics::Gdi::HDC;
 use windows_sys::Win32::Graphics::OpenGL::{
     wglDeleteContext, wglGetCurrentContext, wglGetProcAddress, wglMakeCurrent, HGLRC,
@@ -74,8 +79,14 @@ impl WglContext {
 
 impl Drop for WglContext {
     fn drop(&mut self) {
-        let _ = unsafe { self.make_not_current() };
-        unsafe { wglDeleteContext(self.inner.as_ptr()) }; // TODO: warn on error
+        if let Err(e) = unsafe { self.make_not_current() } {
+            warn!("Could not unset current GL context {}", e);
+        }
+
+        let result = unsafe { wglDeleteContext(self.inner.as_ptr()) };
+        if result == 0 {
+            warn!("Could not delete GL context: {}", Error::from_thread());
+        }
     }
 }
 
@@ -89,42 +100,35 @@ type WglChoosePixelFormatARB =
 // See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_create_context.txt
 type WglCreateContextAttribsARB = unsafe extern "system" fn(HDC, HGLRC, *const i32) -> HGLRC;
 
-#[allow(non_snake_case)]
 pub struct WglExtra {
-    wglCreateContextAttribsARB: WglCreateContextAttribsARB,
-    wglChoosePixelFormatARB: WglChoosePixelFormatARB,
-    wglSwapIntervalEXT: WglSwapIntervalEXT,
+    wglCreateContextAttribsARB: Option<WglCreateContextAttribsARB>,
+    wglChoosePixelFormatARB: Option<WglChoosePixelFormatARB>,
+    wglSwapIntervalEXT: Option<WglSwapIntervalEXT>,
 }
 
 impl WglExtra {
-    pub fn load() -> Result<Self, MissingExtensionFunctionError> {
+    pub fn load() -> Self {
         unsafe {
-            Ok(Self {
-                wglCreateContextAttribsARB: transmute::<*const c_void, WglCreateContextAttribsARB>(
-                    Self::load_fn(c"wglCreateContextAttribsARB")?,
+            Self {
+                wglCreateContextAttribsARB: transmute::<PROC, Option<WglCreateContextAttribsARB>>(
+                    wglGetProcAddress(s!("wglCreateContextAttribsARB")),
                 ),
-                wglChoosePixelFormatARB: transmute::<*const c_void, WglChoosePixelFormatARB>(
-                    Self::load_fn(c"wglChoosePixelFormatARB")?,
+                wglChoosePixelFormatARB: transmute::<PROC, Option<WglChoosePixelFormatARB>>(
+                    wglGetProcAddress(s!("wglChoosePixelFormatARB")),
                 ),
-                wglSwapIntervalEXT: transmute::<*const c_void, WglSwapIntervalEXT>(Self::load_fn(
-                    c"wglSwapIntervalEXT",
-                )?),
-            })
-        }
-    }
-
-    fn load_fn(name: &'static CStr) -> Result<*const c_void, MissingExtensionFunctionError> {
-        let ptr = unsafe { wglGetProcAddress(name.as_ptr() as *const u8) };
-
-        match ptr {
-            Some(ptr) => Ok(ptr as *const c_void),
-            None => Err(MissingExtensionFunctionError { name }),
+                wglSwapIntervalEXT: transmute::<PROC, Option<WglSwapIntervalEXT>>(
+                    wglGetProcAddress(s!("wglSwapIntervalEXT")),
+                ),
+            }
         }
     }
 
     pub fn create_context_for_config(
         &self, dc: &OwnDeviceContext, config: &GlConfig,
-    ) -> windows_core::Result<WglContext> {
+    ) -> Result<WglContext, CreateContextError> {
+        let Some(wglCreateContextAttribsARB) = self.wglCreateContextAttribsARB else {
+            return Err(CreateContextError::Unavailable);
+        };
         let profile_mask = match config.profile {
             Profile::Core => WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
             Profile::Compatibility => WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
@@ -138,17 +142,22 @@ impl WglExtra {
             0
         ];
 
-        let ctx = unsafe {
-            (self.wglCreateContextAttribsARB)(dc.as_raw(), null_mut(), ctx_attribs.as_ptr())
-        };
+        let ctx =
+            unsafe { wglCreateContextAttribsARB(dc.as_raw(), null_mut(), ctx_attribs.as_ptr()) };
 
-        let ctx = NonNull::new(ctx).ok_or_else(Error::from_thread)?;
+        let ctx =
+            NonNull::new(ctx).ok_or_else(|| CreateContextError::Win32(Error::from_thread()))?;
 
         Ok(WglContext { inner: ctx })
     }
 
     pub fn set_vsync(&self, vsync: bool) -> windows_core::Result<()> {
-        let result = unsafe { (self.wglSwapIntervalEXT)(vsync.into()) };
+        let Some(wglSwapIntervalEXT) = self.wglSwapIntervalEXT else {
+            warn!("Could not set vsync: wglSwapIntervalEXT is not available");
+            return Ok(());
+        };
+
+        let result = unsafe { wglSwapIntervalEXT(vsync.into()) };
         if result == 0 {
             return Err(Error::from_thread());
         }
@@ -158,11 +167,15 @@ impl WglExtra {
 
     pub fn choose_pixel_format_from_attribs(
         &self, attribs: &PixelFormatAttribs, dc: &OwnDeviceContext,
-    ) -> windows_core::Result<Option<NonZeroI32>> {
+    ) -> Result<Option<NonZeroI32>, ChoosePixelFormatFromAttribsError> {
+        let Some(wglChoosePixelFormatARB) = self.wglChoosePixelFormatARB else {
+            return Err(ChoosePixelFormatFromAttribsError::Unavailable);
+        };
+
         let mut pixel_formats = [0];
         let mut num_formats = 0;
         let result = unsafe {
-            (self.wglChoosePixelFormatARB)(
+            wglChoosePixelFormatARB(
                 dc.as_raw(),
                 attribs.inner.as_ptr(),
                 std::ptr::null(),
@@ -173,7 +186,7 @@ impl WglExtra {
         };
 
         if result == 0 {
-            return Err(Error::from_thread());
+            return Err(ChoosePixelFormatFromAttribsError::Win32(Error::from_thread()));
         }
 
         if num_formats == 0 {
@@ -181,6 +194,38 @@ impl WglExtra {
         }
 
         Ok(NonZeroI32::new(pixel_formats[0]))
+    }
+}
+
+pub enum CreateContextError {
+    Win32(Error),
+    Unavailable,
+}
+
+impl Display for CreateContextError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CreateContextError::Win32(err) => Display::fmt(err, f),
+            CreateContextError::Unavailable => {
+                f.write_str("wglCreateContextAttribsARB is not available")
+            }
+        }
+    }
+}
+
+pub enum ChoosePixelFormatFromAttribsError {
+    Win32(Error),
+    Unavailable,
+}
+
+impl Display for ChoosePixelFormatFromAttribsError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChoosePixelFormatFromAttribsError::Win32(e) => Display::fmt(e, f),
+            ChoosePixelFormatFromAttribsError::Unavailable => {
+                f.write_str("wglChoosePixelFormatARB is not available")
+            }
+        }
     }
 }
 

@@ -1,5 +1,7 @@
 use baseview::dpi::PhysicalPosition;
-use baseview::{Event, EventStatus, MouseEvent, WindowContext, WindowHandler, WindowSize};
+use baseview::{
+    Event, EventStatus, HandlerError, MouseEvent, WindowContext, WindowHandler, WindowSize,
+};
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 
@@ -115,21 +117,20 @@ impl WindowHandler for OpenWindowExample {
 }
 
 impl OpenWindowExample {
-    pub fn new(window: WindowContext) -> Self {
-        let ctx = softbuffer::Context::new(window.clone()).unwrap();
-        let mut surface = softbuffer::Surface::new(&ctx, window.clone()).unwrap();
+    pub fn new(window: WindowContext) -> Result<Self, HandlerError> {
+        let ctx = softbuffer::Context::new(window.clone())?;
+        let mut surface = softbuffer::Surface::new(&ctx, window.clone())?;
         let size = window.size().physical;
         surface
-            .resize(NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap())
-            .unwrap();
+            .resize(NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap())?;
 
-        OpenWindowExample {
+        Ok(OpenWindowExample {
             window_context: window,
             surface: surface.into(),
             mouse_pos: PhysicalPosition::new(0., 0.).into(),
             is_cursor_inside: false.into(),
             damaged: true.into(),
-        }
+        })
     }
 }
 
