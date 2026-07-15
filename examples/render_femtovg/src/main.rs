@@ -104,7 +104,7 @@ impl WindowHandler for FemtovgExample {
             ) => {
                 self.current_mouse_position.set(position);
                 if position.y > 400. && !self.window_context.has_focus() {
-                    self.window_context.focus()
+                    let _ = self.window_context.focus();
                 }
                 self.damaged.set(true);
             }

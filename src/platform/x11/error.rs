@@ -1,6 +1,6 @@
 use crate::platform::x11::drag_n_drop::ParseError;
 use crate::platform::x11::xcb_connection::GetPropertyError;
-use crate::tracing::warn;
+use crate::warn;
 use crate::wrappers::xlib::{DisplayOpenFailedError, InitThreadsFailedError};
 use crate::HandlerError;
 use std::sync::mpsc::RecvError;

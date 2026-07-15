@@ -1,3 +1,4 @@
+use super::*;
 use crate::{platform, MouseCursor, WindowSize};
 use dpi::Size;
 use raw_window_handle::{
@@ -18,8 +19,9 @@ impl WindowContext {
     }
 
     /// Sets the [`MouseCursor`] icon to be displayed when the mouse cursor hovers this window.
-    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) {
-        self.inner.set_mouse_cursor(mouse_cursor);
+    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) -> Result<()> {
+        self.inner.set_mouse_cursor(mouse_cursor)?;
+        Ok(())
     }
 
     /// Requests the window to be closed.
@@ -38,16 +40,18 @@ impl WindowContext {
     }
 
     /// Focuses this window.
-    pub fn focus(&self) {
-        self.inner.focus();
+    pub fn focus(&self) -> Result<()> {
+        self.inner.focus()?;
+        Ok(())
     }
 
     /// Resizes this window to the given `size`.
     ///
     /// The given `size` can either be in [physical](dpi::PhysicalSize) or
     /// [logical](dpi::LogicalSize) pixels.
-    pub fn resize(&self, size: impl Into<Size>) {
-        self.inner.resize(size.into());
+    pub fn resize(&self, size: impl Into<Size>) -> Result<()> {
+        self.inner.resize(size.into())?;
+        Ok(())
     }
 
     /// Returns the current scale factor of this window.
@@ -78,13 +82,13 @@ impl WindowContext {
 }
 
 impl HasWindowHandle for WindowContext {
-    fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
+    fn window_handle(&self) -> core::result::Result<WindowHandle<'_>, HandleError> {
         self.inner.window_handle().ok_or(HandleError::Unavailable)
     }
 }
 
 impl HasDisplayHandle for WindowContext {
-    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+    fn display_handle(&self) -> core::result::Result<DisplayHandle<'_>, HandleError> {
         Ok(self.inner.display_handle())
     }
 }
@@ -124,13 +128,13 @@ const _: () = {
 };
 
 impl HasWindowHandle for PlatformHandle {
-    fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
+    fn window_handle(&self) -> core::result::Result<WindowHandle<'_>, HandleError> {
         self.inner.window_handle().ok_or(HandleError::Unavailable)
     }
 }
 
 impl HasDisplayHandle for PlatformHandle {
-    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+    fn display_handle(&self) -> core::result::Result<DisplayHandle<'_>, HandleError> {
         Ok(self.inner.display_handle())
     }
 }

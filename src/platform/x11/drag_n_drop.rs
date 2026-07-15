@@ -2,7 +2,7 @@ use super::xcb_connection::{Atoms, GetPropertyError};
 use super::*;
 use crate::handler::WindowHandler;
 use crate::platform::x11::error::ReplyExt;
-use crate::tracing::warn;
+use crate::warn;
 use crate::{DropData, Event, MouseEvent};
 use core::result::Result;
 use dpi::PhysicalPosition;

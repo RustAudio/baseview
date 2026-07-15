@@ -2,7 +2,7 @@
 
 use crate::gl::{GlConfig, Profile};
 use crate::platform::*;
-use crate::tracing::*;
+use crate::warn;
 use objc2::rc::Retained;
 use objc2::AllocAnyThread;
 use objc2::{MainThreadMarker, MainThreadOnly};

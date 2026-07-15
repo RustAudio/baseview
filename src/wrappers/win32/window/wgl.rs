@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use crate::gl::{GlConfig, Profile};
-use crate::tracing::warn;
+use crate::warn;
 use crate::wrappers::win32::window::OwnDeviceContext;
 use std::ffi::{c_void, CStr};
 use std::fmt::{Display, Formatter};

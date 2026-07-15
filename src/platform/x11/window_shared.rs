@@ -6,9 +6,7 @@ use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
-use x11rb::protocol::xproto::{
-    ChangeWindowAttributesAux, ConfigureWindowAux, ConnectionExt, InputFocus, Visualid,
-};
+use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, InputFocus, Visualid};
 use x11rb::CURRENT_TIME;
 
 pub(crate) struct WindowInner {
@@ -90,16 +88,7 @@ impl WindowInner {
 
     pub fn resize(&self, size: Size) -> Result<()> {
         let new_physical_size = size.to_physical::<u32>(self.scaling_factor.get());
-
-        self.connection
-            .conn
-            .configure_window(
-                self.xcb_window.id().get(),
-                &ConfigureWindowAux::new()
-                    .width(new_physical_size.width)
-                    .height(new_physical_size.height),
-            )?
-            .check()?;
+        self.xcb_window.resize(new_physical_size)?;
 
         // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
         // and notify the window handler about it

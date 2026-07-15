@@ -2,6 +2,7 @@ use super::drag_n_drop::DragNDropState;
 use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
 use super::*;
 
+use crate::warn;
 use crate::wrappers::connection_poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
@@ -59,11 +60,16 @@ impl EventLoop {
         }
 
         if let Some(size) = self.new_physical_size.take() {
-            self.window.window_size.set(size);
+            let previous = self.window.window_size.replace(size);
 
             let scale_factor = self.window.scaling_factor.get();
-
-            self.handler.resized(WindowSize::from_physical(size.cast(), scale_factor));
+            if let Err(e) =
+                self.handler.resized(WindowSize::from_physical(size.cast(), scale_factor))
+            {
+                warn!("Window Handler failed to resize: {}", e);
+                self.window.window_size.set(previous);
+                self.window.xcb_window.resize(previous.cast())?.check_warn();
+            }
         }
 
         Ok(())

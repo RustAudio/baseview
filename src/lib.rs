@@ -24,6 +24,6 @@ pub use mouse_cursor::MouseCursor;
 pub use window::*;
 pub use window_open_options::*;
 
-pub(crate) use tracing::*;
+pub(crate) use tracing::warn;
 
 pub(crate) mod wrappers;
