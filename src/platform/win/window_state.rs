@@ -1,5 +1,6 @@
 use crate::platform::win::keyboard::KeyboardState;
 use crate::platform::PlatformHandle;
+use crate::warn;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
@@ -9,7 +10,6 @@ use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, OnceCell, Ref, RefCell};
 use std::num::NonZeroIsize;
-use tracing::warn;
 use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 /// All data associated with the window.
