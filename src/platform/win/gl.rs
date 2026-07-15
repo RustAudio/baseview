@@ -56,12 +56,14 @@ impl GlContextInner {
         Ok(Self { hdc, wgl_ctx, gl_library })
     }
 
-    pub unsafe fn make_current(&self) {
-        let _ = self.wgl_ctx.make_current(&self.hdc);
+    pub unsafe fn make_current(&self) -> Result<(), super::Error> {
+        self.wgl_ctx.make_current(&self.hdc)?;
+        Ok(())
     }
 
-    pub unsafe fn make_not_current(&self) {
-        let _ = self.wgl_ctx.make_not_current();
+    pub unsafe fn make_not_current(&self) -> Result<(), super::Error> {
+        self.wgl_ctx.make_not_current()?;
+        Ok(())
     }
 
     pub fn get_proc_address(&self, symbol: &CStr) -> *const c_void {
@@ -79,8 +81,9 @@ impl GlContextInner {
         core::ptr::null()
     }
 
-    pub fn swap_buffers(&self) {
-        let _ = self.hdc.swap_buffers();
+    pub fn swap_buffers(&self) -> Result<(), super::Error> {
+        self.hdc.swap_buffers()?;
+        Ok(())
     }
 }
 

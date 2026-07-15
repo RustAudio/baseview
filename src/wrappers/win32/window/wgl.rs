@@ -3,7 +3,7 @@
 use crate::gl::{GlConfig, Profile};
 use crate::warn;
 use crate::wrappers::win32::window::OwnDeviceContext;
-use std::ffi::{c_void, CStr};
+use std::ffi::c_void;
 use std::fmt::{Display, Formatter};
 use std::mem::transmute;
 use std::num::NonZeroI32;
@@ -284,16 +284,5 @@ impl PixelFormatAttribs {
     pub fn set_without_srgb_ext(&mut self) {
         self.inner[26] = 0;
         self.inner[27] = 0;
-    }
-}
-
-#[derive(Debug)]
-pub struct MissingExtensionFunctionError {
-    name: &'static CStr,
-}
-
-impl Display for MissingExtensionFunctionError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Missing WGL function extension: {}", self.name.to_string_lossy())
     }
 }

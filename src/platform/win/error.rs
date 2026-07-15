@@ -1,4 +1,5 @@
 use crate::HandlerError;
+use std::fmt::Display;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -20,8 +21,11 @@ impl From<HandlerError> for Error {
     }
 }
 
-impl std::fmt::Display for Error {
+impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        match self {
+            Error::Win32(e) => Display::fmt(e, f),
+            Error::Handler(e) => Display::fmt(e, f),
+        }
     }
 }

@@ -16,6 +16,7 @@ use windows_sys::Win32::{
 use dpi::{PhysicalPosition, PhysicalSize, Size};
 use std::cell::Cell;
 use std::num::NonZeroUsize;
+use tracing::warn;
 
 pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
@@ -107,11 +108,9 @@ impl WindowImpl for BaseviewWindow {
 
         // Now we can get the actual dpi of the window.
         let dpi = window.get_dpi(&self.window_state.user32)?;
-        let mut dpi_changed = false;
 
         if dpi != window_state.current_dpi.get() {
             window_state.current_dpi.set(dpi);
-            dpi_changed = true;
 
             // If the user's requested initial size was in system-scaled logical pixels
             if let WindowScalePolicy::SystemScaleFactor = self.window_state.scale_policy {
@@ -149,11 +148,6 @@ impl WindowImpl for BaseviewWindow {
             self.handler_builder.take().unwrap().build(context)?
         };
         let Ok(()) = window_state.handler.set(handler) else { unreachable!() };
-
-        if dpi_changed {
-            // Send an initial Resized event so users get the correct scale factor and physical size.
-            self.window_state.send_resized();
-        }
 
         Ok(())
     }
@@ -346,10 +340,17 @@ unsafe fn wnd_proc_inner(
                 return None;
             }
 
-            window_state.current_size.set(new_size);
+            let previous = window_state.current_size.replace(new_size);
+            let new_size = WindowSize::from_physical(new_size, window_state.scale_factor());
 
-            if let Some(handler) = window_state.handler.get() {
-                handler.resized(WindowSize::from_physical(new_size, window_state.scale_factor()))
+            let handler = window_state.handler.get()?;
+            if let Err(e) = handler.resized(new_size) {
+                warn!("Window Handler failed to resize: {}", e);
+                window_state.current_size.set(previous);
+
+                if let Err(e) = window_state.resize(previous.into()) {
+                    warn!("Failed to resize back to previous window size: {}", e);
+                }
             }
 
             None
@@ -368,15 +369,25 @@ unsafe fn wnd_proc_inner(
             let changed = window_state.current_size.get() != new_size
                 || window_state.current_dpi.get() != dpi;
 
-            window_state.current_dpi.set(dpi);
-            window_state.current_size.set(new_size);
+            window_state.current_dpi.replace(dpi);
+            let previous_size = window_state.current_size.replace(new_size);
 
             // Windows makes us resize the window manually. This however will not send a WM_SIZE event,
             // hence why we are notifying the window handler manually below.
             let _ = window.set_nc_rect(suggested_nc_rect);
 
             if changed {
-                window_state.send_resized();
+                let handler = window_state.handler.get()?;
+                let new_size = WindowSize::from_physical(new_size, dpi.scale_factor());
+
+                if let Err(e) = handler.resized(new_size) {
+                    warn!("Window Handler failed to resize: {}", e);
+                    window_state.current_size.set(previous_size);
+
+                    if let Err(e) = window_state.resize(previous_size.into()) {
+                        warn!("Failed to resize back to previous window size: {}", e);
+                    }
+                }
             }
 
             None
