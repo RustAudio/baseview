@@ -86,7 +86,7 @@ impl EventLoop {
             // if it's already time to draw a new frame.
             let next_frame = last_frame + self.frame_interval;
             if Instant::now() >= next_frame {
-                self.handler.on_frame();
+                self.handler.on_frame()?;
                 last_frame = Instant::max(next_frame, Instant::now() - self.frame_interval);
             }
 

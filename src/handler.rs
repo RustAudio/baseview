@@ -2,8 +2,8 @@ use super::*;
 use crate::platform::Result;
 
 pub trait WindowHandler: 'static {
-    fn on_frame(&self);
-    fn resized(&self, new_size: WindowSize);
+    fn on_frame(&self) -> core::result::Result<(), HandlerError>;
+    fn resized(&self, new_size: WindowSize) -> core::result::Result<(), HandlerError>;
     fn on_event(&self, event: Event) -> EventStatus;
 }
 

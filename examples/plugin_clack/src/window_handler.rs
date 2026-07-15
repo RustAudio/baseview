@@ -15,24 +15,26 @@ pub struct OpenWindowExample {
 }
 
 impl WindowHandler for OpenWindowExample {
-    fn resized(&self, new_size: WindowSize) {
+    fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError> {
         println!("Resized: {new_size:?}");
 
         if let (Some(width), Some(height)) =
             (NonZeroU32::new(new_size.physical.width), NonZeroU32::new(new_size.physical.height))
         {
-            self.surface.borrow_mut().resize(width, height).unwrap();
+            self.surface.borrow_mut().resize(width, height)?;
             self.damaged.set(true);
         }
+
+        Ok(())
     }
 
-    fn on_frame(&self) {
+    fn on_frame(&self) -> Result<(), HandlerError> {
         if !self.damaged.get() {
-            return;
+            return Ok(());
         }
 
         let mut surface = self.surface.borrow_mut();
-        let mut pixels = surface.buffer_mut().unwrap();
+        let mut pixels = surface.buffer_mut()?;
         let size = self.window_context.size();
         let scale_factor = self.window_context.scale_factor();
         let (width, height) = (size.physical.width, size.physical.height);
@@ -89,8 +91,10 @@ impl WindowHandler for OpenWindowExample {
             }
         }
 
-        pixels.present().unwrap();
+        pixels.present()?;
         self.damaged.set(false);
+
+        Ok(())
     }
 
     fn on_event(&self, event: Event) -> EventStatus {
@@ -121,8 +125,7 @@ impl OpenWindowExample {
         let ctx = softbuffer::Context::new(window.clone())?;
         let mut surface = softbuffer::Surface::new(&ctx, window.clone())?;
         let size = window.size().physical;
-        surface
-            .resize(NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap())?;
+        surface.resize(size.width.try_into()?, size.height.try_into()?)?;
 
         Ok(OpenWindowExample {
             window_context: window,

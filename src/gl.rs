@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CStr};
+use std::ffi::{c_void, CStr, CString};
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -54,19 +54,28 @@ impl GlContext {
         GlContext { inner: context, phantom: PhantomData }
     }
 
-    pub unsafe fn make_current(&self) {
-        self.inner.make_current();
+    pub unsafe fn make_current(&self) -> Result<(), crate::Error> {
+        self.inner.make_current()?;
+        Ok(())
     }
 
-    pub unsafe fn make_not_current(&self) {
-        self.inner.make_not_current();
+    pub unsafe fn make_not_current(&self) -> Result<(), crate::Error> {
+        self.inner.make_not_current()?;
+        Ok(())
+    }
+
+    pub fn get_proc_address_from_str(&self, symbol: impl Into<Vec<u8>>) -> *const c_void {
+        let Ok(symbol) = CString::new(symbol) else { return std::ptr::null() };
+
+        self.get_proc_address(&symbol)
     }
 
     pub fn get_proc_address(&self, symbol: &CStr) -> *const c_void {
         self.inner.get_proc_address(symbol)
     }
 
-    pub fn swap_buffers(&self) {
-        self.inner.swap_buffers();
+    pub fn swap_buffers(&self) -> Result<(), crate::Error> {
+        self.inner.swap_buffers()?;
+        Ok(())
     }
 }
