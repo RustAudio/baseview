@@ -50,7 +50,11 @@ impl ExtendedUser32 {
 
 impl Clone for ExtendedUser32 {
     fn clone(&self) -> Self {
-        let library = unsafe { LibraryModule::load(s!("user32.dll")).unwrap() };
+        let library = unsafe { LibraryModule::load(s!("user32.dll")) };
+
+        // PANIC: This should not be able to happen, since we already loaded it once and it's still loaded in Clone
+        let Ok(library) = library else { unreachable!() };
+
         Self {
             _library: library,
 

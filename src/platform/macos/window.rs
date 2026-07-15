@@ -8,6 +8,7 @@ use std::rc::Rc;
 
 use crate::handler::WindowHandlerBuilder;
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
+use crate::platform::Result;
 use crate::wrappers::appkit::{create_window, View};
 use crate::*;
 
@@ -28,7 +29,9 @@ impl Drop for WindowHandle {
 }
 
 impl WindowHandle {
-    pub fn create_window(mut options: WindowOpenOptions, handler: WindowHandlerBuilder) -> Self {
+    pub fn create_window(
+        mut options: WindowOpenOptions, handler: WindowHandlerBuilder,
+    ) -> Result<Self> {
         autoreleasepool(|_| {
             let Some(mtm) = MainThreadMarker::new() else {
                 panic!("macOS: Windows can only be created on the main thread!")
@@ -48,7 +51,7 @@ impl WindowHandle {
     pub fn create_window_parented(
         builder: WindowOpenOptions, handler: WindowHandlerBuilder, parent_view: Retained<NSView>,
         mtm: MainThreadMarker,
-    ) -> Self {
+    ) -> Result<Self> {
         let parenting =
             ViewParentingType::Parented { parent_view: Weak::from_retained(&parent_view) };
 
@@ -56,14 +59,14 @@ impl WindowHandle {
             parent_view.window().map(|w| w.backingScaleFactor()).unwrap_or(1.0);
         let final_size = builder.size.to_logical(backing_scale_factor);
 
-        let (ns_view, state) = BaseviewView::new(builder, handler, parenting, final_size, mtm);
+        let (ns_view, state) = BaseviewView::new(builder, handler, parenting, final_size, mtm)?;
 
-        Self { mtm, state, _window: None, view: Weak::from_retained(&ns_view) }
+        Ok(Self { mtm, state, _window: None, view: Weak::from_retained(&ns_view) })
     }
 
     pub fn create_window_standalone(
         builder: WindowOpenOptions, handler: WindowHandlerBuilder, mtm: MainThreadMarker,
-    ) -> Self {
+    ) -> Result<Self> {
         let app = NSApplication::sharedApplication(mtm);
         let window = create_window_with_options(&builder, mtm);
 
@@ -75,9 +78,9 @@ impl WindowHandle {
             owned_window: Weak::from_retained(&window),
         };
 
-        let (view, state) = BaseviewView::new(builder, handler, parenting, final_size, mtm);
+        let (view, state) = BaseviewView::new(builder, handler, parenting, final_size, mtm)?;
 
-        Self { mtm, state, view: Weak::from_retained(&view), _window: Some(window) }
+        Ok(Self { mtm, state, view: Weak::from_retained(&view), _window: Some(window) })
     }
 
     pub fn run_until_closed(self) {

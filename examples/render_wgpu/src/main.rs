@@ -1,5 +1,7 @@
 use baseview::dpi::{LogicalSize, PhysicalSize};
-use baseview::{Event, EventStatus, WindowContext, WindowHandler, WindowOpenOptions, WindowSize};
+use baseview::{
+    Event, EventStatus, HandlerError, WindowContext, WindowHandler, WindowOpenOptions, WindowSize,
+};
 
 use log::LevelFilter;
 use std::cell::RefCell;
@@ -16,12 +18,12 @@ struct WgpuExample {
 }
 
 impl WgpuExample {
-    async fn new(context: WindowContext) -> Self {
+    async fn new(context: WindowContext) -> Result<Self, HandlerError> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
             Box::new(context.platform_handle()),
         ));
 
-        let surface = instance.create_surface(context.platform_handle()).unwrap();
+        let surface = instance.create_surface(context.platform_handle())?;
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -31,8 +33,7 @@ impl WgpuExample {
                 compatible_surface: Some(&surface),
                 ..Default::default()
             })
-            .await
-            .expect("Failed to find an appropriate adapter");
+            .await?;
 
         // Create the logical device and command queue
         let (device, queue) = adapter
@@ -44,8 +45,7 @@ impl WgpuExample {
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                 ..Default::default()
             })
-            .await
-            .expect("Failed to create device");
+            .await?;
 
         const SHADER: &str = "
             const VERTS = array(
@@ -116,7 +116,7 @@ impl WgpuExample {
         let surface_config = surface.get_default_config(&adapter, width, height).unwrap();
         surface.configure(&device, &surface_config);
 
-        Self {
+        Ok(Self {
             window_context: context,
 
             instance,
@@ -125,29 +125,30 @@ impl WgpuExample {
             queue,
             surface: surface.into(),
             surface_config: surface_config.into(),
-        }
+        })
     }
 }
 
 impl WindowHandler for WgpuExample {
-    fn on_frame(&self) {
+    fn on_frame(&self) -> Result<(), HandlerError> {
         let mut surface = self.surface.borrow_mut();
 
         let surface_texture = match surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) => texture,
-            wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => return,
+            wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => {
+                return Ok(())
+            }
             wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
                 surface.configure(&self.device, &self.surface_config.borrow());
                 // We'll retry next frame
-                return;
+                return Ok(());
             }
             wgpu::CurrentSurfaceTexture::Lost => {
-                *surface =
-                    self.instance.create_surface(self.window_context.platform_handle()).unwrap();
+                *surface = self.instance.create_surface(self.window_context.platform_handle())?;
                 surface.configure(&self.device, &self.surface_config.borrow());
 
                 // We'll retry next frame
-                return;
+                return Ok(());
             }
             wgpu::CurrentSurfaceTexture::Validation => {
                 unreachable!("No error scope registered, so validation errors will panic")
@@ -183,9 +184,11 @@ impl WindowHandler for WgpuExample {
 
         self.queue.submit(Some(encoder.finish()));
         self.queue.present(surface_texture);
+
+        Ok(())
     }
 
-    fn resized(&self, new_size: WindowSize) {
+    fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError> {
         let mut surface_config = self.surface_config.borrow_mut();
 
         surface_config.width = new_size.physical.width;
@@ -193,6 +196,8 @@ impl WindowHandler for WgpuExample {
 
         let surface = self.surface.borrow();
         surface.configure(&self.device, &surface_config);
+
+        Ok(())
     }
 
     fn on_event(&self, event: Event) -> EventStatus {
@@ -202,14 +207,16 @@ impl WindowHandler for WgpuExample {
     }
 }
 
-fn main() {
+fn main() -> Result<(), baseview::Error> {
     env_logger::builder().filter_level(LevelFilter::Debug).init();
     let window_open_options = WindowOpenOptions::new()
         .with_title("WGPU on Baseview")
         .with_size(LogicalSize::new(512, 512));
 
-    baseview::create_window(window_open_options, |c| pollster::block_on(WgpuExample::new(c)))
+    baseview::create_window(window_open_options, |c| pollster::block_on(WgpuExample::new(c)))?
         .run_until_closed();
+
+    Ok(())
 }
 
 fn log_event(event: &Event) {

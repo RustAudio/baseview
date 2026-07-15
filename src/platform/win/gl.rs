@@ -5,37 +5,14 @@ use windows_core::{s, PCSTR};
 use windows_sys::Win32::Graphics::OpenGL::wglGetProcAddress;
 
 use crate::gl::*;
+use crate::warn;
 use crate::wrappers::win32::window::{
-    with_dummy_window, HWnd, MissingExtensionFunctionError, OwnDeviceContext, PixelFormat,
-    PixelFormatAttribs, WglContext, WglExtra,
+    with_dummy_window, HWnd, OwnDeviceContext, PixelFormat, PixelFormatAttribs, WglContext,
+    WglExtra,
 };
 use crate::wrappers::win32::LibraryModule;
 
-#[derive(Debug)]
-pub enum CreationFailedError {
-    Win32(windows_core::Error),
-    MissingWglExtension(MissingExtensionFunctionError),
-}
-
-impl From<windows_core::Error> for CreationFailedError {
-    fn from(err: windows_core::Error) -> Self {
-        CreationFailedError::Win32(err)
-    }
-}
-
-impl From<MissingExtensionFunctionError> for CreationFailedError {
-    fn from(err: MissingExtensionFunctionError) -> Self {
-        CreationFailedError::MissingWglExtension(err)
-    }
-}
-
 pub type GlContext = Rc<GlContextInner>;
-
-impl From<CreationFailedError> for GlError {
-    fn from(e: CreationFailedError) -> Self {
-        GlError::CreationFailed(e)
-    }
-}
 
 pub struct GlContextInner {
     hdc: OwnDeviceContext,
@@ -44,7 +21,7 @@ pub struct GlContextInner {
 }
 
 impl GlContextInner {
-    pub fn create(window: HWnd, config: GlConfig) -> Result<Self, CreationFailedError> {
+    pub fn create(window: HWnd, config: GlConfig) -> Result<Self, windows_core::Error> {
         let gl_library = unsafe { LibraryModule::load(s!("opengl32.dll"))? };
 
         // Create temporary window and context to load function pointers
@@ -54,7 +31,7 @@ impl GlContextInner {
 
             let wgl_ctx = hdc.create_wgl_context()?;
             wgl_ctx.with_current(&hdc, WglExtra::load)
-        })??;
+        })?;
 
         // Create actual context
         let hdc = window.get_own_dc()?;
@@ -64,19 +41,29 @@ impl GlContextInner {
             None => hdc.set_pixel_format(&PixelFormat::from_config(&config))?,
         }
 
-        let wgl_ctx = extra.create_context_for_config(&hdc, &config)?;
+        let wgl_ctx = match extra.create_context_for_config(&hdc, &config) {
+            Ok(wgl_ctx) => wgl_ctx,
+            Err(e) => {
+                warn!("Could not create OpenGL context from OpenGL config attributes: {}. Attempting fallback.", e);
+                hdc.create_wgl_context()?
+            }
+        };
 
-        wgl_ctx.with_current(&hdc, || extra.set_vsync(config.vsync))??;
+        if let Err(e) | Ok(Err(e)) = wgl_ctx.with_current(&hdc, || extra.set_vsync(config.vsync)) {
+            warn!("Could not set vsync: {}", e);
+        }
 
         Ok(Self { hdc, wgl_ctx, gl_library })
     }
 
-    pub unsafe fn make_current(&self) {
-        let _ = self.wgl_ctx.make_current(&self.hdc);
+    pub unsafe fn make_current(&self) -> Result<(), super::Error> {
+        self.wgl_ctx.make_current(&self.hdc)?;
+        Ok(())
     }
 
-    pub unsafe fn make_not_current(&self) {
-        let _ = self.wgl_ctx.make_not_current();
+    pub unsafe fn make_not_current(&self) -> Result<(), super::Error> {
+        self.wgl_ctx.make_not_current()?;
+        Ok(())
     }
 
     pub fn get_proc_address(&self, symbol: &CStr) -> *const c_void {
@@ -94,8 +81,9 @@ impl GlContextInner {
         core::ptr::null()
     }
 
-    pub fn swap_buffers(&self) {
-        let _ = self.hdc.swap_buffers();
+    pub fn swap_buffers(&self) -> Result<(), super::Error> {
+        self.hdc.swap_buffers()?;
+        Ok(())
     }
 }
 
@@ -104,16 +92,25 @@ fn find_wgl_pixel_format(
 ) -> Option<NonZeroI32> {
     let mut format_attribs = PixelFormatAttribs::from_config(config);
 
-    // TODO: log errors
-    if let Ok(Some(format)) = extra.choose_pixel_format_from_attribs(&format_attribs, dc) {
-        return Some(format);
+    match extra.choose_pixel_format_from_attribs(&format_attribs, dc) {
+        Ok(Some(format)) => return Some(format),
+        Err(e) => {
+            warn!("Could not choose optimal pixel format from GL configuration: {}", e);
+            return None;
+        }
+        Ok(None) => {}
     };
 
     eprintln!("Warning: sRGB framebuffer not supported, falling back to non-sRGB");
     format_attribs.set_without_srgb_ext();
 
-    if let Ok(Some(format)) = extra.choose_pixel_format_from_attribs(&format_attribs, dc) {
-        return Some(format);
+    match extra.choose_pixel_format_from_attribs(&format_attribs, dc) {
+        Ok(Some(format)) => return Some(format),
+        Err(e) => {
+            warn!("Could not choose optimal pixel format from GL configuration: {}", e);
+            return None;
+        }
+        Ok(None) => {}
     };
 
     None

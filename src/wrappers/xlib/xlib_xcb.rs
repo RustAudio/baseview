@@ -1,6 +1,6 @@
+use crate::platform::*;
 use crate::wrappers::xlib::xlib_connection::XlibConnection;
 use raw_window_handle::{DisplayHandle, XcbDisplayHandle, XlibDisplayHandle};
-use std::error::Error;
 use std::ops::Deref;
 use std::os::fd::{AsFd, BorrowedFd};
 use std::os::raw::c_int;
@@ -24,7 +24,7 @@ pub struct XlibXcbConnection {
 }
 
 impl XlibXcbConnection {
-    pub fn open() -> Result<Self, Box<dyn Error>> {
+    pub fn open() -> Result<Self> {
         let xlib_xcb = Xlib_xcb::open()?;
         // Open the connection to the X11 server as a Xlib/XCB connection object
         let xlib_connection = XlibConnection::open()?;

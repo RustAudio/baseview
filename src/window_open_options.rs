@@ -16,7 +16,6 @@ pub enum WindowScalePolicy {
 
 /// The options for opening a new window
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub struct WindowOpenOptions {
     pub title: String,
 
@@ -62,7 +61,14 @@ impl WindowOpenOptions {
 
     #[inline]
     pub fn with_parent(mut self, parent: &impl HasWindowHandle) -> Self {
-        self.parent = Some(ParentWindowHandle::extract(parent));
+        let parent = match ParentWindowHandle::extract(parent) {
+            Ok(parent) => parent,
+            Err(e) => {
+                panic!("Invalid parent window handle: {e}")
+            }
+        };
+
+        self.parent = Some(parent);
         self
     }
 

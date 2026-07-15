@@ -1,5 +1,6 @@
 use crate::platform::win::keyboard::KeyboardState;
 use crate::platform::PlatformHandle;
+use crate::warn;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
@@ -56,7 +57,10 @@ impl WindowState {
     pub(crate) fn handle_on_frame(&self) {
         let Some(handler) = self.handler.get() else { return };
 
-        handler.on_frame()
+        if let Err(e) = handler.on_frame() {
+            warn!("Error while rendering frame: {}", e);
+            self.request_close();
+        }
     }
 
     pub(crate) fn handle_event(&self, event: Event) -> EventStatus {
@@ -82,13 +86,6 @@ impl WindowState {
         self.keyboard_state.borrow()
     }
 
-    pub fn send_resized(&self) {
-        if let Some(handler) = self.handler.get() {
-            handler
-                .resized(WindowSize::from_physical(self.current_size.get(), self.scale_factor()));
-        }
-    }
-
     pub fn request_close(&self) {
         unsafe {
             PostMessageW(
@@ -104,24 +101,28 @@ impl WindowState {
         HWnd::get_focused_window() == self.hwnd.as_raw()
     }
 
-    pub fn focus(&self) {
-        self.hwnd.set_focus().unwrap()
+    pub fn focus(&self) -> Result<(), super::Error> {
+        self.hwnd.set_focus()?;
+        Ok(())
     }
 
-    pub fn resize(&self, size: Size) {
+    pub fn resize(&self, size: Size) -> Result<(), super::Error> {
         // `self.window_info` will be modified in response to the `WM_SIZE` event that
         // follows the `SetWindowPos()` call
         let dpi = self.current_dpi.get();
         let new_size = size.to_physical(dpi.scale_factor());
 
-        self.hwnd.resize_and_activate(new_size, dpi, &self.user32).unwrap();
+        self.hwnd.resize_and_activate(new_size, dpi, &self.user32)?;
+        Ok(())
     }
 
-    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) {
+    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) -> Result<(), super::Error> {
         self.cursor_icon.set(mouse_cursor);
         if let Ok(cursor) = SystemCursor::load(mouse_cursor) {
             cursor.set()
         }
+
+        Ok(())
     }
 
     #[cfg(feature = "opengl")]

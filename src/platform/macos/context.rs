@@ -1,8 +1,9 @@
 use crate::platform::macos::cursor::Cursor;
 use crate::platform::macos::view::BaseviewView;
+use crate::platform::Result;
 use crate::platform::{PlatformHandle, WindowSharedState};
 use crate::wrappers::appkit::{View, ViewRef};
-use crate::{MouseCursor, WindowSize};
+use crate::*;
 use dispatch2::MainThreadBound;
 use dpi::Size;
 use objc2::rc::Weak;
@@ -50,27 +51,32 @@ impl WindowContext {
         view.isEqual(Some(&*first_responder))
     }
 
-    pub fn focus(&self) {
-        let Some(view) = self.view.load() else { return };
+    pub fn focus(&self) -> Result<()> {
+        let Some(view) = self.view.load() else { return Ok(()) };
         if let Some(window) = view.window() {
             window.makeFirstResponder(Some(&view));
         }
+
+        Ok(())
     }
 
-    pub fn resize(&self, size: Size) {
-        let Some(view) = self.view.load() else { return };
-        let Some(view) = view.inner_ref() else { return };
+    pub fn resize(&self, size: Size) -> Result<()> {
+        let Some(view) = self.view.load() else { return Ok(()) };
+        let Some(view) = view.inner_ref() else { return Ok(()) };
         if view.inner.state.closed.get() {
-            return;
+            return Ok(());
         }
 
         BaseviewView::resize(view, size);
+
+        Ok(())
     }
 
-    pub fn set_mouse_cursor(&self, cursor: MouseCursor) {
-        let Some(view) = self.view.load() else { return };
+    pub fn set_mouse_cursor(&self, cursor: MouseCursor) -> Result<()> {
+        let Some(view) = self.view.load() else { return Ok(()) };
         let native_cursor = Cursor::from(cursor);
         view.addCursorRect_cursor(view.bounds(), &native_cursor.load());
+        Ok(())
     }
 
     pub fn size(&self) -> WindowSize {

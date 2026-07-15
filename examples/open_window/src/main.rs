@@ -8,7 +8,8 @@ use rtrb::{Consumer, RingBuffer};
 use baseview::copy_to_clipboard;
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::{
-    Event, EventStatus, MouseEvent, WindowContext, WindowHandler, WindowOpenOptions, WindowSize,
+    Event, EventStatus, HandlerError, MouseEvent, WindowContext, WindowHandler, WindowOpenOptions,
+    WindowSize,
 };
 
 #[derive(Debug, Clone)]
@@ -27,24 +28,26 @@ struct OpenWindowExample {
 }
 
 impl WindowHandler for OpenWindowExample {
-    fn resized(&self, new_size: WindowSize) {
+    fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError> {
         println!("Resized: {new_size:?}");
 
         if let (Some(width), Some(height)) =
             (NonZeroU32::new(new_size.physical.width), NonZeroU32::new(new_size.physical.height))
         {
-            self.surface.borrow_mut().resize(width, height).unwrap();
+            self.surface.borrow_mut().resize(width, height)?;
             self.damaged.set(true);
         }
+
+        Ok(())
     }
 
-    fn on_frame(&self) {
+    fn on_frame(&self) -> Result<(), HandlerError> {
         if !self.damaged.get() {
-            return;
+            return Ok(());
         }
 
         let mut surface = self.surface.borrow_mut();
-        let mut pixels = surface.buffer_mut().unwrap();
+        let mut pixels = surface.buffer_mut()?;
         let size = self.window_context.size();
         let scale_factor = self.window_context.scale_factor();
         let (width, height) = (size.physical.width, size.physical.height);
@@ -101,12 +104,14 @@ impl WindowHandler for OpenWindowExample {
             }
         }
 
-        pixels.present().unwrap();
+        pixels.present()?;
         self.damaged.set(false);
 
         while let Ok(message) = self.rx.borrow_mut().pop() {
             println!("Message: {:?}", message);
         }
+
+        Ok(())
     }
 
     fn on_event(&self, event: Event) -> EventStatus {
@@ -134,7 +139,7 @@ impl WindowHandler for OpenWindowExample {
     }
 }
 
-fn main() {
+fn main() -> Result<(), baseview::Error> {
     let window_open_options = WindowOpenOptions::new().with_size(LogicalSize::new(512.0, 512.0));
 
     let (mut tx, rx) = RingBuffer::new(128);
@@ -148,23 +153,23 @@ fn main() {
     });
 
     baseview::create_window(window_open_options, |window| {
-        let ctx = softbuffer::Context::new(window.clone()).unwrap();
-        let mut surface = softbuffer::Surface::new(&ctx, window.clone()).unwrap();
+        let ctx = softbuffer::Context::new(window.clone())?;
+        let mut surface = softbuffer::Surface::new(&ctx, window.clone())?;
         let size = window.size().physical;
-        surface
-            .resize(NonZeroU32::new(size.width).unwrap(), NonZeroU32::new(size.height).unwrap())
-            .unwrap();
+        surface.resize(size.width.try_into()?, size.height.try_into()?)?;
 
-        OpenWindowExample {
+        Ok(OpenWindowExample {
             window_context: window,
             surface: surface.into(),
             rx: rx.into(),
             mouse_pos: PhysicalPosition::new(0., 0.).into(),
             is_cursor_inside: false.into(),
             damaged: true.into(),
-        }
-    })
+        })
+    })?
     .run_until_closed();
+
+    Ok(())
 }
 
 fn log_event(event: &Event) {

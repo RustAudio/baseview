@@ -1,6 +1,7 @@
 use super::xlib::*;
-use crate::gl::{GlConfig, GlError, Profile};
+use crate::gl::{GlConfig, Profile};
 use crate::platform::gl::CreationFailedError;
+use crate::platform::*;
 
 use std::ffi::{c_ulong, c_void, CStr};
 use std::os::raw::c_int;
@@ -30,7 +31,7 @@ pub struct Glx {
 }
 
 impl Glx {
-    pub fn open() -> Result<Self, GlError> {
+    pub fn open() -> Result<Self> {
         Ok(Self { inner: x11_dl::glx::Glx::open()? })
     }
 
@@ -59,7 +60,7 @@ impl Glx {
 
     pub fn choose_best_fb_config(
         &self, connection: &XlibConnection, config: &GlConfig, error_handler: &XErrorHandler,
-    ) -> Result<GlxFbConfig, GlError> {
+    ) -> Result<GlxFbConfig> {
         let fb_attribs = Self::get_fb_attribs(config);
 
         let mut nelements = 0;
@@ -76,7 +77,7 @@ impl Glx {
 
         error_handler.check()?;
         if nelements == 0 || result.is_null() {
-            return Err(GlError::CreationFailed(CreationFailedError::NoValidFBConfig));
+            return Err(CreationFailedError::NoValidFBConfig.into());
         }
 
         // SAFETY: If nelements != 0, the result pointer is non-null, and no Xlib error occured, then
@@ -92,14 +93,14 @@ impl Glx {
 
     pub fn get_visual_from_fb_config(
         &self, connection: &XlibConnection, fb_config: GlxFbConfig, error_handler: &XErrorHandler,
-    ) -> Result<XVisualInfo, GlError> {
+    ) -> Result<XVisualInfo> {
         // SAFETY: XlibConnection guarantees the inner dpy is valid.
         let result =
             unsafe { (self.inner.glXGetVisualFromFBConfig)(connection.as_raw(), fb_config.0) };
 
         error_handler.check()?;
         if result.is_null() {
-            return Err(GlError::CreationFailed(CreationFailedError::NoVisual));
+            return Err(CreationFailedError::NoVisual.into());
         }
 
         // SAFETY: If the result pointer is non-null, and no Xlib error occured, then
@@ -114,7 +115,7 @@ impl Glx {
 
     pub fn swap_buffers(
         &self, connection: &XlibConnection, window_id: c_ulong, error_handler: &XErrorHandler,
-    ) -> Result<(), GlError> {
+    ) -> Result<()> {
         // SAFETY: XlibConnection guarantees the inner dpy is valid.
         unsafe { (self.inner.glXSwapBuffers)(connection.as_raw(), window_id) };
 
@@ -151,13 +152,13 @@ impl Glx {
     pub unsafe fn make_current(
         &self, connection: &XlibConnection, window_id: c_ulong, context: GLXContext,
         error_handler: &XErrorHandler,
-    ) -> Result<(), GlError> {
+    ) -> Result<()> {
         // SAFETY: XlibConnection guarantees the inner dpy is valid.
         let res = unsafe { (self.inner.glXMakeCurrent)(connection.as_raw(), window_id, context) };
 
         error_handler.check()?;
         if res == 0 {
-            return Err(GlError::CreationFailed(CreationFailedError::MakeCurrentFailed));
+            return Err(CreationFailedError::MakeCurrentFailed.into());
         }
 
         Ok(())
@@ -165,14 +166,14 @@ impl Glx {
 
     pub unsafe fn clear_current(
         &self, connection: &XlibConnection, error_handler: &XErrorHandler,
-    ) -> Result<(), GlError> {
+    ) -> Result<()> {
         self.make_current(connection, 0, core::ptr::null_mut(), error_handler)
     }
 
     pub unsafe fn with_current_context<T>(
         &self, connection: &XlibConnection, window_id: c_ulong, context: GLXContext,
         error_handler: &XErrorHandler, closure: impl FnOnce() -> T,
-    ) -> Result<T, GlError> {
+    ) -> Result<T> {
         self.make_current(connection, window_id, context, error_handler)?;
 
         // Using a "drop" allows us to clear the GL context even if the given closure panics
@@ -221,7 +222,7 @@ impl GlxCreateContextAttribsARB {
     pub fn call(
         &self, connection: &XlibConnection, gl_config: &GlConfig, glx_fb_config: GlxFbConfig,
         error_handler: &XErrorHandler,
-    ) -> Result<GLXContext, GlError> {
+    ) -> Result<GLXContext> {
         let ctx_attribs = Self::get_ctx_attribs(gl_config);
 
         let context = unsafe {
@@ -237,7 +238,7 @@ impl GlxCreateContextAttribsARB {
         error_handler.check()?;
 
         if context.is_null() {
-            return Err(GlError::CreationFailed(CreationFailedError::ContextCreationFailed));
+            return Err(CreationFailedError::ContextCreationFailed.into());
         }
 
         Ok(context)

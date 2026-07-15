@@ -3,7 +3,8 @@
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
 use crate::handler::WindowHandlerBuilder;
-use crate::platform::macos::context::WindowContext;
+use crate::platform::*;
+use crate::tracing::warn;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
@@ -48,7 +49,7 @@ impl BaseviewView {
     pub fn new(
         _options: WindowOpenOptions, builder: WindowHandlerBuilder, parenting: ViewParentingType,
         final_size: LogicalSize<f64>, mtm: MainThreadMarker,
-    ) -> (Retained<View<Self>>, Rc<WindowSharedState>) {
+    ) -> Result<(Retained<View<Self>>, Rc<WindowSharedState>)> {
         let view_rect =
             NSRect::new(NSPoint::ZERO, NSSize::new(final_size.width, final_size.height));
 
@@ -72,13 +73,15 @@ impl BaseviewView {
             // Set up parenting before handler setup
             match &view.parenting {
                 ViewParentingType::Parented { parent_view } => {
-                    let parent_view = parent_view.load().unwrap();
-                    parent_view.addSubview(view.view);
+                    if let Some(parent_view) = parent_view.load() {
+                        parent_view.addSubview(view.view);
+                    }
                 }
                 ViewParentingType::Windowed { owned_window, .. } => {
-                    let owned_window = owned_window.load().unwrap();
-                    owned_window.setContentView(Some(view.view));
-                    set_delegate(&owned_window, view.view);
+                    if let Some(owned_window) = owned_window.load() {
+                        owned_window.setContentView(Some(view.view));
+                        set_delegate(&owned_window, view.view);
+                    }
                 }
             }
 
@@ -87,12 +90,12 @@ impl BaseviewView {
 
             #[cfg(feature = "opengl")]
             if let Some(gl_config) = _options.gl_config {
-                let gl_context = super::gl::GlContext::create(view.view, gl_config).unwrap();
+                let gl_context = super::gl::GlContext::create(view.view, gl_config, view.mtm)?;
                 let Ok(()) = view.gl_context.set(gl_context) else { unreachable!() };
             }
 
             let context = WindowContext::new(view);
-            let handler = builder.build(crate::WindowContext::new(context));
+            let handler = builder.build(crate::WindowContext::new(context))?;
 
             // Initialize handler
             view.window_handler.set(handler);
@@ -121,9 +124,11 @@ impl BaseviewView {
                 }
             });
             view.notification_center_observer.set(Some(observer));
-        });
 
-        (view, state)
+            Ok(())
+        })?;
+
+        Ok((view, state))
     }
 
     pub fn close(this: ViewRef<Self>) {
@@ -178,7 +183,10 @@ impl BaseviewView {
     }
 
     fn trigger_frame(this: ViewRef<Self>) {
-        this.window_handler.use_handler(|h| h.on_frame());
+        if let Some(Err(e)) = this.window_handler.use_handler(|h| h.on_frame()) {
+            warn!("Error while rendering frame: {}", e);
+            Self::close(this);
+        }
     }
 }
 
@@ -222,12 +230,18 @@ impl ViewImpl for BaseviewView {
         if this.state.scale_factor.get() != current_scale_factor
             || this.state.size.get() != current_size
         {
-            this.state.size.set(current_size);
+            let previous = this.state.size.replace(current_size);
             this.state.scale_factor.set(current_scale_factor);
 
-            this.window_handler.use_handler(|h| {
+            let result = this.window_handler.use_handler(|h| {
                 h.resized(WindowSize::from_logical(current_size, current_scale_factor))
             });
+
+            if let Some(Err(e)) = result {
+                warn!("Window Handler failed to resize: {}", e);
+                this.state.size.set(previous);
+                Self::resize(this, previous.into())
+            }
         }
     }
 

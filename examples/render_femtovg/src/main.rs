@@ -1,12 +1,12 @@
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::gl::{GlConfig, GlContext};
 use baseview::{
-    Event, EventStatus, MouseEvent, WindowContext, WindowHandler, WindowOpenOptions, WindowSize,
+    Event, EventStatus, HandlerError, MouseEvent, WindowContext, WindowHandler, WindowOpenOptions,
+    WindowSize,
 };
 use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
 use std::cell::{Cell, RefCell};
-use std::ffi::CString;
 
 struct FemtovgExample {
     window_context: WindowContext,
@@ -17,39 +17,37 @@ struct FemtovgExample {
 }
 
 impl FemtovgExample {
-    fn new(window_context: WindowContext) -> Self {
-        let gl_context = window_context.gl_context().unwrap();
-        unsafe { gl_context.make_current() };
+    fn new(window_context: WindowContext) -> Result<Self, HandlerError> {
+        let Some(gl_context) = window_context.gl_context() else { unreachable!() };
+        unsafe { gl_context.make_current()? };
 
-        let renderer = unsafe {
-            OpenGl::new_from_function(|s| gl_context.get_proc_address(&CString::new(s).unwrap()))
-        }
-        .unwrap();
+        let renderer =
+            unsafe { OpenGl::new_from_function(|s| gl_context.get_proc_address_from_str(s)) }?;
 
-        let mut canvas = Canvas::new(renderer).unwrap();
+        let mut canvas = Canvas::new(renderer)?;
         let size = window_context.size();
 
         canvas.set_size(size.physical.width, size.physical.height, size.scale_factor as f32);
 
-        unsafe { gl_context.make_not_current() };
-        Self {
+        unsafe { gl_context.make_not_current()? };
+        Ok(Self {
             gl_context,
             window_context,
             canvas: canvas.into(),
             damaged: true.into(),
             current_mouse_position: Cell::new(PhysicalPosition::default()),
-        }
+        })
     }
 }
 
 impl WindowHandler for FemtovgExample {
-    fn on_frame(&self) {
+    fn on_frame(&self) -> Result<(), HandlerError> {
         if !self.damaged.get() {
-            return;
+            return Ok(());
         }
 
         let context = &self.gl_context;
-        unsafe { context.make_current() };
+        unsafe { context.make_current()? };
 
         let mut canvas = self.canvas.borrow_mut();
 
@@ -81,15 +79,19 @@ impl WindowHandler for FemtovgExample {
 
         // Tell renderer to execute all drawing commands
         canvas.flush();
-        context.swap_buffers();
-        unsafe { context.make_not_current() };
+        context.swap_buffers()?;
+        unsafe { context.make_not_current()? };
         self.damaged.set(false);
+
+        Ok(())
     }
 
-    fn resized(&self, new_size: WindowSize) {
+    fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError> {
         let size = new_size.physical;
         self.canvas.borrow_mut().set_size(size.width, size.height, new_size.scale_factor as f32);
         self.damaged.set(true);
+
+        Ok(())
     }
 
     fn on_event(&self, event: Event) -> EventStatus {
@@ -102,7 +104,7 @@ impl WindowHandler for FemtovgExample {
             ) => {
                 self.current_mouse_position.set(position);
                 if position.y > 400. && !self.window_context.has_focus() {
-                    self.window_context.focus()
+                    let _ = self.window_context.focus();
                 }
                 self.damaged.set(true);
             }
@@ -113,13 +115,14 @@ impl WindowHandler for FemtovgExample {
     }
 }
 
-fn main() {
+fn main() -> Result<(), baseview::Error> {
     let window_open_options = WindowOpenOptions::new()
         .with_title("Femtovg on Baseview")
         .with_size(LogicalSize::new(512, 512))
         .with_gl_config(GlConfig { alpha_bits: 8, ..GlConfig::default() });
 
-    baseview::create_window(window_open_options, FemtovgExample::new).run_until_closed();
+    baseview::create_window(window_open_options, FemtovgExample::new)?.run_until_closed();
+    Ok(())
 }
 
 fn log_event(event: &Event) {

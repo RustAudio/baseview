@@ -5,9 +5,10 @@ use std::num::{NonZero, NonZeroU32};
 use std::rc::Rc;
 use x11rb::connection::Connection;
 use x11rb::cookie::VoidCookie;
-use x11rb::errors::ReplyOrIdError;
+use x11rb::errors::{ConnectionError, ReplyOrIdError};
 use x11rb::protocol::xproto::{
-    AtomEnum, ConnectionExt as _, CreateWindowAux, EventMask, PropMode, WindowClass,
+    AtomEnum, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, PropMode,
+    WindowClass,
 };
 use x11rb::wrapper::ConnectionExt as _;
 use x11rb::xcb_ffi::XCBConnection;
@@ -61,6 +62,15 @@ impl XcbWindow {
 
     pub fn map_window(&self) -> Result<VoidCookie<'_, XCBConnection>, ReplyOrIdError> {
         Ok(self.connection.conn.map_window(self.window_id.get())?)
+    }
+
+    pub fn resize(
+        &self, size: PhysicalSize<u32>,
+    ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
+        self.connection.conn.configure_window(
+            self.id().get(),
+            &ConfigureWindowAux::new().width(size.width).height(size.height),
+        )
     }
 
     pub fn set_title(&self, title: &str) -> Result<VoidCookie<'_, XCBConnection>, ReplyOrIdError> {

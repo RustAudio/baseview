@@ -1,4 +1,4 @@
-use windows_core::{ComObject, Result, HSTRING};
+use windows_core::{ComObject, HSTRING};
 use windows_sys::Win32::{
     Foundation::{LPARAM, LRESULT, RECT, WPARAM},
     UI::{
@@ -13,6 +13,7 @@ use windows_sys::Win32::{
     },
 };
 
+use crate::warn;
 use dpi::{PhysicalPosition, PhysicalSize, Size};
 use std::cell::Cell;
 use std::num::NonZeroUsize;
@@ -23,6 +24,7 @@ use super::drop_target::DropTarget;
 use super::*;
 use crate::handler::WindowHandlerBuilder;
 use crate::platform::win::window_state::WindowState;
+use crate::platform::Error;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
@@ -98,7 +100,7 @@ pub struct BaseviewWindow {
 }
 
 impl WindowImpl for BaseviewWindow {
-    fn after_create(&self, window: HWnd) -> Result<()> {
+    fn after_create(&self, window: HWnd) -> core::result::Result<(), Error> {
         let hwnd = window.as_raw();
         let window_state = &self.window_state;
 
@@ -106,11 +108,9 @@ impl WindowImpl for BaseviewWindow {
 
         // Now we can get the actual dpi of the window.
         let dpi = window.get_dpi(&self.window_state.user32)?;
-        let mut dpi_changed = false;
 
         if dpi != window_state.current_dpi.get() {
             window_state.current_dpi.set(dpi);
-            dpi_changed = true;
 
             // If the user's requested initial size was in system-scaled logical pixels
             if let WindowScalePolicy::SystemScaleFactor = self.window_state.scale_policy {
@@ -145,14 +145,9 @@ impl WindowImpl for BaseviewWindow {
 
         let handler = {
             let context = crate::WindowContext::new(Rc::clone(&self.window_state));
-            self.handler_builder.take().unwrap().build(context)
+            self.handler_builder.take().unwrap().build(context)?
         };
         let Ok(()) = window_state.handler.set(handler) else { unreachable!() };
-
-        if dpi_changed {
-            // Send an initial Resized event so users get the correct scale factor and physical size.
-            self.window_state.send_resized();
-        }
 
         Ok(())
     }
@@ -345,10 +340,17 @@ unsafe fn wnd_proc_inner(
                 return None;
             }
 
-            window_state.current_size.set(new_size);
+            let previous = window_state.current_size.replace(new_size);
+            let new_size = WindowSize::from_physical(new_size, window_state.scale_factor());
 
-            if let Some(handler) = window_state.handler.get() {
-                handler.resized(WindowSize::from_physical(new_size, window_state.scale_factor()))
+            let handler = window_state.handler.get()?;
+            if let Err(e) = handler.resized(new_size) {
+                warn!("Window Handler failed to resize: {}", e);
+                window_state.current_size.set(previous);
+
+                if let Err(e) = window_state.resize(previous.into()) {
+                    warn!("Failed to resize back to previous window size: {}", e);
+                }
             }
 
             None
@@ -367,15 +369,25 @@ unsafe fn wnd_proc_inner(
             let changed = window_state.current_size.get() != new_size
                 || window_state.current_dpi.get() != dpi;
 
-            window_state.current_dpi.set(dpi);
-            window_state.current_size.set(new_size);
+            window_state.current_dpi.replace(dpi);
+            let previous_size = window_state.current_size.replace(new_size);
 
             // Windows makes us resize the window manually. This however will not send a WM_SIZE event,
             // hence why we are notifying the window handler manually below.
             let _ = window.set_nc_rect(suggested_nc_rect);
 
             if changed {
-                window_state.send_resized();
+                let handler = window_state.handler.get()?;
+                let new_size = WindowSize::from_physical(new_size, dpi.scale_factor());
+
+                if let Err(e) = handler.resized(new_size) {
+                    warn!("Window Handler failed to resize: {}", e);
+                    window_state.current_size.set(previous_size);
+
+                    if let Err(e) = window_state.resize(previous_size.into()) {
+                        warn!("Failed to resize back to previous window size: {}", e);
+                    }
+                }
             }
 
             None
@@ -407,8 +419,10 @@ unsafe fn wnd_proc_inner(
 }
 
 impl WindowHandle {
-    pub fn create_window(options: WindowOpenOptions, build: WindowHandlerBuilder) -> WindowHandle {
-        let extended_user_32 = ExtendedUser32::load().unwrap();
+    pub fn create_window(
+        options: WindowOpenOptions, build: WindowHandlerBuilder,
+    ) -> Result<WindowHandle> {
+        let extended_user_32 = ExtendedUser32::load()?;
         let title = HSTRING::from(options.title);
 
         let scaling_factor = match options.scale {
@@ -423,10 +437,9 @@ impl WindowHandle {
         } else {
             WindowStyle::embedded()
         };
-        let dpi_ctx = DpiAwarenessContext::new(&extended_user_32).unwrap();
+        let dpi_ctx = DpiAwarenessContext::new(&extended_user_32)?;
 
-        let rect =
-            dpi_ctx.client_area_to_nc_area(window_size.into(), style, Dpi::default()).unwrap();
+        let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, Dpi::default())?;
 
         let is_open = Rc::new(Cell::new(true));
 
@@ -455,19 +468,18 @@ impl WindowHandle {
 
         let parent = options.parent.map(|p| p.handle);
 
-        let window =
-            create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer).unwrap();
+        let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
 
         // FIXME: this SetTimer call could be in after_create, but for some reason it changes the ordering
         // for a parent+child window situation, which results in the parent drawing over the child.
         // This timer should be replaced by proper window redrawing/damage/vsync handling, but this
         // would be a breaking change, so we'll do that later.
         // TODO: create a new timer instead of hard-coding a specific ID
-        window.set_timer(WIN_FRAME_TIMER, 15).unwrap();
+        window.set_timer(WIN_FRAME_TIMER, 15)?;
 
         window.show_and_activate();
 
-        WindowHandle { hwnd: Some(window).into(), is_open: Rc::clone(&is_open) }
+        Ok(WindowHandle { hwnd: Some(window).into(), is_open: Rc::clone(&is_open) })
     }
 }
 

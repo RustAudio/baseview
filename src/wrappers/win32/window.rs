@@ -24,7 +24,7 @@ use windows_core::{Error, Result, HSTRING};
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::style::WindowStyle;
 use crate::wrappers::win32::DpiAwarenessContext;
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW;
 
 pub trait WindowImpl: 'static {
@@ -35,7 +35,7 @@ pub trait WindowImpl: 'static {
     /// [`handle_message`] to be called immediately. Implementations must be ready for that.
     ///
     /// If this returns an error, the window creation is canceled.
-    fn after_create(&self, window: HWnd) -> Result<()>;
+    fn after_create(&self, window: HWnd) -> core::result::Result<(), crate::platform::Error>;
     unsafe fn handle_message(
         &self, window: HWnd, message_code: u32, w_param: WPARAM, l_param: LPARAM,
     ) -> Option<LRESULT>;

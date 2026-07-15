@@ -2,7 +2,7 @@ use crate::window_handler::OpenWindowExample;
 use crate::ExamplePluginMainThread;
 use baseview::dpi::PhysicalSize;
 use baseview::gl::GlConfig;
-use baseview::{Window, WindowHandle, WindowOpenOptions};
+use baseview::{WindowHandle, WindowOpenOptions};
 use clack_extensions::gui::{
     GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, PluginGuiImpl, Window as ClapWindow,
 };
@@ -72,9 +72,10 @@ impl PluginGuiImpl for ExamplePluginMainThread {
 
         let options = WindowOpenOptions::new()
             .with_size(PhysicalSize::new(400, 200))
-            .with_gl_config(GlConfig::default());
+            .with_gl_config(GlConfig::default())
+            .with_parent(&parent);
 
-        let window = Window::open_parented(&parent, options, OpenWindowExample::new);
+        let window = baseview::create_window(options, OpenWindowExample::new)?;
 
         self.gui = Some(ExamplePluginGui { handle: window });
 

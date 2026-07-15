@@ -1,3 +1,4 @@
+use crate::platform::*;
 use std::error::Error;
 use std::ffi::CStr;
 use std::fmt::Formatter;
@@ -24,7 +25,7 @@ unsafe impl Send for XlibConnection {}
 unsafe impl Sync for XlibConnection {}
 
 impl XlibConnection {
-    pub fn open() -> Result<Self, Box<dyn Error>> {
+    pub fn open() -> Result<Self> {
         let xlib = Box::new(Xlib::open()?);
 
         if unsafe { (xlib.XInitThreads)() } == 0 {
@@ -86,9 +87,7 @@ impl XlibConnection {
         unsafe { (self.xlib.XSync)(self.display.as_ptr(), 0) };
     }
 
-    pub fn get_error_text(
-        &self, buf: &mut [u8], error_code: core::ffi::c_uchar,
-    ) -> &core::ffi::CStr {
+    pub fn get_error_text(&self, buf: &mut [u8], error_code: core::ffi::c_uchar) -> &CStr {
         if buf.is_empty() {
             return c"";
         }
@@ -115,7 +114,7 @@ impl XlibConnection {
         *buf.last_mut().unwrap() = 0;
 
         // SAFETY: whatever XGetErrorText did or not, we guaranteed there is a nul byte at the end of the buffer
-        unsafe { std::ffi::CStr::from_ptr(buf.as_mut_ptr().cast()) }
+        unsafe { CStr::from_ptr(buf.as_mut_ptr().cast()) }
     }
 
     pub fn set_error_handler(
@@ -139,7 +138,7 @@ impl Drop for XlibConnection {
 }
 
 #[derive(Debug)]
-struct DisplayOpenFailedError;
+pub struct DisplayOpenFailedError;
 impl std::fmt::Display for DisplayOpenFailedError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str("Failed to open X11 display connection: XOpenDisplay() failed")
@@ -148,7 +147,7 @@ impl std::fmt::Display for DisplayOpenFailedError {
 impl Error for DisplayOpenFailedError {}
 
 #[derive(Debug)]
-struct InitThreadsFailedError;
+pub struct InitThreadsFailedError;
 impl std::fmt::Display for InitThreadsFailedError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str("Failed to open X11 display connection: XOpenDisplay() failed")

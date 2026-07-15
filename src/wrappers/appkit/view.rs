@@ -1,7 +1,7 @@
 use dpi::LogicalSize;
 use objc2::__framework_prelude::{Allocated, AnyClass, ProtocolObject, Retained};
 use objc2::rc::Weak;
-use objc2::runtime::AnyObject;
+use objc2::runtime::{AnyObject, Ivar};
 use objc2::{msg_send, Encoding, Message, RefEncode};
 use objc2_app_kit::{NSDragOperation, NSDraggingInfo, NSEvent, NSView, NSWindow};
 use objc2_core_foundation::CGRect;
@@ -40,7 +40,10 @@ impl<V> Deref for View<V> {
 }
 
 impl<V: ViewImpl> View<V> {
-    pub fn new(frame: CGRect, inner: V, init: impl FnOnce(ViewRef<V>)) -> Retained<View<V>> {
+    pub fn new(
+        frame: CGRect, inner: V,
+        init: impl FnOnce(ViewRef<V>) -> Result<(), crate::platform::Error>,
+    ) -> Result<Retained<View<V>>, crate::platform::Error> {
         // SAFETY: We don't access this reference after this function
         let class = unsafe { implementation::create_view_class::<V>() };
 
@@ -51,21 +54,28 @@ impl<V: ViewImpl> View<V> {
 
         let view: Retained<View<V>> = unsafe { msg_send![view, initWithFrame: frame] };
 
-        init(view.inner_ref().unwrap());
+        let Some(inner_ref) = view.inner_ref() else { unreachable!() };
 
-        view
+        init(inner_ref)?;
+
+        Ok(view)
+    }
+
+    fn get_ivar(class: &AnyClass) -> &Ivar {
+        let Some(ivar) = class.instance_variable(BASEVIEW_STATE_IVAR) else { unreachable!() };
+        ivar
     }
 
     fn set_inner(view: &Allocated<View<V>>, class: &AnyClass, inner: ViewInner<V>) {
         let inner = Box::new(inner);
-        let ivar = class.instance_variable(BASEVIEW_STATE_IVAR).unwrap();
+        let ivar = Self::get_ivar(class);
         let ivar_target = unsafe { &*Allocated::as_ptr(view).cast() };
         let ivar = unsafe { ivar.load_ptr::<*mut c_void>(ivar_target) };
         unsafe { ivar.write(Box::into_raw(inner).cast()) };
     }
 
     fn free_inner(this: &AnyObject, class: &AnyClass) {
-        let ivar = class.instance_variable(BASEVIEW_STATE_IVAR).unwrap();
+        let ivar = Self::get_ivar(class);
         let ivar = unsafe { ivar.load_ptr::<*mut c_void>(this) };
         let raw = unsafe { ivar.read() };
 
@@ -79,7 +89,7 @@ impl<V: ViewImpl> View<V> {
     }
 
     fn get_inner(&self) -> Option<&ViewInner<V>> {
-        let ivar = self.class().instance_variable(BASEVIEW_STATE_IVAR).unwrap();
+        let ivar = Self::get_ivar(self.class());
         let ivar = unsafe { ivar.load::<*mut c_void>(self) };
         unsafe { ivar.cast::<ViewInner<V>>().as_ref() }
     }

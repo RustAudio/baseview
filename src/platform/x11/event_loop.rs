@@ -2,14 +2,15 @@ use super::drag_n_drop::DragNDropState;
 use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
 use super::*;
 
+use crate::warn;
 use crate::wrappers::connection_poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use dpi::{PhysicalPosition, PhysicalSize};
-use std::error::Error;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
+use x11rb::errors::ConnectionError;
 use x11rb::protocol::Event as XEvent;
 
 pub(crate) struct EventLoop {
@@ -29,9 +30,10 @@ pub(crate) struct EventLoop {
 impl EventLoop {
     pub fn new(
         window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
-        parent_handle: Option<ParentHandle>, xkb_state: Option<XkbcommonState>,
+        parent_handle: Option<ParentHandle>,
     ) -> Self {
         Self {
+            xkb_state: XkbcommonState::new(&window.connection),
             window,
             handler,
             parent_handle,
@@ -39,12 +41,15 @@ impl EventLoop {
             event_loop_running: false,
             new_physical_size: None,
             drag_n_drop: DragNDropState::NoCurrentSession,
-            xkb_state,
         }
     }
 
+    pub fn window_id(&self) -> NonZeroU32 {
+        self.window.xcb_window.id()
+    }
+
     #[inline]
-    fn drain_xcb_events(&mut self) -> Result<(), Box<dyn Error>> {
+    fn drain_xcb_events(&mut self) -> core::result::Result<(), ConnectionError> {
         // the X server has a tendency to send spurious/extraneous configure notify events when a
         // window is resized, and we need to batch those together and just send one resize event
         // when they've all been coalesced.
@@ -55,18 +60,23 @@ impl EventLoop {
         }
 
         if let Some(size) = self.new_physical_size.take() {
-            self.window.window_size.set(size);
+            let previous = self.window.window_size.replace(size);
 
             let scale_factor = self.window.scaling_factor.get();
-
-            self.handler.resized(WindowSize::from_physical(size.cast(), scale_factor));
+            if let Err(e) =
+                self.handler.resized(WindowSize::from_physical(size.cast(), scale_factor))
+            {
+                warn!("Window Handler failed to resize: {}", e);
+                self.window.window_size.set(previous);
+                self.window.xcb_window.resize(previous.cast())?.check_warn();
+            }
         }
 
         Ok(())
     }
 
     // Event loop
-    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn run(mut self) -> Result<()> {
         let connection = Rc::clone(&self.window.connection);
         let mut poller = ConnectionPoller::new(&connection.conn)?;
 
@@ -82,7 +92,7 @@ impl EventLoop {
             // if it's already time to draw a new frame.
             let next_frame = last_frame + self.frame_interval;
             if Instant::now() >= next_frame {
-                self.handler.on_frame();
+                self.handler.on_frame()?;
                 last_frame = Instant::max(next_frame, Instant::now() - self.frame_interval);
             }
 
@@ -91,7 +101,7 @@ impl EventLoop {
             self.drain_xcb_events()?;
 
             // FIXME: handle errors
-            if let PollStatus::ReadAvailable = poller.wait(next_frame).unwrap() {
+            if let PollStatus::ReadAvailable = poller.wait(next_frame)? {
                 self.drain_xcb_events()?;
             }
 
