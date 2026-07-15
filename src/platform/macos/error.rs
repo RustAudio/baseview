@@ -26,3 +26,9 @@ impl std::error::Error for Error {
         }
     }
 }
+
+impl From<HandlerError> for Error {
+    fn from(e: HandlerError) -> Self {
+        Error::Handler(e)
+    }
+}

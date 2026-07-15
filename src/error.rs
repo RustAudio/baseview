@@ -38,6 +38,12 @@ impl std::error::Error for Error {
     }
 }
 
+impl From<HandlerError> for Error {
+    fn from(e: HandlerError) -> Self {
+        Self { inner: crate::platform::Error::Handler(e) }
+    }
+}
+
 /// An error that can be returned from a [`WindowHandler`](crate::WindowHandler).
 ///
 /// This type does not implement the [`Error`] trait: instead it can be created from any kind of
