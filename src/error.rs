@@ -32,7 +32,11 @@ impl Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.inner.source()
+    }
+}
 
 /// An error that can be returned from a [`WindowHandler`](crate::WindowHandler).
 ///
@@ -46,7 +50,7 @@ pub struct HandlerError {
 
 impl HandlerError {
     #[inline]
-    pub fn cause(&self) -> &(dyn std::error::Error + 'static) {
+    pub fn source(&self) -> &(dyn std::error::Error + 'static) {
         self.inner.as_ref()
     }
 
