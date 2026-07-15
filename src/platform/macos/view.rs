@@ -4,6 +4,7 @@ use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
 use crate::handler::WindowHandlerBuilder;
 use crate::platform::*;
+use crate::tracing::warn;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
@@ -182,7 +183,10 @@ impl BaseviewView {
     }
 
     fn trigger_frame(this: ViewRef<Self>) {
-        this.window_handler.use_handler(|h| h.on_frame());
+        if let Some(Err(e)) = this.window_handler.use_handler(|h| h.on_frame()) {
+            warn!("Error while rendering frame: {}", e);
+            Self::close(this);
+        }
     }
 }
 
@@ -226,12 +230,18 @@ impl ViewImpl for BaseviewView {
         if this.state.scale_factor.get() != current_scale_factor
             || this.state.size.get() != current_size
         {
-            this.state.size.set(current_size);
+            let previous = this.state.size.replace(current_size);
             this.state.scale_factor.set(current_scale_factor);
 
-            this.window_handler.use_handler(|h| {
+            let result = this.window_handler.use_handler(|h| {
                 h.resized(WindowSize::from_logical(current_size, current_scale_factor))
             });
+
+            if let Some(Err(e)) = result {
+                warn!("Window Handler failed to resize: {}", e);
+                this.state.size.set(previous);
+                Self::resize(this, previous.into())
+            }
         }
     }
 
