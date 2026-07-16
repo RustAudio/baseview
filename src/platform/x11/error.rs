@@ -25,6 +25,7 @@ pub enum Error {
     DisplayOpenFailed(DisplayOpenFailedError),
     Handler(HandlerError),
     Channel(RecvError),
+    Calloop(calloop::Error),
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
     #[cfg(feature = "opengl")]
@@ -95,6 +96,12 @@ impl From<X11Error> for Error {
 impl From<HandlerError> for Error {
     fn from(value: HandlerError) -> Self {
         Self::Handler(value)
+    }
+}
+
+impl From<calloop::Error> for Error {
+    fn from(value: calloop::Error) -> Self {
+        Self::Calloop(value)
     }
 }
 

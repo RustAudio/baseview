@@ -1,11 +1,15 @@
 use super::drag_n_drop::DragNDropState;
 use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
 use super::*;
+use std::result::Result;
 
 use crate::warn;
 use crate::wrappers::connection_poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
+use calloop::generic::Generic;
+use calloop::timer::{TimeoutAction, Timer};
+use calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken};
 use dpi::{PhysicalPosition, PhysicalSize};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -16,31 +20,45 @@ use x11rb::protocol::Event as XEvent;
 pub(crate) struct EventLoop {
     handler: Box<dyn WindowHandler>,
     window: Rc<WindowInner>,
-    parent_handle: Option<ParentHandle>,
 
     new_physical_size: Option<PhysicalSize<u16>>,
-    frame_interval: Duration,
-    event_loop_running: bool,
+
+    frame_timer: RegistrationToken,
+    loop_handle: LoopHandle<'static, Self>,
+    loop_signal: LoopSignal,
 
     drag_n_drop: DragNDropState,
-
     xkb_state: Option<XkbcommonState>,
 }
+
+const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 
 impl EventLoop {
     pub fn new(
         window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
-        parent_handle: Option<ParentHandle>,
+        inner: &mut calloop::EventLoop<'static, Self>,
     ) -> Self {
+        let loop_handle = inner.handle();
+        let frame_timer = loop_handle
+            .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| e.handle_frame(i))
+            .unwrap();
+
+        loop_handle
+            .insert_source(
+                Generic::new_with_error(window.connection.conn.clone(), Interest::READ, Mode::Edge),
+                |_, _, e| e.handle_connection_event_ready(),
+            )
+            .unwrap();
+
         Self {
-            xkb_state: XkbcommonState::new(&window.connection),
-            window,
+            loop_handle,
+            loop_signal: inner.get_signal(),
             handler,
-            parent_handle,
-            frame_interval: Duration::from_millis(15),
-            event_loop_running: false,
+            frame_timer,
             new_physical_size: None,
             drag_n_drop: DragNDropState::NoCurrentSession,
+            xkb_state: XkbcommonState::new(&window.connection),
+            window,
         }
     }
 
@@ -49,7 +67,7 @@ impl EventLoop {
     }
 
     #[inline]
-    fn drain_xcb_events(&mut self) -> core::result::Result<(), ConnectionError> {
+    fn drain_xcb_events(&mut self) -> Result<(), ConnectionError> {
         // the X server has a tendency to send spurious/extraneous configure notify events when a
         // window is resized, and we need to batch those together and just send one resize event
         // when they've all been coalesced.
@@ -75,53 +93,54 @@ impl EventLoop {
         Ok(())
     }
 
-    // Event loop
-    pub fn run(mut self) -> Result<()> {
-        let connection = Rc::clone(&self.window.connection);
-        let mut poller = ConnectionPoller::new(&connection.conn)?;
+    fn handle_connection_event_ready(&mut self) -> Result<PostAction, ConnectionError> {
+        self.drain_xcb_events()?;
 
-        let mut last_frame = Instant::now();
-        self.event_loop_running = true;
+        Ok(PostAction::Continue)
+    }
 
-        while self.event_loop_running {
-            // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
-            // the expected frame time, this will throttle down to prevent multiple frames from
-            // being queued up. The conditional here is needed because event handling and frame
-            // drawing is interleaved. The `poll()` function below will wait until the next frame
-            // can be drawn, or until the window receives an event. We thus need to manually check
-            // if it's already time to draw a new frame.
-            let next_frame = last_frame + self.frame_interval;
-            if Instant::now() >= next_frame {
-                self.handler.on_frame()?;
-                last_frame = Instant::max(next_frame, Instant::now() - self.frame_interval);
-            }
+    fn handle_frame(&mut self, previous_deadline: Instant) -> TimeoutAction {
+        self.handler.on_frame(); // TODO: handle error
 
-            // Check for any events in the internal buffers
-            // before going to sleep:
-            self.drain_xcb_events()?;
+        // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
+        // the expected frame time, this will throttle down to prevent multiple frames from
+        // being queued up.
 
-            // FIXME: handle errors
-            if let PollStatus::ReadAvailable = poller.wait(next_frame)? {
-                self.drain_xcb_events()?;
-            }
+        let now = Instant::now();
+        let next_deadline = if previous_deadline + FRAME_INTERVAL >= now {
+            now + FRAME_INTERVAL
+        } else {
+            previous_deadline + FRAME_INTERVAL
+        };
 
-            // Check if the parents's handle was dropped (such as when the host
-            // requested the window to close)
-            if let Some(parent_handle) = &self.parent_handle {
-                if parent_handle.parent_did_drop() {
-                    self.handle_must_close();
-                    self.window.close_requested.set(false);
-                }
-            }
+        TimeoutAction::ToInstant(next_deadline)
+    }
 
-            // Check if the user has requested the window to close
-            if self.window.close_requested.get() {
+    fn handle_idle(&mut self) {
+        // Check for any events in the internal buffers
+        // before going to sleep:
+        self.drain_xcb_events().unwrap();
+
+        /*
+        // Check if the parents's handle was dropped (such as when the host
+        // requested the window to close)
+        if let Some(parent_handle) = &self.parent_handle {
+            if parent_handle.parent_did_drop() {
                 self.handle_must_close();
                 self.window.close_requested.set(false);
             }
-        }
+        }*/
 
-        poller.delete()?;
+        // Check if the user has requested the window to close
+        if self.window.close_requested.get() {
+            self.handle_must_close();
+            self.loop_signal.stop();
+            self.window.close_requested.set(false);
+        }
+    }
+
+    pub fn run(&mut self, mut inner: calloop::EventLoop<Self>) -> Result<(), Error> {
+        inner.run(None, self, Self::handle_idle)?;
 
         Ok(())
     }
@@ -157,7 +176,7 @@ impl EventLoop {
                 }
 
                 if event.data.as_data32()[0] == self.window.connection.atoms.WM_DELETE_WINDOW {
-                    self.handle_close_requested();
+                    self.handle_must_close();
                     return;
                 }
 
@@ -301,15 +320,10 @@ impl EventLoop {
         self.handler.on_event(event);
     }
 
-    fn handle_close_requested(&mut self) {
-        // FIXME: handler should decide whether window stays open or not
-        self.handle_must_close();
-    }
-
     fn handle_must_close(&mut self) {
         self.handle_event(Event::Window(WindowEvent::WillClose));
-
-        self.event_loop_running = false;
+        self.loop_signal.stop();
+        self.loop_signal.wakeup();
     }
 }
 

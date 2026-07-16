@@ -1,6 +1,7 @@
+use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::*;
-use crate::{MouseCursor, WindowSize};
+use crate::{MouseCursor, WindowOpenOptions, WindowScalePolicy, WindowSize};
 use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::cell::Cell;
@@ -26,6 +27,68 @@ pub(crate) struct WindowInner {
 }
 
 impl WindowInner {
+    pub(crate) fn create(options: WindowOpenOptions) -> Result<Rc<Self>> {
+        // Connect to the X server
+        let xcb_connection = X11Connection::new()?;
+
+        let scaling = match options.scale {
+            WindowScalePolicy::SystemScaleFactor => xcb_connection.get_scaling(),
+            WindowScalePolicy::ScaleFactor(scale) => scale,
+        };
+
+        let physical_size = options.size.to_physical(scaling);
+
+        #[cfg(feature = "opengl")]
+        let visual_info =
+            WindowVisualConfig::find_best_visual_config_for_gl(&xcb_connection, options.gl_config)?;
+
+        #[cfg(not(feature = "opengl"))]
+        let visual_info = WindowVisualConfig::find_best_visual_config(&xcb_connection)?;
+
+        let xcb_connection = Rc::new(xcb_connection);
+
+        let x_window = XcbWindow::new(
+            Rc::clone(&xcb_connection),
+            physical_size,
+            &visual_info,
+            options.parent.map(|p| p.window_id),
+        )?;
+
+        let cookies = [
+            x_window.map_window()?,
+            x_window.set_title(&options.title)?,
+            x_window.enable_wm_protocols()?,
+            x_window.enable_dnd_protocols()?,
+        ];
+
+        for cookie in cookies {
+            cookie.check()?;
+        }
+
+        #[cfg(feature = "opengl")]
+        let gl_context = match visual_info.fb_config {
+            None => None,
+            Some(fb_config) => {
+                // Because of the visual negotation we had to take some extra steps to create this context
+                Some(super::gl::GlContextInner::create(
+                    &x_window,
+                    Rc::clone(&xcb_connection),
+                    fb_config,
+                )?)
+            }
+        };
+
+        Ok(Rc::new(WindowInner::new(
+            xcb_connection,
+            x_window,
+            physical_size,
+            scaling,
+            visual_info.visual_id,
+            #[cfg(feature = "opengl")]
+            gl_context,
+        )))
+    }
+
     pub(crate) fn new(
         connection: Rc<X11Connection>, xcb_window: XcbWindow, window_size: PhysicalSize<u16>,
         scale_factor: f64, visual_id: Visualid,
