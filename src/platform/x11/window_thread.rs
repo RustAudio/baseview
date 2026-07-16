@@ -97,7 +97,7 @@ impl WindowResultSender {
     pub fn send_error(self, error: Error) {
         if let Err(err) = self.0.send(WindowOpenResult::Error(format!("{}", error))) {
             crate::error!("Window creation failed: {}", error);
-            crate::warn!("Failed to send error to main thread: {err}");
+            crate::warn!("Failed to send error to main thread: {}", err);
         }
     }
 
