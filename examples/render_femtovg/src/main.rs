@@ -116,6 +116,8 @@ impl WindowHandler for FemtovgExample {
 }
 
 fn main() -> Result<(), baseview::Error> {
+    tracing_subscriber::fmt::init();
+
     let window_open_options = WindowOpenOptions::new()
         .with_title("Femtovg on Baseview")
         .with_size(LogicalSize::new(512, 512))

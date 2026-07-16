@@ -4,7 +4,6 @@ use super::*;
 use std::result::Result;
 
 use crate::warn;
-use crate::wrappers::connection_poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use calloop::generic::Generic;
@@ -37,20 +36,20 @@ impl EventLoop {
     pub fn new(
         window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
         inner: &mut calloop::EventLoop<'static, Self>,
-    ) -> Self {
+    ) -> Result<Self, Error> {
         let loop_handle = inner.handle();
         let frame_timer = loop_handle
             .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| e.handle_frame(i))
-            .unwrap();
+            .map_err(|e| e.error)?;
 
         loop_handle
             .insert_source(
                 Generic::new_with_error(window.connection.conn.clone(), Interest::READ, Mode::Edge),
                 |_, _, e| e.handle_connection_event_ready(),
             )
-            .unwrap();
+            .map_err(|e| e.error)?;
 
-        Self {
+        Ok(Self {
             loop_handle,
             loop_signal: inner.get_signal(),
             handler,
@@ -59,7 +58,7 @@ impl EventLoop {
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
             window,
-        }
+        })
     }
 
     pub fn window_id(&self) -> NonZeroU32 {
@@ -139,8 +138,8 @@ impl EventLoop {
         }
     }
 
-    pub fn run(&mut self, mut inner: calloop::EventLoop<Self>) -> Result<(), Error> {
-        inner.run(None, self, Self::handle_idle)?;
+    pub fn run(mut self, mut inner: calloop::EventLoop<Self>) -> Result<(), Error> {
+        inner.run(None, &mut self, Self::handle_idle)?;
 
         Ok(())
     }

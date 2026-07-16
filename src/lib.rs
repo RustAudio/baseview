@@ -25,6 +25,6 @@ pub use window::*;
 pub use window_open_options::*;
 
 #[allow(unused)]
-pub(crate) use tracing::warn;
+pub(crate) use tracing::*;
 
 pub(crate) mod wrappers;

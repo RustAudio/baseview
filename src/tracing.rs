@@ -1,5 +1,5 @@
 #[cfg(feature = "tracing")]
-pub use tracing::*;
+pub use tracing::{error, warn};
 
 #[cfg(not(feature = "tracing"))]
 mod tracing_impl {
@@ -13,6 +13,7 @@ mod tracing_impl {
     }
 
     pub(crate) use __warn as warn;
+    pub(crate) use __warn as error;
 }
 
 #[cfg(not(feature = "tracing"))]

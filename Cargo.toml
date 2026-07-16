@@ -99,3 +99,6 @@ missing-safety-doc = "allow"
 
 [package.metadata.docs.rs]
 all-features = true
+
+[workspace.dependencies]
+tracing-subscriber = "0.3.23"

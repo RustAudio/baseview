@@ -105,6 +105,12 @@ impl From<calloop::Error> for Error {
     }
 }
 
+impl From<RecvError> for Error {
+    fn from(value: RecvError) -> Self {
+        Self::Channel(value)
+    }
+}
+
 #[cfg(feature = "opengl")]
 impl From<crate::wrappers::xlib::XLibError> for Error {
     fn from(value: crate::wrappers::xlib::XLibError) -> Self {
