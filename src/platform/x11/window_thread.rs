@@ -8,13 +8,24 @@ use std::cell::Cell;
 use std::num::NonZeroU32;
 use std::panic::resume_unwind;
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
-use std::time::Duration;
+
+pub(crate) struct WindowThreadShared {
+    stopped: AtomicBool,
+    final_error: Mutex<Option<String>>,
+}
+
+impl WindowThreadShared {
+    pub fn new() -> Self {
+        Self { stopped: false.into(), final_error: None.into() }
+    }
+}
 
 pub struct WindowThreadHandle {
-    window_id: NonZeroU32,
+    shared: Arc<WindowThreadShared>,
     loop_signal: LoopSignal,
     event_loop_handle: Cell<Option<JoinHandle<()>>>,
 }
@@ -24,33 +35,42 @@ impl WindowThreadHandle {
         options: WindowOpenOptions, handler: WindowHandlerBuilder,
     ) -> Result<Self> {
         let (tx, rx) = result_channel();
+        let shared = Arc::new(WindowThreadShared::new());
 
-        let join_handle = thread::spawn(move || {
-            let thread = match WindowThread::create(options, handler) {
-                Err(e) => return tx.send_error(e),
-                Ok(thread) => thread,
-            };
+        let join_handle = {
+            let shared = shared.clone();
 
-            if tx.send_success(&thread) {
-                thread.run()
-            }
-        });
+            thread::spawn(move || {
+                let thread = match WindowThread::create(options, handler, shared) {
+                    Err(e) => return tx.send_error(e),
+                    Ok(thread) => thread,
+                };
 
-        thread::sleep(Duration::from_millis(2000));
+                if tx.send_success(&thread) {
+                    thread.run()
+                }
+            })
+        };
 
-        rx.receive(join_handle)
+        rx.receive(join_handle, shared)
     }
 
-    pub fn run_until_closed(&self) {
-        let Some(thread) = self.event_loop_handle.take() else { return };
+    pub fn run_until_closed(&self) -> Result<()> {
+        let Some(thread) = self.event_loop_handle.take() else { return Ok(()) };
 
         if let Err(panic) = thread.join() {
             resume_unwind(panic);
         }
+
+        if let Some(e) = self.shared.final_error.lock().unwrap().take() {
+            return Err(Error::RunError(e));
+        }
+
+        Ok(())
     }
 
     pub fn is_open(&self) -> bool {
-        todo!()
+        !self.shared.stopped.load(Ordering::Relaxed)
     }
 }
 
@@ -64,27 +84,32 @@ impl Drop for WindowThreadHandle {
 }
 
 enum WindowOpenResult {
-    Success { window_id: NonZeroU32, loop_signal: LoopSignal },
+    Success { loop_signal: LoopSignal },
     Error(String),
 }
 
 struct WindowThread {
     event_loop: EventLoop,
     ev_loop: calloop::EventLoop<'static, EventLoop>,
+    shared: Arc<WindowThreadShared>,
 }
 
 impl WindowThread {
-    pub fn create(options: WindowOpenOptions, handler: WindowHandlerBuilder) -> Result<Self> {
+    pub fn create(
+        options: WindowOpenOptions, handler: WindowHandlerBuilder, shared: Arc<WindowThreadShared>,
+    ) -> Result<Self> {
         let mut ev_loop = calloop::EventLoop::try_new()?;
         let inner = WindowInner::create(options, &ev_loop)?;
         let handler = handler.build(WindowContext::new(Rc::clone(&inner)))?;
-        let event_loop = EventLoop::new(inner, handler, &mut ev_loop)?;
+        let event_loop = EventLoop::new(inner, handler, shared.clone(), &mut ev_loop)?;
 
-        Ok(Self { event_loop, ev_loop })
+        Ok(Self { event_loop, ev_loop, shared })
     }
 
     pub fn run(self) {
-        self.event_loop.run(self.ev_loop).unwrap();
+        if let Err(e) = self.event_loop.run(self.ev_loop) {
+            self.shared.final_error.lock().unwrap().replace(e.to_string());
+        }
     }
 }
 
@@ -103,10 +128,7 @@ impl WindowResultSender {
     }
 
     pub fn send_success(self, thread: &WindowThread) -> bool {
-        let msg = WindowOpenResult::Success {
-            loop_signal: thread.ev_loop.get_signal(),
-            window_id: thread.event_loop.window_id(),
-        };
+        let msg = WindowOpenResult::Success { loop_signal: thread.ev_loop.get_signal() };
 
         if let Err(err) = self.0.send(msg) {
             crate::error!("Failed to send created window to main thread: {}. Aborting.", err);
@@ -119,13 +141,15 @@ impl WindowResultSender {
 
 struct WindowResultReceiver(mpsc::Receiver<WindowOpenResult>);
 impl WindowResultReceiver {
-    pub fn receive(self, join_handle: JoinHandle<()>) -> Result<WindowThreadHandle> {
+    pub fn receive(
+        self, join_handle: JoinHandle<()>, shared: Arc<WindowThreadShared>,
+    ) -> Result<WindowThreadHandle> {
         let result = self.0.recv()?;
         match result {
             WindowOpenResult::Error(e) => Err(Error::CreationFailed(e)),
-            WindowOpenResult::Success { window_id, loop_signal } => Ok(WindowThreadHandle {
+            WindowOpenResult::Success { loop_signal } => Ok(WindowThreadHandle {
                 event_loop_handle: Some(join_handle).into(),
-                window_id,
+                shared,
                 loop_signal,
             }),
         }

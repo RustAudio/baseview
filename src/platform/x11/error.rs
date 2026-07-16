@@ -13,6 +13,7 @@ use x11rb::x11_utils::{TryParse, X11Error};
 #[derive(Debug)]
 pub enum Error {
     CreationFailed(String),
+    RunError(String),
     Io(std::io::Error),
     DylibOpen(OpenError),
     InitThreadsFailed(InitThreadsFailedError),

@@ -3,12 +3,13 @@ use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mo
 use super::*;
 use std::result::Result;
 
+use crate::platform::x11::window_thread::WindowThreadShared;
 use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use calloop::generic::Generic;
 use calloop::timer::{TimeoutAction, Timer};
-use calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken};
+use calloop::{Interest, LoopSignal, Mode, PostAction};
 use dpi::{PhysicalPosition, PhysicalSize};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -22,23 +23,25 @@ pub(crate) struct EventLoop {
 
     new_physical_size: Option<PhysicalSize<u16>>,
 
-    frame_timer: RegistrationToken,
-    loop_handle: LoopHandle<'static, Self>,
     loop_signal: LoopSignal,
 
     drag_n_drop: DragNDropState,
     xkb_state: Option<XkbcommonState>,
+
+    run_error: Option<Error>,
+    pub(crate) shared: Arc<WindowThreadShared>,
 }
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 
 impl EventLoop {
     pub fn new(
-        window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
+        window: Rc<WindowInner>, handler: Box<dyn WindowHandler>, shared: Arc<WindowThreadShared>,
         inner: &mut calloop::EventLoop<'static, Self>,
     ) -> Result<Self, Error> {
         let loop_handle = inner.handle();
-        let frame_timer = loop_handle
+
+        loop_handle
             .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| e.handle_frame(i))
             .map_err(|e| e.error)?;
 
@@ -50,13 +53,13 @@ impl EventLoop {
             .map_err(|e| e.error)?;
 
         Ok(Self {
-            loop_handle,
             loop_signal: inner.get_signal(),
             handler,
-            frame_timer,
             new_physical_size: None,
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
+            run_error: None,
+            shared,
             window,
         })
     }
@@ -100,7 +103,7 @@ impl EventLoop {
 
     fn handle_frame(&mut self, previous_deadline: Instant) -> TimeoutAction {
         if let Err(e) = self.handler.on_frame() {
-            // TODO: properly log/bubble up error
+            self.run_error = Some(e.into());
             self.loop_signal.stop();
             return TimeoutAction::Drop;
         }
@@ -128,6 +131,10 @@ impl EventLoop {
         inner.run(None, &mut self, Self::handle_idle)?;
 
         self.handle_event(Event::Window(WindowEvent::WillClose));
+
+        if let Some(err) = self.run_error {
+            return Err(err);
+        };
 
         Ok(())
     }
