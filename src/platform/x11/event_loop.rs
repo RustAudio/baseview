@@ -73,7 +73,7 @@ impl EventLoop {
         self.new_physical_size = None;
 
         while let Some(event) = self.window.connection.conn.poll_for_event()? {
-            self.handle_xcb_event(event);
+            self.handle_xcb_event(event)?;
         }
 
         if let Some(size) = self.new_physical_size.take() {
@@ -99,7 +99,11 @@ impl EventLoop {
     }
 
     fn handle_frame(&mut self, previous_deadline: Instant) -> TimeoutAction {
-        self.handler.on_frame(); // TODO: handle error
+        if let Err(e) = self.handler.on_frame() {
+            // TODO: properly log/bubble up error
+            self.loop_signal.stop();
+            return TimeoutAction::Drop;
+        }
 
         // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
         // the expected frame time, this will throttle down to prevent multiple frames from
@@ -116,35 +120,19 @@ impl EventLoop {
     }
 
     fn handle_idle(&mut self) {
-        // Check for any events in the internal buffers
-        // before going to sleep:
-        self.drain_xcb_events().unwrap();
-
-        /*
-        // Check if the parents's handle was dropped (such as when the host
-        // requested the window to close)
-        if let Some(parent_handle) = &self.parent_handle {
-            if parent_handle.parent_did_drop() {
-                self.handle_must_close();
-                self.window.close_requested.set(false);
-            }
-        }*/
-
-        // Check if the user has requested the window to close
-        if self.window.close_requested.get() {
-            self.handle_must_close();
-            self.loop_signal.stop();
-            self.window.close_requested.set(false);
-        }
+        // Check for any events in the internal buffers before going to sleep:
+        let _ = self.drain_xcb_events();
     }
 
     pub fn run(mut self, mut inner: calloop::EventLoop<Self>) -> Result<(), Error> {
         inner.run(None, &mut self, Self::handle_idle)?;
 
+        self.handle_event(Event::Window(WindowEvent::WillClose));
+
         Ok(())
     }
 
-    fn handle_xcb_event(&mut self, event: XEvent) {
+    fn handle_xcb_event(&mut self, event: XEvent) -> Result<(), ConnectionError> {
         // For all the keyboard and mouse events, you can fetch
         // `x`, `y`, `detail`, and `state`.
         // - `x` and `y` are the position inside the window where the cursor currently is
@@ -171,53 +159,35 @@ impl EventLoop {
             ////
             XEvent::ClientMessage(event) => {
                 if event.format != 32 {
-                    return;
+                    return Ok(());
                 }
 
                 if event.data.as_data32()[0] == self.window.connection.atoms.WM_DELETE_WINDOW {
-                    self.handle_must_close();
-                    return;
+                    self.window.request_close();
+                    return Ok(());
                 }
 
                 ////
                 // drag n drop
                 ////
                 if event.type_ == self.window.connection.atoms.XdndEnter {
-                    if let Err(_e) = self.drag_n_drop.handle_enter_event(
-                        &self.window,
-                        &mut *self.handler,
-                        &event,
-                    ) {
-                        // TODO: log warning
-                    }
+                    self.drag_n_drop.handle_enter_event(&self.window, &*self.handler, &event)?;
                 } else if event.type_ == self.window.connection.atoms.XdndPosition {
-                    if let Err(_e) = self.drag_n_drop.handle_position_event(
-                        &self.window,
-                        &mut *self.handler,
-                        &event,
-                    ) {
-                        // TODO: log warning
-                    }
+                    self.drag_n_drop.handle_position_event(&self.window, &*self.handler, &event)?;
                 } else if event.type_ == self.window.connection.atoms.XdndDrop {
-                    if let Err(_e) =
-                        self.drag_n_drop.handle_drop_event(&self.window, &mut *self.handler, &event)
-                    {
-                        // TODO: log warning
-                    }
+                    self.drag_n_drop.handle_drop_event(&self.window, &*self.handler, &event)?;
                 } else if event.type_ == self.window.connection.atoms.XdndLeave {
-                    self.drag_n_drop.handle_leave_event(&mut *self.handler, &event);
+                    self.drag_n_drop.handle_leave_event(&*self.handler, &event);
                 }
             }
 
             XEvent::SelectionNotify(event) => {
                 if event.property == self.window.connection.atoms.XdndSelection {
-                    if let Err(_e) = self.drag_n_drop.handle_selection_notify_event(
+                    self.drag_n_drop.handle_selection_notify_event(
                         &self.window,
-                        &mut *self.handler,
+                        &*self.handler,
                         &event,
-                    ) {
-                        // TODO: Log warning
-                    }
+                    )?;
                 }
             }
 
@@ -272,9 +242,8 @@ impl EventLoop {
                     }));
                 }
                 detail => {
-                    let button_id = mouse_id(detail);
                     self.handle_event(Event::Mouse(MouseEvent::ButtonPressed {
-                        button: button_id,
+                        button: mouse_id(detail),
                         modifiers: key_mods(event.state),
                     }));
                 }
@@ -313,16 +282,12 @@ impl EventLoop {
 
             _ => {}
         }
+
+        Ok(())
     }
 
     fn handle_event(&mut self, event: Event) {
         self.handler.on_event(event);
-    }
-
-    fn handle_must_close(&mut self) {
-        self.handle_event(Event::Window(WindowEvent::WillClose));
-        self.loop_signal.stop();
-        self.loop_signal.wakeup();
     }
 }
 

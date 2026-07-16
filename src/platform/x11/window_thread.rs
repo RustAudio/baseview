@@ -15,6 +15,7 @@ use std::time::Duration;
 
 pub struct WindowThreadHandle {
     window_id: NonZeroU32,
+    loop_signal: LoopSignal,
     event_loop_handle: Cell<Option<JoinHandle<()>>>,
 }
 
@@ -40,7 +41,7 @@ impl WindowThreadHandle {
         rx.receive(join_handle)
     }
 
-    pub fn run_until_closed(self) {
+    pub fn run_until_closed(&self) {
         let Some(thread) = self.event_loop_handle.take() else { return };
 
         if let Err(panic) = thread.join() {
@@ -55,10 +56,10 @@ impl WindowThreadHandle {
 
 impl Drop for WindowThreadHandle {
     fn drop(&mut self) {
-        // TODO: stop event loop
-        if let Some(event_loop) = self.event_loop_handle.take() {
-            let _ = event_loop.join();
-        }
+        self.loop_signal.stop();
+        self.loop_signal.wakeup();
+
+        self.run_until_closed();
     }
 }
 
@@ -75,7 +76,7 @@ struct WindowThread {
 impl WindowThread {
     pub fn create(options: WindowOpenOptions, handler: WindowHandlerBuilder) -> Result<Self> {
         let mut ev_loop = calloop::EventLoop::try_new()?;
-        let inner = WindowInner::create(options)?;
+        let inner = WindowInner::create(options, &ev_loop)?;
         let handler = handler.build(WindowContext::new(Rc::clone(&inner)))?;
         let event_loop = EventLoop::new(inner, handler, &mut ev_loop)?;
 
@@ -122,9 +123,11 @@ impl WindowResultReceiver {
         let result = self.0.recv()?;
         match result {
             WindowOpenResult::Error(e) => Err(Error::CreationFailed(e)),
-            WindowOpenResult::Success { window_id, loop_signal } => {
-                Ok(WindowThreadHandle { event_loop_handle: Some(join_handle).into(), window_id })
-            }
+            WindowOpenResult::Success { window_id, loop_signal } => Ok(WindowThreadHandle {
+                event_loop_handle: Some(join_handle).into(),
+                window_id,
+                loop_signal,
+            }),
         }
     }
 }
