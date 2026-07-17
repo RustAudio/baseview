@@ -167,7 +167,7 @@ fn main() -> Result<(), baseview::Error> {
             damaged: true.into(),
         })
     })?
-    .run_until_closed();
+    .run_until_closed()?;
 
     Ok(())
 }

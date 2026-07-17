@@ -15,8 +15,9 @@ impl WindowHandle {
         Self { window_handle, phantom: PhantomData }
     }
 
-    pub fn run_until_closed(self) {
-        self.window_handle.run_until_closed()
+    pub fn run_until_closed(self) -> Result<(), Error> {
+        self.window_handle.run_until_closed()?;
+        Ok(())
     }
 
     /// Close the window

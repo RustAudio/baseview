@@ -111,6 +111,7 @@ impl XcbWindow {
 
 impl Drop for XcbWindow {
     fn drop(&mut self) {
+        // TODO: log error
         let Ok(cookie) = self.connection.conn.destroy_window(self.window_id.get()) else { return };
         let _ = cookie.check();
     }

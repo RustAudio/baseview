@@ -130,7 +130,7 @@ impl WindowHandler for ChildWindowHandler {
 fn main() -> Result<(), baseview::Error> {
     let window_open_options = WindowOpenOptions::new().with_size(LogicalSize::new(512.0, 512.0));
 
-    baseview::create_window(window_open_options, ParentWindowHandler::new)?.run_until_closed();
+    baseview::create_window(window_open_options, ParentWindowHandler::new)?.run_until_closed()?;
 
     Ok(())
 }

@@ -43,7 +43,7 @@ tracing = { version = "0.1", optional = true }
 x11rb = { version = "0.13.2", features = ["cursor", "resource_manager", "allow-unsafe-code", "dl-libxcb"], default-features = false }
 xkbcommon-dl = { version = "0.4.2", features = ["x11"] }
 x11-dl = { version = "2.21.0" }
-polling = "3.11.0"
+calloop = "0.14.4"
 percent-encoding = "2.3.2"
 bytemuck = "1.25.0"
 
@@ -99,3 +99,6 @@ missing-safety-doc = "allow"
 
 [package.metadata.docs.rs]
 all-features = true
+
+[workspace.dependencies]
+tracing-subscriber = "0.3.23"

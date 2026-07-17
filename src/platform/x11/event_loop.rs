@@ -1,11 +1,14 @@
 use super::drag_n_drop::DragNDropState;
 use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
 use super::*;
+use std::result::Result;
 
 use crate::warn;
-use crate::wrappers::connection_poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
+use calloop::generic::Generic;
+use calloop::timer::{TimeoutAction, Timer};
+use calloop::{Interest, LoopSignal, Mode, PostAction};
 use dpi::{PhysicalPosition, PhysicalSize};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -16,47 +19,57 @@ use x11rb::protocol::Event as XEvent;
 pub(crate) struct EventLoop {
     handler: Box<dyn WindowHandler>,
     window: Rc<WindowInner>,
-    parent_handle: Option<ParentHandle>,
 
     new_physical_size: Option<PhysicalSize<u16>>,
-    frame_interval: Duration,
-    event_loop_running: bool,
+
+    loop_signal: LoopSignal,
 
     drag_n_drop: DragNDropState,
-
     xkb_state: Option<XkbcommonState>,
+
+    run_error: Option<Error>,
 }
+
+const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 
 impl EventLoop {
     pub fn new(
         window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
-        parent_handle: Option<ParentHandle>,
-    ) -> Self {
-        Self {
-            xkb_state: XkbcommonState::new(&window.connection),
-            window,
+        inner: &mut calloop::EventLoop<'static, Self>,
+    ) -> Result<Self, Error> {
+        let loop_handle = inner.handle();
+
+        loop_handle
+            .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| e.handle_frame(i))
+            .map_err(|e| e.error)?;
+
+        loop_handle
+            .insert_source(
+                Generic::new_with_error(window.connection.conn.clone(), Interest::READ, Mode::Edge),
+                |_, _, e| e.handle_connection_event_ready(),
+            )
+            .map_err(|e| e.error)?;
+
+        Ok(Self {
+            loop_signal: inner.get_signal(),
             handler,
-            parent_handle,
-            frame_interval: Duration::from_millis(15),
-            event_loop_running: false,
             new_physical_size: None,
             drag_n_drop: DragNDropState::NoCurrentSession,
-        }
-    }
-
-    pub fn window_id(&self) -> NonZeroU32 {
-        self.window.xcb_window.id()
+            xkb_state: XkbcommonState::new(&window.connection),
+            run_error: None,
+            window,
+        })
     }
 
     #[inline]
-    fn drain_xcb_events(&mut self) -> core::result::Result<(), ConnectionError> {
+    fn drain_xcb_events(&mut self) -> Result<(), ConnectionError> {
         // the X server has a tendency to send spurious/extraneous configure notify events when a
         // window is resized, and we need to batch those together and just send one resize event
         // when they've all been coalesced.
         self.new_physical_size = None;
 
         while let Some(event) = self.window.connection.conn.poll_for_event()? {
-            self.handle_xcb_event(event);
+            self.handle_xcb_event(event)?;
         }
 
         if let Some(size) = self.new_physical_size.take() {
@@ -75,58 +88,51 @@ impl EventLoop {
         Ok(())
     }
 
-    // Event loop
-    pub fn run(mut self) -> Result<()> {
-        let connection = Rc::clone(&self.window.connection);
-        let mut poller = ConnectionPoller::new(&connection.conn)?;
+    fn handle_connection_event_ready(&mut self) -> Result<PostAction, ConnectionError> {
+        self.drain_xcb_events()?;
 
-        let mut last_frame = Instant::now();
-        self.event_loop_running = true;
+        Ok(PostAction::Continue)
+    }
 
-        while self.event_loop_running {
-            // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
-            // the expected frame time, this will throttle down to prevent multiple frames from
-            // being queued up. The conditional here is needed because event handling and frame
-            // drawing is interleaved. The `poll()` function below will wait until the next frame
-            // can be drawn, or until the window receives an event. We thus need to manually check
-            // if it's already time to draw a new frame.
-            let next_frame = last_frame + self.frame_interval;
-            if Instant::now() >= next_frame {
-                self.handler.on_frame()?;
-                last_frame = Instant::max(next_frame, Instant::now() - self.frame_interval);
-            }
-
-            // Check for any events in the internal buffers
-            // before going to sleep:
-            self.drain_xcb_events()?;
-
-            // FIXME: handle errors
-            if let PollStatus::ReadAvailable = poller.wait(next_frame)? {
-                self.drain_xcb_events()?;
-            }
-
-            // Check if the parents's handle was dropped (such as when the host
-            // requested the window to close)
-            if let Some(parent_handle) = &self.parent_handle {
-                if parent_handle.parent_did_drop() {
-                    self.handle_must_close();
-                    self.window.close_requested.set(false);
-                }
-            }
-
-            // Check if the user has requested the window to close
-            if self.window.close_requested.get() {
-                self.handle_must_close();
-                self.window.close_requested.set(false);
-            }
+    fn handle_frame(&mut self, previous_deadline: Instant) -> TimeoutAction {
+        if let Err(e) = self.handler.on_frame() {
+            self.run_error = Some(e.into());
+            self.loop_signal.stop();
+            return TimeoutAction::Drop;
         }
 
-        poller.delete()?;
+        // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
+        // the expected frame time, this will throttle down to prevent multiple frames from
+        // being queued up.
+
+        let now = Instant::now();
+        let next_deadline = if previous_deadline + FRAME_INTERVAL >= now {
+            now + FRAME_INTERVAL
+        } else {
+            previous_deadline + FRAME_INTERVAL
+        };
+
+        TimeoutAction::ToInstant(next_deadline)
+    }
+
+    fn handle_idle(&mut self) {
+        // Check for any events in the internal buffers before going to sleep:
+        let _ = self.drain_xcb_events();
+    }
+
+    pub fn run(mut self, mut inner: calloop::EventLoop<Self>) -> Result<(), Error> {
+        inner.run(None, &mut self, Self::handle_idle)?;
+
+        self.handle_event(Event::Window(WindowEvent::WillClose));
+
+        if let Some(err) = self.run_error {
+            return Err(err);
+        };
 
         Ok(())
     }
 
-    fn handle_xcb_event(&mut self, event: XEvent) {
+    fn handle_xcb_event(&mut self, event: XEvent) -> Result<(), ConnectionError> {
         // For all the keyboard and mouse events, you can fetch
         // `x`, `y`, `detail`, and `state`.
         // - `x` and `y` are the position inside the window where the cursor currently is
@@ -153,53 +159,35 @@ impl EventLoop {
             ////
             XEvent::ClientMessage(event) => {
                 if event.format != 32 {
-                    return;
+                    return Ok(());
                 }
 
                 if event.data.as_data32()[0] == self.window.connection.atoms.WM_DELETE_WINDOW {
-                    self.handle_close_requested();
-                    return;
+                    self.window.request_close();
+                    return Ok(());
                 }
 
                 ////
                 // drag n drop
                 ////
                 if event.type_ == self.window.connection.atoms.XdndEnter {
-                    if let Err(_e) = self.drag_n_drop.handle_enter_event(
-                        &self.window,
-                        &mut *self.handler,
-                        &event,
-                    ) {
-                        // TODO: log warning
-                    }
+                    self.drag_n_drop.handle_enter_event(&self.window, &*self.handler, &event)?;
                 } else if event.type_ == self.window.connection.atoms.XdndPosition {
-                    if let Err(_e) = self.drag_n_drop.handle_position_event(
-                        &self.window,
-                        &mut *self.handler,
-                        &event,
-                    ) {
-                        // TODO: log warning
-                    }
+                    self.drag_n_drop.handle_position_event(&self.window, &*self.handler, &event)?;
                 } else if event.type_ == self.window.connection.atoms.XdndDrop {
-                    if let Err(_e) =
-                        self.drag_n_drop.handle_drop_event(&self.window, &mut *self.handler, &event)
-                    {
-                        // TODO: log warning
-                    }
+                    self.drag_n_drop.handle_drop_event(&self.window, &*self.handler, &event)?;
                 } else if event.type_ == self.window.connection.atoms.XdndLeave {
-                    self.drag_n_drop.handle_leave_event(&mut *self.handler, &event);
+                    self.drag_n_drop.handle_leave_event(&*self.handler, &event);
                 }
             }
 
             XEvent::SelectionNotify(event) => {
                 if event.property == self.window.connection.atoms.XdndSelection {
-                    if let Err(_e) = self.drag_n_drop.handle_selection_notify_event(
+                    self.drag_n_drop.handle_selection_notify_event(
                         &self.window,
-                        &mut *self.handler,
+                        &*self.handler,
                         &event,
-                    ) {
-                        // TODO: Log warning
-                    }
+                    )?;
                 }
             }
 
@@ -254,9 +242,8 @@ impl EventLoop {
                     }));
                 }
                 detail => {
-                    let button_id = mouse_id(detail);
                     self.handle_event(Event::Mouse(MouseEvent::ButtonPressed {
-                        button: button_id,
+                        button: mouse_id(detail),
                         modifiers: key_mods(event.state),
                     }));
                 }
@@ -295,21 +282,12 @@ impl EventLoop {
 
             _ => {}
         }
+
+        Ok(())
     }
 
     fn handle_event(&mut self, event: Event) {
         self.handler.on_event(event);
-    }
-
-    fn handle_close_requested(&mut self) {
-        // FIXME: handler should decide whether window stays open or not
-        self.handle_must_close();
-    }
-
-    fn handle_must_close(&mut self) {
-        self.handle_event(Event::Window(WindowEvent::WillClose));
-
-        self.event_loop_running = false;
     }
 }
 

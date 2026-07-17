@@ -21,6 +21,7 @@ mod visual_info;
 mod xcb_window;
 
 mod window_shared;
+mod window_thread;
 
 pub use error::{CookieExt as _, Error};
 pub(crate) type Result<T> = std::result::Result<T, Error>;

@@ -13,6 +13,7 @@ use x11rb::x11_utils::{TryParse, X11Error};
 #[derive(Debug)]
 pub enum Error {
     CreationFailed(String),
+    Run(String),
     Io(std::io::Error),
     DylibOpen(OpenError),
     InitThreadsFailed(InitThreadsFailedError),
@@ -25,6 +26,7 @@ pub enum Error {
     DisplayOpenFailed(DisplayOpenFailedError),
     Handler(HandlerError),
     Channel(RecvError),
+    Calloop(calloop::Error),
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
     #[cfg(feature = "opengl")]
@@ -95,6 +97,18 @@ impl From<X11Error> for Error {
 impl From<HandlerError> for Error {
     fn from(value: HandlerError) -> Self {
         Self::Handler(value)
+    }
+}
+
+impl From<calloop::Error> for Error {
+    fn from(value: calloop::Error) -> Self {
+        Self::Calloop(value)
+    }
+}
+
+impl From<RecvError> for Error {
+    fn from(value: RecvError) -> Self {
+        Self::Channel(value)
     }
 }
 

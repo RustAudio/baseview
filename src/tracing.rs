@@ -1,7 +1,9 @@
 #[cfg(feature = "tracing")]
-pub use tracing::*;
+#[allow(unused)]
+pub use tracing::{error, warn};
 
 #[cfg(not(feature = "tracing"))]
+#[allow(unused)]
 mod tracing_impl {
     macro_rules! __warn {
         ($($f:tt)*) => {
@@ -13,6 +15,7 @@ mod tracing_impl {
     }
 
     pub(crate) use __warn as warn;
+    pub(crate) use __warn as error;
 }
 
 #[cfg(not(feature = "tracing"))]

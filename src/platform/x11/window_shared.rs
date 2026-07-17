@@ -1,6 +1,9 @@
+use crate::platform::x11::event_loop::EventLoop;
+use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::*;
-use crate::{MouseCursor, WindowSize};
+use crate::{MouseCursor, WindowOpenOptions, WindowScalePolicy, WindowSize};
+use calloop::LoopSignal;
 use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::cell::Cell;
@@ -21,30 +24,79 @@ pub(crate) struct WindowInner {
     mouse_cursor: Cell<MouseCursor>,
     pub(crate) visual_id: Visualid,
 
-    pub(crate) close_requested: Cell<bool>,
     pub(crate) is_focused: Cell<bool>,
+    pub(crate) loop_signal: LoopSignal,
 }
 
 impl WindowInner {
-    pub(crate) fn new(
-        connection: Rc<X11Connection>, xcb_window: XcbWindow, window_size: PhysicalSize<u16>,
-        scale_factor: f64, visual_id: Visualid,
-        #[cfg(feature = "opengl")] gl_context: Option<super::gl::GlContext>,
-    ) -> Self {
-        Self {
+    pub(crate) fn create(
+        options: WindowOpenOptions, ev_loop: &calloop::EventLoop<'static, EventLoop>,
+    ) -> Result<Rc<Self>> {
+        // Connect to the X server
+        let xcb_connection = X11Connection::new()?;
+
+        let scaling = match options.scale {
+            WindowScalePolicy::SystemScaleFactor => xcb_connection.get_scaling(),
+            WindowScalePolicy::ScaleFactor(scale) => scale,
+        };
+
+        let physical_size = options.size.to_physical(scaling);
+
+        #[cfg(feature = "opengl")]
+        let visual_info =
+            WindowVisualConfig::find_best_visual_config_for_gl(&xcb_connection, options.gl_config)?;
+
+        #[cfg(not(feature = "opengl"))]
+        let visual_info = WindowVisualConfig::find_best_visual_config(&xcb_connection)?;
+
+        let connection = Rc::new(xcb_connection);
+
+        let xcb_window = XcbWindow::new(
+            Rc::clone(&connection),
+            physical_size,
+            &visual_info,
+            options.parent.map(|p| p.window_id),
+        )?;
+
+        let cookies = [
+            xcb_window.map_window()?,
+            xcb_window.set_title(&options.title)?,
+            xcb_window.enable_wm_protocols()?,
+            xcb_window.enable_dnd_protocols()?,
+        ];
+
+        for cookie in cookies {
+            cookie.check()?;
+        }
+
+        #[cfg(feature = "opengl")]
+        let gl_context = match visual_info.fb_config {
+            None => None,
+            Some(fb_config) => {
+                // Because of the visual negotation we had to take some extra steps to create this context
+                Some(super::gl::GlContextInner::create(
+                    &xcb_window,
+                    Rc::clone(&connection),
+                    fb_config,
+                )?)
+            }
+        };
+
+        let visual_id = visual_info.visual_id;
+        Ok(Rc::new(Self {
             connection,
             xcb_window,
             visual_id,
-            window_size: window_size.into(),
-            scaling_factor: scale_factor.into(),
+            window_size: physical_size.into(),
+            scaling_factor: scaling.into(),
             mouse_cursor: MouseCursor::default().into(),
+            loop_signal: ev_loop.get_signal(),
 
-            close_requested: false.into(),
             is_focused: false.into(),
 
             #[cfg(feature = "opengl")]
             gl_context,
-        }
+        }))
     }
 
     pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) -> Result<()> {
@@ -70,7 +122,8 @@ impl WindowInner {
     }
 
     pub fn request_close(&self) {
-        self.close_requested.set(true);
+        self.loop_signal.stop();
+        self.loop_signal.wakeup();
     }
 
     pub fn has_focus(&self) -> bool {
