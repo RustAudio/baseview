@@ -5,8 +5,6 @@ use baseview::{
 };
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
-use std::thread;
-use std::time::Duration;
 
 struct ParentWindowHandler {
     surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,

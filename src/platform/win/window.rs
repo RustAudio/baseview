@@ -32,8 +32,7 @@ use crate::wrappers::win32::{
     WindowStyle,
 };
 use crate::{
-    Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowOpenOptions, WindowScalePolicy,
-    WindowSize,
+    Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowOpenOptions, WindowSize,
 };
 
 #[allow(non_snake_case)]
@@ -64,6 +63,26 @@ impl WindowHandle {
 
     pub fn is_open(&self) -> bool {
         self.state.is_alive.get()
+    }
+
+    pub fn size(&self) -> WindowSize {
+        self.state.size()
+    }
+
+    pub fn resize(&self, new_size: Size) -> Result<()> {
+        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
+        let new_size = new_size.to_physical(self.state.scale_factor());
+        hwnd.resize_and_activate(new_size, self.state.current_dpi.get(), &self.state.user32)?;
+
+        if self.state.current_size.get() == new_size {
+            Ok(())
+        } else {
+            Err(Error::ResizeFailed)
+        }
+    }
+
+    pub fn suggest_scale_factor(&self, _scale_factor: f64) -> Result<()> {
+        todo!()
     }
 }
 
@@ -106,22 +125,19 @@ impl WindowImpl for BaseviewWindow {
         // Now we can get the actual dpi of the window.
         let dpi = window.get_dpi(&self.window_state.user32)?;
 
-        if dpi != window_state.current_dpi.get() {
-            window_state.current_dpi.set(dpi);
+        if dpi != window_state.shared.current_dpi.get() {
+            window_state.shared.current_dpi.set(dpi);
 
-            // If the user's requested initial size was in system-scaled logical pixels
-            if let WindowScalePolicy::SystemScaleFactor = self.window_state.scale_policy {
-                // We cannot create a window in "logical" pixels, and we can't DPI-scale to physical pixels because we
-                // have no way to know where the window will end up.
-                // So, at window creation, we assume a DPI=96, and if it ends up wrong, we resize the window
-                // to the actual logical size the user desired.
-                let new_size = self.initial_size.to_physical(dpi.scale_factor());
+            // We cannot create a window in "logical" pixels, and we can't DPI-scale to physical pixels because we
+            // have no way to know where the window will end up.
+            // So, at window creation, we assume a DPI=96, and if it ends up wrong, we resize the window
+            // to the actual logical size the user desired.
+            let new_size = self.initial_size.to_physical(dpi.scale_factor());
 
-                // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
-                // doesn't also emit Resized.
-                window_state.current_size.set(new_size);
-                window.resize_and_activate(new_size, dpi, &window_state.user32)?;
-            }
+            // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
+            // doesn't also emit Resized.
+            window_state.shared.current_size.set(new_size);
+            window.resize_and_activate(new_size, dpi, &window_state.user32)?;
         }
 
         let drop_target = ComObject::new(DropTarget::new(Rc::downgrade(window_state), window));
@@ -330,24 +346,26 @@ unsafe fn wnd_proc_inner(
             let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
 
             let new_size = PhysicalSize { width, height };
-            let current_size = window_state.current_size.get();
+            let current_size = window_state.shared.current_size.get();
 
             // Only send the event if anything changed
             if current_size == new_size {
                 return None;
             }
 
-            let previous = window_state.current_size.replace(new_size);
-            let new_size = WindowSize::from_physical(new_size, window_state.scale_factor());
+            let previous = window_state.shared.current_size.replace(new_size);
+            let new_size = WindowSize::from_physical(new_size, window_state.shared.scale_factor());
 
             let handler = window_state.handler.get()?;
             if let Err(e) = handler.resized(new_size) {
                 warn!("Window Handler failed to resize: {}", e);
-                window_state.current_size.set(previous);
+                window_state.shared.current_size.set(previous);
 
                 if let Err(e) = window_state.resize(previous.into()) {
                     warn!("Failed to resize back to previous window size: {}", e);
                 }
+
+                return Some(-1);
             }
 
             None
@@ -363,11 +381,11 @@ unsafe fn wnd_proc_inner(
 
             let new_size = suggested_rect.size();
 
-            let changed = window_state.current_size.get() != new_size
-                || window_state.current_dpi.get() != dpi;
+            let changed = window_state.shared.current_size.get() != new_size
+                || window_state.shared.current_dpi.get() != dpi;
 
-            window_state.current_dpi.replace(dpi);
-            let previous_size = window_state.current_size.replace(new_size);
+            window_state.shared.current_dpi.replace(dpi);
+            let previous_size = window_state.shared.current_size.replace(new_size);
 
             // Windows makes us resize the window manually. This however will not send a WM_SIZE event,
             // hence why we are notifying the window handler manually below.
@@ -379,7 +397,7 @@ unsafe fn wnd_proc_inner(
 
                 if let Err(e) = handler.resized(new_size) {
                     warn!("Window Handler failed to resize: {}", e);
-                    window_state.current_size.set(previous_size);
+                    window_state.shared.current_size.set(previous_size);
 
                     if let Err(e) = window_state.resize(previous_size.into()) {
                         warn!("Failed to resize back to previous window size: {}", e);
@@ -422,10 +440,7 @@ impl WindowHandle {
         let extended_user_32 = ExtendedUser32::load()?;
         let title = HSTRING::from(options.title);
 
-        let scaling_factor = match options.scale {
-            WindowScalePolicy::SystemScaleFactor => 1.0,
-            WindowScalePolicy::ScaleFactor(scale) => scale,
-        };
+        let scaling_factor = 1.0;
 
         let window_size = options.size.to_physical(scaling_factor);
 
@@ -435,20 +450,21 @@ impl WindowHandle {
             WindowStyle::embedded()
         };
         let dpi_ctx = DpiAwarenessContext::new(&extended_user_32)?;
-
-        let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, Dpi::default())?;
+        let shared_state = WindowSharedState::new(window_size, extended_user_32.clone());
 
         let initializer = {
             let extended_user_32 = extended_user_32.clone();
+            let shared_state = shared_state.clone();
 
             move |hwnd: HWnd| {
                 let window_state =
-                    Rc::new(WindowState::new(hwnd, window_size, options.scale, extended_user_32));
+                    Rc::new(WindowState::new(hwnd, extended_user_32, shared_state.clone()));
 
                 BaseviewWindow {
                     window_state,
                     initial_size: options.size,
                     handler_builder: Cell::new(Some(build)),
+                    shared_state,
 
                     _drop_target: None.into(),
                     _keyboard_hook: None.into(),
@@ -460,6 +476,7 @@ impl WindowHandle {
         };
 
         let parent = options.parent.map(|p| p.handle);
+        let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, Dpi::default())?;
 
         let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
 
@@ -472,7 +489,7 @@ impl WindowHandle {
 
         window.show_and_activate();
 
-        Ok(WindowHandle { hwnd: Some(window).into(), is_open: Rc::clone(&is_open) })
+        Ok(WindowHandle { hwnd: Some(window).into(), state: shared_state })
     }
 }
 

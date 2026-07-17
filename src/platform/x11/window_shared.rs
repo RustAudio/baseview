@@ -3,7 +3,7 @@ use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::x11::window_thread::WindowThreadShared;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::*;
-use crate::{warn, MouseCursor, WindowHandler, WindowOpenOptions, WindowScalePolicy, WindowSize};
+use crate::{warn, MouseCursor, WindowHandler, WindowOpenOptions, WindowSize};
 use calloop::LoopSignal;
 use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
@@ -40,8 +40,7 @@ impl ScalingFactor {
 
 impl From<Option<f64>> for ScalingFactor {
     fn from(value: Option<f64>) -> Self {
-        // FIXME
-        Self { system: None.into(), suggested: None.into() }
+        Self { system: value.into(), suggested: None.into() }
     }
 }
 
@@ -73,10 +72,7 @@ impl WindowInner {
         // Connect to the X server
         let xcb_connection = X11Connection::new()?;
 
-        let scaling = match options.scale {
-            WindowScalePolicy::SystemScaleFactor => xcb_connection.get_scaling(),
-            WindowScalePolicy::ScaleFactor(scale) => Some(scale),
-        };
+        let scaling = xcb_connection.get_scaling();
 
         let initial_scale_factor = scaling.unwrap_or(1.0);
         shared.set_scaling_factor(initial_scale_factor);
