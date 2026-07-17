@@ -3,7 +3,7 @@ use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::x11::window_thread::WindowThreadShared;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::*;
-use crate::{MouseCursor, WindowOpenOptions, WindowScalePolicy, WindowSize};
+use crate::{warn, MouseCursor, WindowHandler, WindowOpenOptions, WindowScalePolicy, WindowSize};
 use calloop::LoopSignal;
 use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
@@ -13,6 +13,38 @@ use std::sync::Arc;
 use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, InputFocus, Visualid};
 use x11rb::CURRENT_TIME;
 
+pub struct ScalingFactor {
+    system: Cell<Option<f64>>,
+    suggested: Cell<Option<f64>>,
+}
+
+impl ScalingFactor {
+    pub fn get(&self) -> f64 {
+        if let Some(factor) = self.system.get() {
+            return factor;
+        };
+
+        if let Some(factor) = self.suggested.get() {
+            return factor;
+        }
+
+        1.0
+    }
+
+    pub fn suggest(&self, value: f64) -> bool {
+        self.suggested.set(Some(value));
+
+        self.system.get().is_none()
+    }
+}
+
+impl From<Option<f64>> for ScalingFactor {
+    fn from(value: Option<f64>) -> Self {
+        // FIXME
+        Self { system: None.into(), suggested: None.into() }
+    }
+}
+
 pub(crate) struct WindowInner {
     // GlContext should be dropped **before** XcbConnection is dropped
     #[cfg(feature = "opengl")]
@@ -20,7 +52,9 @@ pub(crate) struct WindowInner {
 
     pub(crate) xcb_window: XcbWindow,
     pub(crate) connection: Rc<X11Connection>,
-    pub(crate) scaling_factor: Cell<f64>,
+
+    pub(crate) scaling_factor: ScalingFactor,
+
     window_size: Cell<PhysicalSize<u16>>,
     mouse_cursor: Cell<MouseCursor>,
     pub(crate) visual_id: Visualid,
@@ -41,11 +75,13 @@ impl WindowInner {
 
         let scaling = match options.scale {
             WindowScalePolicy::SystemScaleFactor => xcb_connection.get_scaling(),
-            WindowScalePolicy::ScaleFactor(scale) => scale,
+            WindowScalePolicy::ScaleFactor(scale) => Some(scale),
         };
 
-        shared.set_scaling_factor(scaling);
-        let physical_size = options.size.to_physical(scaling);
+        let initial_scale_factor = scaling.unwrap_or(1.0);
+        shared.set_scaling_factor(initial_scale_factor);
+
+        let physical_size = options.size.to_physical(initial_scale_factor);
 
         #[cfg(feature = "opengl")]
         let visual_info =
@@ -160,6 +196,28 @@ impl WindowInner {
 
         // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
         // and notify the window handler about it
+
+        Ok(())
+    }
+
+    pub fn resize_immediately(
+        &self, new_size: PhysicalSize<u16>, handler: &dyn WindowHandler,
+    ) -> Result<()> {
+        let previous = self.store_size(new_size);
+
+        if previous == new_size {
+            return Ok(());
+        };
+
+        self.xcb_window.resize(new_size.cast())?; // Will not call handler, as size is the same as above.
+
+        if let Err(e) =
+            handler.resized(WindowSize::from_physical(new_size.cast(), self.scaling_factor.get()))
+        {
+            warn!("Window Handler failed to resize: {}. Reverting to previous size", &e);
+            self.store_size(previous);
+            return Err(e.into());
+        }
 
         Ok(())
     }

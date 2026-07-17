@@ -10,14 +10,13 @@ use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, OnceCell, Ref, RefCell};
 use std::num::NonZeroIsize;
+use std::rc::Rc;
 use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 /// All data associated with the window.
 pub(crate) struct WindowState {
     /// The HWND belonging to this window.
     pub hwnd: HWnd,
-    pub current_size: Cell<PhysicalSize<u32>>,
-    pub current_dpi: Cell<Dpi>, // None if in non-system scale policy
     pub keyboard_state: RefCell<KeyboardState>,
     pub mouse_button_counter: Cell<usize>,
     pub mouse_was_outside_window: Cell<bool>,
@@ -39,8 +38,6 @@ impl WindowState {
     ) -> Self {
         Self {
             hwnd,
-            current_dpi: Dpi::default().into(),
-            current_size: current_size.into(),
             keyboard_state: RefCell::new(KeyboardState::new()),
             mouse_button_counter: Cell::new(0),
             mouse_was_outside_window: true.into(),
@@ -127,7 +124,6 @@ impl WindowState {
 
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
-        use std::rc::Rc;
         Some(crate::gl::GlContext::new(Rc::clone(self.gl_context.get()?)))
     }
 
@@ -146,5 +142,22 @@ impl WindowState {
     pub fn platform_handle(&self) -> PlatformHandle {
         let Some(hwnd) = NonZeroIsize::new(self.hwnd.as_raw() as _) else { unreachable!() };
         PlatformHandle { hwnd }
+    }
+}
+
+pub struct WindowSharedState {
+    pub is_alive: Cell<bool>,
+    pub current_size: Cell<PhysicalSize<u32>>,
+    pub current_dpi: Cell<Dpi>, // None if in non-system scale policy
+}
+
+impl WindowSharedState {
+    pub fn new(current_size: PhysicalSize<u32>) -> Rc<Self> {
+        Self {
+            is_alive: true.into(),
+            current_dpi: Dpi::default().into(),
+            current_size: current_size.into(),
+        }
+        .into()
     }
 }

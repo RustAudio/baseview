@@ -5,6 +5,8 @@ use baseview::{
 };
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
+use std::thread;
+use std::time::Duration;
 
 struct ParentWindowHandler {
     surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
@@ -56,6 +58,7 @@ impl WindowHandler for ParentWindowHandler {
 
         let child_size =
             PhysicalSize::new(new_size.physical.width / 2, new_size.physical.height / 2);
+        self.child_window.suggest_scale_factor(new_size.scale_factor)?;
         self.child_window.resize(child_size.into())?;
         Ok(())
     }

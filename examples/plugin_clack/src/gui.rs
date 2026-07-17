@@ -1,6 +1,6 @@
 use crate::window_handler::OpenWindowExample;
 use crate::ExamplePluginMainThread;
-use baseview::dpi::{LogicalSize, PhysicalSize, Size};
+use baseview::dpi::{PhysicalSize, Size};
 use baseview::gl::GlConfig;
 use baseview::{WindowHandle, WindowOpenOptions, WindowSize};
 use clack_extensions::gui::{

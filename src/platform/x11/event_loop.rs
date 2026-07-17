@@ -137,21 +137,23 @@ impl EventLoop {
                 let scale_factor = self.window.scaling_factor.get();
                 let new_size = new_size.to_physical(scale_factor);
 
-                // Handle everything directly, so we can return a handler error immediately.
-                let previous = self.window.store_size(new_size);
-                self.window.xcb_window.resize(new_size.cast())?; // Will not call handler, as size is the same as above.
-
-                if let Err(e) =
-                    self.handler.resized(WindowSize::from_physical(new_size.cast(), scale_factor))
-                {
-                    warn!("Window Handler failed to resize: {}. Reverting to previous size", &e);
-                    self.window.store_size(previous);
-                    return Err(e.into());
-                }
+                self.window.resize_immediately(new_size, &*self.handler)?;
 
                 Ok(())
             }
-            _ => todo!(),
+            WindowThreadRequest::SuggestScaleFactor(scale) => {
+                // If the scaling factor is already provided by the system, do nothing
+                if !self.window.scaling_factor.suggest(scale) {
+                    return Ok(());
+                };
+
+                let current_logical_size = self.window.get_size().to_logical::<f64>(1.0);
+                let new_physical_size = current_logical_size.to_physical(scale);
+
+                self.window.resize_immediately(new_physical_size, &*self.handler)?;
+
+                Ok(())
+            }
         }
     }
 

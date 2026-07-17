@@ -23,7 +23,7 @@ pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 use super::drop_target::DropTarget;
 use super::*;
 use crate::handler::WindowHandlerBuilder;
-use crate::platform::win::window_state::WindowState;
+use crate::platform::win::window_state::{WindowSharedState, WindowState};
 use crate::platform::Error;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
@@ -53,7 +53,7 @@ const WIN_FRAME_TIMER: NonZeroUsize = match NonZeroUsize::new(4242) {
 
 pub struct WindowHandle {
     hwnd: Cell<Option<HWnd>>,
-    is_open: Rc<Cell<bool>>,
+    state: Rc<WindowSharedState>,
 }
 
 impl WindowHandle {
@@ -63,7 +63,7 @@ impl WindowHandle {
     }
 
     pub fn is_open(&self) -> bool {
-        self.is_open.get()
+        self.state.is_alive.get()
     }
 }
 
@@ -75,29 +75,25 @@ impl Drop for WindowHandle {
     }
 }
 
-struct ParentHandle {
-    is_open: Rc<Cell<bool>>,
-}
-
-impl Drop for ParentHandle {
-    fn drop(&mut self) {
-        self.is_open.set(false);
-    }
-}
-
 pub struct BaseviewWindow {
     window_state: Rc<WindowState>,
+    shared_state: Rc<WindowSharedState>,
     initial_size: Size,
 
     handler_builder: Cell<Option<WindowHandlerBuilder>>,
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
-    _parent_handle: ParentHandle,
     _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
     _drop_target: Cell<Option<ComObject<DropTarget>>>,
 
     #[cfg(feature = "opengl")]
     pub gl_config: Option<crate::gl::GlConfig>,
+}
+
+impl Drop for BaseviewWindow {
+    fn drop(&mut self) {
+        self.shared_state.is_alive.set(false);
+    }
 }
 
 impl WindowImpl for BaseviewWindow {
@@ -442,10 +438,7 @@ impl WindowHandle {
 
         let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, Dpi::default())?;
 
-        let is_open = Rc::new(Cell::new(true));
-
         let initializer = {
-            let parent_handle = ParentHandle { is_open: is_open.clone() };
             let extended_user_32 = extended_user_32.clone();
 
             move |hwnd: HWnd| {
@@ -457,7 +450,6 @@ impl WindowHandle {
                     initial_size: options.size,
                     handler_builder: Cell::new(Some(build)),
 
-                    _parent_handle: parent_handle,
                     _drop_target: None.into(),
                     _keyboard_hook: None.into(),
 
