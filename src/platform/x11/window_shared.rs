@@ -1,5 +1,6 @@
 use crate::platform::x11::event_loop::EventLoop;
 use crate::platform::x11::visual_info::WindowVisualConfig;
+use crate::platform::x11::window_thread::WindowThreadShared;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::*;
 use crate::{MouseCursor, WindowOpenOptions, WindowScalePolicy, WindowSize};
@@ -20,17 +21,20 @@ pub(crate) struct WindowInner {
     pub(crate) xcb_window: XcbWindow,
     pub(crate) connection: Rc<X11Connection>,
     pub(crate) scaling_factor: Cell<f64>,
-    pub(crate) window_size: Cell<PhysicalSize<u16>>,
+    window_size: Cell<PhysicalSize<u16>>,
     mouse_cursor: Cell<MouseCursor>,
     pub(crate) visual_id: Visualid,
 
     pub(crate) is_focused: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
+
+    main_thread_shared: Arc<WindowThreadShared>,
 }
 
 impl WindowInner {
     pub(crate) fn create(
         options: WindowOpenOptions, ev_loop: &calloop::EventLoop<'static, EventLoop>,
+        shared: Arc<WindowThreadShared>,
     ) -> Result<Rc<Self>> {
         // Connect to the X server
         let xcb_connection = X11Connection::new()?;
@@ -40,6 +44,7 @@ impl WindowInner {
             WindowScalePolicy::ScaleFactor(scale) => scale,
         };
 
+        shared.set_scaling_factor(scaling);
         let physical_size = options.size.to_physical(scaling);
 
         #[cfg(feature = "opengl")]
@@ -82,17 +87,17 @@ impl WindowInner {
             }
         };
 
-        let visual_id = visual_info.visual_id;
         Ok(Rc::new(Self {
             connection,
             xcb_window,
-            visual_id,
+            visual_id: visual_info.visual_id,
             window_size: physical_size.into(),
             scaling_factor: scaling.into(),
             mouse_cursor: MouseCursor::default().into(),
             loop_signal: ev_loop.get_signal(),
 
             is_focused: false.into(),
+            main_thread_shared: shared,
 
             #[cfg(feature = "opengl")]
             gl_context,
@@ -121,6 +126,16 @@ impl WindowInner {
         Ok(())
     }
 
+    pub fn store_size(&self, size: PhysicalSize<u16>) -> PhysicalSize<u16> {
+        let previous = self.window_size.replace(size);
+        self.main_thread_shared.set_size(size);
+        previous
+    }
+
+    pub fn get_size(&self) -> PhysicalSize<u16> {
+        self.window_size.get()
+    }
+
     pub fn request_close(&self) {
         self.loop_signal.stop();
         self.loop_signal.wakeup();
@@ -140,7 +155,7 @@ impl WindowInner {
     }
 
     pub fn resize(&self, size: Size) -> Result<()> {
-        let new_physical_size = size.to_physical::<u32>(self.scaling_factor.get());
+        let new_physical_size = size.to_physical(self.scaling_factor.get());
         self.xcb_window.resize(new_physical_size)?;
 
         // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`

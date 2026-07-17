@@ -1,4 +1,4 @@
-use baseview::dpi::LogicalSize;
+use baseview::dpi::{LogicalSize, PhysicalSize};
 use baseview::{
     Event, EventStatus, HandlerError, WindowContext, WindowHandle, WindowHandler,
     WindowOpenOptions, WindowSize,
@@ -10,7 +10,7 @@ struct ParentWindowHandler {
     surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
     damaged: Cell<bool>,
 
-    _child_window: Option<WindowHandle>,
+    child_window: WindowHandle,
 }
 
 impl ParentWindowHandler {
@@ -27,11 +27,7 @@ impl ParentWindowHandler {
 
         let child_window = baseview::create_window(window_open_options, ChildWindowHandler::new)?;
 
-        Ok(Self {
-            surface: surface.into(),
-            damaged: true.into(),
-            _child_window: Some(child_window),
-        })
+        Ok(Self { surface: surface.into(), damaged: true.into(), child_window })
     }
 }
 
@@ -58,6 +54,9 @@ impl WindowHandler for ParentWindowHandler {
             self.damaged.set(true);
         }
 
+        let child_size =
+            PhysicalSize::new(new_size.physical.width / 2, new_size.physical.height / 2);
+        self.child_window.resize(child_size.into())?;
         Ok(())
     }
 
