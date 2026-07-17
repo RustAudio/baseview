@@ -1,7 +1,7 @@
 use crate::handler::WindowHandlerBuilder;
 use crate::platform;
 use crate::*;
-use dpi::{LogicalSize, PhysicalSize, Pixel};
+use dpi::{LogicalSize, PhysicalSize, Pixel, Size};
 use std::marker::PhantomData;
 
 pub struct WindowHandle {
@@ -23,6 +23,16 @@ impl WindowHandle {
     /// The current size of the window.
     pub fn size(&self) -> WindowSize {
         self.window_handle.size()
+    }
+
+    pub fn resize(&self, size: Size) -> Result<(), Error> {
+        self.window_handle.resize(size)?;
+        Ok(())
+    }
+
+    pub fn suggest_scale_factor(&self, scale_factor: f64) -> Result<(), Error> {
+        self.window_handle.suggest_scale_factor(scale_factor)?;
+        Ok(())
     }
 
     /// Close the window

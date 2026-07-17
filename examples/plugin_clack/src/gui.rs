@@ -1,6 +1,6 @@
 use crate::window_handler::OpenWindowExample;
 use crate::ExamplePluginMainThread;
-use baseview::dpi::PhysicalSize;
+use baseview::dpi::{LogicalSize, PhysicalSize, Size};
 use baseview::gl::GlConfig;
 use baseview::{WindowHandle, WindowOpenOptions, WindowSize};
 use clack_extensions::gui::{
@@ -39,8 +39,12 @@ impl PluginGuiImpl for ExamplePluginMainThread {
         gui.handle.close()
     }
 
-    fn set_scale(&mut self, _scale: f64) -> Result<(), PluginError> {
-        // Unsupported
+    fn set_scale(&mut self, scale: f64) -> Result<(), PluginError> {
+        let Some(gui) = &self.gui else {
+            return Err(PluginError::Message("set_scale called without a GUI active"));
+        };
+        gui.handle.suggest_scale_factor(scale)?;
+
         Ok(())
     }
 
@@ -49,19 +53,26 @@ impl PluginGuiImpl for ExamplePluginMainThread {
     }
 
     fn can_resize(&mut self) -> bool {
-        false // Non-resizeable windows not supported yet
+        true // Non-resizeable windows not supported yet
     }
 
     fn get_resize_hints(&mut self) -> Option<GuiResizeHints> {
         None // Not supported yet
     }
 
-    fn adjust_size(&mut self, _size: GuiSize) -> Option<GuiSize> {
-        None // Not supported yet
+    fn adjust_size(&mut self, size: GuiSize) -> Option<GuiSize> {
+        Some(size) // Not supported yet
     }
 
-    fn set_size(&mut self, _size: GuiSize) -> Result<(), PluginError> {
-        Ok(()) // Not supported yet
+    fn set_size(&mut self, size: GuiSize) -> Result<(), PluginError> {
+        let Some(gui) = &self.gui else {
+            return Err(PluginError::Message("set_size called without a GUI active"));
+        };
+
+        let size = gui_size_to_window_size(size);
+        gui.handle.resize(size)?;
+
+        Ok(())
     }
 
     #[allow(deprecated)]
@@ -109,5 +120,16 @@ fn window_size_to_gui_size(size: WindowSize) -> GuiSize {
     {
         let size = size.physical.cast();
         GuiSize { width: size.width, height: size.height }
+    }
+}
+
+fn gui_size_to_window_size(size: GuiSize) -> Size {
+    #[cfg(target_os = "macos")]
+    {
+        Size::Logical(LogicalSize::new(size.width, size.height).cast())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Size::Physical(PhysicalSize::new(size.width, size.height))
     }
 }
