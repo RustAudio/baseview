@@ -123,7 +123,7 @@ fn main() -> Result<(), baseview::Error> {
         .with_size(LogicalSize::new(512, 512))
         .with_gl_config(GlConfig { alpha_bits: 8, ..GlConfig::default() });
 
-    baseview::create_window(window_open_options, FemtovgExample::new)?.run_until_closed();
+    baseview::create_window(window_open_options, FemtovgExample::new)?.run_until_closed()?;
     Ok(())
 }
 

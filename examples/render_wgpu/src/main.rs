@@ -214,7 +214,7 @@ fn main() -> Result<(), baseview::Error> {
         .with_size(LogicalSize::new(512, 512));
 
     baseview::create_window(window_open_options, |c| pollster::block_on(WgpuExample::new(c)))?
-        .run_until_closed();
+        .run_until_closed()?;
 
     Ok(())
 }

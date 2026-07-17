@@ -3,7 +3,6 @@ use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mo
 use super::*;
 use std::result::Result;
 
-use crate::platform::x11::window_thread::WindowThreadShared;
 use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
@@ -29,14 +28,13 @@ pub(crate) struct EventLoop {
     xkb_state: Option<XkbcommonState>,
 
     run_error: Option<Error>,
-    pub(crate) shared: Arc<WindowThreadShared>,
 }
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 
 impl EventLoop {
     pub fn new(
-        window: Rc<WindowInner>, handler: Box<dyn WindowHandler>, shared: Arc<WindowThreadShared>,
+        window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
         inner: &mut calloop::EventLoop<'static, Self>,
     ) -> Result<Self, Error> {
         let loop_handle = inner.handle();
@@ -59,13 +57,8 @@ impl EventLoop {
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
             run_error: None,
-            shared,
             window,
         })
-    }
-
-    pub fn window_id(&self) -> NonZeroU32 {
-        self.window.xcb_window.id()
     }
 
     #[inline]

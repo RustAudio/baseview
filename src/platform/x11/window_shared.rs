@@ -47,7 +47,7 @@ impl WindowInner {
             WindowVisualConfig::find_best_visual_config_for_gl(&xcb_connection, options.gl_config)?;
 
         #[cfg(not(feature = "opengl"))]
-        let visual_info = WindowVisualConfig::find_best_visual_config(&connection)?;
+        let visual_info = WindowVisualConfig::find_best_visual_config(&xcb_connection)?;
 
         let connection = Rc::new(xcb_connection);
 

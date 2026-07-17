@@ -5,7 +5,6 @@ use crate::platform::x11::window_shared::WindowInner;
 use crate::{WindowContext, WindowOpenOptions};
 use calloop::LoopSignal;
 use std::cell::Cell;
-use std::num::NonZeroU32;
 use std::panic::resume_unwind;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -63,7 +62,7 @@ impl WindowThreadHandle {
         }
 
         if let Some(e) = self.shared.final_error.lock().unwrap().take() {
-            return Err(Error::RunError(e));
+            return Err(Error::Run(e));
         }
 
         Ok(())
@@ -79,7 +78,9 @@ impl Drop for WindowThreadHandle {
         self.loop_signal.stop();
         self.loop_signal.wakeup();
 
-        self.run_until_closed();
+        if let Err(e) = self.run_until_closed() {
+            crate::warn!("Error while closing window: {}", e)
+        }
     }
 }
 
@@ -101,7 +102,7 @@ impl WindowThread {
         let mut ev_loop = calloop::EventLoop::try_new()?;
         let inner = WindowInner::create(options, &ev_loop)?;
         let handler = handler.build(WindowContext::new(Rc::clone(&inner)))?;
-        let event_loop = EventLoop::new(inner, handler, shared.clone(), &mut ev_loop)?;
+        let event_loop = EventLoop::new(inner, handler, &mut ev_loop)?;
 
         Ok(Self { event_loop, ev_loop, shared })
     }
