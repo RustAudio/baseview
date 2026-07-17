@@ -57,8 +57,9 @@ pub struct WindowHandle {
 }
 
 impl WindowHandle {
-    pub fn run_until_closed(self) {
-        run_thread_message_loop_until(|| !self.is_open()).unwrap();
+    pub fn run_until_closed(self) -> Result<()> {
+        run_thread_message_loop_until(|| !self.is_open())?;
+        Ok(())
     }
 
     pub fn is_open(&self) -> bool {

@@ -83,8 +83,9 @@ impl WindowHandle {
         Ok(Self { mtm, state, view: Weak::from_retained(&view), _window: Some(window) })
     }
 
-    pub fn run_until_closed(self) {
+    pub fn run_until_closed(self) -> Result<()> {
         NSApplication::sharedApplication(self.mtm).run();
+        Ok(())
     }
 
     pub fn is_open(&self) -> bool {
