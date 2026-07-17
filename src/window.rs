@@ -20,6 +20,11 @@ impl WindowHandle {
         Ok(())
     }
 
+    /// The current size of the window.
+    pub fn size(&self) -> WindowSize {
+        self.window_handle.size()
+    }
+
     /// Close the window
     pub fn close(self) {
         drop(self)

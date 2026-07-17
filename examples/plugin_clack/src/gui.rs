@@ -2,7 +2,7 @@ use crate::window_handler::OpenWindowExample;
 use crate::ExamplePluginMainThread;
 use baseview::dpi::PhysicalSize;
 use baseview::gl::GlConfig;
-use baseview::{WindowHandle, WindowOpenOptions};
+use baseview::{WindowHandle, WindowOpenOptions, WindowSize};
 use clack_extensions::gui::{
     GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, PluginGuiImpl, Window as ClapWindow,
 };
@@ -45,8 +45,7 @@ impl PluginGuiImpl for ExamplePluginMainThread {
     }
 
     fn get_size(&mut self) -> Option<GuiSize> {
-        // Unsupported
-        Some(GuiSize { width: 400, height: 200 })
+        Some(window_size_to_gui_size(self.gui.as_ref()?.handle.size()))
     }
 
     fn can_resize(&mut self) -> bool {
@@ -96,5 +95,19 @@ impl PluginGuiImpl for ExamplePluginMainThread {
 
     fn hide(&mut self) -> Result<(), PluginError> {
         Ok(()) // Not supported yet
+    }
+}
+
+fn window_size_to_gui_size(size: WindowSize) -> GuiSize {
+    #[cfg(target_os = "macos")]
+    {
+        let size = size.logical.cast();
+        GuiSize { width: size.width, height: size.height }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let size = size.physical.cast();
+        GuiSize { width: size.width, height: size.height }
     }
 }

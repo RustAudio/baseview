@@ -1,4 +1,4 @@
-use dpi::LogicalSize;
+use dpi::{LogicalSize, PhysicalSize};
 use objc2::rc::{autoreleasepool, Retained, Weak};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardTypeString, NSView, NSWindow};
@@ -90,6 +90,10 @@ impl WindowHandle {
 
     pub fn is_open(&self) -> bool {
         self.state.closed.get()
+    }
+
+    pub fn size(&self) -> WindowSize {
+        WindowSize::from_logical(self.state.size.get(), self.state.scale_factor.get())
     }
 }
 
