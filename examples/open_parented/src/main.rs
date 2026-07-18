@@ -1,4 +1,4 @@
-use baseview::dpi::{LogicalSize, PhysicalSize};
+use baseview::dpi::LogicalSize;
 use baseview::{
     Event, EventStatus, HandlerError, WindowContext, WindowHandle, WindowHandler,
     WindowOpenOptions, WindowSize,
@@ -55,7 +55,7 @@ impl WindowHandler for ParentWindowHandler {
         }
 
         let child_size =
-            PhysicalSize::new(new_size.physical.width / 2, new_size.physical.height / 2);
+            LogicalSize::new(new_size.logical.width / 2., new_size.logical.height / 2.);
         self.child_window.suggest_scale_factor(new_size.scale_factor)?;
         self.child_window.resize(child_size.into())?;
         Ok(())
