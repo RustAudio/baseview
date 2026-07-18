@@ -4,7 +4,8 @@ use baseview::dpi::*;
 use baseview::gl::GlConfig;
 use baseview::{WindowHandle, WindowOpenOptions, WindowSize};
 use clack_extensions::gui::{
-    GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, PluginGuiImpl, Window as ClapWindow,
+    AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, PluginGuiImpl,
+    Window as ClapWindow,
 };
 use clack_plugin::plugin::PluginError;
 
@@ -49,7 +50,12 @@ impl PluginGuiImpl for ExamplePluginMainThread {
     }
 
     fn get_size(&mut self) -> Option<GuiSize> {
-        Some(window_size_to_gui_size(self.gui.as_ref()?.handle.size()))
+        let Some(gui) = self.gui.as_ref() else {
+            // Because we delayed the window creation, this will get called without a GUI active.
+            // During that time, return the default UI size.
+            return Some(GuiSize { width: 400, height: 200 });
+        };
+        Some(window_size_to_gui_size(gui.handle.size()))
     }
 
     fn can_resize(&mut self) -> bool {
@@ -57,7 +63,13 @@ impl PluginGuiImpl for ExamplePluginMainThread {
     }
 
     fn get_resize_hints(&mut self) -> Option<GuiResizeHints> {
-        None // Not supported yet
+        Some(GuiResizeHints {
+            strategy: AspectRatioStrategy::Disregard, // Not supported
+
+            // Non-resizeable windows not supported yet
+            can_resize_vertically: true,
+            can_resize_horizontally: true,
+        })
     }
 
     fn adjust_size(&mut self, size: GuiSize) -> Option<GuiSize> {

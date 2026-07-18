@@ -114,8 +114,6 @@ impl WindowHandler for OpenWindowExample {
             _ => {}
         }
 
-        log_event(&event);
-
         EventStatus::Captured
     }
 }
@@ -134,14 +132,5 @@ impl OpenWindowExample {
             is_cursor_inside: false.into(),
             damaged: true.into(),
         })
-    }
-}
-
-fn log_event(event: &Event) {
-    match event {
-        Event::Mouse(e) => println!("Mouse event: {:?}", e),
-        Event::Keyboard(e) => println!("Keyboard event: {:?}", e),
-        Event::Window(e) => println!("Window event: {:?}", e),
-        _ => {}
     }
 }
