@@ -44,7 +44,7 @@ impl PluginGuiImpl for ExamplePluginMainThread {
         let Some(gui) = &self.gui else {
             return Err(PluginError::Message("set_scale called without a GUI active"));
         };
-        gui.handle.suggest_scale_factor(scale)?;
+        gui.handle.suggest_fallback_scale_factor(scale)?;
 
         Ok(())
     }

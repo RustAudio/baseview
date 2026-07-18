@@ -56,7 +56,7 @@ impl WindowHandler for ParentWindowHandler {
 
         let child_size =
             LogicalSize::new(new_size.logical.width / 2., new_size.logical.height / 2.);
-        self.child_window.suggest_scale_factor(new_size.scale_factor)?;
+        self.child_window.suggest_fallback_scale_factor(new_size.scale_factor)?;
         self.child_window.resize(child_size.into())?;
         Ok(())
     }

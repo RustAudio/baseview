@@ -42,12 +42,12 @@ impl WindowHandle {
     ///
     /// # Platform compatibility notes.
     ///
-    /// On Win32, this is used if running on early versions of Windows 10 (or earlier).
+    /// On Win32, this value is used if running on early versions of Windows 10 (or earlier).
     ///
-    /// On X11, this is used if no `Xft.dpi`setting is set.
+    /// On X11, this value is used if no `Xft.dpi`setting is set.
     ///
-    /// On macOS, this is always a no-op.
-    pub fn suggest_scale_factor(&self, scale_factor: f64) -> Result<(), Error> {
+    /// On macOS, this function is always a no-op.
+    pub fn suggest_fallback_scale_factor(&self, scale_factor: f64) -> Result<(), Error> {
         self.window_handle.suggest_scale_factor(scale_factor)?;
         Ok(())
     }
