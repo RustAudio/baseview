@@ -103,7 +103,7 @@ impl WindowState {
         // `self.window_info` will be modified in response to the `WM_SIZE` event that
         // follows the `SetWindowPos()` call
         let dpi = self.shared.current_dpi.get();
-        let new_size = size.to_physical(dpi.scale_factor());
+        let new_size = size.to_physical(self.shared.scale_factor());
 
         self.hwnd.resize_and_activate(new_size, dpi, &self.user32)?;
         Ok(())
@@ -144,7 +144,8 @@ impl WindowState {
 pub struct WindowSharedState {
     pub is_alive: Cell<bool>,
     pub current_size: Cell<PhysicalSize<u32>>,
-    pub current_dpi: Cell<Dpi>, // None if in non-system scale policy
+    pub current_dpi: Cell<Option<Dpi>>, // None if Win32 HiDPI isn't supported
+    pub fallback_scale_factor: Cell<Option<f64>>,
 
     pub user32: ExtendedUser32,
 }
@@ -153,8 +154,9 @@ impl WindowSharedState {
     pub fn new(current_size: PhysicalSize<u32>, user32: ExtendedUser32) -> Rc<Self> {
         Self {
             is_alive: true.into(),
-            current_dpi: Dpi::default().into(),
+            current_dpi: None.into(),
             current_size: current_size.into(),
+            fallback_scale_factor: None.into(),
             user32,
         }
         .into()
@@ -165,6 +167,10 @@ impl WindowSharedState {
     }
 
     pub fn scale_factor(&self) -> f64 {
-        self.current_dpi.get().scale_factor()
+        if let Some(dpi) = self.current_dpi.get() {
+            dpi.scale_factor()
+        } else {
+            self.fallback_scale_factor.get().unwrap_or(1.0)
+        }
     }
 }

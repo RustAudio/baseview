@@ -81,8 +81,36 @@ impl WindowHandle {
         }
     }
 
-    pub fn suggest_scale_factor(&self, _scale_factor: f64) -> Result<()> {
-        todo!()
+    pub fn suggest_scale_factor(&self, scale_factor: f64) -> Result<()> {
+        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
+
+        let current_scale_factor = self.state.scale_factor();
+        self.state.fallback_scale_factor.set(Some(scale_factor));
+
+        if self.state.current_dpi.get().is_some() {
+            return Ok(());
+        }
+
+        let current_size = self.state.current_size.get();
+        let new_size = self
+            .state
+            .current_size
+            .get()
+            .to_logical::<f64>(current_scale_factor)
+            .to_physical(self.state.scale_factor());
+
+        // This call doesn't meaningfully change the scaling factor, ignore the result
+        if current_size == new_size {
+            return Ok(());
+        }
+
+        hwnd.resize_and_activate(new_size, None, &self.state.user32)?;
+
+        if self.state.current_size.get() == new_size {
+            Ok(())
+        } else {
+            Err(Error::ResizeFailed)
+        }
     }
 }
 
@@ -125,19 +153,21 @@ impl WindowImpl for BaseviewWindow {
         // Now we can get the actual dpi of the window.
         let dpi = window.get_dpi(&self.window_state.user32)?;
 
-        if dpi != window_state.shared.current_dpi.get() {
-            window_state.shared.current_dpi.set(dpi);
+        if let Some(dpi) = dpi {
+            if Some(dpi) != window_state.shared.current_dpi.get() {
+                window_state.shared.current_dpi.set(Some(dpi));
 
-            // We cannot create a window in "logical" pixels, and we can't DPI-scale to physical pixels because we
-            // have no way to know where the window will end up.
-            // So, at window creation, we assume a DPI=96, and if it ends up wrong, we resize the window
-            // to the actual logical size the user desired.
-            let new_size = self.initial_size.to_physical(dpi.scale_factor());
+                // We cannot create a window in "logical" pixels, and we can't DPI-scale to physical pixels because we
+                // have no way to know where the window will end up.
+                // So, at window creation, we assume a DPI=96, and if it ends up wrong, we resize the window
+                // to the actual logical size the user desired.
+                let new_size = self.initial_size.to_physical(dpi.scale_factor());
 
-            // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
-            // doesn't also emit Resized.
-            window_state.shared.current_size.set(new_size);
-            window.resize_and_activate(new_size, dpi, &window_state.user32)?;
+                // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
+                // doesn't also emit Resized.
+                window_state.shared.current_size.set(new_size);
+                window.resize_and_activate(new_size, Some(dpi), &window_state.user32)?;
+            }
         }
 
         let drop_target = ComObject::new(DropTarget::new(Rc::downgrade(window_state), window));
@@ -377,14 +407,14 @@ unsafe fn wnd_proc_inner(
             let dpi_ctx = DpiAwarenessContext::new(&window_state.user32).unwrap();
             let style = window.get_style().unwrap();
             let suggested_rect =
-                dpi_ctx.nc_area_to_client_area(suggested_nc_rect, style, dpi).unwrap();
+                dpi_ctx.nc_area_to_client_area(suggested_nc_rect, style, Some(dpi)).unwrap();
 
             let new_size = suggested_rect.size();
 
             let changed = window_state.shared.current_size.get() != new_size
-                || window_state.shared.current_dpi.get() != dpi;
+                || window_state.shared.current_dpi.get() != Some(dpi);
 
-            window_state.shared.current_dpi.replace(dpi);
+            window_state.shared.current_dpi.replace(Some(dpi));
             let previous_size = window_state.shared.current_size.replace(new_size);
 
             // Windows makes us resize the window manually. This however will not send a WM_SIZE event,
@@ -476,7 +506,7 @@ impl WindowHandle {
         };
 
         let parent = options.parent.map(|p| p.handle);
-        let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, Dpi::default())?;
+        let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, None)?;
 
         let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
 

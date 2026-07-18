@@ -42,9 +42,11 @@ impl<'a> DpiAwarenessContext<'a> {
     }
 
     pub fn client_area_to_nc_area(
-        &self, mut rect: Rect, style: WindowStyle, dpi: Dpi,
+        &self, mut rect: Rect, style: WindowStyle, dpi: Option<Dpi>,
     ) -> Result<Rect> {
-        let Some(adjust_window_rect_ex_for_dpi) = self.user32.adjust_window_rect_ex_for_dpi else {
+        let (Some(adjust_window_rect_ex_for_dpi), Some(dpi)) =
+            (self.user32.adjust_window_rect_ex_for_dpi, dpi)
+        else {
             let result = unsafe { AdjustWindowRectEx(&mut rect.0, style.style, 0, style.style_ex) };
 
             if result == 0 {
@@ -67,7 +69,9 @@ impl<'a> DpiAwarenessContext<'a> {
         Ok(rect)
     }
 
-    pub fn nc_area_to_client_area(&self, rect: Rect, style: WindowStyle, dpi: Dpi) -> Result<Rect> {
+    pub fn nc_area_to_client_area(
+        &self, rect: Rect, style: WindowStyle, dpi: Option<Dpi>,
+    ) -> Result<Rect> {
         let result = self.client_area_to_nc_area(Rect::EMPTY, style, dpi)?;
 
         Ok(Rect(RECT {

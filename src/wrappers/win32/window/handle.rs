@@ -87,15 +87,15 @@ impl HWnd {
         })
     }
 
-    pub fn get_dpi(&self, extended_user32: &ExtendedUser32) -> Result<Dpi> {
+    pub fn get_dpi(&self, extended_user32: &ExtendedUser32) -> Result<Option<Dpi>> {
         let Some(get_dpi_for_window) = extended_user32.get_dpi_for_window else {
-            return Ok(Dpi::default());
+            return Ok(None);
         };
 
         // SAFETY: This type guarantees the HWND is safe to use.
         match unsafe { get_dpi_for_window(self.as_raw()) } {
             0 => Err(Error::from_thread()),
-            dpi => Ok(Dpi(dpi)),
+            dpi => Ok(Some(Dpi(dpi))),
         }
     }
 
@@ -140,7 +140,7 @@ impl HWnd {
     }
 
     pub fn resize_and_activate(
-        &self, client_size: PhysicalSize<u32>, window_dpi: Dpi, user32: &ExtendedUser32,
+        &self, client_size: PhysicalSize<u32>, window_dpi: Option<Dpi>, user32: &ExtendedUser32,
     ) -> Result<()> {
         let dpi_ctx = DpiAwarenessContext::new(user32)?;
         let style = self.get_style()?;
