@@ -5,49 +5,43 @@ use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Dpi, ExtendedUser32};
-use crate::{Event, EventStatus, MouseCursor, WindowHandler, WindowScalePolicy, WindowSize};
+use crate::{Event, EventStatus, MouseCursor, WindowHandler, WindowSize};
 use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, OnceCell, Ref, RefCell};
 use std::num::NonZeroIsize;
+use std::rc::Rc;
 use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 /// All data associated with the window.
 pub(crate) struct WindowState {
     /// The HWND belonging to this window.
     pub hwnd: HWnd,
-    pub current_size: Cell<PhysicalSize<u32>>,
-    pub current_dpi: Cell<Dpi>, // None if in non-system scale policy
     pub keyboard_state: RefCell<KeyboardState>,
     pub mouse_button_counter: Cell<usize>,
     pub mouse_was_outside_window: Cell<bool>,
     pub cursor_icon: Cell<MouseCursor>,
     // Initialized late so the `Window` can hold a reference to this `WindowState`
     pub handler: OnceCell<Box<dyn WindowHandler>>,
-    pub scale_policy: WindowScalePolicy,
 
     pub user32: ExtendedUser32,
+    pub shared: Rc<WindowSharedState>,
 
     #[cfg(feature = "opengl")]
     pub gl_context: OnceCell<super::gl::GlContext>,
 }
 
 impl WindowState {
-    pub fn new(
-        hwnd: HWnd, current_size: PhysicalSize<u32>, scale_policy: WindowScalePolicy,
-        user32: ExtendedUser32,
-    ) -> Self {
+    pub fn new(hwnd: HWnd, user32: ExtendedUser32, shared: Rc<WindowSharedState>) -> Self {
         Self {
             hwnd,
-            current_dpi: Dpi::default().into(),
-            current_size: current_size.into(),
             keyboard_state: RefCell::new(KeyboardState::new()),
             mouse_button_counter: Cell::new(0),
             mouse_was_outside_window: true.into(),
             cursor_icon: Cell::new(MouseCursor::Default),
             handler: OnceCell::new(),
-            scale_policy,
             user32,
+            shared,
 
             #[cfg(feature = "opengl")]
             gl_context: OnceCell::new(),
@@ -71,15 +65,14 @@ impl WindowState {
         handler.on_event(event)
     }
 
+    /// Returns the current size of this window.
     pub fn size(&self) -> WindowSize {
-        WindowSize::from_physical(self.current_size.get(), self.scale_factor())
+        self.shared.size()
     }
 
+    /// Returns the current scale factor of this window.
     pub fn scale_factor(&self) -> f64 {
-        match self.scale_policy {
-            WindowScalePolicy::ScaleFactor(scale) => scale,
-            WindowScalePolicy::SystemScaleFactor => self.current_dpi.get().scale_factor(),
-        }
+        self.shared.scale_factor()
     }
 
     pub(crate) fn keyboard_state(&self) -> Ref<'_, KeyboardState> {
@@ -109,8 +102,8 @@ impl WindowState {
     pub fn resize(&self, size: Size) -> Result<(), super::Error> {
         // `self.window_info` will be modified in response to the `WM_SIZE` event that
         // follows the `SetWindowPos()` call
-        let dpi = self.current_dpi.get();
-        let new_size = size.to_physical(dpi.scale_factor());
+        let dpi = self.shared.current_dpi.get();
+        let new_size = size.to_physical(self.shared.scale_factor());
 
         self.hwnd.resize_and_activate(new_size, dpi, &self.user32)?;
         Ok(())
@@ -127,7 +120,6 @@ impl WindowState {
 
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
-        use std::rc::Rc;
         Some(crate::gl::GlContext::new(Rc::clone(self.gl_context.get()?)))
     }
 
@@ -146,5 +138,39 @@ impl WindowState {
     pub fn platform_handle(&self) -> PlatformHandle {
         let Some(hwnd) = NonZeroIsize::new(self.hwnd.as_raw() as _) else { unreachable!() };
         PlatformHandle { hwnd }
+    }
+}
+
+pub struct WindowSharedState {
+    pub is_alive: Cell<bool>,
+    pub current_size: Cell<PhysicalSize<u32>>,
+    pub current_dpi: Cell<Option<Dpi>>, // None if Win32 HiDPI isn't supported
+    pub fallback_scale_factor: Cell<Option<f64>>,
+
+    pub user32: ExtendedUser32,
+}
+
+impl WindowSharedState {
+    pub fn new(current_size: PhysicalSize<u32>, user32: ExtendedUser32) -> Rc<Self> {
+        Self {
+            is_alive: true.into(),
+            current_dpi: None.into(),
+            current_size: current_size.into(),
+            fallback_scale_factor: None.into(),
+            user32,
+        }
+        .into()
+    }
+
+    pub fn size(&self) -> WindowSize {
+        WindowSize::from_physical(self.current_size.get(), self.scale_factor())
+    }
+
+    pub fn scale_factor(&self) -> f64 {
+        if let Some(dpi) = self.current_dpi.get() {
+            dpi.scale_factor()
+        } else {
+            self.fallback_scale_factor.get().unwrap_or(1.0)
+        }
     }
 }

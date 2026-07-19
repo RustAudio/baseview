@@ -1,4 +1,4 @@
-use dpi::LogicalSize;
+use dpi::{LogicalSize, Size};
 use objc2::rc::{autoreleasepool, Retained, Weak};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardTypeString, NSView, NSWindow};
@@ -90,6 +90,24 @@ impl WindowHandle {
 
     pub fn is_open(&self) -> bool {
         self.state.closed.get()
+    }
+
+    pub fn size(&self) -> WindowSize {
+        WindowSize::from_logical(self.state.size.get(), self.state.scale_factor.get())
+    }
+
+    pub fn resize(&self, size: Size) -> Result<()> {
+        let Some(view) = self.view.load() else { return Ok(()) };
+        let Some(view) = view.inner_ref() else { return Ok(()) };
+
+        BaseviewView::resize(view, size);
+
+        Ok(())
+    }
+
+    pub fn suggest_scale_factor(&self, _scale_factor: f64) -> Result<()> {
+        // This does not do anything on macOS: all coordinates are already logical
+        Ok(())
     }
 }
 

@@ -3,6 +3,9 @@ use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mo
 use super::*;
 use std::result::Result;
 
+use crate::platform::x11::window_thread::{
+    WindowThreadRequest, WindowThreadResponse, WindowThreadResponseMessage,
+};
 use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
@@ -11,6 +14,7 @@ use calloop::timer::{TimeoutAction, Timer};
 use calloop::{Interest, LoopSignal, Mode, PostAction};
 use dpi::{PhysicalPosition, PhysicalSize};
 use std::rc::Rc;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::errors::ConnectionError;
@@ -28,6 +32,8 @@ pub(crate) struct EventLoop {
     xkb_state: Option<XkbcommonState>,
 
     run_error: Option<Error>,
+
+    response_sender: mpsc::Sender<WindowThreadResponseMessage>,
 }
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(15);
@@ -35,6 +41,8 @@ const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 impl EventLoop {
     pub fn new(
         window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
+        request_receiver: calloop::channel::Channel<WindowThreadRequest>,
+        response_sender: mpsc::Sender<WindowThreadResponseMessage>,
         inner: &mut calloop::EventLoop<'static, Self>,
     ) -> Result<Self, Error> {
         let loop_handle = inner.handle();
@@ -50,6 +58,10 @@ impl EventLoop {
             )
             .map_err(|e| e.error)?;
 
+        loop_handle
+            .insert_source(request_receiver, |e, _, l| l.handle_main_thread_request(e))
+            .map_err(|e| e.error)?;
+
         Ok(Self {
             loop_signal: inner.get_signal(),
             handler,
@@ -58,6 +70,7 @@ impl EventLoop {
             xkb_state: XkbcommonState::new(&window.connection),
             run_error: None,
             window,
+            response_sender,
         })
     }
 
@@ -73,19 +86,75 @@ impl EventLoop {
         }
 
         if let Some(size) = self.new_physical_size.take() {
-            let previous = self.window.window_size.replace(size);
+            let previous = self.window.store_size(size);
 
             let scale_factor = self.window.scaling_factor.get();
             if let Err(e) =
                 self.handler.resized(WindowSize::from_physical(size.cast(), scale_factor))
             {
                 warn!("Window Handler failed to resize: {}", e);
-                self.window.window_size.set(previous);
+                self.window.store_size(previous);
                 self.window.xcb_window.resize(previous.cast())?.check_warn();
             }
         }
 
         Ok(())
+    }
+
+    fn handle_main_thread_request(&mut self, event: calloop::channel::Event<WindowThreadRequest>) {
+        match event {
+            calloop::channel::Event::Closed => {
+                // Closed channel means the sender, i.e. the Window Handle has been dropped.
+                // It should already stop this event loop on drop, but we'll take the hint.
+                self.stop_now();
+            }
+            calloop::channel::Event::Msg(req) => match self.handle_request(req) {
+                Ok(()) => self.send_response(Ok(WindowThreadResponse::Ok)),
+                Err(e) => self.send_response(Err(e.to_string())),
+            },
+        }
+    }
+
+    fn send_response(&mut self, response: WindowThreadResponseMessage) {
+        if let Err(e) = self.response_sender.send(response) {
+            warn!("Failed to send response back to main thread: {}", &e);
+            if let Err(e) = e.0 {
+                crate::error!("Request failed: {}", e)
+            }
+
+            self.stop_now();
+        }
+    }
+
+    fn stop_now(&self) {
+        self.loop_signal.stop();
+        self.loop_signal.wakeup();
+    }
+
+    fn handle_request(&mut self, req: WindowThreadRequest) -> Result<(), Error> {
+        match req {
+            WindowThreadRequest::Resize(new_size) => {
+                let scale_factor = self.window.scaling_factor.get();
+                let new_size = new_size.to_physical(scale_factor);
+
+                self.window.resize_immediately(new_size, &*self.handler)?;
+
+                Ok(())
+            }
+            WindowThreadRequest::SuggestScaleFactor(scale) => {
+                // If the scaling factor is already provided by the system, do nothing
+                if !self.window.scaling_factor.suggest(scale) {
+                    return Ok(());
+                };
+
+                let current_logical_size = self.window.get_size().to_logical::<f64>(1.0);
+                let new_physical_size = current_logical_size.to_physical(scale);
+
+                self.window.resize_immediately(new_physical_size, &*self.handler)?;
+
+                Ok(())
+            }
+        }
     }
 
     fn handle_connection_event_ready(&mut self) -> Result<PostAction, ConnectionError> {
@@ -97,7 +166,7 @@ impl EventLoop {
     fn handle_frame(&mut self, previous_deadline: Instant) -> TimeoutAction {
         if let Err(e) = self.handler.on_frame() {
             self.run_error = Some(e.into());
-            self.loop_signal.stop();
+            self.stop_now();
             return TimeoutAction::Drop;
         }
 
@@ -194,9 +263,7 @@ impl EventLoop {
             XEvent::ConfigureNotify(event) => {
                 let new_physical_size = PhysicalSize::new(event.width, event.height);
 
-                if self.new_physical_size.is_some()
-                    || new_physical_size != self.window.window_size.get()
-                {
+                if self.new_physical_size.is_some() || new_physical_size != self.window.get_size() {
                     self.new_physical_size = Some(new_physical_size);
                 }
             }

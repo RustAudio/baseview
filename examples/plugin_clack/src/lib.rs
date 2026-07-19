@@ -26,7 +26,7 @@ impl DefaultPluginFactory for ExamplePlugin {
     fn get_descriptor() -> PluginDescriptor {
         use clack_plugin::plugin::features::*;
 
-        PluginDescriptor::new("org.rust-audio.clack.gain-egui", "Clack Gain EGUI Example")
+        PluginDescriptor::new("org.rust-audio.clack.gain-baseview", "Clack Gain Baseview Example")
             .with_features([AUDIO_EFFECT, STEREO])
     }
 

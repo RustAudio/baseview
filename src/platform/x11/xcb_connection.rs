@@ -69,12 +69,11 @@ impl X11Connection {
         })
     }
 
-    pub fn get_scaling(&self) -> f64 {
-        // If the WM didn't set any display scaling, assume a scaling factor of 1.0 (i.e. don't do any scaling)
+    pub fn get_scaling(&self) -> Option<f64> {
         if let Ok(Some(dpi)) = self.resources.get_value::<u32>("Xft.dpi", "") {
-            dpi as f64 / 96.0
+            Some(dpi as f64 / 96.0)
         } else {
-            1.0
+            None
         }
     }
 

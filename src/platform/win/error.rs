@@ -6,6 +6,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 pub enum Error {
     Win32(windows_core::Error),
+    ResizeFailed,
     Handler(HandlerError),
 }
 
@@ -26,6 +27,7 @@ impl Display for Error {
         match self {
             Error::Win32(e) => Display::fmt(e, f),
             Error::Handler(e) => Display::fmt(e, f),
+            Error::ResizeFailed => f.write_str("Window resize request failed."),
         }
     }
 }
@@ -35,6 +37,7 @@ impl std::error::Error for Error {
         match self {
             Error::Win32(e) => Some(e),
             Error::Handler(e) => Some(e.source()),
+            _ => None,
         }
     }
 }

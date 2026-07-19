@@ -1,10 +1,11 @@
 use crate::window_handler::OpenWindowExample;
 use crate::ExamplePluginMainThread;
-use baseview::dpi::PhysicalSize;
+use baseview::dpi::*;
 use baseview::gl::GlConfig;
-use baseview::{WindowHandle, WindowOpenOptions};
+use baseview::{WindowHandle, WindowOpenOptions, WindowSize};
 use clack_extensions::gui::{
-    GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, PluginGuiImpl, Window as ClapWindow,
+    AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, PluginGuiImpl,
+    Window as ClapWindow,
 };
 use clack_plugin::plugin::PluginError;
 
@@ -39,30 +40,51 @@ impl PluginGuiImpl for ExamplePluginMainThread {
         gui.handle.close()
     }
 
-    fn set_scale(&mut self, _scale: f64) -> Result<(), PluginError> {
-        // Unsupported
+    fn set_scale(&mut self, scale: f64) -> Result<(), PluginError> {
+        let Some(gui) = &self.gui else {
+            return Err(PluginError::Message("set_scale called without a GUI active"));
+        };
+        gui.handle.suggest_fallback_scale_factor(scale)?;
+
         Ok(())
     }
 
     fn get_size(&mut self) -> Option<GuiSize> {
-        // Unsupported
-        Some(GuiSize { width: 400, height: 200 })
+        let Some(gui) = self.gui.as_ref() else {
+            // Because we delayed the window creation, this will get called without a GUI active.
+            // During that time, return the default UI size.
+            return Some(GuiSize { width: 400, height: 200 });
+        };
+        Some(window_size_to_gui_size(gui.handle.size()))
     }
 
     fn can_resize(&mut self) -> bool {
-        false // Non-resizeable windows not supported yet
+        true // Non-resizeable windows not supported yet
     }
 
     fn get_resize_hints(&mut self) -> Option<GuiResizeHints> {
-        None // Not supported yet
+        Some(GuiResizeHints {
+            strategy: AspectRatioStrategy::Disregard, // Not supported
+
+            // Non-resizeable windows not supported yet
+            can_resize_vertically: true,
+            can_resize_horizontally: true,
+        })
     }
 
-    fn adjust_size(&mut self, _size: GuiSize) -> Option<GuiSize> {
-        None // Not supported yet
+    fn adjust_size(&mut self, size: GuiSize) -> Option<GuiSize> {
+        Some(size) // Not supported yet
     }
 
-    fn set_size(&mut self, _size: GuiSize) -> Result<(), PluginError> {
-        Ok(()) // Not supported yet
+    fn set_size(&mut self, size: GuiSize) -> Result<(), PluginError> {
+        let Some(gui) = &self.gui else {
+            return Err(PluginError::Message("set_size called without a GUI active"));
+        };
+
+        let size = gui_size_to_window_size(size);
+        gui.handle.resize(size)?;
+
+        Ok(())
     }
 
     #[allow(deprecated)]
@@ -96,5 +118,30 @@ impl PluginGuiImpl for ExamplePluginMainThread {
 
     fn hide(&mut self) -> Result<(), PluginError> {
         Ok(()) // Not supported yet
+    }
+}
+
+fn window_size_to_gui_size(size: WindowSize) -> GuiSize {
+    #[cfg(target_os = "macos")]
+    {
+        let size = size.logical.cast();
+        GuiSize { width: size.width, height: size.height }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let size = size.physical.cast();
+        GuiSize { width: size.width, height: size.height }
+    }
+}
+
+fn gui_size_to_window_size(size: GuiSize) -> Size {
+    #[cfg(target_os = "macos")]
+    {
+        Size::Logical(LogicalSize::new(size.width, size.height).cast())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Size::Physical(PhysicalSize::new(size.width, size.height))
     }
 }

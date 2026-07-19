@@ -23,7 +23,7 @@ pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 use super::drop_target::DropTarget;
 use super::*;
 use crate::handler::WindowHandlerBuilder;
-use crate::platform::win::window_state::WindowState;
+use crate::platform::win::window_state::{WindowSharedState, WindowState};
 use crate::platform::Error;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
@@ -32,8 +32,7 @@ use crate::wrappers::win32::{
     WindowStyle,
 };
 use crate::{
-    Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowOpenOptions, WindowScalePolicy,
-    WindowSize,
+    Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowOpenOptions, WindowSize,
 };
 
 #[allow(non_snake_case)]
@@ -53,7 +52,7 @@ const WIN_FRAME_TIMER: NonZeroUsize = match NonZeroUsize::new(4242) {
 
 pub struct WindowHandle {
     hwnd: Cell<Option<HWnd>>,
-    is_open: Rc<Cell<bool>>,
+    state: Rc<WindowSharedState>,
 }
 
 impl WindowHandle {
@@ -63,7 +62,55 @@ impl WindowHandle {
     }
 
     pub fn is_open(&self) -> bool {
-        self.is_open.get()
+        self.state.is_alive.get()
+    }
+
+    pub fn size(&self) -> WindowSize {
+        self.state.size()
+    }
+
+    pub fn resize(&self, new_size: Size) -> Result<()> {
+        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
+        let new_size = new_size.to_physical(self.state.scale_factor());
+        hwnd.resize_and_activate(new_size, self.state.current_dpi.get(), &self.state.user32)?;
+
+        if self.state.current_size.get() == new_size {
+            Ok(())
+        } else {
+            Err(Error::ResizeFailed)
+        }
+    }
+
+    pub fn suggest_scale_factor(&self, scale_factor: f64) -> Result<()> {
+        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
+
+        let current_scale_factor = self.state.scale_factor();
+        self.state.fallback_scale_factor.set(Some(scale_factor));
+
+        if self.state.current_dpi.get().is_some() {
+            return Ok(());
+        }
+
+        let current_size = self.state.current_size.get();
+        let new_size = self
+            .state
+            .current_size
+            .get()
+            .to_logical::<f64>(current_scale_factor)
+            .to_physical(self.state.scale_factor());
+
+        // This call doesn't meaningfully change the scaling factor, ignore the result
+        if current_size == new_size {
+            return Ok(());
+        }
+
+        hwnd.resize_and_activate(new_size, None, &self.state.user32)?;
+
+        if self.state.current_size.get() == new_size {
+            Ok(())
+        } else {
+            Err(Error::ResizeFailed)
+        }
     }
 }
 
@@ -75,29 +122,25 @@ impl Drop for WindowHandle {
     }
 }
 
-struct ParentHandle {
-    is_open: Rc<Cell<bool>>,
-}
-
-impl Drop for ParentHandle {
-    fn drop(&mut self) {
-        self.is_open.set(false);
-    }
-}
-
 pub struct BaseviewWindow {
     window_state: Rc<WindowState>,
+    shared_state: Rc<WindowSharedState>,
     initial_size: Size,
 
     handler_builder: Cell<Option<WindowHandlerBuilder>>,
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
-    _parent_handle: ParentHandle,
     _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
     _drop_target: Cell<Option<ComObject<DropTarget>>>,
 
     #[cfg(feature = "opengl")]
     pub gl_config: Option<crate::gl::GlConfig>,
+}
+
+impl Drop for BaseviewWindow {
+    fn drop(&mut self) {
+        self.shared_state.is_alive.set(false);
+    }
 }
 
 impl WindowImpl for BaseviewWindow {
@@ -110,11 +153,10 @@ impl WindowImpl for BaseviewWindow {
         // Now we can get the actual dpi of the window.
         let dpi = window.get_dpi(&self.window_state.user32)?;
 
-        if dpi != window_state.current_dpi.get() {
-            window_state.current_dpi.set(dpi);
+        if let Some(dpi) = dpi {
+            if Some(dpi) != window_state.shared.current_dpi.get() {
+                window_state.shared.current_dpi.set(Some(dpi));
 
-            // If the user's requested initial size was in system-scaled logical pixels
-            if let WindowScalePolicy::SystemScaleFactor = self.window_state.scale_policy {
                 // We cannot create a window in "logical" pixels, and we can't DPI-scale to physical pixels because we
                 // have no way to know where the window will end up.
                 // So, at window creation, we assume a DPI=96, and if it ends up wrong, we resize the window
@@ -123,8 +165,8 @@ impl WindowImpl for BaseviewWindow {
 
                 // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
                 // doesn't also emit Resized.
-                window_state.current_size.set(new_size);
-                window.resize_and_activate(new_size, dpi, &window_state.user32)?;
+                window_state.shared.current_size.set(new_size);
+                window.resize_and_activate(new_size, Some(dpi), &window_state.user32)?;
             }
         }
 
@@ -334,24 +376,26 @@ unsafe fn wnd_proc_inner(
             let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
 
             let new_size = PhysicalSize { width, height };
-            let current_size = window_state.current_size.get();
+            let current_size = window_state.shared.current_size.get();
 
             // Only send the event if anything changed
             if current_size == new_size {
                 return None;
             }
 
-            let previous = window_state.current_size.replace(new_size);
-            let new_size = WindowSize::from_physical(new_size, window_state.scale_factor());
+            let previous = window_state.shared.current_size.replace(new_size);
+            let new_size = WindowSize::from_physical(new_size, window_state.shared.scale_factor());
 
             let handler = window_state.handler.get()?;
             if let Err(e) = handler.resized(new_size) {
                 warn!("Window Handler failed to resize: {}", e);
-                window_state.current_size.set(previous);
+                window_state.shared.current_size.set(previous);
 
                 if let Err(e) = window_state.resize(previous.into()) {
                     warn!("Failed to resize back to previous window size: {}", e);
                 }
+
+                return Some(-1);
             }
 
             None
@@ -363,15 +407,15 @@ unsafe fn wnd_proc_inner(
             let dpi_ctx = DpiAwarenessContext::new(&window_state.user32).unwrap();
             let style = window.get_style().unwrap();
             let suggested_rect =
-                dpi_ctx.nc_area_to_client_area(suggested_nc_rect, style, dpi).unwrap();
+                dpi_ctx.nc_area_to_client_area(suggested_nc_rect, style, Some(dpi)).unwrap();
 
             let new_size = suggested_rect.size();
 
-            let changed = window_state.current_size.get() != new_size
-                || window_state.current_dpi.get() != dpi;
+            let changed = window_state.shared.current_size.get() != new_size
+                || window_state.shared.current_dpi.get() != Some(dpi);
 
-            window_state.current_dpi.replace(dpi);
-            let previous_size = window_state.current_size.replace(new_size);
+            window_state.shared.current_dpi.replace(Some(dpi));
+            let previous_size = window_state.shared.current_size.replace(new_size);
 
             // Windows makes us resize the window manually. This however will not send a WM_SIZE event,
             // hence why we are notifying the window handler manually below.
@@ -383,7 +427,7 @@ unsafe fn wnd_proc_inner(
 
                 if let Err(e) = handler.resized(new_size) {
                     warn!("Window Handler failed to resize: {}", e);
-                    window_state.current_size.set(previous_size);
+                    window_state.shared.current_size.set(previous_size);
 
                     if let Err(e) = window_state.resize(previous_size.into()) {
                         warn!("Failed to resize back to previous window size: {}", e);
@@ -426,10 +470,7 @@ impl WindowHandle {
         let extended_user_32 = ExtendedUser32::load()?;
         let title = HSTRING::from(options.title);
 
-        let scaling_factor = match options.scale {
-            WindowScalePolicy::SystemScaleFactor => 1.0,
-            WindowScalePolicy::ScaleFactor(scale) => scale,
-        };
+        let scaling_factor = 1.0;
 
         let window_size = options.size.to_physical(scaling_factor);
 
@@ -439,25 +480,22 @@ impl WindowHandle {
             WindowStyle::embedded()
         };
         let dpi_ctx = DpiAwarenessContext::new(&extended_user_32)?;
-
-        let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, Dpi::default())?;
-
-        let is_open = Rc::new(Cell::new(true));
+        let shared_state = WindowSharedState::new(window_size, extended_user_32.clone());
 
         let initializer = {
-            let parent_handle = ParentHandle { is_open: is_open.clone() };
             let extended_user_32 = extended_user_32.clone();
+            let shared_state = shared_state.clone();
 
             move |hwnd: HWnd| {
                 let window_state =
-                    Rc::new(WindowState::new(hwnd, window_size, options.scale, extended_user_32));
+                    Rc::new(WindowState::new(hwnd, extended_user_32, shared_state.clone()));
 
                 BaseviewWindow {
                     window_state,
                     initial_size: options.size,
                     handler_builder: Cell::new(Some(build)),
+                    shared_state,
 
-                    _parent_handle: parent_handle,
                     _drop_target: None.into(),
                     _keyboard_hook: None.into(),
 
@@ -468,6 +506,7 @@ impl WindowHandle {
         };
 
         let parent = options.parent.map(|p| p.handle);
+        let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, None)?;
 
         let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
 
@@ -480,7 +519,7 @@ impl WindowHandle {
 
         window.show_and_activate();
 
-        Ok(WindowHandle { hwnd: Some(window).into(), is_open: Rc::clone(&is_open) })
+        Ok(WindowHandle { hwnd: Some(window).into(), state: shared_state })
     }
 }
 

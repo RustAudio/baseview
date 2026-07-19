@@ -10,7 +10,7 @@ struct ParentWindowHandler {
     surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
     damaged: Cell<bool>,
 
-    _child_window: Option<WindowHandle>,
+    child_window: WindowHandle,
 }
 
 impl ParentWindowHandler {
@@ -27,11 +27,7 @@ impl ParentWindowHandler {
 
         let child_window = baseview::create_window(window_open_options, ChildWindowHandler::new)?;
 
-        Ok(Self {
-            surface: surface.into(),
-            damaged: true.into(),
-            _child_window: Some(child_window),
-        })
+        Ok(Self { surface: surface.into(), damaged: true.into(), child_window })
     }
 }
 
@@ -58,6 +54,10 @@ impl WindowHandler for ParentWindowHandler {
             self.damaged.set(true);
         }
 
+        let child_size =
+            LogicalSize::new(new_size.logical.width / 2., new_size.logical.height / 2.);
+        self.child_window.suggest_fallback_scale_factor(new_size.scale_factor)?;
+        self.child_window.resize(child_size.into())?;
         Ok(())
     }
 
