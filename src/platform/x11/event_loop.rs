@@ -3,8 +3,9 @@ use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mo
 use super::*;
 use std::result::Result;
 
+use crate::host::HostMainThreadCaller;
 use crate::platform::x11::window_thread::{
-    WindowThreadRequest, WindowThreadResponse, WindowThreadResponseMessage,
+    HostCallback, WindowThreadRequest, WindowThreadResponse, WindowThreadResponseMessage,
 };
 use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
@@ -34,6 +35,8 @@ pub(crate) struct EventLoop {
     run_error: Option<Error>,
 
     response_sender: mpsc::Sender<WindowThreadResponseMessage>,
+    callback_sender: mpsc::Sender<HostCallback>,
+    main_thread_caller: Option<Box<dyn HostMainThreadCaller>>,
 }
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(15);
@@ -43,6 +46,8 @@ impl EventLoop {
         window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
         request_receiver: calloop::channel::Channel<WindowThreadRequest>,
         response_sender: mpsc::Sender<WindowThreadResponseMessage>,
+        callback_sender: mpsc::Sender<HostCallback>,
+        main_thread_caller: Option<Box<dyn HostMainThreadCaller>>,
         inner: &mut calloop::EventLoop<'static, Self>,
     ) -> Result<Self, Error> {
         let loop_handle = inner.handle();
@@ -69,6 +74,9 @@ impl EventLoop {
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
             run_error: None,
+            callback_sender,
+            main_thread_caller,
+
             window,
             response_sender,
         })
@@ -89,12 +97,19 @@ impl EventLoop {
             let previous = self.window.store_size(size);
 
             let scale_factor = self.window.scaling_factor.get();
-            if let Err(e) =
-                self.handler.resized(WindowSize::from_physical(size.cast(), scale_factor))
-            {
+            let new_size = WindowSize::from_physical(size.cast(), scale_factor);
+
+            if let Err(e) = self.handler.resized(new_size) {
                 warn!("Window Handler failed to resize: {}", e);
                 self.window.store_size(previous);
                 self.window.xcb_window.resize(previous.cast())?.check_warn();
+            } else {
+                // TODO: only if this wansn't the result of a host request
+                // TODO: do not allocate channel if no host callback is present
+                if let Some(main_thread) = self.main_thread_caller.as_mut() {
+                    self.callback_sender.send(HostCallback::Resized(new_size)).unwrap(); // TODO: unwrap
+                    main_thread.call_main_thread();
+                }
             }
         }
 

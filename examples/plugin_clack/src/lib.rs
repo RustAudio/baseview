@@ -52,7 +52,11 @@ pub struct ExamplePluginMainThread<'a> {
 }
 
 impl<'a> PluginMainThread<'a, ()> for ExamplePluginMainThread<'a> {
-    fn on_main_thread(&mut self) {}
+    fn on_main_thread(&mut self) {
+        if let Some(gui) = self.gui.as_mut() {
+            gui.handle.host_main_thread_callback();
+        }
+    }
 }
 
 clack_export_entry!(SinglePluginEntry<ExamplePlugin>);

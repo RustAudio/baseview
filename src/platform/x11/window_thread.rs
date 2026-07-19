@@ -1,6 +1,6 @@
 use super::*;
 use crate::handler::WindowHandlerBuilder;
-use crate::host::Host;
+use crate::host::{Host, HostCallbacks, HostMainThreadCaller};
 use crate::platform::x11::event_loop::EventLoop;
 use crate::platform::x11::window_shared::WindowInner;
 use crate::{WindowContext, WindowOpenOptions, WindowSize};
@@ -65,6 +65,11 @@ pub enum WindowThreadResponse {
 
 pub type WindowThreadResponseMessage = core::result::Result<WindowThreadResponse, String>;
 
+pub enum HostCallback {
+    Resized(WindowSize),
+    Destroyed,
+}
+
 pub struct WindowThreadHandle {
     shared: Arc<WindowThreadShared>,
     loop_signal: LoopSignal,
@@ -72,6 +77,8 @@ pub struct WindowThreadHandle {
 
     request_sender: calloop::channel::SyncSender<WindowThreadRequest>,
     response_receiver: mpsc::Receiver<WindowThreadResponseMessage>,
+    callback_receiver: mpsc::Receiver<HostCallback>,
+    host_callbacks: Option<Box<dyn HostCallbacks>>,
 }
 
 impl WindowThreadHandle {
@@ -82,6 +89,7 @@ impl WindowThreadHandle {
         let shared = Arc::new(WindowThreadShared::new());
         let (request_sender, request_receiver) = calloop::channel::sync_channel(1);
         let (response_sender, response_receiver) = mpsc::channel();
+        let (callback_sender, callback_receiver) = mpsc::channel();
 
         let join_handle = {
             let shared = shared.clone();
@@ -94,6 +102,8 @@ impl WindowThreadHandle {
                     shared,
                     request_receiver,
                     response_sender,
+                    callback_sender,
+                    main_thread_caller,
                 ) {
                     Err(e) => return tx.send_error(e),
                     Ok(thread) => thread,
@@ -113,6 +123,8 @@ impl WindowThreadHandle {
             loop_signal,
             request_sender,
             response_receiver,
+            host_callbacks: host.callbacks,
+            callback_receiver,
         })
     }
 
@@ -158,6 +170,18 @@ impl WindowThreadHandle {
     pub fn is_open(&self) -> bool {
         !self.shared.stopped.load(Ordering::Relaxed)
     }
+
+    pub fn handle_main_thread_callback(&mut self) {
+        let Some(host_callbacks) = self.host_callbacks.as_mut() else { return };
+        for msg in self.callback_receiver.try_iter() {
+            match msg {
+                HostCallback::Destroyed => host_callbacks.destroyed(),
+                HostCallback::Resized(size) => {
+                    host_callbacks.resized(size).unwrap();
+                }
+            }
+        }
+    }
 }
 
 impl Drop for WindowThreadHandle {
@@ -187,11 +211,21 @@ impl WindowThread {
         options: WindowOpenOptions, handler: WindowHandlerBuilder, shared: Arc<WindowThreadShared>,
         receiver: calloop::channel::Channel<WindowThreadRequest>,
         sender: mpsc::Sender<WindowThreadResponseMessage>,
+        callback_sender: mpsc::Sender<HostCallback>,
+        main_thread_caller: Option<Box<dyn HostMainThreadCaller>>,
     ) -> Result<Self> {
         let mut ev_loop = calloop::EventLoop::try_new()?;
         let inner = WindowInner::create(options, &ev_loop, shared.clone())?;
         let handler = handler.build(WindowContext::new(Rc::clone(&inner)))?;
-        let event_loop = EventLoop::new(inner, handler, receiver, sender, &mut ev_loop)?;
+        let event_loop = EventLoop::new(
+            inner,
+            handler,
+            receiver,
+            sender,
+            callback_sender,
+            main_thread_caller,
+            &mut ev_loop,
+        )?;
 
         Ok(Self { event_loop, ev_loop, shared })
     }

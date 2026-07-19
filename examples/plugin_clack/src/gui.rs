@@ -14,7 +14,7 @@ use clack_plugin::prelude::{HostMainThreadHandle, HostSharedHandle};
 use raw_window_handle::HasRawWindowHandle;
 
 pub struct ExamplePluginGui {
-    handle: WindowHandle,
+    pub handle: WindowHandle,
 }
 
 impl PluginGuiImpl for ExamplePluginMainThread<'_> {
@@ -163,6 +163,7 @@ struct MainThreadHandler {
 
 impl HostMainThreadCaller for MainThreadHandler {
     fn call_main_thread(&mut self) {
+        eprintln!("Requesting main thread");
         self.host.request_callback();
     }
 }
@@ -174,6 +175,7 @@ struct HostGuiCallbacks {
 
 impl HostCallbacks for HostGuiCallbacks {
     fn resized(&mut self, new_size: WindowSize) -> Result<(), HandlerError> {
+        eprintln!("Resized: {:?}", new_size);
         let size = window_size_to_gui_size(new_size);
         self.ext.request_resize(&self.host, size.width, size.height)?;
         Ok(())

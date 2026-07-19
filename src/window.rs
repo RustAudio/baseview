@@ -72,7 +72,7 @@ impl WindowHandle {
     }
 
     pub fn host_main_thread_callback(&mut self) {
-        todo!()
+        self.window_handle.handle_main_thread_callback()
     }
 }
 
