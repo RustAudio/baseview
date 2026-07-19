@@ -1,5 +1,6 @@
 use super::*;
 use crate::handler::WindowHandlerBuilder;
+use crate::host::Host;
 use crate::platform::x11::event_loop::EventLoop;
 use crate::platform::x11::window_shared::WindowInner;
 use crate::{WindowContext, WindowOpenOptions, WindowSize};
@@ -75,7 +76,7 @@ pub struct WindowThreadHandle {
 
 impl WindowThreadHandle {
     pub fn create_window(
-        options: WindowOpenOptions, handler: WindowHandlerBuilder,
+        options: WindowOpenOptions, handler: WindowHandlerBuilder, host: Host,
     ) -> Result<Self> {
         let (tx, rx) = result_channel();
         let shared = Arc::new(WindowThreadShared::new());
@@ -84,6 +85,7 @@ impl WindowThreadHandle {
 
         let join_handle = {
             let shared = shared.clone();
+            let main_thread_caller = host.main_thread;
 
             thread::spawn(move || {
                 let thread = match WindowThread::create(

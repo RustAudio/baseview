@@ -1,6 +1,6 @@
 use crate::audio::ExamplePluginAudioProcessor;
 use crate::gui::ExamplePluginGui;
-use clack_extensions::gui::PluginGui;
+use clack_extensions::gui::{HostGui, PluginGui};
 use clack_plugin::prelude::*;
 
 mod audio;
@@ -15,7 +15,7 @@ pub struct ExamplePlugin;
 impl Plugin for ExamplePlugin {
     type AudioProcessor<'a> = ExamplePluginAudioProcessor;
     type Shared<'a> = ();
-    type MainThread<'a> = ExamplePluginMainThread;
+    type MainThread<'a> = ExamplePluginMainThread<'a>;
 
     fn declare_extensions(builder: &mut PluginExtensions<Self>, _shared: Option<&()>) {
         builder.register::<PluginGui>();
@@ -35,19 +35,23 @@ impl DefaultPluginFactory for ExamplePlugin {
     }
 
     fn new_main_thread<'a>(
-        _host: HostMainThreadHandle<'a>, _shared: &'a Self::Shared<'a>,
+        host: HostMainThreadHandle<'a>, _shared: &'a Self::Shared<'a>,
     ) -> Result<Self::MainThread<'a>, PluginError> {
-        Ok(Self::MainThread { gui: None })
+        Ok(Self::MainThread { gui: None, host_gui: host.get_extension(), host })
     }
 }
 
 /// The data that belongs to the main thread of our plugin.
-pub struct ExamplePluginMainThread {
+pub struct ExamplePluginMainThread<'a> {
+    /// The host handle
+    host: HostMainThreadHandle<'a>,
+    // The host GUI extension handle
+    host_gui: Option<HostGui>,
     /// The plugin's GUI state and context
     gui: Option<ExamplePluginGui>,
 }
 
-impl<'a> PluginMainThread<'a, ()> for ExamplePluginMainThread {
+impl<'a> PluginMainThread<'a, ()> for ExamplePluginMainThread<'a> {
     fn on_main_thread(&mut self) {}
 }
 

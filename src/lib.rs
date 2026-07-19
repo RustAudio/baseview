@@ -3,6 +3,7 @@ mod context;
 mod error;
 mod event;
 mod handler;
+pub mod host;
 mod keyboard;
 mod mouse_cursor;
 mod tracing;

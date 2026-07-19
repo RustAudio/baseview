@@ -1,4 +1,5 @@
 use crate::handler::WindowHandlerBuilder;
+use crate::host::Host;
 use crate::platform;
 use crate::*;
 use dpi::{LogicalSize, PhysicalSize, Pixel, Size};
@@ -69,15 +70,28 @@ impl WindowHandle {
     pub fn is_open(&self) -> bool {
         self.window_handle.is_open()
     }
+
+    pub fn host_main_thread_callback(&mut self) {
+        todo!()
+    }
 }
 
 pub fn create_window<H: WindowHandler>(
     builder: WindowOpenOptions,
     handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
 ) -> Result<WindowHandle, Error> {
+    create_window_with_host(builder, handler, None)
+}
+
+pub fn create_window_with_host<H: WindowHandler>(
+    builder: WindowOpenOptions,
+    handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
+    host: impl Into<Option<Host>>,
+) -> Result<WindowHandle, Error> {
     Ok(WindowHandle::new(platform::WindowHandle::create_window(
         builder,
         WindowHandlerBuilder::new(handler),
+        host.into().unwrap_or_else(Host::default),
     )?))
 }
 
