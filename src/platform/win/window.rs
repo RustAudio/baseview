@@ -205,7 +205,7 @@ impl WindowImpl for BaseviewWindow {
     unsafe fn handle_message(
         &self, window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM,
     ) -> Option<LRESULT> {
-        unsafe { wnd_proc_inner(window, msg, wparam, lparam, &self) }
+        unsafe { wnd_proc_inner(window, msg, wparam, lparam, self) }
     }
 
     fn before_destroy(&self, window: HWnd) {

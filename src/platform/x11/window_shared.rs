@@ -186,7 +186,7 @@ impl WindowInner {
         Ok(())
     }
 
-    pub fn resize_later(&self, size: Size) -> Result<()> {
+    pub fn resize(&self, size: Size) -> Result<()> {
         let new_physical_size = size.to_physical(self.scaling_factor.get());
         self.xcb_window.resize(new_physical_size)?.check()?;
 

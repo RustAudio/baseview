@@ -16,7 +16,6 @@ use x11rb::x11_utils::{TryParse, X11Error};
 pub enum FatalError {
     Connection(ConnectionError),
     SendMainThread,
-    ReceiveMainThread,
 }
 
 impl Display for FatalError {
@@ -25,7 +24,6 @@ impl Display for FatalError {
             FatalError::Connection(e) => e.fmt(f),
             // TODO: better errors
             FatalError::SendMainThread => f.write_str("SendMainThread"),
-            FatalError::ReceiveMainThread => f.write_str("ReceiveMainThread"),
         }
     }
 }

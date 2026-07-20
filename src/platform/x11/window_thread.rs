@@ -1,6 +1,6 @@
 use super::*;
 use crate::handler::WindowHandlerBuilder;
-use crate::host::{Host, HostCallbacks, HostMainThreadCaller};
+use crate::host::{Host, HostCallbacks};
 use crate::platform::x11::event_loop::{EventLoop, MainThreadCaller};
 use crate::platform::x11::window_shared::WindowInner;
 use crate::warn;
