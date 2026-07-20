@@ -1,4 +1,5 @@
 use crate::platform::x11::drag_n_drop::ParseError;
+use crate::platform::x11::window_thread::RequestFailed;
 use crate::platform::x11::xcb_connection::GetPropertyError;
 use crate::warn;
 use crate::wrappers::xlib::{DisplayOpenFailedError, InitThreadsFailedError};
@@ -27,6 +28,7 @@ pub enum Error {
     Handler(HandlerError),
     Channel(RecvError),
     Calloop(calloop::Error),
+    RequestFromMainThreadFailed(RequestFailed),
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
     #[cfg(feature = "opengl")]
@@ -109,6 +111,12 @@ impl From<calloop::Error> for Error {
 impl From<RecvError> for Error {
     fn from(value: RecvError) -> Self {
         Self::Channel(value)
+    }
+}
+
+impl From<RequestFailed> for Error {
+    fn from(value: RequestFailed) -> Self {
+        Self::RequestFromMainThreadFailed(value)
     }
 }
 

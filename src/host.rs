@@ -5,7 +5,7 @@ pub trait HostMainThreadCaller: Send + 'static {
 }
 
 pub trait HostCallbacks: 'static {
-    fn resized(&mut self, new_size: WindowSize) -> Result<(), HandlerError>;
+    fn request_resize(&mut self, new_size: WindowSize) -> Result<(), HandlerError>;
     fn destroyed(&mut self);
 }
 

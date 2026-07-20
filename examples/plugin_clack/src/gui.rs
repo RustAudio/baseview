@@ -174,8 +174,7 @@ struct HostGuiCallbacks {
 }
 
 impl HostCallbacks for HostGuiCallbacks {
-    fn resized(&mut self, new_size: WindowSize) -> Result<(), HandlerError> {
-        eprintln!("Resized: {:?}", new_size);
+    fn request_resize(&mut self, new_size: WindowSize) -> Result<(), HandlerError> {
         let size = window_size_to_gui_size(new_size);
         self.ext.request_resize(&self.host, size.width, size.height)?;
         Ok(())

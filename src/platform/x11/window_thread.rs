@@ -3,6 +3,7 @@ use crate::handler::WindowHandlerBuilder;
 use crate::host::{Host, HostCallbacks, HostMainThreadCaller};
 use crate::platform::x11::event_loop::EventLoop;
 use crate::platform::x11::window_shared::WindowInner;
+use crate::warn;
 use crate::{WindowContext, WindowOpenOptions, WindowSize};
 use calloop::LoopSignal;
 use dpi::{PhysicalSize, Size};
@@ -66,7 +67,7 @@ pub enum WindowThreadResponse {
 pub type WindowThreadResponseMessage = core::result::Result<WindowThreadResponse, String>;
 
 pub enum HostCallback {
-    Resized(WindowSize),
+    Resized { new_size: WindowSize, previous: WindowSize },
     Destroyed,
 }
 
@@ -144,12 +145,12 @@ impl WindowThreadHandle {
     }
 
     fn request(&self, req: WindowThreadRequest) -> Result<()> {
-        self.request_sender.send(req).unwrap(); // TODO: handle error
-        let result = self.response_receiver.recv().unwrap(); // TODO: handle error
+        self.request_sender.send(req).map_err(|_| RequestFailed::SendError)?;
+        let result = self.response_receiver.recv().map_err(|_| RequestFailed::RecvError)?;
 
         match result {
             Ok(WindowThreadResponse::Ok) => Ok(()),
-            Err(e) => Err(Error::Run(e)), // TODO: better error type?
+            Err(e) => Err(RequestFailed::ResponseError(e).into()),
         }
     }
 
@@ -172,12 +173,27 @@ impl WindowThreadHandle {
     }
 
     pub fn handle_main_thread_callback(&mut self) {
+        loop {
+            let Some(callback) = self.callback_receiver.try_recv().ok() else { return };
+            self.handle_main_thread_message(callback);
+        }
+    }
+
+    fn handle_main_thread_message(&mut self, msg: HostCallback) {
         let Some(host_callbacks) = self.host_callbacks.as_mut() else { return };
-        for msg in self.callback_receiver.try_iter() {
-            match msg {
-                HostCallback::Destroyed => host_callbacks.destroyed(),
-                HostCallback::Resized(size) => {
-                    host_callbacks.resized(size).unwrap();
+
+        match msg {
+            HostCallback::Destroyed => host_callbacks.destroyed(),
+            HostCallback::Resized { new_size: new, previous } => {
+                if let Err(e) = host_callbacks.request_resize(new) {
+                    warn!("Host failed to resize parent window: {}. Reverting.", e);
+
+                    if let Err(e) = self.resize(previous.physical.into()) {
+                        warn!(
+                            "Failed to revert to previous size while handling previous error: {}",
+                            e
+                        );
+                    }
                 }
             }
         }
@@ -204,6 +220,23 @@ struct WindowThread {
     event_loop: EventLoop,
     ev_loop: calloop::EventLoop<'static, EventLoop>,
     shared: Arc<WindowThreadShared>,
+}
+
+#[derive(Debug)]
+pub enum RequestFailed {
+    SendError,
+    RecvError,
+    ResponseError(String),
+}
+
+impl Display for RequestFailed {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RequestFailed::SendError => f.write_str("Request to X11 thread failed: Could not send request (X11 thread disconnected)"),
+            RequestFailed::RecvError => f.write_str("Request to X11 thread failed: Could not receive response (X11 thread disconnected)"),
+            RequestFailed::ResponseError(e) => f.write_str(e),
+        }
+    }
 }
 
 impl WindowThread {

@@ -107,7 +107,12 @@ impl EventLoop {
                 // TODO: only if this wansn't the result of a host request
                 // TODO: do not allocate channel if no host callback is present
                 if let Some(main_thread) = self.main_thread_caller.as_mut() {
-                    self.callback_sender.send(HostCallback::Resized(new_size)).unwrap(); // TODO: unwrap
+                    self.callback_sender
+                        .send(HostCallback::Resized {
+                            new_size,
+                            previous: WindowSize::from_physical(previous.cast(), scale_factor),
+                        })
+                        .unwrap(); // TODO: unwrap
                     main_thread.call_main_thread();
                 }
             }
