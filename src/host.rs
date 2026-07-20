@@ -32,6 +32,7 @@ impl Host {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn with_main_thread(mut self, main_thread: impl HostMainThreadCaller) -> Self {
         #[cfg(target_os = "linux")]
         {
