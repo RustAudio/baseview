@@ -146,6 +146,8 @@ pub struct WindowSharedState {
     pub current_size: Cell<PhysicalSize<u32>>,
     pub current_dpi: Cell<Option<Dpi>>, // None if Win32 HiDPI isn't supported
     pub fallback_scale_factor: Cell<Option<f64>>,
+    pub resize_host_originated: Cell<bool>,
+    pub destroy_host_originated: Cell<bool>,
 
     pub user32: ExtendedUser32,
 }
@@ -157,6 +159,8 @@ impl WindowSharedState {
             current_dpi: None.into(),
             current_size: current_size.into(),
             fallback_scale_factor: None.into(),
+            resize_host_originated: false.into(),
+            destroy_host_originated: false.into(),
             user32,
         }
         .into()
@@ -172,5 +176,22 @@ impl WindowSharedState {
         } else {
             self.fallback_scale_factor.get().unwrap_or(1.0)
         }
+    }
+
+    pub fn originate_host_resize(&self) -> impl Drop + use<'_> {
+        self.resize_host_originated.set(true);
+        Guard(&self.resize_host_originated)
+    }
+
+    pub fn originate_host_destroy(&self) -> impl Drop + use<'_> {
+        self.destroy_host_originated.set(true);
+        Guard(&self.destroy_host_originated)
+    }
+}
+
+struct Guard<'a>(&'a Cell<bool>);
+impl<'a> Drop for Guard<'a> {
+    fn drop(&mut self) {
+        self.0.set(false);
     }
 }

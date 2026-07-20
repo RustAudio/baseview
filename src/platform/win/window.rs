@@ -13,9 +13,9 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::warn;
+use crate::{warn, HandlerError};
 use dpi::{PhysicalPosition, PhysicalSize, Size};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::num::NonZeroUsize;
 
 pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
@@ -73,6 +73,7 @@ impl WindowHandle {
     pub fn resize(&self, new_size: Size) -> Result<()> {
         let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
         let new_size = new_size.to_physical(self.state.scale_factor());
+        let _guard = self.state.originate_host_resize();
         hwnd.resize_and_activate(new_size, self.state.current_dpi.get(), &self.state.user32)?;
 
         if self.state.current_size.get() == new_size {
@@ -105,6 +106,8 @@ impl WindowHandle {
             return Ok(());
         }
 
+        let _guard = self.state.originate_host_resize();
+
         hwnd.resize_and_activate(new_size, None, &self.state.user32)?;
 
         if self.state.current_size.get() == new_size {
@@ -123,7 +126,10 @@ impl WindowHandle {
 impl Drop for WindowHandle {
     fn drop(&mut self) {
         if let Some(hwnd) = self.hwnd.take() {
-            let _ = hwnd.destroy();
+            let _guard = self.state.originate_host_destroy();
+            if let Err(e) = hwnd.destroy() {
+                warn!("Failed to destroy window: {}", e);
+            }
         }
     }
 }
@@ -134,7 +140,7 @@ pub struct BaseviewWindow {
     initial_size: Size,
 
     handler_builder: Cell<Option<WindowHandlerBuilder>>,
-    host: Host,
+    host: RefCell<Host>,
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
     _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
@@ -144,9 +150,35 @@ pub struct BaseviewWindow {
     pub gl_config: Option<crate::gl::GlConfig>,
 }
 
+impl BaseviewWindow {
+    fn notify_destroyed_to_host(&self) {
+        if self.shared_state.destroy_host_originated.get() {
+            return;
+        };
+
+        let Ok(mut host) = self.host.try_borrow_mut() else { return };
+        let Some(host) = &mut host.callbacks else { return };
+
+        host.destroyed()
+    }
+
+    fn request_resize_from_host(
+        &self, new_size: WindowSize,
+    ) -> core::result::Result<(), HandlerError> {
+        if self.shared_state.resize_host_originated.get() {
+            return Ok(());
+        };
+
+        let Ok(mut host) = self.host.try_borrow_mut() else { return Ok(()) };
+        let Some(host) = &mut host.callbacks else { return Ok(()) };
+        host.request_resize(new_size)
+    }
+}
+
 impl Drop for BaseviewWindow {
     fn drop(&mut self) {
         self.shared_state.is_alive.set(false);
+        self.notify_destroyed_to_host();
     }
 }
 
@@ -406,6 +438,21 @@ unsafe fn wnd_proc_inner(
                 return Some(-1);
             }
 
+            if let Err(e) = window_bv.request_resize_from_host(new_size) {
+                warn!("Resize request from Host failed: {}. Reverting to previous size.", e);
+
+                if let Err(e) = handler.resized(new_size) {
+                    warn!("Window Handler failed to resize to previous window size: {}", e);
+                }
+
+                window_state.shared.current_size.set(previous);
+                if let Err(e) = window_state.resize(previous.into()) {
+                    warn!("Failed to resize back to previous window size: {}", e);
+                }
+
+                return Some(-1);
+            }
+
             None
         }
         WM_DPICHANGED => {
@@ -440,6 +487,21 @@ unsafe fn wnd_proc_inner(
                     if let Err(e) = window_state.resize(previous_size.into()) {
                         warn!("Failed to resize back to previous window size: {}", e);
                     }
+                }
+
+                if let Err(e) = window_bv.request_resize_from_host(new_size) {
+                    warn!("Resize request from Host failed: {}. Reverting to previous size.", e);
+
+                    if let Err(e) = handler.resized(new_size) {
+                        warn!("Window Handler failed to resize to previous window size: {}", e);
+                    }
+
+                    window_state.shared.current_size.set(previous_size);
+                    if let Err(e) = window_state.resize(previous_size.into()) {
+                        warn!("Failed to resize back to previous window size: {}", e);
+                    }
+
+                    return Some(-1);
                 }
             }
 
@@ -503,7 +565,7 @@ impl WindowHandle {
                     initial_size: options.size,
                     handler_builder: Cell::new(Some(build)),
                     shared_state,
-                    host,
+                    host: host.into(),
 
                     _drop_target: None.into(),
                     _keyboard_hook: None.into(),
