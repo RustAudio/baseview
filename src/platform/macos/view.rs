@@ -3,6 +3,7 @@
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
 use crate::handler::WindowHandlerBuilder;
+use crate::host::{Host, HostCallbacks};
 use crate::platform::*;
 use crate::tracing::warn;
 use crate::wrappers::appkit::*;
@@ -22,6 +23,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
 use std::cell::{Cell, RefCell};
+use std::ops::DerefMut;
 use std::rc::Rc;
 
 pub enum ViewParentingType {
@@ -41,6 +43,8 @@ pub(crate) struct BaseviewView {
 
     parenting: ViewParentingType,
 
+    host: RefCell<Host>,
+
     #[cfg(feature = "opengl")]
     pub(crate) gl_context: std::cell::OnceCell<super::gl::GlContext>,
 }
@@ -48,7 +52,7 @@ pub(crate) struct BaseviewView {
 impl BaseviewView {
     pub fn new(
         _options: WindowOpenOptions, builder: WindowHandlerBuilder, parenting: ViewParentingType,
-        final_size: LogicalSize<f64>, mtm: MainThreadMarker,
+        host: Host, final_size: LogicalSize<f64>, mtm: MainThreadMarker,
     ) -> Result<(Retained<View<Self>>, Rc<WindowSharedState>)> {
         let view_rect =
             NSRect::new(NSPoint::ZERO, NSSize::new(final_size.width, final_size.height));
@@ -64,6 +68,7 @@ impl BaseviewView {
             window_handler: WindowHandlerContainer::new(),
             notification_center_observer: None.into(),
             parenting,
+            host: host.into(),
 
             #[cfg(feature = "opengl")]
             gl_context: std::cell::OnceCell::new(),
@@ -188,6 +193,18 @@ impl BaseviewView {
             Self::close(this);
         }
     }
+
+    fn use_host_callback<E>(
+        this: ViewRef<Self>,
+        handle: impl FnOnce(&mut dyn HostCallbacks) -> core::result::Result<(), E>,
+    ) -> core::result::Result<(), E> {
+        let Ok(mut host) = this.host.try_borrow_mut() else {
+            return Ok(());
+        };
+
+        let Some(callback) = host.callbacks.as_mut() else { return Ok(()) };
+        handle(callback.deref_mut())
+    }
 }
 
 impl Drop for BaseviewView {
@@ -232,15 +249,20 @@ impl ViewImpl for BaseviewView {
         {
             let previous = this.state.size.replace(current_size);
             this.state.scale_factor.set(current_scale_factor);
+            let new_size = WindowSize::from_logical(current_size, current_scale_factor);
 
-            let result = this.window_handler.use_handler(|h| {
-                h.resized(WindowSize::from_logical(current_size, current_scale_factor))
-            });
+            let result = this.window_handler.use_handler(|h| h.resized(new_size));
 
             if let Some(Err(e)) = result {
                 warn!("Window Handler failed to resize: {}", e);
                 this.state.size.set(previous);
                 Self::resize(this, previous.into())
+            }
+
+            // TODO: only if not coming from host
+            if let Err(e) = Self::use_host_callback(this, |c| c.request_resize(new_size)) {
+                warn!("Host failed to resize parent view: {}", e);
+                Self::resize(this, previous.into()) // TODO: break error loop?
             }
         }
     }

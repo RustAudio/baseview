@@ -10,6 +10,7 @@ pub trait HostCallbacks: 'static {
 }
 
 pub struct Host {
+    #[cfg(target_os = "linux")]
     pub(crate) main_thread: Option<Box<dyn HostMainThreadCaller>>,
     pub(crate) callbacks: Option<Box<dyn HostCallbacks>>,
 }
@@ -21,15 +22,26 @@ impl Default for Host {
 }
 
 impl Host {
+    #[inline]
     pub fn new() -> Self {
-        Self { main_thread: None, callbacks: None }
+        Self {
+            #[cfg(target_os = "linux")]
+            main_thread: None,
+            callbacks: None,
+        }
     }
 
+    #[inline]
     pub fn with_main_thread(mut self, main_thread: impl HostMainThreadCaller) -> Self {
-        self.main_thread = Some(Box::new(main_thread));
+        #[cfg(target_os = "linux")]
+        {
+            self.main_thread = Some(Box::new(main_thread));
+        }
+
         self
     }
 
+    #[inline]
     pub fn with_callbacks(mut self, callbacks: impl HostCallbacks) -> Self {
         self.callbacks = Some(Box::new(callbacks));
         self
