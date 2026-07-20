@@ -50,7 +50,7 @@ impl WindowContext {
     /// The given `size` can either be in [physical](dpi::PhysicalSize) or
     /// [logical](dpi::LogicalSize) pixels.
     pub fn resize(&self, size: impl Into<Size>) -> Result<(), Error> {
-        self.inner.resize(size.into())?;
+        self.inner.resize_later(size.into())?;
         Ok(())
     }
 

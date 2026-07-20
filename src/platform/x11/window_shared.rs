@@ -61,7 +61,7 @@ pub(crate) struct WindowInner {
     pub(crate) is_focused: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
 
-    main_thread_shared: Arc<WindowThreadShared>,
+    pub(crate) main_thread_shared: Arc<WindowThreadShared>,
 }
 
 impl WindowInner {
@@ -186,7 +186,7 @@ impl WindowInner {
         Ok(())
     }
 
-    pub fn resize(&self, size: Size) -> Result<()> {
+    pub fn resize_later(&self, size: Size) -> Result<()> {
         let new_physical_size = size.to_physical(self.scaling_factor.get());
         self.xcb_window.resize(new_physical_size)?.check()?;
 
@@ -211,9 +211,11 @@ impl WindowInner {
             warn!("Window Handler failed to resize: {}. Reverting to previous size", &e);
             self.store_size(previous);
             return Err(e.into());
-        } else {
-            self.xcb_window.resize(new_size.cast())?.check()?; // Will not call handler, as size is the same as above.
         }
+
+        self.xcb_window.resize(new_size.cast())?.check()?; // Will not call handler, as size is the same as above.
+
+        // These come from the Host, no need to notify it about the new size
 
         Ok(())
     }

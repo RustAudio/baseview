@@ -41,7 +41,11 @@ impl WindowOpenOptions {
     }
 
     #[inline]
-    pub fn with_parent(mut self, parent: &impl HasWindowHandle) -> Self {
+    pub fn with_parent<'a, P: HasWindowHandle + 'a>(
+        mut self, parent: impl Into<Option<&'a P>>,
+    ) -> Self {
+        let Some(parent) = parent.into() else { return self };
+
         let parent = match ParentWindowHandle::extract(parent) {
             Ok(parent) => parent,
             Err(e) => {

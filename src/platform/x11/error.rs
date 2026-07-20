@@ -4,12 +4,39 @@ use crate::platform::x11::xcb_connection::GetPropertyError;
 use crate::warn;
 use crate::wrappers::xlib::{DisplayOpenFailedError, InitThreadsFailedError};
 use crate::HandlerError;
+use std::fmt::{Display, Formatter};
 use std::sync::mpsc::RecvError;
 use x11_dl::error::OpenError;
 use x11rb::connection::RequestConnection;
 use x11rb::cookie::{Cookie, VoidCookie};
 use x11rb::errors::{ConnectError, ConnectionError, ReplyError, ReplyOrIdError};
 use x11rb::x11_utils::{TryParse, X11Error};
+
+#[derive(Debug)]
+pub enum FatalError {
+    Connection(ConnectionError),
+    SendMainThread,
+    ReceiveMainThread,
+}
+
+impl Display for FatalError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FatalError::Connection(e) => e.fmt(f),
+            // TODO: better errors
+            FatalError::SendMainThread => f.write_str("SendMainThread"),
+            FatalError::ReceiveMainThread => f.write_str("ReceiveMainThread"),
+        }
+    }
+}
+
+impl std::error::Error for FatalError {}
+
+impl From<ConnectionError> for FatalError {
+    fn from(err: ConnectionError) -> FatalError {
+        FatalError::Connection(err)
+    }
+}
 
 #[derive(Debug)]
 pub enum Error {
@@ -35,7 +62,7 @@ pub enum Error {
     Gl(super::gl::CreationFailedError),
 }
 
-impl std::fmt::Display for Error {
+impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::Io(e) => e.fmt(f),

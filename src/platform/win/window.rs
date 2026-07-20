@@ -23,6 +23,7 @@ pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 use super::drop_target::DropTarget;
 use super::*;
 use crate::handler::WindowHandlerBuilder;
+use crate::host::Host;
 use crate::platform::win::window_state::{WindowSharedState, WindowState};
 use crate::platform::Error;
 use crate::wrappers::win32::cursor::SystemCursor;
@@ -112,6 +113,11 @@ impl WindowHandle {
             Err(Error::ResizeFailed)
         }
     }
+
+    #[inline]
+    pub fn handle_main_thread_callback(&self) {
+        // No-op
+    }
 }
 
 impl Drop for WindowHandle {
@@ -128,6 +134,7 @@ pub struct BaseviewWindow {
     initial_size: Size,
 
     handler_builder: Cell<Option<WindowHandlerBuilder>>,
+    host: Host,
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
     _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
@@ -198,7 +205,7 @@ impl WindowImpl for BaseviewWindow {
     unsafe fn handle_message(
         &self, window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM,
     ) -> Option<LRESULT> {
-        unsafe { wnd_proc_inner(window, msg, wparam, lparam, &self.window_state) }
+        unsafe { wnd_proc_inner(window, msg, wparam, lparam, &self) }
     }
 
     fn before_destroy(&self, window: HWnd) {
@@ -209,8 +216,9 @@ impl WindowImpl for BaseviewWindow {
 /// Our custom `wnd_proc` handler. If the result contains a value, then this is returned after
 /// handling any deferred tasks. otherwise the default window procedure is invoked.
 unsafe fn wnd_proc_inner(
-    window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM, window_state: &WindowState,
+    window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM, window_bv: &BaseviewWindow,
 ) -> Option<LRESULT> {
+    let window_state = &window_bv.window_state;
     match msg {
         WM_MOUSEMOVE => {
             if window_state.mouse_was_outside_window.get() {
@@ -465,7 +473,7 @@ unsafe fn wnd_proc_inner(
 
 impl WindowHandle {
     pub fn create_window(
-        options: WindowOpenOptions, build: WindowHandlerBuilder,
+        options: WindowOpenOptions, build: WindowHandlerBuilder, host: Host,
     ) -> Result<WindowHandle> {
         let extended_user_32 = ExtendedUser32::load()?;
         let title = HSTRING::from(options.title);
@@ -495,6 +503,7 @@ impl WindowHandle {
                     initial_size: options.size,
                     handler_builder: Cell::new(Some(build)),
                     shared_state,
+                    host,
 
                     _drop_target: None.into(),
                     _keyboard_hook: None.into(),

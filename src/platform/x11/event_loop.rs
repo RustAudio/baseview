@@ -4,6 +4,7 @@ use super::*;
 use std::result::Result;
 
 use crate::host::HostMainThreadCaller;
+use crate::platform::x11::error::FatalError;
 use crate::platform::x11::window_thread::{
     HostCallback, WindowThreadRequest, WindowThreadResponse, WindowThreadResponseMessage,
 };
@@ -16,10 +17,35 @@ use calloop::{Interest, LoopSignal, Mode, PostAction};
 use dpi::{PhysicalPosition, PhysicalSize};
 use std::rc::Rc;
 use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::errors::ConnectionError;
 use x11rb::protocol::Event as XEvent;
+
+pub struct MainThreadCaller {
+    sender: mpsc::Sender<HostCallback>,
+    caller: Box<dyn HostMainThreadCaller>,
+}
+
+impl MainThreadCaller {
+    pub(crate) fn new(
+        main_thread: Option<Box<dyn HostMainThreadCaller>>,
+    ) -> (Option<Self>, Option<Receiver<HostCallback>>) {
+        let Some(main_thread) = main_thread else {
+            return (None, None);
+        };
+
+        let (sender, receiver) = mpsc::channel();
+        (Some(Self { sender, caller: main_thread }), Some(receiver))
+    }
+
+    pub fn send(&mut self, msg: HostCallback) -> Result<(), FatalError> {
+        self.sender.send(msg).map_err(|_| FatalError::SendMainThread)?;
+        self.caller.call_main_thread();
+        Ok(())
+    }
+}
 
 pub(crate) struct EventLoop {
     handler: Box<dyn WindowHandler>,
@@ -35,8 +61,7 @@ pub(crate) struct EventLoop {
     run_error: Option<Error>,
 
     response_sender: mpsc::Sender<WindowThreadResponseMessage>,
-    callback_sender: mpsc::Sender<HostCallback>,
-    main_thread_caller: Option<Box<dyn HostMainThreadCaller>>,
+    main_thread: Option<MainThreadCaller>,
 }
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(15);
@@ -46,9 +71,7 @@ impl EventLoop {
         window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
         request_receiver: calloop::channel::Channel<WindowThreadRequest>,
         response_sender: mpsc::Sender<WindowThreadResponseMessage>,
-        callback_sender: mpsc::Sender<HostCallback>,
-        main_thread_caller: Option<Box<dyn HostMainThreadCaller>>,
-        inner: &mut calloop::EventLoop<'static, Self>,
+        main_thread: Option<MainThreadCaller>, inner: &mut calloop::EventLoop<'static, Self>,
     ) -> Result<Self, Error> {
         let loop_handle = inner.handle();
 
@@ -74,8 +97,7 @@ impl EventLoop {
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
             run_error: None,
-            callback_sender,
-            main_thread_caller,
+            main_thread,
 
             window,
             response_sender,
@@ -83,7 +105,7 @@ impl EventLoop {
     }
 
     #[inline]
-    fn drain_xcb_events(&mut self) -> Result<(), ConnectionError> {
+    fn drain_xcb_events(&mut self) -> Result<(), FatalError> {
         // the X server has a tendency to send spurious/extraneous configure notify events when a
         // window is resized, and we need to batch those together and just send one resize event
         // when they've all been coalesced.
@@ -93,28 +115,31 @@ impl EventLoop {
             self.handle_xcb_event(event)?;
         }
 
-        if let Some(size) = self.new_physical_size.take() {
-            let previous = self.window.store_size(size);
+        self.handle_coalesced_resize_events()
+    }
 
-            let scale_factor = self.window.scaling_factor.get();
-            let new_size = WindowSize::from_physical(size.cast(), scale_factor);
+    fn handle_coalesced_resize_events(&mut self) -> Result<(), FatalError> {
+        let Some(new_size) = self.new_physical_size.take() else { return Ok(()) };
+        let previous = self.window.store_size(new_size);
 
-            if let Err(e) = self.handler.resized(new_size) {
-                warn!("Window Handler failed to resize: {}", e);
-                self.window.store_size(previous);
-                self.window.xcb_window.resize(previous.cast())?.check_warn();
-            } else {
-                // TODO: only if this wansn't the result of a host request
-                // TODO: do not allocate channel if no host callback is present
-                if let Some(main_thread) = self.main_thread_caller.as_mut() {
-                    self.callback_sender
-                        .send(HostCallback::Resized {
-                            new_size,
-                            previous: WindowSize::from_physical(previous.cast(), scale_factor),
-                        })
-                        .unwrap(); // TODO: unwrap
-                    main_thread.call_main_thread();
-                }
+        if previous == new_size {
+            return Ok(());
+        };
+
+        let scale_factor = self.window.scaling_factor.get();
+        let new_size = WindowSize::from_physical(new_size.cast(), scale_factor);
+
+        if let Err(e) = self.handler.resized(new_size) {
+            warn!("Window Handler failed to resize: {}", e);
+            self.window.store_size(previous);
+            self.window.xcb_window.resize(previous.cast())?.check_warn();
+        } else {
+            // TODO: only if this wansn't the result of a host request
+            if let Some(host) = self.main_thread.as_mut() {
+                host.send(HostCallback::Resized {
+                    new_size,
+                    previous: WindowSize::from_physical(previous.cast(), scale_factor),
+                })?;
             }
         }
 
@@ -177,7 +202,7 @@ impl EventLoop {
         }
     }
 
-    fn handle_connection_event_ready(&mut self) -> Result<PostAction, ConnectionError> {
+    fn handle_connection_event_ready(&mut self) -> Result<PostAction, FatalError> {
         self.drain_xcb_events()?;
 
         Ok(PostAction::Continue)
@@ -213,6 +238,15 @@ impl EventLoop {
         inner.run(None, &mut self, Self::handle_idle)?;
 
         self.handle_event(Event::Window(WindowEvent::WillClose));
+
+        // If the event loop doesn't stop because the host asked it to, then we should notify it
+        if !self.window.main_thread_shared.is_stop_host_requested() {
+            if let Some(main_thread) = self.main_thread.as_mut() {
+                if let Err(e) = main_thread.send(HostCallback::Destroyed) {
+                    warn!("Could not notify host that X11 thread is stopping: {}", e)
+                }
+            }
+        }
 
         if let Some(err) = self.run_error {
             return Err(err);
