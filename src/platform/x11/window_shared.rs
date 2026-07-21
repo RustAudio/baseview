@@ -96,7 +96,6 @@ impl WindowInner {
         )?;
 
         let cookies = [
-            xcb_window.map_window()?,
             xcb_window.set_title(&options.title)?,
             xcb_window.enable_wm_protocols()?,
             xcb_window.enable_dnd_protocols()?,

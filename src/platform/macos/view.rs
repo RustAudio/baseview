@@ -154,6 +154,26 @@ impl BaseviewView {
         Ok((view, state))
     }
 
+    pub fn show(this: ViewRef<Self>) {
+        let Ok(parent) = this.parenting.try_borrow() else { return };
+
+        if let ViewParentingType::Windowed { owned_window } = &*parent {
+            if let Some(window) = owned_window.load() {
+                window.makeKeyAndOrderFront(None)
+            }
+        }
+    }
+
+    pub fn hide(this: ViewRef<Self>) {
+        let Ok(parent) = this.parenting.try_borrow() else { return };
+
+        if let ViewParentingType::Windowed { owned_window } = &*parent {
+            if let Some(window) = owned_window.load() {
+                window.orderOut(None)
+            }
+        }
+    }
+
     pub fn close(this: ViewRef<Self>, from_host: bool) {
         this.state.closed.set(true);
         this.view.removeFromSuperview();

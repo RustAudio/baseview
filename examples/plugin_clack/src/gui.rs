@@ -114,6 +114,7 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
         let parent = unsafe { raw_window_handle::WindowHandle::borrow_raw(parent) };
 
         gui.handle.set_parent(&parent)?;
+        gui.handle.show()?;
 
         Ok(())
     }
@@ -127,11 +128,21 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 
     fn show(&mut self) -> Result<(), PluginError> {
-        Ok(()) // Not supported yet
+        let Some(gui) = &self.gui else {
+            return Err(PluginError::Message("show called without a GUI active"));
+        };
+        gui.handle.show()?;
+
+        Ok(())
     }
 
     fn hide(&mut self) -> Result<(), PluginError> {
-        Ok(()) // Not supported yet
+        let Some(gui) = &self.gui else {
+            return Err(PluginError::Message("hide called without a GUI active"));
+        };
+        gui.handle.show()?;
+
+        Ok(())
     }
 }
 

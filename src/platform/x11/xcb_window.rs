@@ -65,6 +65,10 @@ impl XcbWindow {
         Ok(self.connection.conn.map_window(self.window_id.get())?)
     }
 
+    pub fn unmap_window(&self) -> Result<VoidCookie<'_, XCBConnection>, ReplyOrIdError> {
+        Ok(self.connection.conn.unmap_window(self.window_id.get())?)
+    }
+
     pub fn resize(
         &self, size: PhysicalSize<u32>,
     ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {

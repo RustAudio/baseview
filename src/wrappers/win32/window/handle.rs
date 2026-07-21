@@ -16,7 +16,7 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     DestroyWindow, GetWindowLongPtrW, GetWindowLongW, SetParent, SetTimer, SetWindowLongPtrW,
     SetWindowLongW, SetWindowPos, ShowWindow, GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SW_SHOW, WINDOW_LONG_PTR_INDEX,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_LONG_PTR_INDEX,
 };
 
 /// A simple wrapper around a HWND.
@@ -191,6 +191,10 @@ impl HWnd {
         let result = unsafe { ShowWindow(self.as_raw(), SW_SHOW) };
 
         result != 0
+    }
+
+    pub fn hide(&self) {
+        unsafe { ShowWindow(self.as_raw(), SW_HIDE) };
     }
 
     pub fn set_nc_rect(&self, nc_rect: Rect) -> Result<()> {
