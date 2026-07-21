@@ -1,6 +1,6 @@
 #[cfg(feature = "opengl")]
 use crate::gl::GlConfig;
-use crate::platform::ParentWindowHandle;
+use crate::platform;
 use dpi::{LogicalSize, Size};
 use raw_window_handle::HasWindowHandle;
 
@@ -12,7 +12,7 @@ pub struct WindowOpenOptions {
     /// The size of the window, either in physical or logical coordinates
     pub size: Size,
 
-    pub(crate) parent: Option<ParentWindowHandle>,
+    pub parent: Option<ParentWindowHandle>,
 
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
     /// access this context through [crate::WindowContext::gl_context].
@@ -46,14 +46,7 @@ impl WindowOpenOptions {
     ) -> Self {
         let Some(parent) = parent.into() else { return self };
 
-        let parent = match ParentWindowHandle::extract(parent) {
-            Ok(parent) => parent,
-            Err(e) => {
-                panic!("Invalid parent window handle: {e}")
-            }
-        };
-
-        self.parent = Some(parent);
+        self.parent = Some(ParentWindowHandle::from_window(parent));
         self
     }
 
@@ -74,5 +67,29 @@ impl Default for WindowOpenOptions {
             #[cfg(feature = "opengl")]
             gl_config: None,
         }
+    }
+}
+
+/// An owned handle to a parent window.
+///
+/// This type holds just what's needed for baseview to create a child window into this window.
+///
+/// This can safely be constructed from only a temporary reference to any [`HasWindowHandle`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParentWindowHandle {
+    pub(crate) inner: platform::ParentWindowHandle,
+}
+
+impl ParentWindowHandle {
+    /// Grabs a handle to the given `parent_window`, to later create a child window in it.
+    pub fn from_window(parent_window: &impl HasWindowHandle) -> Self {
+        let inner = match platform::ParentWindowHandle::extract(parent_window) {
+            Ok(parent) => parent,
+            Err(e) => {
+                panic!("Invalid parent window handle: {e}")
+            }
+        };
+
+        Self { inner }
     }
 }

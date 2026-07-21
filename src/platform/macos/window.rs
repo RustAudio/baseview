@@ -42,7 +42,13 @@ impl WindowHandle {
             let _ = NSApplication::sharedApplication(mtm);
 
             if let Some(parent) = options.parent.take() {
-                return Self::create_window_parented(options, handler, host, parent.view, mtm);
+                return Self::create_window_parented(
+                    options,
+                    handler,
+                    host,
+                    parent.inner.view,
+                    mtm,
+                );
             }
 
             Self::create_window_standalone(options, handler, host, mtm)

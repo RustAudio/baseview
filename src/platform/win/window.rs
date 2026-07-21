@@ -571,7 +571,7 @@ impl WindowHandle {
             }
         };
 
-        let parent = options.parent.map(|p| p.handle);
+        let parent = options.parent.map(|p| p.inner.handle);
         let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, None)?;
 
         let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
