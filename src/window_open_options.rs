@@ -93,3 +93,9 @@ impl ParentWindowHandle {
         Self { inner }
     }
 }
+
+impl<W: HasWindowHandle> From<&W> for ParentWindowHandle {
+    fn from(window: &W) -> Self {
+        Self::from_window(window)
+    }
+}

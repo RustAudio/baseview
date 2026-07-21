@@ -91,6 +91,12 @@ impl WindowHandle {
     pub fn host_main_thread_callback(&mut self) {
         self.window_handle.handle_main_thread_callback()
     }
+
+    #[inline]
+    pub fn set_parent(&self, parent: impl Into<ParentWindowHandle>) -> Result<(), Error> {
+        self.window_handle.set_parent(parent.into().inner)?;
+        Ok(())
+    }
 }
 
 #[inline]

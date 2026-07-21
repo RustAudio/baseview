@@ -74,6 +74,17 @@ impl XcbWindow {
         )
     }
 
+    pub fn reparent(
+        &self, parent: Option<NonZeroU32>,
+    ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
+        self.connection.conn.reparent_window(
+            self.id().get(),
+            parent.map(|i| i.get()).unwrap_or(0),
+            0,
+            0,
+        )
+    }
+
     pub fn set_title(&self, title: &str) -> Result<VoidCookie<'_, XCBConnection>, ReplyOrIdError> {
         Ok(self.connection.conn.change_property8(
             PropMode::REPLACE,

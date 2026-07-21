@@ -6,7 +6,7 @@ use std::result::Result;
 use crate::host::HostMainThreadCaller;
 use crate::platform::x11::error::FatalError;
 use crate::platform::x11::window_thread::{
-    HostCallback, WindowThreadRequest, WindowThreadResponse, WindowThreadResponseMessage,
+    HostCallback, WindowThreadRequest, WindowThreadResponseMessage,
 };
 use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
@@ -156,7 +156,7 @@ impl EventLoop {
                 self.stop_now();
             }
             calloop::channel::Event::Msg(req) => match self.handle_request(req) {
-                Ok(()) => self.send_response(Ok(WindowThreadResponse::Ok)),
+                Ok(()) => self.send_response(Ok(())),
                 Err(e) => self.send_response(Err(e.to_string())),
             },
         }
@@ -198,6 +198,11 @@ impl EventLoop {
                 let new_physical_size = current_logical_size.to_physical(scale);
 
                 self.window.resize_immediately(new_physical_size, &*self.handler)?;
+
+                Ok(())
+            }
+            WindowThreadRequest::SetParent(new_parent) => {
+                self.window.xcb_window.reparent(Some(new_parent.window_id))?;
 
                 Ok(())
             }

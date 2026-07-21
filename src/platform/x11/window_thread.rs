@@ -34,6 +34,11 @@ impl WindowThreadShared {
         }
     }
 
+    fn init(&self, window: &WindowInner) {
+        self.set_size(window.get_size());
+        self.set_scaling_factor(window.scale_factor());
+    }
+
     pub fn get_size(&self) -> PhysicalSize<u16> {
         let bytes = self.size.load(Ordering::Relaxed);
         let low = (bytes & u16::MAX as u32) as u16;
@@ -64,13 +69,10 @@ impl WindowThreadShared {
 pub enum WindowThreadRequest {
     SuggestScaleFactor(f64),
     Resize(Size),
+    SetParent(ParentWindowHandle),
 }
 
-pub enum WindowThreadResponse {
-    Ok,
-}
-
-pub type WindowThreadResponseMessage = core::result::Result<WindowThreadResponse, String>;
+pub type WindowThreadResponseMessage = core::result::Result<(), String>;
 
 pub enum HostCallback {
     Resized { new_size: WindowSize, previous: WindowSize },
@@ -152,10 +154,7 @@ impl WindowThreadHandle {
         self.request_sender.send(req).map_err(|_| RequestFailed::Send)?;
         let result = self.response_receiver.recv().map_err(|_| RequestFailed::Recv)?;
 
-        match result {
-            Ok(WindowThreadResponse::Ok) => Ok(()),
-            Err(e) => Err(RequestFailed::Response(e).into()),
-        }
+        result.map_err(|e| RequestFailed::Response(e).into())
     }
 
     pub fn run_until_closed(&self) -> Result<()> {
@@ -183,6 +182,10 @@ impl WindowThreadHandle {
 
             self.handle_main_thread_message(callback);
         }
+    }
+
+    pub fn set_parent(&self, new_parent: ParentWindowHandle) -> Result<()> {
+        self.request(WindowThreadRequest::SetParent(new_parent))
     }
 
     fn handle_main_thread_message(&mut self, msg: HostCallback) {
@@ -255,6 +258,9 @@ impl WindowThread {
     ) -> Result<Self> {
         let mut ev_loop = calloop::EventLoop::try_new()?;
         let inner = WindowInner::create(options, &ev_loop, shared.clone())?;
+
+        shared.init(&inner);
+
         let handler = handler.build(WindowContext::new(Rc::clone(&inner)))?;
         let event_loop =
             EventLoop::new(inner, handler, receiver, sender, main_thread_caller, &mut ev_loop)?;

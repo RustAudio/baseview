@@ -27,7 +27,35 @@ use std::rc::Rc;
 
 pub enum ViewParentingType {
     Parented { parent_view: Weak<NSView> },
-    Windowed { owned_window: Weak<NSWindow>, running_app: Weak<NSApplication> },
+    Windowed { owned_window: Weak<NSWindow> },
+    Uninitialized,
+}
+
+impl ViewParentingType {
+    fn setup(&self, child: &View<BaseviewView>) {
+        match self {
+            ViewParentingType::Parented { parent_view } => {
+                if let Some(parent_view) = parent_view.load() {
+                    parent_view.addSubview(child);
+                }
+            }
+            ViewParentingType::Windowed { owned_window, .. } => {
+                if let Some(owned_window) = owned_window.load() {
+                    owned_window.setContentView(Some(child));
+                    set_delegate(&owned_window, child);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn teardown(self) {
+        if let ViewParentingType::Windowed { owned_window: parent_window } = self {
+            if let Some(parent_window) = parent_window.load() {
+                parent_window.close();
+            }
+        }
+    }
 }
 
 pub(crate) struct BaseviewView {
@@ -40,7 +68,8 @@ pub(crate) struct BaseviewView {
 
     keyboard_state: KeyboardState,
 
-    parenting: ViewParentingType,
+    parenting: RefCell<ViewParentingType>,
+    pub(crate) lifetime_tied_to_app: Cell<Option<Weak<NSApplication>>>,
 
     host: Host,
 
@@ -66,8 +95,9 @@ impl BaseviewView {
             frame_timer: None.into(),
             window_handler: WindowHandlerContainer::new(),
             notification_center_observer: None.into(),
-            parenting,
+            parenting: ViewParentingType::Uninitialized.into(),
             host,
+            lifetime_tied_to_app: None.into(),
 
             #[cfg(feature = "opengl")]
             gl_context: std::cell::OnceCell::new(),
@@ -75,19 +105,8 @@ impl BaseviewView {
 
         let view = View::new(view_rect, inner, |view| {
             // Set up parenting before handler setup
-            match &view.parenting {
-                ViewParentingType::Parented { parent_view } => {
-                    if let Some(parent_view) = parent_view.load() {
-                        parent_view.addSubview(view.view);
-                    }
-                }
-                ViewParentingType::Windowed { owned_window, .. } => {
-                    if let Some(owned_window) = owned_window.load() {
-                        owned_window.setContentView(Some(view.view));
-                        set_delegate(&owned_window, view.view);
-                    }
-                }
-            }
+            parenting.setup(view.view);
+            view.parenting.replace(parenting);
 
             view.state.scale_factor.set(view.view.backing_scale_factor());
             view.state.size.set(view.view.size());
@@ -142,14 +161,11 @@ impl BaseviewView {
         this.frame_timer.take();
         this.window_handler.destroy();
 
-        if let ViewParentingType::Windowed { owned_window: parent_window, running_app } =
-            &this.parenting
-        {
-            if let Some(parent_window) = parent_window.load() {
-                parent_window.close();
-            }
+        let parenting = this.parenting.replace(ViewParentingType::Uninitialized);
+        parenting.teardown();
 
-            if let Some(app) = running_app.load() {
+        if let Some(app) = this.lifetime_tied_to_app.take() {
+            if let Some(app) = app.load() {
                 app.stop(Some(&app));
             }
         }
@@ -157,6 +173,16 @@ impl BaseviewView {
         if !from_host {
             this.host.notify_destroyed();
         }
+    }
+
+    pub fn set_parent(this: ViewRef<Self>, new_parent: Retained<NSView>) {
+        let previous_parenting = this.parenting.replace(ViewParentingType::Uninitialized);
+        previous_parenting.teardown();
+
+        let parenting = ViewParentingType::Parented { parent_view: Weak::from(new_parent) };
+        parenting.setup(this.view);
+
+        this.parenting.replace(parenting);
     }
 
     pub fn resize(this: ViewRef<Self>, size: Size, notify_host: bool) {
@@ -176,7 +202,7 @@ impl BaseviewView {
         }
 
         // If this is a standalone window then we'll also need to resize the window itself
-        if let ViewParentingType::Windowed { owned_window, .. } = &this.parenting {
+        if let ViewParentingType::Windowed { owned_window } = &*this.parenting.borrow() {
             if let Some(owned_window) = owned_window.load() {
                 owned_window.setContentSize(size);
             }

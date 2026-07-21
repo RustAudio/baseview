@@ -9,6 +9,7 @@ use std::rc::Rc;
 use crate::handler::WindowHandlerBuilder;
 use crate::host::Host;
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
+use crate::platform::ParentWindowHandle;
 use crate::platform::Result;
 use crate::wrappers::appkit::{create_window, View};
 use crate::*;
@@ -76,16 +77,12 @@ impl WindowHandle {
         builder: WindowOpenOptions, handler: WindowHandlerBuilder, host: Host,
         mtm: MainThreadMarker,
     ) -> Result<Self> {
-        let app = NSApplication::sharedApplication(mtm);
         let window = create_window_with_options(&builder, mtm);
 
         let final_size = window.contentRectForFrameRect(window.frame()).size;
         let final_size = LogicalSize::new(final_size.width, final_size.height);
 
-        let parenting = ViewParentingType::Windowed {
-            running_app: Weak::from_retained(&app),
-            owned_window: Weak::from_retained(&window),
-        };
+        let parenting = ViewParentingType::Windowed { owned_window: Weak::from_retained(&window) };
 
         let (view, state) = BaseviewView::new(builder, handler, parenting, host, final_size, mtm)?;
 
@@ -93,7 +90,15 @@ impl WindowHandle {
     }
 
     pub fn run_until_closed(self) -> Result<()> {
-        NSApplication::sharedApplication(self.mtm).run();
+        let Some(view) = self.view.load() else { return Ok(()) };
+        let Some(view) = view.inner_ref() else { return Ok(()) };
+
+        let app = NSApplication::sharedApplication(self.mtm);
+
+        view.lifetime_tied_to_app.set(Some(Weak::from_retained(&app)));
+        app.run();
+        view.lifetime_tied_to_app.set(None);
+
         Ok(())
     }
 
@@ -121,6 +126,15 @@ impl WindowHandle {
 
     pub fn suggest_scale_factor(&self, _scale_factor: f64) -> Result<()> {
         // This does not do anything on macOS: all coordinates are already logical
+        Ok(())
+    }
+
+    pub fn set_parent(&self, new_parent: ParentWindowHandle) -> Result<()> {
+        let Some(view) = self.view.load() else { return Ok(()) };
+        let Some(view) = view.inner_ref() else { return Ok(()) };
+
+        BaseviewView::set_parent(view, new_parent.view);
+
         Ok(())
     }
 }

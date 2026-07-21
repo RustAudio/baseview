@@ -14,9 +14,9 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DestroyWindow, GetWindowLongPtrW, GetWindowLongW, SetTimer, SetWindowLongPtrW, SetWindowPos,
-    ShowWindow, GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER,
-    SW_SHOW, WINDOW_LONG_PTR_INDEX,
+    DestroyWindow, GetWindowLongPtrW, GetWindowLongW, SetParent, SetTimer, SetWindowLongPtrW,
+    SetWindowLongW, SetWindowPos, ShowWindow, GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SW_SHOW, WINDOW_LONG_PTR_INDEX,
 };
 
 /// A simple wrapper around a HWND.
@@ -80,11 +80,46 @@ impl HWnd {
         Err(error)
     }
 
+    pub fn set_long(&self, index: WINDOW_LONG_PTR_INDEX, value: i32) -> Result<i32> {
+        // SAFETY: This function is always safe to call
+        unsafe { SetLastError(0) };
+        // SAFETY: This type guarantees the HWND is still valid.
+        let result = unsafe { SetWindowLongW(self.as_raw(), index, value) };
+        if result != 0 {
+            return Ok(result);
+        }
+
+        // We can't know if a return value of 0 is indicative of an error, or if it's just because the
+        // value was actually 0. So we check GetLastError instead (called by Error::from_thread).
+        let error = Error::from_thread();
+        if error.code() == HRESULT(0) {
+            return Ok(result);
+        }
+
+        Err(error)
+    }
+
     pub fn get_style(&self) -> Result<WindowStyle> {
         Ok(WindowStyle {
             style: self.get_long(GWL_STYLE)? as _,
             style_ex: self.get_long(GWL_EXSTYLE)? as _,
         })
+    }
+
+    pub fn set_style(&self, style: WindowStyle) -> Result<()> {
+        self.set_long(GWL_STYLE, style.style as _)?;
+        self.set_long(GWL_EXSTYLE, style.style_ex as _)?;
+        Ok(())
+    }
+
+    pub fn set_parent(&self, parent: &HWnd) -> Result<()> {
+        let result = unsafe { SetParent(self.as_raw(), parent.as_raw()) };
+
+        if result.is_null() {
+            return Err(Error::from_thread());
+        }
+
+        Ok(())
     }
 
     pub fn get_dpi(&self, extended_user32: &ExtendedUser32) -> Result<Option<Dpi>> {

@@ -31,7 +31,23 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 
     fn create(&mut self, _configuration: GuiConfiguration) -> Result<(), PluginError> {
-        // Delay creation until set_parent
+        let options = WindowOpenOptions::new()
+            .with_size(PhysicalSize::new(400, 200))
+            .with_gl_config(GlConfig::default());
+
+        let mut host = Host::new().with_main_thread(unsafe {
+            MainThreadHandler { host: self.host.shared().with_arbitrary_lifetime() }
+        });
+
+        if let Some(gui) = self.host_gui {
+            host = host.with_callbacks(unsafe {
+                HostGuiCallbacks { ext: gui, host: self.host.with_arbitrary_lifetime() }
+            });
+        }
+
+        let window = baseview::create_window_with_host(options, OpenWindowExample::new, host)?;
+
+        self.gui = Some(ExamplePluginGui { handle: window });
         Ok(())
     }
 
@@ -51,11 +67,11 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 
     fn get_size(&mut self) -> Option<GuiSize> {
-        let Some(gui) = self.gui.as_ref() else {
-            // Because we delayed the window creation, this will get called without a GUI active.
-            // During that time, return the default UI size.
-            return Some(GuiSize { width: 400, height: 200 });
+        let Some(gui) = &self.gui else {
+            eprintln!("get_size called without a GUI active");
+            return None;
         };
+
         Some(window_size_to_gui_size(gui.handle.size()))
     }
 
@@ -90,27 +106,14 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
 
     #[allow(deprecated)]
     fn set_parent(&mut self, window: ClapWindow) -> Result<(), PluginError> {
+        let Some(gui) = &self.gui else {
+            return Err(PluginError::Message("set_parent called without a GUI active"));
+        };
+
         let parent = window.raw_window_handle()?;
         let parent = unsafe { raw_window_handle::WindowHandle::borrow_raw(parent) };
 
-        let options = WindowOpenOptions::new()
-            .with_size(PhysicalSize::new(400, 200))
-            .with_gl_config(GlConfig::default())
-            .with_parent(&parent);
-
-        let mut host = Host::new().with_main_thread(unsafe {
-            MainThreadHandler { host: self.host.shared().with_arbitrary_lifetime() }
-        });
-
-        if let Some(gui) = self.host_gui {
-            host = host.with_callbacks(unsafe {
-                HostGuiCallbacks { ext: gui, host: self.host.with_arbitrary_lifetime() }
-            });
-        }
-
-        let window = baseview::create_window_with_host(options, OpenWindowExample::new, host)?;
-
-        self.gui = Some(ExamplePluginGui { handle: window });
+        gui.handle.set_parent(&parent)?;
 
         Ok(())
     }
@@ -163,7 +166,6 @@ struct MainThreadHandler {
 
 impl HostMainThreadCaller for MainThreadHandler {
     fn call_main_thread(&mut self) {
-        eprintln!("Requesting main thread");
         self.host.request_callback();
     }
 }
