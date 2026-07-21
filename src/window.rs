@@ -78,6 +78,15 @@ impl WindowHandle {
         self.window_handle.is_open()
     }
 
+    /// Performs the work the window thread had scheduled for the main thread.
+    ///
+    /// This must be called back on the main thread, as a response to [`HostMainThreadCaller::call_main_thread`](host::HostMainThreadCaller::call_main_thread).
+    ///
+    /// # Platform compatibility notes
+    ///
+    /// Only the X11 platform has a separate window thread, so this is only needed to run host callbacks on X11.
+    ///
+    /// On Windows and macOS, this is always a no-op.
     #[inline]
     pub fn host_main_thread_callback(&mut self) {
         self.window_handle.handle_main_thread_callback()
