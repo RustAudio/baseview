@@ -93,6 +93,8 @@ impl WindowHandle {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
+        BaseviewView::show(view);
+
         let app = NSApplication::sharedApplication(self.mtm);
 
         view.lifetime_tied_to_app.set(Some(Weak::from_retained(&app)));
@@ -137,6 +139,22 @@ impl WindowHandle {
 
         Ok(())
     }
+
+    pub fn show(&self) -> Result<()> {
+        let Some(view) = self.view.load() else { return Ok(()) };
+        let Some(view) = view.inner_ref() else { return Ok(()) };
+
+        BaseviewView::show(view);
+        Ok(())
+    }
+
+    pub fn hide(&self) -> Result<()> {
+        let Some(view) = self.view.load() else { return Ok(()) };
+        let Some(view) = view.inner_ref() else { return Ok(()) };
+
+        BaseviewView::hide(view);
+        Ok(())
+    }
 }
 
 fn create_window_with_options(
@@ -154,7 +172,6 @@ fn create_window_with_options(
     let title = NSString::from_str(&options.title);
     window.setTitle(&title);
 
-    window.makeKeyAndOrderFront(None);
     window
 }
 

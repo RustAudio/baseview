@@ -17,6 +17,9 @@ impl WindowHandle {
         Self { window_handle, phantom: PhantomData }
     }
 
+    /// Blocks the thread and runs an event loop until the window is closed.
+    ///
+    /// The window is shown automatically if it wasn't already.
     #[inline]
     pub fn run_until_closed(self) -> Result<(), Error> {
         self.window_handle.run_until_closed()?;
@@ -92,9 +95,29 @@ impl WindowHandle {
         self.window_handle.handle_main_thread_callback()
     }
 
+    /// Reparents this window using the given `parent`.
+    ///
+    /// If the window was a floating window, it will become parented.
     #[inline]
     pub fn set_parent(&self, parent: impl Into<ParentWindowHandle>) -> Result<(), Error> {
         self.window_handle.set_parent(parent.into().inner)?;
+        Ok(())
+    }
+
+    /// Shows the window to the screen.
+    #[inline]
+    pub fn show(&self) -> Result<(), Error> {
+        self.window_handle.show()?;
+        Ok(())
+    }
+
+    /// Hides the window from the screen.
+    ///
+    /// The window will still exist, and it might still receive some events, but rendering will be
+    /// paused and the user will not be able to see or interact with it.
+    #[inline]
+    pub fn hide(&self) -> Result<(), Error> {
+        self.window_handle.hide()?;
         Ok(())
     }
 }

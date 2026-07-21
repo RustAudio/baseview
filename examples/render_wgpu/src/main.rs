@@ -134,25 +134,26 @@ impl WindowHandler for WgpuExample {
         let mut surface = self.surface.borrow_mut();
 
         let surface_texture = match surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(texture) => texture,
+            wgpu::CurrentSurfaceTexture::Success(texture) => Some(texture),
             wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => {
                 return Ok(())
             }
             wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
-                surface.configure(&self.device, &self.surface_config.borrow());
-                // We'll retry next frame
-                return Ok(());
+                None
             }
             wgpu::CurrentSurfaceTexture::Lost => {
                 *surface = self.instance.create_surface(self.window_context.platform_handle())?;
-                surface.configure(&self.device, &self.surface_config.borrow());
-
-                // We'll retry next frame
-                return Ok(());
+                None
             }
             wgpu::CurrentSurfaceTexture::Validation => {
                 unreachable!("No error scope registered, so validation errors will panic")
             }
+        };
+
+        let Some(surface_texture) = surface_texture else {
+            surface.configure(&self.device, &self.surface_config.borrow());
+            // We'll retry next frame
+            return Ok(());
         };
 
         let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());

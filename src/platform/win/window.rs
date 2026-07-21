@@ -58,6 +58,8 @@ pub struct WindowHandle {
 
 impl WindowHandle {
     pub fn run_until_closed(self) -> Result<()> {
+        self.show()?;
+
         run_thread_message_loop_until(|| !self.is_open())?;
         Ok(())
     }
@@ -134,6 +136,20 @@ impl WindowHandle {
     #[inline]
     pub fn handle_main_thread_callback(&self) {
         // No-op
+    }
+
+    pub fn show(&self) -> Result<()> {
+        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
+        hwnd.show_and_activate();
+
+        Ok(())
+    }
+
+    pub fn hide(&self) -> Result<()> {
+        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
+        hwnd.hide();
+
+        Ok(())
     }
 }
 
@@ -597,8 +613,6 @@ impl WindowHandle {
         // would be a breaking change, so we'll do that later.
         // TODO: create a new timer instead of hard-coding a specific ID
         window.set_timer(WIN_FRAME_TIMER, 15)?;
-
-        window.show_and_activate();
 
         Ok(WindowHandle { hwnd: Some(window).into(), state: shared_state })
     }

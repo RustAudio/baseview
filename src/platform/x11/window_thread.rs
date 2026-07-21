@@ -70,6 +70,8 @@ pub enum WindowThreadRequest {
     SuggestScaleFactor(f64),
     Resize(Size),
     SetParent(ParentWindowHandle),
+    Show,
+    Hide,
 }
 
 pub type WindowThreadResponseMessage = core::result::Result<(), String>;
@@ -158,6 +160,8 @@ impl WindowThreadHandle {
     }
 
     pub fn run_until_closed(&self) -> Result<()> {
+        self.request(WindowThreadRequest::Show)?;
+
         let Some(thread) = self.event_loop_handle.take() else { return Ok(()) };
 
         if let Err(panic) = thread.join() {
@@ -169,6 +173,14 @@ impl WindowThreadHandle {
         }
 
         Ok(())
+    }
+
+    pub fn show(&self) -> Result<()> {
+        self.request(WindowThreadRequest::Show)
+    }
+
+    pub fn hide(&self) -> Result<()> {
+        self.request(WindowThreadRequest::Hide)
     }
 
     pub fn is_open(&self) -> bool {

@@ -206,6 +206,14 @@ impl EventLoop {
 
                 Ok(())
             }
+            WindowThreadRequest::Show => {
+                self.window.xcb_window.map_window()?.check()?;
+                Ok(())
+            }
+            WindowThreadRequest::Hide => {
+                self.window.xcb_window.unmap_window()?.check()?;
+                Ok(())
+            }
         }
     }
 
