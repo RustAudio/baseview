@@ -5,7 +5,6 @@ use crate::warn;
 use crate::wrappers::xlib::{DisplayOpenFailedError, InitThreadsFailedError};
 use crate::HandlerError;
 use std::fmt::{Display, Formatter};
-use std::sync::mpsc::RecvError;
 use x11_dl::error::OpenError;
 use x11rb::connection::RequestConnection;
 use x11rb::cookie::{Cookie, VoidCookie};

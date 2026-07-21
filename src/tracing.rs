@@ -7,8 +7,8 @@ pub use tracing::{error, warn};
 mod tracing_impl {
     macro_rules! __warn {
         ($($f:tt)*) => {
-            #[allow(unused, dead_code)]
             {
+                #[allow(unused, dead_code)]
                 let _ = ($($f)*);
             }
         };
