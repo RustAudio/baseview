@@ -1,6 +1,7 @@
 use baseview::dpi::PhysicalPosition;
 use baseview::{
-    Event, EventStatus, HandlerError, MouseEvent, WindowContext, WindowHandler, WindowSize,
+    Event, EventStatus, HandlerError, MouseButton, MouseEvent, WindowContext, WindowHandler,
+    WindowSize,
 };
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
@@ -110,6 +111,16 @@ impl WindowHandler for OpenWindowExample {
             Event::Mouse(MouseEvent::CursorLeft) => {
                 self.is_cursor_inside.set(false);
                 self.damaged.set(true);
+            }
+            Event::Mouse(MouseEvent::ButtonPressed { button: MouseButton::Left, .. }) => {
+                let mut size = self.window_context.size().physical;
+                if self.mouse_pos.get().x < 100.0 {
+                    size.width -= 50;
+                } else {
+                    size.width += 50;
+                }
+
+                self.window_context.resize(size).unwrap();
             }
             _ => {}
         }

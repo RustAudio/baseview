@@ -1,4 +1,5 @@
 use crate::handler::WindowHandlerBuilder;
+use crate::host::Host;
 use crate::platform;
 use crate::*;
 use dpi::{LogicalSize, PhysicalSize, Pixel, Size};
@@ -11,16 +12,19 @@ pub struct WindowHandle {
 }
 
 impl WindowHandle {
+    #[inline]
     fn new(window_handle: platform::WindowHandle) -> Self {
         Self { window_handle, phantom: PhantomData }
     }
 
+    #[inline]
     pub fn run_until_closed(self) -> Result<(), Error> {
         self.window_handle.run_until_closed()?;
         Ok(())
     }
 
     /// The current size of the window.
+    #[inline]
     pub fn size(&self) -> WindowSize {
         self.window_handle.size()
     }
@@ -28,6 +32,7 @@ impl WindowHandle {
     /// Resizes the window to the given [`Size`].
     ///
     /// The `size` can be provided in either physical or logical pixels.
+    #[inline]
     pub fn resize(&self, size: Size) -> Result<(), Error> {
         self.window_handle.resize(size)?;
         Ok(())
@@ -47,6 +52,7 @@ impl WindowHandle {
     /// On X11, this value is used if no `Xft.dpi`setting is set.
     ///
     /// On macOS, this function is always a no-op.
+    #[inline]
     pub fn suggest_fallback_scale_factor(&self, scale_factor: f64) -> Result<(), Error> {
         self.window_handle.suggest_scale_factor(scale_factor)?;
         Ok(())
@@ -60,24 +66,50 @@ impl WindowHandle {
     /// this call.
     ///
     /// Calling this method is more explicit, but otherwise identical to just dropping this [`WindowHandle`].
+    #[inline]
     pub fn close(self) {
         drop(self)
     }
 
     /// Returns `true` if the window is still open, and returns `false`
     /// if the window was closed/dropped.
+    #[inline]
     pub fn is_open(&self) -> bool {
         self.window_handle.is_open()
     }
+
+    /// Performs the work the window thread had scheduled for the main thread.
+    ///
+    /// This must be called back on the main thread, as a response to [`HostMainThreadCaller::call_main_thread`](host::HostMainThreadCaller::call_main_thread).
+    ///
+    /// # Platform compatibility notes
+    ///
+    /// Only the X11 platform has a separate window thread, so this is only needed to run host callbacks on X11.
+    ///
+    /// On Windows and macOS, this is always a no-op.
+    #[inline]
+    pub fn host_main_thread_callback(&mut self) {
+        self.window_handle.handle_main_thread_callback()
+    }
 }
 
+#[inline]
 pub fn create_window<H: WindowHandler>(
     builder: WindowOpenOptions,
     handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
 ) -> Result<WindowHandle, Error> {
+    create_window_with_host(builder, handler, None)
+}
+
+pub fn create_window_with_host<H: WindowHandler>(
+    builder: WindowOpenOptions,
+    handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
+    host: impl Into<Option<Host>>,
+) -> Result<WindowHandle, Error> {
     Ok(WindowHandle::new(platform::WindowHandle::create_window(
         builder,
         WindowHandlerBuilder::new(handler),
+        host.into().unwrap_or_else(Host::default),
     )?))
 }
 

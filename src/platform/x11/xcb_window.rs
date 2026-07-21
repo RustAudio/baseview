@@ -1,3 +1,4 @@
+use crate::platform::x11::error::CookieExt;
 use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::X11Connection;
 use dpi::PhysicalSize;
@@ -111,8 +112,9 @@ impl XcbWindow {
 
 impl Drop for XcbWindow {
     fn drop(&mut self) {
-        // TODO: log error
-        let Ok(cookie) = self.connection.conn.destroy_window(self.window_id.get()) else { return };
-        let _ = cookie.check();
+        match self.connection.conn.destroy_window(self.window_id.get()) {
+            Err(e) => crate::warn!("Failed to send request to destroy X window: {}", e),
+            Ok(cookie) => cookie.check_warn(),
+        }
     }
 }

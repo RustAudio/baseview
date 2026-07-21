@@ -2,21 +2,22 @@ use crate::window_handler::OpenWindowExample;
 use crate::ExamplePluginMainThread;
 use baseview::dpi::*;
 use baseview::gl::GlConfig;
-use baseview::{WindowHandle, WindowOpenOptions, WindowSize};
+use baseview::host::{Host, HostCallbacks, HostMainThreadCaller};
+use baseview::{HandlerError, WindowHandle, WindowOpenOptions, WindowSize};
 use clack_extensions::gui::{
-    AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, PluginGuiImpl,
-    Window as ClapWindow,
+    AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, HostGui,
+    PluginGuiImpl, Window as ClapWindow,
 };
 use clack_plugin::plugin::PluginError;
-
+use clack_plugin::prelude::{HostMainThreadHandle, HostSharedHandle};
 #[allow(deprecated)]
 use raw_window_handle::HasRawWindowHandle;
 
 pub struct ExamplePluginGui {
-    handle: WindowHandle,
+    pub handle: WindowHandle,
 }
 
-impl PluginGuiImpl for ExamplePluginMainThread {
+impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     fn is_api_supported(&mut self, configuration: GuiConfiguration) -> bool {
         !configuration.is_floating
             && Some(configuration.api_type) == GuiApiType::default_for_current_platform()
@@ -97,7 +98,17 @@ impl PluginGuiImpl for ExamplePluginMainThread {
             .with_gl_config(GlConfig::default())
             .with_parent(&parent);
 
-        let window = baseview::create_window(options, OpenWindowExample::new)?;
+        let mut host = Host::new().with_main_thread(unsafe {
+            MainThreadHandler { host: self.host.shared().with_arbitrary_lifetime() }
+        });
+
+        if let Some(gui) = self.host_gui {
+            host = host.with_callbacks(unsafe {
+                HostGuiCallbacks { ext: gui, host: self.host.with_arbitrary_lifetime() }
+            });
+        }
+
+        let window = baseview::create_window_with_host(options, OpenWindowExample::new, host)?;
 
         self.gui = Some(ExamplePluginGui { handle: window });
 
@@ -143,5 +154,33 @@ fn gui_size_to_window_size(size: GuiSize) -> Size {
     #[cfg(not(target_os = "macos"))]
     {
         Size::Physical(PhysicalSize::new(size.width, size.height))
+    }
+}
+
+struct MainThreadHandler {
+    host: HostSharedHandle<'static>,
+}
+
+impl HostMainThreadCaller for MainThreadHandler {
+    fn call_main_thread(&mut self) {
+        eprintln!("Requesting main thread");
+        self.host.request_callback();
+    }
+}
+
+struct HostGuiCallbacks {
+    ext: HostGui,
+    host: HostMainThreadHandle<'static>,
+}
+
+impl HostCallbacks for HostGuiCallbacks {
+    fn request_resize(&mut self, new_size: WindowSize) -> Result<(), HandlerError> {
+        let size = window_size_to_gui_size(new_size);
+        self.ext.request_resize(&self.host, size.width, size.height)?;
+        Ok(())
+    }
+
+    fn destroyed(&mut self) {
+        self.ext.closed(&self.host, true);
     }
 }

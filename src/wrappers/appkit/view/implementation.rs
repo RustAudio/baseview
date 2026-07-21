@@ -187,7 +187,7 @@ extern "C-unwind" fn view_did_change_backing_properties<V: ViewImpl>(
     this: &View<V>, _: Sel, _: &AnyObject,
 ) {
     let Some(inner) = this.inner_ref() else { return };
-    V::view_did_change_backing_properties(inner);
+    V::view_did_change_backing_properties(inner, true);
 }
 
 extern "C-unwind" fn hit_test<V: ViewImpl>(

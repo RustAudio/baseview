@@ -61,7 +61,7 @@ pub(crate) struct WindowInner {
     pub(crate) is_focused: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
 
-    main_thread_shared: Arc<WindowThreadShared>,
+    pub(crate) main_thread_shared: Arc<WindowThreadShared>,
 }
 
 impl WindowInner {
@@ -188,7 +188,7 @@ impl WindowInner {
 
     pub fn resize(&self, size: Size) -> Result<()> {
         let new_physical_size = size.to_physical(self.scaling_factor.get());
-        self.xcb_window.resize(new_physical_size)?;
+        self.xcb_window.resize(new_physical_size)?.check()?;
 
         // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
         // and notify the window handler about it
@@ -205,8 +205,6 @@ impl WindowInner {
             return Ok(());
         };
 
-        self.xcb_window.resize(new_size.cast())?; // Will not call handler, as size is the same as above.
-
         if let Err(e) =
             handler.resized(WindowSize::from_physical(new_size.cast(), self.scaling_factor.get()))
         {
@@ -214,6 +212,10 @@ impl WindowInner {
             self.store_size(previous);
             return Err(e.into());
         }
+
+        self.xcb_window.resize(new_size.cast())?.check()?; // Will not call handler, as size is the same as above.
+
+        // These come from the Host, no need to notify it about the new size
 
         Ok(())
     }

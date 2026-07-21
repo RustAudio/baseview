@@ -3,7 +3,7 @@ use clack_plugin::prelude::*;
 
 pub struct ExamplePluginAudioProcessor;
 
-impl<'a> PluginAudioProcessor<'a, (), ExamplePluginMainThread> for ExamplePluginAudioProcessor {
+impl<'a> PluginAudioProcessor<'a, (), ExamplePluginMainThread<'a>> for ExamplePluginAudioProcessor {
     fn activate(
         _host: HostAudioProcessorHandle<'a>, _main_thread: &mut ExamplePluginMainThread,
         _shared: &'a (), _audio_config: PluginAudioConfiguration,

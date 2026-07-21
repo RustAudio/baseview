@@ -13,7 +13,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::warn;
+use crate::{warn, HandlerError};
 use dpi::{PhysicalPosition, PhysicalSize, Size};
 use std::cell::Cell;
 use std::num::NonZeroUsize;
@@ -23,6 +23,7 @@ pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 use super::drop_target::DropTarget;
 use super::*;
 use crate::handler::WindowHandlerBuilder;
+use crate::host::Host;
 use crate::platform::win::window_state::{WindowSharedState, WindowState};
 use crate::platform::Error;
 use crate::wrappers::win32::cursor::SystemCursor;
@@ -72,6 +73,7 @@ impl WindowHandle {
     pub fn resize(&self, new_size: Size) -> Result<()> {
         let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
         let new_size = new_size.to_physical(self.state.scale_factor());
+        let _guard = self.state.originate_host_resize();
         hwnd.resize_and_activate(new_size, self.state.current_dpi.get(), &self.state.user32)?;
 
         if self.state.current_size.get() == new_size {
@@ -104,6 +106,8 @@ impl WindowHandle {
             return Ok(());
         }
 
+        let _guard = self.state.originate_host_resize();
+
         hwnd.resize_and_activate(new_size, None, &self.state.user32)?;
 
         if self.state.current_size.get() == new_size {
@@ -112,12 +116,20 @@ impl WindowHandle {
             Err(Error::ResizeFailed)
         }
     }
+
+    #[inline]
+    pub fn handle_main_thread_callback(&self) {
+        // No-op
+    }
 }
 
 impl Drop for WindowHandle {
     fn drop(&mut self) {
         if let Some(hwnd) = self.hwnd.take() {
-            let _ = hwnd.destroy();
+            let _guard = self.state.originate_host_destroy();
+            if let Err(e) = hwnd.destroy() {
+                warn!("Failed to destroy window: {}", e);
+            }
         }
     }
 }
@@ -128,6 +140,7 @@ pub struct BaseviewWindow {
     initial_size: Size,
 
     handler_builder: Cell<Option<WindowHandlerBuilder>>,
+    host: Host,
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
     _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
@@ -137,9 +150,30 @@ pub struct BaseviewWindow {
     pub gl_config: Option<crate::gl::GlConfig>,
 }
 
+impl BaseviewWindow {
+    fn notify_destroyed_to_host(&self) {
+        if self.shared_state.destroy_host_originated.get() {
+            return;
+        };
+
+        self.host.notify_destroyed()
+    }
+
+    fn request_resize_from_host(
+        &self, new_size: WindowSize,
+    ) -> core::result::Result<(), HandlerError> {
+        if self.shared_state.resize_host_originated.get() {
+            return Ok(());
+        };
+
+        self.host.request_resize(new_size)
+    }
+}
+
 impl Drop for BaseviewWindow {
     fn drop(&mut self) {
         self.shared_state.is_alive.set(false);
+        self.notify_destroyed_to_host();
     }
 }
 
@@ -198,7 +232,7 @@ impl WindowImpl for BaseviewWindow {
     unsafe fn handle_message(
         &self, window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM,
     ) -> Option<LRESULT> {
-        unsafe { wnd_proc_inner(window, msg, wparam, lparam, &self.window_state) }
+        unsafe { wnd_proc_inner(window, msg, wparam, lparam, self) }
     }
 
     fn before_destroy(&self, window: HWnd) {
@@ -209,8 +243,9 @@ impl WindowImpl for BaseviewWindow {
 /// Our custom `wnd_proc` handler. If the result contains a value, then this is returned after
 /// handling any deferred tasks. otherwise the default window procedure is invoked.
 unsafe fn wnd_proc_inner(
-    window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM, window_state: &WindowState,
+    window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM, window_bv: &BaseviewWindow,
 ) -> Option<LRESULT> {
+    let window_state = &window_bv.window_state;
     match msg {
         WM_MOUSEMOVE => {
             if window_state.mouse_was_outside_window.get() {
@@ -398,6 +433,21 @@ unsafe fn wnd_proc_inner(
                 return Some(-1);
             }
 
+            if let Err(e) = window_bv.request_resize_from_host(new_size) {
+                warn!("Resize request from Host failed: {}. Reverting to previous size.", e);
+
+                if let Err(e) = handler.resized(new_size) {
+                    warn!("Window Handler failed to resize to previous window size: {}", e);
+                }
+
+                window_state.shared.current_size.set(previous);
+                if let Err(e) = window_state.resize(previous.into()) {
+                    warn!("Failed to resize back to previous window size: {}", e);
+                }
+
+                return Some(-1);
+            }
+
             None
         }
         WM_DPICHANGED => {
@@ -433,6 +483,21 @@ unsafe fn wnd_proc_inner(
                         warn!("Failed to resize back to previous window size: {}", e);
                     }
                 }
+
+                if let Err(e) = window_bv.request_resize_from_host(new_size) {
+                    warn!("Resize request from Host failed: {}. Reverting to previous size.", e);
+
+                    if let Err(e) = handler.resized(new_size) {
+                        warn!("Window Handler failed to resize to previous window size: {}", e);
+                    }
+
+                    window_state.shared.current_size.set(previous_size);
+                    if let Err(e) = window_state.resize(previous_size.into()) {
+                        warn!("Failed to resize back to previous window size: {}", e);
+                    }
+
+                    return Some(-1);
+                }
             }
 
             None
@@ -465,7 +530,7 @@ unsafe fn wnd_proc_inner(
 
 impl WindowHandle {
     pub fn create_window(
-        options: WindowOpenOptions, build: WindowHandlerBuilder,
+        options: WindowOpenOptions, build: WindowHandlerBuilder, host: Host,
     ) -> Result<WindowHandle> {
         let extended_user_32 = ExtendedUser32::load()?;
         let title = HSTRING::from(options.title);
@@ -495,6 +560,7 @@ impl WindowHandle {
                     initial_size: options.size,
                     handler_builder: Cell::new(Some(build)),
                     shared_state,
+                    host,
 
                     _drop_target: None.into(),
                     _keyboard_hook: None.into(),

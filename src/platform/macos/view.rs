@@ -3,6 +3,7 @@
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
 use crate::handler::WindowHandlerBuilder;
+use crate::host::Host;
 use crate::platform::*;
 use crate::tracing::warn;
 use crate::wrappers::appkit::*;
@@ -41,6 +42,8 @@ pub(crate) struct BaseviewView {
 
     parenting: ViewParentingType,
 
+    host: Host,
+
     #[cfg(feature = "opengl")]
     pub(crate) gl_context: std::cell::OnceCell<super::gl::GlContext>,
 }
@@ -48,7 +51,7 @@ pub(crate) struct BaseviewView {
 impl BaseviewView {
     pub fn new(
         _options: WindowOpenOptions, builder: WindowHandlerBuilder, parenting: ViewParentingType,
-        final_size: LogicalSize<f64>, mtm: MainThreadMarker,
+        host: Host, final_size: LogicalSize<f64>, mtm: MainThreadMarker,
     ) -> Result<(Retained<View<Self>>, Rc<WindowSharedState>)> {
         let view_rect =
             NSRect::new(NSPoint::ZERO, NSSize::new(final_size.width, final_size.height));
@@ -64,6 +67,7 @@ impl BaseviewView {
             window_handler: WindowHandlerContainer::new(),
             notification_center_observer: None.into(),
             parenting,
+            host,
 
             #[cfg(feature = "opengl")]
             gl_context: std::cell::OnceCell::new(),
@@ -131,7 +135,7 @@ impl BaseviewView {
         Ok((view, state))
     }
 
-    pub fn close(this: ViewRef<Self>) {
+    pub fn close(this: ViewRef<Self>, from_host: bool) {
         this.state.closed.set(true);
         this.view.removeFromSuperview();
         this.notification_center_observer.take();
@@ -149,9 +153,13 @@ impl BaseviewView {
                 app.stop(Some(&app));
             }
         }
+
+        if !from_host {
+            this.host.notify_destroyed();
+        }
     }
 
-    pub fn resize(this: ViewRef<Self>, size: Size) {
+    pub fn resize(this: ViewRef<Self>, size: Size, notify_host: bool) {
         let size = size.to_logical::<f64>(this.view.backing_scale_factor());
         // NOTE: macOS gives you a personal rave if you pass in fractional pixels here. Even
         // though the size is in fractional pixels.
@@ -174,7 +182,7 @@ impl BaseviewView {
             }
         }
 
-        Self::view_did_change_backing_properties(this);
+        Self::view_did_change_backing_properties(this, notify_host);
     }
 
     /// Trigger the event immediately and return the event status.
@@ -185,7 +193,7 @@ impl BaseviewView {
     fn trigger_frame(this: ViewRef<Self>) {
         if let Some(Err(e)) = this.window_handler.use_handler(|h| h.on_frame()) {
             warn!("Error while rendering frame: {}", e);
-            Self::close(this);
+            Self::close(this, false);
         }
     }
 }
@@ -216,12 +224,12 @@ impl ViewImpl for BaseviewView {
 
     fn window_should_close(this: ViewRef<Self>) -> bool {
         Self::trigger_event(this, Event::Window(WindowEvent::WillClose));
-        Self::close(this);
+        Self::close(this, false);
 
         true
     }
 
-    fn view_did_change_backing_properties(this: ViewRef<Self>) {
+    fn view_did_change_backing_properties(this: ViewRef<Self>, notify_host: bool) {
         let current_size = this.view.size();
         let current_scale_factor = this.view.backing_scale_factor();
 
@@ -232,15 +240,24 @@ impl ViewImpl for BaseviewView {
         {
             let previous = this.state.size.replace(current_size);
             this.state.scale_factor.set(current_scale_factor);
+            let new_size = WindowSize::from_logical(current_size, current_scale_factor);
 
-            let result = this.window_handler.use_handler(|h| {
-                h.resized(WindowSize::from_logical(current_size, current_scale_factor))
-            });
+            let result = this.window_handler.use_handler(|h| h.resized(new_size));
 
             if let Some(Err(e)) = result {
                 warn!("Window Handler failed to resize: {}", e);
                 this.state.size.set(previous);
-                Self::resize(this, previous.into())
+
+                Self::resize(this, previous.into(), false);
+                return;
+            }
+
+            if notify_host {
+                if let Err(e) = this.host.request_resize(new_size) {
+                    warn!("Host failed to resize parent view: {}", e);
+
+                    Self::resize(this, previous.into(), false);
+                }
             }
         }
     }

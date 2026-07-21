@@ -20,6 +20,24 @@ pub enum CreationFailedError {
     OpenError(OpenError),
 }
 
+impl Display for CreationFailedError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CreationFailedError::NoValidFBConfig => {
+                f.write_str("Could not find a valid Framebuffer configuration")
+            }
+            CreationFailedError::NoVisual => {
+                f.write_str("Could not find a matching visual configuration")
+            }
+            CreationFailedError::GetProcAddressFailed => f.write_str("GetProcAddress failed"),
+            CreationFailedError::MakeCurrentFailed => f.write_str("MakeCurrent failed"),
+            CreationFailedError::ContextCreationFailed => f.write_str("Faile to create GL context"),
+            CreationFailedError::X11Error(e) => e.fmt(f),
+            CreationFailedError::OpenError(e) => e.fmt(f),
+        }
+    }
+}
+
 pub type GlContext = Rc<GlContextInner>;
 
 pub struct GlContextInner {

@@ -1,7 +1,9 @@
 use super::*;
 use crate::handler::WindowHandlerBuilder;
-use crate::platform::x11::event_loop::EventLoop;
+use crate::host::{Host, HostCallbacks};
+use crate::platform::x11::event_loop::{EventLoop, MainThreadCaller};
 use crate::platform::x11::window_shared::WindowInner;
+use crate::warn;
 use crate::{WindowContext, WindowOpenOptions, WindowSize};
 use calloop::LoopSignal;
 use dpi::{PhysicalSize, Size};
@@ -18,6 +20,7 @@ pub(crate) struct WindowThreadShared {
     scaling_factor: AtomicU64,
     size: AtomicU32,
     final_error: Mutex<Option<String>>,
+    stopped_requested_from_host: AtomicBool,
 }
 
 impl WindowThreadShared {
@@ -27,6 +30,7 @@ impl WindowThreadShared {
             final_error: None.into(),
             size: 0.into(),
             scaling_factor: 0.into(),
+            stopped_requested_from_host: false.into(),
         }
     }
 
@@ -51,6 +55,10 @@ impl WindowThreadShared {
         self.scaling_factor
             .store(u64::from_be_bytes(scale_factor.to_ne_bytes()), Ordering::Relaxed);
     }
+
+    pub fn is_stop_host_requested(&self) -> bool {
+        self.stopped_requested_from_host.load(Ordering::Relaxed)
+    }
 }
 
 pub enum WindowThreadRequest {
@@ -64,6 +72,11 @@ pub enum WindowThreadResponse {
 
 pub type WindowThreadResponseMessage = core::result::Result<WindowThreadResponse, String>;
 
+pub enum HostCallback {
+    Resized { new_size: WindowSize, previous: WindowSize },
+    Destroyed,
+}
+
 pub struct WindowThreadHandle {
     shared: Arc<WindowThreadShared>,
     loop_signal: LoopSignal,
@@ -71,16 +84,19 @@ pub struct WindowThreadHandle {
 
     request_sender: calloop::channel::SyncSender<WindowThreadRequest>,
     response_receiver: mpsc::Receiver<WindowThreadResponseMessage>,
+    callback_receiver: Option<mpsc::Receiver<HostCallback>>,
+    host_callbacks: Option<Box<dyn HostCallbacks>>,
 }
 
 impl WindowThreadHandle {
     pub fn create_window(
-        options: WindowOpenOptions, handler: WindowHandlerBuilder,
+        options: WindowOpenOptions, handler: WindowHandlerBuilder, host: Host,
     ) -> Result<Self> {
         let (tx, rx) = result_channel();
         let shared = Arc::new(WindowThreadShared::new());
         let (request_sender, request_receiver) = calloop::channel::sync_channel(1);
         let (response_sender, response_receiver) = mpsc::channel();
+        let (main_thread_caller, main_thread_receiver) = MainThreadCaller::new(host.main_thread);
 
         let join_handle = {
             let shared = shared.clone();
@@ -92,6 +108,7 @@ impl WindowThreadHandle {
                     shared,
                     request_receiver,
                     response_sender,
+                    main_thread_caller,
                 ) {
                     Err(e) => return tx.send_error(e),
                     Ok(thread) => thread,
@@ -111,6 +128,8 @@ impl WindowThreadHandle {
             loop_signal,
             request_sender,
             response_receiver,
+            host_callbacks: host.callbacks.map(|c| c.into_inner()),
+            callback_receiver: main_thread_receiver,
         })
     }
 
@@ -130,12 +149,12 @@ impl WindowThreadHandle {
     }
 
     fn request(&self, req: WindowThreadRequest) -> Result<()> {
-        self.request_sender.send(req).unwrap(); // TODO: handle error
-        let result = self.response_receiver.recv().unwrap(); // TODO: handle error
+        self.request_sender.send(req).map_err(|_| RequestFailed::Send)?;
+        let result = self.response_receiver.recv().map_err(|_| RequestFailed::Recv)?;
 
         match result {
             Ok(WindowThreadResponse::Ok) => Ok(()),
-            Err(e) => Err(Error::Run(e)), // TODO: better error type?
+            Err(e) => Err(RequestFailed::Response(e).into()),
         }
     }
 
@@ -156,15 +175,45 @@ impl WindowThreadHandle {
     pub fn is_open(&self) -> bool {
         !self.shared.stopped.load(Ordering::Relaxed)
     }
+
+    pub fn handle_main_thread_callback(&mut self) {
+        loop {
+            let Some(receiver) = self.callback_receiver.as_mut() else { return };
+            let Some(callback) = receiver.try_recv().ok() else { return };
+
+            self.handle_main_thread_message(callback);
+        }
+    }
+
+    fn handle_main_thread_message(&mut self, msg: HostCallback) {
+        let Some(host_callbacks) = self.host_callbacks.as_mut() else { return };
+
+        match msg {
+            HostCallback::Destroyed => host_callbacks.destroyed(),
+            HostCallback::Resized { new_size: new, previous } => {
+                if let Err(e) = host_callbacks.request_resize(new) {
+                    warn!("Host failed to resize parent window: {}. Reverting.", e);
+
+                    if let Err(e) = self.resize(previous.physical.into()) {
+                        warn!(
+                            "Failed to revert to previous size while handling previous error: {}",
+                            e
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl Drop for WindowThreadHandle {
     fn drop(&mut self) {
+        self.shared.stopped_requested_from_host.store(true, Ordering::Relaxed);
         self.loop_signal.stop();
         self.loop_signal.wakeup();
 
         if let Err(e) = self.run_until_closed() {
-            crate::warn!("Error while closing window: {}", e)
+            warn!("Error while closing window: {}", e)
         }
     }
 }
@@ -180,16 +229,35 @@ struct WindowThread {
     shared: Arc<WindowThreadShared>,
 }
 
+#[derive(Debug)]
+pub enum RequestFailed {
+    Send,
+    Recv,
+    Response(String),
+}
+
+impl Display for RequestFailed {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RequestFailed::Send => f.write_str("Request to X11 thread failed: Could not send request (X11 thread disconnected)"),
+            RequestFailed::Recv => f.write_str("Request to X11 thread failed: Could not receive response (X11 thread disconnected)"),
+            RequestFailed::Response(e) => f.write_str(e),
+        }
+    }
+}
+
 impl WindowThread {
     pub fn create(
         options: WindowOpenOptions, handler: WindowHandlerBuilder, shared: Arc<WindowThreadShared>,
         receiver: calloop::channel::Channel<WindowThreadRequest>,
         sender: mpsc::Sender<WindowThreadResponseMessage>,
+        main_thread_caller: Option<MainThreadCaller>,
     ) -> Result<Self> {
         let mut ev_loop = calloop::EventLoop::try_new()?;
         let inner = WindowInner::create(options, &ev_loop, shared.clone())?;
         let handler = handler.build(WindowContext::new(Rc::clone(&inner)))?;
-        let event_loop = EventLoop::new(inner, handler, receiver, sender, &mut ev_loop)?;
+        let event_loop =
+            EventLoop::new(inner, handler, receiver, sender, main_thread_caller, &mut ev_loop)?;
 
         Ok(Self { event_loop, ev_loop, shared })
     }
@@ -230,7 +298,8 @@ impl WindowResultSender {
 struct WindowResultReceiver(mpsc::Receiver<WindowOpenResult>);
 impl WindowResultReceiver {
     pub fn receive(self) -> Result<LoopSignal> {
-        let result = self.0.recv()?;
+        let result = self.0.recv().map_err(|_| Error::MainThreadRecvResult)?;
+
         match result {
             WindowOpenResult::Error(e) => Err(Error::CreationFailed(e)),
             WindowOpenResult::Success { loop_signal } => Ok(loop_signal),

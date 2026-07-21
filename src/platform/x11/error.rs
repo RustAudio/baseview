@@ -1,14 +1,40 @@
 use crate::platform::x11::drag_n_drop::ParseError;
+use crate::platform::x11::window_thread::RequestFailed;
 use crate::platform::x11::xcb_connection::GetPropertyError;
 use crate::warn;
 use crate::wrappers::xlib::{DisplayOpenFailedError, InitThreadsFailedError};
 use crate::HandlerError;
-use std::sync::mpsc::RecvError;
+use std::fmt::{Display, Formatter};
 use x11_dl::error::OpenError;
 use x11rb::connection::RequestConnection;
 use x11rb::cookie::{Cookie, VoidCookie};
 use x11rb::errors::{ConnectError, ConnectionError, ReplyError, ReplyOrIdError};
 use x11rb::x11_utils::{TryParse, X11Error};
+
+#[derive(Debug)]
+pub enum FatalError {
+    Connection(ConnectionError),
+    SendMainThread,
+}
+
+impl Display for FatalError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FatalError::Connection(e) => e.fmt(f),
+            FatalError::SendMainThread => {
+                f.write_str("Failed to send callback from X11 thread to main thread")
+            }
+        }
+    }
+}
+
+impl std::error::Error for FatalError {}
+
+impl From<ConnectionError> for FatalError {
+    fn from(err: ConnectionError) -> FatalError {
+        FatalError::Connection(err)
+    }
+}
 
 #[derive(Debug)]
 pub enum Error {
@@ -25,20 +51,40 @@ pub enum Error {
     Connect(ConnectError),
     DisplayOpenFailed(DisplayOpenFailedError),
     Handler(HandlerError),
-    Channel(RecvError),
+    MainThreadRecvResult,
     Calloop(calloop::Error),
+    RequestFromMainThreadFailed(RequestFailed),
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
     #[cfg(feature = "opengl")]
     Gl(super::gl::CreationFailedError),
 }
 
-impl std::fmt::Display for Error {
+impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::Io(e) => e.fmt(f),
             Self::IdsExhausted => f.write_str("X11 IDs have been exhausted"),
-            _ => todo!(),
+            Error::CreationFailed(e) => write!(f, "Failed to create window: {e}"),
+            Error::Run(e) => write!(f, "Error in running X11 thread: {e}"),
+            Error::DylibOpen(e) => e.fmt(f),
+            Error::InitThreadsFailed(e) => e.fmt(f),
+            Error::X11(e) => write!(f, "X server replied with error: {e:?}"),
+            Error::Connection(e) => e.fmt(f),
+            Error::Parse(e) => e.fmt(f),
+            Error::GetProperty(e) => e.fmt(f),
+            Error::Connect(e) => e.fmt(f),
+            Error::DisplayOpenFailed(e) => e.fmt(f),
+            Error::Handler(e) => e.fmt(f),
+            Error::MainThreadRecvResult => {
+                f.write_str("Failed to receive Window creation response from X11 thread: channel was closed unexpectedly")
+            }
+            Error::Calloop(e) => e.fmt(f),
+            Error::RequestFromMainThreadFailed(e) => e.fmt(f),
+            #[cfg(feature = "opengl")]
+            Error::XLib(e) => e.fmt(f),
+            #[cfg(feature = "opengl")]
+            Error::Gl(e) => e.fmt(f),
         }
     }
 }
@@ -47,7 +93,6 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Io(e) => Some(e),
-            Error::Channel(e) => Some(e),
             Error::DylibOpen(e) => Some(e),
             Error::Connect(e) => Some(e),
             Error::Handler(e) => Some(e.source()),
@@ -106,9 +151,9 @@ impl From<calloop::Error> for Error {
     }
 }
 
-impl From<RecvError> for Error {
-    fn from(value: RecvError) -> Self {
-        Self::Channel(value)
+impl From<RequestFailed> for Error {
+    fn from(value: RequestFailed) -> Self {
+        Self::RequestFromMainThreadFailed(value)
     }
 }
 
