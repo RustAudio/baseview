@@ -15,7 +15,7 @@ use windows_sys::Win32::{
 
 use crate::{warn, HandlerError};
 use dpi::{PhysicalPosition, PhysicalSize, Size};
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::num::NonZeroUsize;
 
 pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
