@@ -43,7 +43,7 @@ pub(crate) struct BaseviewView {
 
     parenting: ViewParentingType,
 
-    host: RefCell<Host>,
+    host: Host,
 
     #[cfg(feature = "opengl")]
     pub(crate) gl_context: std::cell::OnceCell<super::gl::GlContext>,
@@ -136,7 +136,7 @@ impl BaseviewView {
         Ok((view, state))
     }
 
-    pub fn close(this: ViewRef<Self>) {
+    pub fn close(this: ViewRef<Self>, from_host: bool) {
         this.state.closed.set(true);
         this.view.removeFromSuperview();
         this.notification_center_observer.take();
@@ -153,6 +153,10 @@ impl BaseviewView {
             if let Some(app) = running_app.load() {
                 app.stop(Some(&app));
             }
+        }
+
+        if !from_host {
+            this.host.notify_destroyed();
         }
     }
 
@@ -190,20 +194,8 @@ impl BaseviewView {
     fn trigger_frame(this: ViewRef<Self>) {
         if let Some(Err(e)) = this.window_handler.use_handler(|h| h.on_frame()) {
             warn!("Error while rendering frame: {}", e);
-            Self::close(this);
+            Self::close(this, false);
         }
-    }
-
-    fn use_host_callback<E>(
-        this: ViewRef<Self>,
-        handle: impl FnOnce(&mut dyn HostCallbacks) -> core::result::Result<(), E>,
-    ) -> core::result::Result<(), E> {
-        let Ok(mut host) = this.host.try_borrow_mut() else {
-            return Ok(());
-        };
-
-        let Some(callback) = host.callbacks.as_mut() else { return Ok(()) };
-        handle(callback.deref_mut())
     }
 }
 
@@ -233,7 +225,7 @@ impl ViewImpl for BaseviewView {
 
     fn window_should_close(this: ViewRef<Self>) -> bool {
         Self::trigger_event(this, Event::Window(WindowEvent::WillClose));
-        Self::close(this);
+        Self::close(this, false);
 
         true
     }
@@ -260,7 +252,7 @@ impl ViewImpl for BaseviewView {
             }
 
             // TODO: only if not coming from host
-            if let Err(e) = Self::use_host_callback(this, |c| c.request_resize(new_size)) {
+            if let Err(e) = this.host.request_resize(new_size) {
                 warn!("Host failed to resize parent view: {}", e);
                 Self::resize(this, previous.into()) // TODO: break error loop?
             }

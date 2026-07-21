@@ -31,7 +31,7 @@ impl WindowContext {
     pub fn request_close(&self) {
         let Some(view) = self.view.load() else { return };
         let Some(view) = view.inner_ref() else { return };
-        BaseviewView::close(view);
+        BaseviewView::close(view, false);
     }
 
     pub fn has_focus(&self) -> bool {

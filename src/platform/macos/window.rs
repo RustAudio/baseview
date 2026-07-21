@@ -25,7 +25,7 @@ impl Drop for WindowHandle {
         let Some(view) = self.view.load() else { return };
         let Some(view) = view.inner_ref() else { return };
 
-        BaseviewView::close(view);
+        BaseviewView::close(view, true);
     }
 }
 

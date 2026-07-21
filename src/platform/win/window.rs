@@ -140,7 +140,7 @@ pub struct BaseviewWindow {
     initial_size: Size,
 
     handler_builder: Cell<Option<WindowHandlerBuilder>>,
-    host: RefCell<Host>,
+    host: Host,
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
     _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
@@ -156,10 +156,7 @@ impl BaseviewWindow {
             return;
         };
 
-        let Ok(mut host) = self.host.try_borrow_mut() else { return };
-        let Some(host) = &mut host.callbacks else { return };
-
-        host.destroyed()
+        self.host.notify_destroyed()
     }
 
     fn request_resize_from_host(
@@ -169,9 +166,7 @@ impl BaseviewWindow {
             return Ok(());
         };
 
-        let Ok(mut host) = self.host.try_borrow_mut() else { return Ok(()) };
-        let Some(host) = &mut host.callbacks else { return Ok(()) };
-        host.request_resize(new_size)
+        self.host.request_resize(new_size)
     }
 }
 

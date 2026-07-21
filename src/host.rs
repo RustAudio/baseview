@@ -1,4 +1,5 @@
 use crate::{HandlerError, WindowSize};
+use std::cell::RefCell;
 
 pub trait HostMainThreadCaller: Send + 'static {
     fn call_main_thread(&mut self);
@@ -12,7 +13,7 @@ pub trait HostCallbacks: 'static {
 pub struct Host {
     #[cfg(target_os = "linux")]
     pub(crate) main_thread: Option<Box<dyn HostMainThreadCaller>>,
-    pub(crate) callbacks: Option<Box<dyn HostCallbacks>>,
+    pub(crate) callbacks: Option<RefCell<Box<dyn HostCallbacks>>>,
 }
 
 impl Default for Host {
@@ -44,7 +45,22 @@ impl Host {
 
     #[inline]
     pub fn with_callbacks(mut self, callbacks: impl HostCallbacks) -> Self {
-        self.callbacks = Some(Box::new(callbacks));
+        self.callbacks = Some(RefCell::new(Box::new(callbacks)));
         self
+    }
+}
+
+#[allow(unused)]
+impl Host {
+    pub(crate) fn notify_destroyed(&self) {
+        let Some(callbacks) = &self.callbacks else { return };
+        let Ok(mut callbacks) = callbacks.try_borrow_mut() else { return };
+        callbacks.destroyed();
+    }
+
+    pub(crate) fn request_resize(&self, new_size: WindowSize) -> Result<(), HandlerError> {
+        let Some(callbacks) = &self.callbacks else { return Ok(()) };
+        let Ok(mut callbacks) = callbacks.try_borrow_mut() else { return Ok(()) };
+        callbacks.request_resize(new_size)
     }
 }
