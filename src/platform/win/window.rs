@@ -560,7 +560,7 @@ impl WindowHandle {
                     initial_size: options.size,
                     handler_builder: Cell::new(Some(build)),
                     shared_state,
-                    host: host.into(),
+                    host,
 
                     _drop_target: None.into(),
                     _keyboard_hook: None.into(),

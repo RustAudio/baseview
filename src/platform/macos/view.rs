@@ -67,7 +67,7 @@ impl BaseviewView {
             window_handler: WindowHandlerContainer::new(),
             notification_center_observer: None.into(),
             parenting,
-            host: host.into(),
+            host,
 
             #[cfg(feature = "opengl")]
             gl_context: std::cell::OnceCell::new(),
