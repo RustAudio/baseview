@@ -3,7 +3,7 @@
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
 use crate::handler::WindowHandlerBuilder;
-use crate::host::{Host, HostCallbacks};
+use crate::host::Host;
 use crate::platform::*;
 use crate::tracing::warn;
 use crate::wrappers::appkit::*;
@@ -23,7 +23,6 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
 use std::cell::{Cell, RefCell};
-use std::ops::DerefMut;
 use std::rc::Rc;
 
 pub enum ViewParentingType {
