@@ -298,7 +298,8 @@ impl WindowResultSender {
 struct WindowResultReceiver(mpsc::Receiver<WindowOpenResult>);
 impl WindowResultReceiver {
     pub fn receive(self) -> Result<LoopSignal> {
-        let result = self.0.recv()?;
+        let result = self.0.recv().map_err(|_| Error::MainThreadRecvResult)?;
+
         match result {
             WindowOpenResult::Error(e) => Err(Error::CreationFailed(e)),
             WindowOpenResult::Success { loop_signal } => Ok(loop_signal),

@@ -152,7 +152,7 @@ pub trait ViewImpl: Sized {
     fn become_first_responder(this: ViewRef<Self>) -> bool;
     fn resign_first_responder(this: ViewRef<Self>) -> bool;
     fn window_should_close(this: ViewRef<Self>) -> bool;
-    fn view_did_change_backing_properties(this: ViewRef<Self>);
+    fn view_did_change_backing_properties(this: ViewRef<Self>, from_host: bool);
     fn hit_test(this: ViewRef<'_, Self>, point: NSPoint) -> Option<&NSView>;
     fn view_will_move_to_window(this: ViewRef<Self>, new_window: Option<&NSWindow>);
     fn update_tracking_areas(this: ViewRef<Self>);

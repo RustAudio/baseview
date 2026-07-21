@@ -108,7 +108,7 @@ impl WindowHandle {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
-        BaseviewView::resize(view, size);
+        BaseviewView::resize(view, size, false);
 
         Ok(())
     }

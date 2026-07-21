@@ -134,7 +134,9 @@ impl EventLoop {
             self.window.store_size(previous);
             self.window.xcb_window.resize(previous.cast())?.check_warn();
         } else {
-            // TODO: only if this wansn't the result of a host request
+            // Host requests use resize_immediately, which stops the previous == new_size condition
+            // So if we're here, it's guaranteed not to be from a host request
+
             if let Some(host) = self.main_thread.as_mut() {
                 host.send(HostCallback::Resized {
                     new_size,

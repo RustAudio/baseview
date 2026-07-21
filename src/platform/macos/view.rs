@@ -159,7 +159,7 @@ impl BaseviewView {
         }
     }
 
-    pub fn resize(this: ViewRef<Self>, size: Size) {
+    pub fn resize(this: ViewRef<Self>, size: Size, notify_host: bool) {
         let size = size.to_logical::<f64>(this.view.backing_scale_factor());
         // NOTE: macOS gives you a personal rave if you pass in fractional pixels here. Even
         // though the size is in fractional pixels.
@@ -182,7 +182,7 @@ impl BaseviewView {
             }
         }
 
-        Self::view_did_change_backing_properties(this);
+        Self::view_did_change_backing_properties(this, notify_host);
     }
 
     /// Trigger the event immediately and return the event status.
@@ -229,7 +229,7 @@ impl ViewImpl for BaseviewView {
         true
     }
 
-    fn view_did_change_backing_properties(this: ViewRef<Self>) {
+    fn view_did_change_backing_properties(this: ViewRef<Self>, notify_host: bool) {
         let current_size = this.view.size();
         let current_scale_factor = this.view.backing_scale_factor();
 
@@ -247,13 +247,17 @@ impl ViewImpl for BaseviewView {
             if let Some(Err(e)) = result {
                 warn!("Window Handler failed to resize: {}", e);
                 this.state.size.set(previous);
-                Self::resize(this, previous.into())
+
+                Self::resize(this, previous.into(), false);
+                return;
             }
 
-            // TODO: only if not coming from host
-            if let Err(e) = this.host.request_resize(new_size) {
-                warn!("Host failed to resize parent view: {}", e);
-                Self::resize(this, previous.into()) // TODO: break error loop?
+            if notify_host {
+                if let Err(e) = this.host.request_resize(new_size) {
+                    warn!("Host failed to resize parent view: {}", e);
+
+                    Self::resize(this, previous.into(), false);
+                }
             }
         }
     }

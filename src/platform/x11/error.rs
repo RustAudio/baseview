@@ -22,8 +22,9 @@ impl Display for FatalError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             FatalError::Connection(e) => e.fmt(f),
-            // TODO: better errors
-            FatalError::SendMainThread => f.write_str("SendMainThread"),
+            FatalError::SendMainThread => {
+                f.write_str("Failed to send callback from X11 thread to main thread")
+            }
         }
     }
 }
@@ -51,7 +52,7 @@ pub enum Error {
     Connect(ConnectError),
     DisplayOpenFailed(DisplayOpenFailedError),
     Handler(HandlerError),
-    Channel(RecvError),
+    MainThreadRecvResult,
     Calloop(calloop::Error),
     RequestFromMainThreadFailed(RequestFailed),
     #[cfg(feature = "opengl")]
@@ -65,7 +66,26 @@ impl Display for Error {
         match self {
             Error::Io(e) => e.fmt(f),
             Self::IdsExhausted => f.write_str("X11 IDs have been exhausted"),
-            _ => todo!(),
+            Error::CreationFailed(e) => write!(f, "Failed to create window: {e}"),
+            Error::Run(e) => write!(f, "Error in running X11 thread: {e}"),
+            Error::DylibOpen(e) => e.fmt(f),
+            Error::InitThreadsFailed(e) => e.fmt(f),
+            Error::X11(e) => write!(f, "X server replied with error: {e:?}"),
+            Error::Connection(e) => e.fmt(f),
+            Error::Parse(e) => e.fmt(f),
+            Error::GetProperty(e) => e.fmt(f),
+            Error::Connect(e) => e.fmt(f),
+            Error::DisplayOpenFailed(e) => e.fmt(f),
+            Error::Handler(e) => e.fmt(f),
+            Error::MainThreadRecvResult => {
+                f.write_str("Failed to receive Window creation response from X11 thread: channel was closed unexpectedly")
+            }
+            Error::Calloop(e) => e.fmt(f),
+            Error::RequestFromMainThreadFailed(e) => e.fmt(f),
+            #[cfg(feature = "opengl")]
+            Error::XLib(e) => e.fmt(f),
+            #[cfg(feature = "opengl")]
+            Error::Gl(e) => e.fmt(f),
         }
     }
 }
@@ -74,7 +94,6 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Io(e) => Some(e),
-            Error::Channel(e) => Some(e),
             Error::DylibOpen(e) => Some(e),
             Error::Connect(e) => Some(e),
             Error::Handler(e) => Some(e.source()),
@@ -130,12 +149,6 @@ impl From<HandlerError> for Error {
 impl From<calloop::Error> for Error {
     fn from(value: calloop::Error) -> Self {
         Self::Calloop(value)
-    }
-}
-
-impl From<RecvError> for Error {
-    fn from(value: RecvError) -> Self {
-        Self::Channel(value)
     }
 }
 
