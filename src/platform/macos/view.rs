@@ -105,7 +105,7 @@ impl BaseviewView {
 
         let view = View::new(view_rect, inner, |view| {
             // Set up parenting before handler setup
-            parenting.setup(&view.view);
+            parenting.setup(view.view);
             view.parenting.replace(parenting);
 
             view.state.scale_factor.set(view.view.backing_scale_factor());
