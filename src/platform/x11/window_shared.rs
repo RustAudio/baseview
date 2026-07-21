@@ -92,7 +92,7 @@ impl WindowInner {
             Rc::clone(&connection),
             physical_size,
             &visual_info,
-            options.parent.map(|p| p.window_id),
+            options.parent.map(|p| p.inner.window_id),
         )?;
 
         let cookies = [
