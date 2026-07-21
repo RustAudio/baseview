@@ -128,7 +128,7 @@ impl WindowThreadHandle {
             loop_signal,
             request_sender,
             response_receiver,
-            host_callbacks: host.callbacks,
+            host_callbacks: host.callbacks.map(|c| c.into_inner()),
             callback_receiver: main_thread_receiver,
         })
     }
