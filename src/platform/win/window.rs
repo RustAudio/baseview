@@ -117,6 +117,20 @@ impl WindowHandle {
         }
     }
 
+    pub fn set_parent(&self, new_parent: ParentWindowHandle) -> Result<()> {
+        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
+
+        hwnd.set_parent(&new_parent.handle)?;
+
+        if !self.state.parented.get() {
+            self.state.parented.set(true);
+
+            hwnd.set_style(WindowStyle::parented())?;
+        }
+
+        Ok(())
+    }
+
     #[inline]
     pub fn handle_main_thread_callback(&self) {
         // No-op
@@ -545,7 +559,8 @@ impl WindowHandle {
             WindowStyle::embedded()
         };
         let dpi_ctx = DpiAwarenessContext::new(&extended_user_32)?;
-        let shared_state = WindowSharedState::new(window_size, extended_user_32.clone());
+        let shared_state =
+            WindowSharedState::new(window_size, extended_user_32.clone(), options.parent.is_some());
 
         let initializer = {
             let extended_user_32 = extended_user_32.clone();

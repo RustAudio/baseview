@@ -142,6 +142,7 @@ impl WindowState {
 }
 
 pub struct WindowSharedState {
+    pub parented: Cell<bool>,
     pub is_alive: Cell<bool>,
     pub current_size: Cell<PhysicalSize<u32>>,
     pub current_dpi: Cell<Option<Dpi>>, // None if Win32 HiDPI isn't supported
@@ -153,8 +154,11 @@ pub struct WindowSharedState {
 }
 
 impl WindowSharedState {
-    pub fn new(current_size: PhysicalSize<u32>, user32: ExtendedUser32) -> Rc<Self> {
+    pub fn new(
+        current_size: PhysicalSize<u32>, user32: ExtendedUser32, parented: bool,
+    ) -> Rc<Self> {
         Self {
+            parented: parented.into(),
             is_alive: true.into(),
             current_dpi: None.into(),
             current_size: current_size.into(),
