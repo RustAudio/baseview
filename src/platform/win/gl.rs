@@ -101,7 +101,7 @@ fn find_wgl_pixel_format(
         Ok(None) => {}
     };
 
-    eprintln!("Warning: sRGB framebuffer not supported, falling back to non-sRGB");
+    crate::warn!("Warning: sRGB framebuffer not supported, falling back to non-sRGB");
     format_attribs.set_without_srgb_ext();
 
     match extra.choose_pixel_format_from_attribs(&format_attribs, dc) {
