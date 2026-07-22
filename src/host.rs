@@ -3,7 +3,7 @@ use std::cell::RefCell;
 
 /// A special handler for the Window thread to wake up and call methods on the main thread.
 ///
-/// [`WindowHandle::host_main_thread_callback`](crate::WindowHandle::host_main_thread_callback)
+/// [`WindowHandle::host_main_thread_callback`](crate::Window::host_main_thread_callback)
 /// should be called as a response to this.
 ///
 /// # Platform compatibility notes
@@ -12,7 +12,7 @@ use std::cell::RefCell;
 pub trait HostMainThreadCaller: Send + 'static {
     /// Schedules a callback on the main thread.
     ///
-    /// [`WindowHandle::host_main_thread_callback`](crate::WindowHandle::host_main_thread_callback)
+    /// [`WindowHandle::host_main_thread_callback`](crate::Window::host_main_thread_callback)
     /// should be called as a response to this.
     ///
     /// # Platform compatibility notes
@@ -50,7 +50,7 @@ pub trait HostCallbacks: 'static {
 ///
 /// It also brings the additional safety guarantee that all handlers given to this types will be
 /// destroyed alongside with the window, guaranteeing callbacks cannot be fired after the
-/// [`WindowHandle`](crate::WindowHandle) is dropped. (or after this [`Host`] object is dropped, if
+/// [`WindowHandle`](crate::Window) is dropped. (or after this [`Host`] object is dropped, if
 /// it never made it to a [`create_window_with_host`](crate::create_window_with_host) call).
 pub struct Host {
     #[cfg(target_os = "linux")]
