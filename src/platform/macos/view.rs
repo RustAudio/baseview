@@ -10,7 +10,7 @@ use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
     DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowOpenOptions, WindowSize,
+    WindowHandler, WindowSettings, WindowSize,
 };
 use dpi::{LogicalPosition, LogicalSize, Size};
 use objc2::__framework_prelude::Retained;
@@ -79,7 +79,7 @@ pub(crate) struct BaseviewView {
 
 impl BaseviewView {
     pub fn new(
-        _options: WindowOpenOptions, builder: WindowHandlerBuilder, parenting: ViewParentingType,
+        _options: WindowSettings, builder: WindowHandlerBuilder, parenting: ViewParentingType,
         host: Host, final_size: LogicalSize<f64>, mtm: MainThreadMarker,
     ) -> Result<(Retained<View<Self>>, Rc<WindowSharedState>)> {
         let view_rect =

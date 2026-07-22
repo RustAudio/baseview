@@ -3,7 +3,7 @@ use std::cell::RefCell;
 
 /// A special handler for the Window thread to wake up and call methods on the main thread.
 ///
-/// [`WindowHandle::host_main_thread_callback`](crate::WindowHandle::host_main_thread_callback)
+/// [`WindowHandle::host_main_thread_callback`](crate::Window::host_main_thread_callback)
 /// should be called as a response to this.
 ///
 /// # Platform compatibility notes
@@ -12,7 +12,7 @@ use std::cell::RefCell;
 pub trait HostMainThreadCaller: Send + 'static {
     /// Schedules a callback on the main thread.
     ///
-    /// [`WindowHandle::host_main_thread_callback`](crate::WindowHandle::host_main_thread_callback)
+    /// [`WindowHandle::host_main_thread_callback`](crate::Window::host_main_thread_callback)
     /// should be called as a response to this.
     ///
     /// # Platform compatibility notes
@@ -48,10 +48,12 @@ pub trait HostCallbacks: 'static {
 ///
 /// This type and its methods are always safe to use.
 ///
-/// It also brings the additional safety guarantee that all handlers given to this types will be
-/// destroyed alongside with the window, guaranteeing callbacks cannot be fired after the
-/// [`WindowHandle`](crate::WindowHandle) is dropped. (or after this [`Host`] object is dropped, if
-/// it never made it to a [`create_window_with_host`](crate::create_window_with_host) call).
+/// It also brings the additional safety guarantee that all handlers given to this type will be
+/// destroyed alongside with the window.
+///
+/// This guarantees callbacks cannot be fired after the [`Window`](crate::Window) is dropped.
+/// (or after this [`Host`] object is dropped, if it never made it to a
+/// [`Window::create_with_host`](crate::Window::create_with_host) call).
 pub struct Host {
     #[cfg(target_os = "linux")]
     pub(crate) main_thread: Option<Box<dyn HostMainThreadCaller>>,
@@ -67,8 +69,8 @@ impl Default for Host {
 impl Host {
     /// Creates a new, empty host with no callbacks.
     ///
-    /// Calling [`create_window_with_host`](crate::create_window_with_host) with this is equivalent
-    /// to just calling [`create_window`](crate::create_window).
+    /// Calling [`Window::create_with_host`](crate::Window::create_with_host) with this is equivalent
+    /// to just calling [`Window::create`](crate::Window::create).
     #[inline]
     pub fn new() -> Self {
         Self {

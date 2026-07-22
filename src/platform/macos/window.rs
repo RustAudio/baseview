@@ -32,7 +32,7 @@ impl Drop for WindowHandle {
 
 impl WindowHandle {
     pub fn create_window(
-        mut options: WindowOpenOptions, handler: WindowHandlerBuilder, host: Host,
+        mut options: WindowSettings, handler: WindowHandlerBuilder, host: Host,
     ) -> Result<Self> {
         autoreleasepool(|_| {
             let Some(mtm) = MainThreadMarker::new() else {
@@ -57,7 +57,7 @@ impl WindowHandle {
     }
 
     pub fn create_window_parented(
-        builder: WindowOpenOptions, handler: WindowHandlerBuilder, host: Host,
+        builder: WindowSettings, handler: WindowHandlerBuilder, host: Host,
         parent_view: Retained<NSView>, mtm: MainThreadMarker,
     ) -> Result<Self> {
         let parenting =
@@ -74,8 +74,7 @@ impl WindowHandle {
     }
 
     pub fn create_window_standalone(
-        builder: WindowOpenOptions, handler: WindowHandlerBuilder, host: Host,
-        mtm: MainThreadMarker,
+        builder: WindowSettings, handler: WindowHandlerBuilder, host: Host, mtm: MainThreadMarker,
     ) -> Result<Self> {
         let window = create_window_with_options(&builder, mtm);
 
@@ -158,7 +157,7 @@ impl WindowHandle {
 }
 
 fn create_window_with_options(
-    options: &WindowOpenOptions, mtm: MainThreadMarker,
+    options: &WindowSettings, mtm: MainThreadMarker,
 ) -> Retained<NSWindow> {
     let initial_size = options.size.to_logical(1.0);
     let window = create_window(initial_size, mtm);

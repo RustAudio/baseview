@@ -32,9 +32,7 @@ use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessContext, ExtendedUser32, Rect,
     WindowStyle,
 };
-use crate::{
-    Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowOpenOptions, WindowSize,
-};
+use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSettings, WindowSize};
 
 #[allow(non_snake_case)]
 fn HIWORD(wparam: WPARAM) -> u16 {
@@ -560,7 +558,7 @@ unsafe fn wnd_proc_inner(
 
 impl WindowHandle {
     pub fn create_window(
-        options: WindowOpenOptions, build: WindowHandlerBuilder, host: Host,
+        options: WindowSettings, build: WindowHandlerBuilder, host: Host,
     ) -> Result<WindowHandle> {
         let extended_user_32 = ExtendedUser32::load()?;
         let title = HSTRING::from(options.title);

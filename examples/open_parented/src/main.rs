@@ -1,7 +1,7 @@
 use baseview::dpi::LogicalSize;
 use baseview::{
-    Event, EventStatus, HandlerError, WindowContext, WindowHandle, WindowHandler,
-    WindowOpenOptions, WindowSize,
+    Event, EventStatus, HandlerError, Window, WindowContext, WindowHandler, WindowSettings,
+    WindowSize,
 };
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
@@ -10,7 +10,7 @@ struct ParentWindowHandler {
     surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
     damaged: Cell<bool>,
 
-    child_window: WindowHandle,
+    child_window: Window,
 }
 
 impl ParentWindowHandler {
@@ -20,12 +20,12 @@ impl ParentWindowHandler {
         let size = window.size().physical;
         surface.resize(size.width.try_into()?, size.height.try_into()?)?;
 
-        let window_open_options = WindowOpenOptions::new()
+        let window_open_options = WindowSettings::new()
             .with_size(LogicalSize::new(256, 256))
             .with_parent(&window)
             .with_title("baseview child");
 
-        let child_window = baseview::create_window(window_open_options, ChildWindowHandler::new)?;
+        let child_window = Window::create(window_open_options, ChildWindowHandler::new)?;
 
         Ok(Self { surface: surface.into(), damaged: true.into(), child_window })
     }
@@ -128,9 +128,9 @@ impl WindowHandler for ChildWindowHandler {
 }
 
 fn main() -> Result<(), baseview::Error> {
-    let window_open_options = WindowOpenOptions::new().with_size(LogicalSize::new(512.0, 512.0));
+    let window_open_options = WindowSettings::new().with_size(LogicalSize::new(512.0, 512.0));
 
-    baseview::create_window(window_open_options, ParentWindowHandler::new)?.run_until_closed()?;
+    Window::create(window_open_options, ParentWindowHandler::new)?.run_until_closed()?;
 
     Ok(())
 }

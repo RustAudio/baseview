@@ -3,7 +3,7 @@ use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::x11::window_thread::WindowThreadShared;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::*;
-use crate::{warn, MouseCursor, WindowHandler, WindowOpenOptions, WindowSize};
+use crate::{warn, MouseCursor, WindowHandler, WindowSettings, WindowSize};
 use calloop::LoopSignal;
 use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
@@ -66,7 +66,7 @@ pub(crate) struct WindowInner {
 
 impl WindowInner {
     pub(crate) fn create(
-        options: WindowOpenOptions, ev_loop: &calloop::EventLoop<'static, EventLoop>,
+        options: WindowSettings, ev_loop: &calloop::EventLoop<'static, EventLoop>,
         shared: Arc<WindowThreadShared>,
     ) -> Result<Rc<Self>> {
         // Connect to the X server

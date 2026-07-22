@@ -4,7 +4,7 @@ use crate::host::{Host, HostCallbacks};
 use crate::platform::x11::event_loop::{EventLoop, MainThreadCaller};
 use crate::platform::x11::window_shared::WindowInner;
 use crate::warn;
-use crate::{WindowContext, WindowOpenOptions, WindowSize};
+use crate::{WindowContext, WindowSettings, WindowSize};
 use calloop::LoopSignal;
 use dpi::{PhysicalSize, Size};
 use std::cell::Cell;
@@ -94,7 +94,7 @@ pub struct WindowThreadHandle {
 
 impl WindowThreadHandle {
     pub fn create_window(
-        options: WindowOpenOptions, handler: WindowHandlerBuilder, host: Host,
+        options: WindowSettings, handler: WindowHandlerBuilder, host: Host,
     ) -> Result<Self> {
         let (tx, rx) = result_channel();
         let shared = Arc::new(WindowThreadShared::new());
@@ -263,7 +263,7 @@ impl Display for RequestFailed {
 
 impl WindowThread {
     pub fn create(
-        options: WindowOpenOptions, handler: WindowHandlerBuilder, shared: Arc<WindowThreadShared>,
+        options: WindowSettings, handler: WindowHandlerBuilder, shared: Arc<WindowThreadShared>,
         receiver: calloop::channel::Channel<WindowThreadRequest>,
         sender: mpsc::Sender<WindowThreadResponseMessage>,
         main_thread_caller: Option<MainThreadCaller>,

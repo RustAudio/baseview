@@ -1,6 +1,7 @@
 use baseview::dpi::{LogicalSize, PhysicalSize};
 use baseview::{
-    Event, EventStatus, HandlerError, WindowContext, WindowHandler, WindowOpenOptions, WindowSize,
+    Event, EventStatus, HandlerError, Window, WindowContext, WindowHandler, WindowSettings,
+    WindowSize,
 };
 
 use log::LevelFilter;
@@ -210,11 +211,10 @@ impl WindowHandler for WgpuExample {
 
 fn main() -> Result<(), baseview::Error> {
     env_logger::builder().filter_level(LevelFilter::Debug).init();
-    let window_open_options = WindowOpenOptions::new()
-        .with_title("WGPU on Baseview")
-        .with_size(LogicalSize::new(512, 512));
+    let window_open_options =
+        WindowSettings::new().with_title("WGPU on Baseview").with_size(LogicalSize::new(512, 512));
 
-    baseview::create_window(window_open_options, |c| pollster::block_on(WgpuExample::new(c)))?
+    Window::create(window_open_options, |c| pollster::block_on(WgpuExample::new(c)))?
         .run_until_closed()?;
 
     Ok(())
