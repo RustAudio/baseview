@@ -5,6 +5,38 @@ use crate::*;
 use dpi::{LogicalSize, PhysicalSize, Pixel, Size};
 use std::marker::PhantomData;
 
+/// A handle to a Window created by baseview.
+///
+/// Unlike some other windowing libraries like `winit`, baseview [`Window`]s manage their own
+/// lifecycle.
+///
+/// All of its events and internal operations (such as rendering) are handled in a separate
+/// [`WindowHandler`] type, which is owned by the window itself.
+///
+/// Dropping this [`Window`] handle will always destroy the window, and drop its associated
+/// [`WindowHandler`] and [`Host`] types.
+///
+/// # Window lifecycle and ownership
+///
+/// Owning this [`Window`] does not mean you fully own the window itself, per se.
+/// While you control when the window is [`create`d](Self::create), you do not have the sole control
+/// over when it is destroyed.
+///
+/// The lifetime of this [`Window`] handle is going to be the longest possible lifetime for the
+/// underlying platform window, but it can be destroyed earlier than this.
+///
+/// This is because while dropping this handle will always destroy the window, it can be destroyed
+/// from other factors, such as:
+///
+/// * The [`WindowHandler`] decided to close the window itself, e.g. by calling [`WindowContext::request_close`] from the user clicking an internal "close" button;
+/// * The [`WindowContext`] encountered a fatal error (e.g. during rendering) or panicked,
+///   and cannot operate anymore.
+/// * The underlying platform closed or destroyed the window directly.
+/// * The connection to the display server (on e.g. X11) was lost.
+///
+/// This type makes enables to handle those cases safely: most methods will either return errors or
+/// become no-ops. You can use the [`Window::is_open`] method to know if the window has been closed.
+///
 pub struct Window {
     inner: platform::WindowHandle,
     // so that WindowHandle is !Send on all platforms
@@ -12,22 +44,38 @@ pub struct Window {
 }
 
 impl Window {
+    /// Creates a new window, using the given [`WindowOpenOptions`] and a builder closure to
+    /// create the associated [`WindowHandler`].
+    ///
+    /// This function creates the window but does not open or show it.
+    /// You must use the [`show`](Self::show) method to actually open it.
+    /// (unless you use [`run_until_closed`](Self::run_until_closed), which does it automatically)
     #[inline]
     pub fn create<H: WindowHandler>(
-        builder: WindowOpenOptions,
+        options: WindowOpenOptions,
         handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
     ) -> Result<Window, Error> {
-        Self::create_with_host(builder, handler, None)
+        Self::create_with_host(options, handler, None)
     }
 
+    /// Creates a new window, using the given [`WindowOpenOptions`] and a builder closure to
+    /// create the associated [`WindowHandler`], as well as an optional [`Host`] containing callbacks
+    /// to a potential system that is hosting the window (e.g. in a plug-in setting).
+    ///
+    /// This function creates the window but does not open or show it.
+    /// You must use the [`show`](Self::show) method to actually open it.
+    /// (unless you use [`run_until_closed`](Self::run_until_closed), which does it automatically)
+    ///
+    /// Calling this function with [`None`] for the `host` value is equivalent to calling
+    /// [`create`](Self::create).
     pub fn create_with_host<H: WindowHandler>(
-        builder: WindowOpenOptions,
+        options: WindowOpenOptions,
         handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
         host: impl Into<Option<Host>>,
     ) -> Result<Window, Error> {
         Ok(Self {
             inner: platform::WindowHandle::create_window(
-                builder,
+                options,
                 WindowHandlerBuilder::new(handler),
                 host.into().unwrap_or_else(Host::default),
             )?,
@@ -53,6 +101,8 @@ impl Window {
     /// Resizes the window to the given [`Size`].
     ///
     /// The `size` can be provided in either physical or logical pixels.
+    ///
+    /// Using this method does *not* trigger the [`HostCallbacks::request_resize`](host::HostCallbacks) callback.
     #[inline]
     pub fn resize(&self, size: Size) -> Result<(), Error> {
         self.inner.resize(size)?;
