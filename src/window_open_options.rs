@@ -4,14 +4,18 @@ use crate::platform;
 use dpi::{LogicalSize, Size};
 use raw_window_handle::HasWindowHandle;
 
-/// The options for opening a new window
+/// Settings used when creating a new window
 #[derive(Debug, Clone, PartialEq)]
-pub struct WindowOpenOptions {
+pub struct WindowSettings {
+    /// The window title
     pub title: String,
 
     /// The size of the window, either in physical or logical coordinates
     pub size: Size,
 
+    /// If the window is to be embedded in a parent window, the handle to that window.
+    ///
+    /// If `None`, the window will be standalone.
     pub parent: Option<ParentWindowHandle>,
 
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
@@ -22,7 +26,7 @@ pub struct WindowOpenOptions {
     pub gl_config: Option<GlConfig>,
 }
 
-impl WindowOpenOptions {
+impl WindowSettings {
     #[inline]
     pub fn new() -> Self {
         Self::default()
@@ -44,9 +48,7 @@ impl WindowOpenOptions {
     pub fn with_parent<'a, P: HasWindowHandle + 'a>(
         mut self, parent: impl Into<Option<&'a P>>,
     ) -> Self {
-        let Some(parent) = parent.into() else { return self };
-
-        self.parent = Some(ParentWindowHandle::from_window(parent));
+        self.parent = parent.into().map(ParentWindowHandle::from_window);
         self
     }
 
@@ -58,7 +60,7 @@ impl WindowOpenOptions {
     }
 }
 
-impl Default for WindowOpenOptions {
+impl Default for WindowSettings {
     fn default() -> Self {
         Self {
             title: String::from("baseview window"),

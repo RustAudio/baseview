@@ -9,7 +9,7 @@ use baseview::copy_to_clipboard;
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::{
     Event, EventStatus, HandlerError, MouseEvent, Window, WindowContext, WindowHandler,
-    WindowOpenOptions, WindowSize,
+    WindowSettings, WindowSize,
 };
 
 #[derive(Debug, Clone)]
@@ -140,7 +140,7 @@ impl WindowHandler for OpenWindowExample {
 }
 
 fn main() -> Result<(), baseview::Error> {
-    let window_open_options = WindowOpenOptions::new().with_size(LogicalSize::new(512.0, 512.0));
+    let window_open_options = WindowSettings::new().with_size(LogicalSize::new(512.0, 512.0));
 
     let (mut tx, rx) = RingBuffer::new(128);
 

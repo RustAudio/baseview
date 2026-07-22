@@ -1,6 +1,6 @@
 use baseview::dpi::LogicalSize;
 use baseview::{
-    Event, EventStatus, HandlerError, Window, WindowContext, WindowHandler, WindowOpenOptions,
+    Event, EventStatus, HandlerError, Window, WindowContext, WindowHandler, WindowSettings,
     WindowSize,
 };
 use std::cell::{Cell, RefCell};
@@ -20,7 +20,7 @@ impl ParentWindowHandler {
         let size = window.size().physical;
         surface.resize(size.width.try_into()?, size.height.try_into()?)?;
 
-        let window_open_options = WindowOpenOptions::new()
+        let window_open_options = WindowSettings::new()
             .with_size(LogicalSize::new(256, 256))
             .with_parent(&window)
             .with_title("baseview child");
@@ -128,7 +128,7 @@ impl WindowHandler for ChildWindowHandler {
 }
 
 fn main() -> Result<(), baseview::Error> {
-    let window_open_options = WindowOpenOptions::new().with_size(LogicalSize::new(512.0, 512.0));
+    let window_open_options = WindowSettings::new().with_size(LogicalSize::new(512.0, 512.0));
 
     Window::create(window_open_options, ParentWindowHandler::new)?.run_until_closed()?;
 
