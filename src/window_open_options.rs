@@ -6,6 +6,7 @@ use raw_window_handle::HasWindowHandle;
 
 /// Settings used when creating a new window
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct WindowSettings {
     /// The window title
     pub title: String,
