@@ -22,7 +22,7 @@ impl FemtovgExample {
         unsafe { gl_context.make_current()? };
 
         let renderer =
-            unsafe { OpenGl::new_from_function(|s| gl_context.get_proc_address_from_str(s)) }?;
+            unsafe { OpenGl::new_from_function_cstr(|s| gl_context.get_proc_address(s)) }?;
 
         let mut canvas = Canvas::new(renderer)?;
         let size = window_context.size();
