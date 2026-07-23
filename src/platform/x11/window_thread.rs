@@ -66,6 +66,14 @@ impl WindowThreadShared {
     }
 }
 
+struct ThreadStopWatcher(Arc<WindowThreadShared>);
+
+impl Drop for ThreadStopWatcher {
+    fn drop(&mut self) {
+        self.0.stopped.store(true, Ordering::Relaxed);
+    }
+}
+
 pub enum WindowThreadRequest {
     SuggestScaleFactor(f64),
     Resize(Size),
@@ -104,6 +112,7 @@ impl WindowThreadHandle {
 
         let join_handle = {
             let shared = shared.clone();
+            let stop_watcher = ThreadStopWatcher(shared.clone());
 
             thread::spawn(move || {
                 let thread = match WindowThread::create(
@@ -121,6 +130,9 @@ impl WindowThreadHandle {
                 if tx.send_success(&thread) {
                     thread.run()
                 }
+
+                // Forces the stop_watcher to be moved to this closure
+                drop(stop_watcher);
             })
         };
 
@@ -160,7 +172,9 @@ impl WindowThreadHandle {
     }
 
     pub fn run_until_closed(&self) -> Result<()> {
-        self.request(WindowThreadRequest::Show)?;
+        if !self.shared.stopped.load(Ordering::Relaxed) {
+            self.request(WindowThreadRequest::Show)?;
+        }
 
         let Some(thread) = self.event_loop_handle.take() else { return Ok(()) };
 
