@@ -8,14 +8,13 @@ pub struct WindowStyle {
 
 impl WindowStyle {
     pub const fn parented() -> Self {
-        Self { style: WS_CHILD | WS_VISIBLE, style_ex: 0 }
+        Self { style: WS_CHILD, style_ex: 0 }
     }
 
     pub const fn embedded() -> Self {
         Self {
             style: WS_POPUPWINDOW
                 | WS_CAPTION
-                | WS_VISIBLE
                 | WS_SIZEBOX
                 | WS_MINIMIZEBOX
                 | WS_MAXIMIZEBOX

@@ -126,6 +126,9 @@ impl WindowHandle {
             self.state.parented.set(true);
 
             hwnd.set_style(WindowStyle::parented())?;
+            let _guard = self.state.originate_host_resize();
+            let dpi = self.state.current_dpi.get();
+            hwnd.resize_and_activate(self.state.current_size.get(), dpi, &self.state.user32)?;
         }
 
         Ok(())
