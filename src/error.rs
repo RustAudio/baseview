@@ -51,17 +51,22 @@ impl From<HandlerError> for Error {
 ///
 /// [`Error`]: std::error::Error
 pub struct HandlerError {
-    inner: Box<dyn std::error::Error + 'static>,
+    inner: Box<dyn std::error::Error>,
 }
 
 impl HandlerError {
+    #[inline]
+    pub fn from_boxed(error: Box<dyn std::error::Error>) -> Self {
+        Self { inner: error }
+    }
+
     #[inline]
     pub fn source(&self) -> &(dyn std::error::Error + 'static) {
         self.inner.as_ref()
     }
 
     #[inline]
-    pub fn into_inner(self) -> Box<dyn std::error::Error + 'static> {
+    pub fn into_inner(self) -> Box<dyn std::error::Error> {
         self.inner
     }
 }
