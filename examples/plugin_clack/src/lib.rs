@@ -1,7 +1,9 @@
 use crate::audio::ExamplePluginAudioProcessor;
 use crate::gui::ExamplePluginGui;
 use clack_extensions::gui::{HostGui, PluginGui};
+use clack_extensions::state::{PluginState, PluginStateImpl};
 use clack_plugin::prelude::*;
+use clack_plugin::stream::{InputStream, OutputStream};
 
 mod audio;
 mod gui;
@@ -18,7 +20,7 @@ impl Plugin for ExamplePlugin {
     type MainThread<'a> = ExamplePluginMainThread<'a>;
 
     fn declare_extensions(builder: &mut PluginExtensions<Self>, _shared: Option<&()>) {
-        builder.register::<PluginGui>();
+        builder.register::<PluginGui>().register::<PluginState>();
     }
 }
 
@@ -56,6 +58,16 @@ impl<'a> PluginMainThread<'a, ()> for ExamplePluginMainThread<'a> {
         if let Some(gui) = self.gui.as_mut() {
             gui.handle.host_main_thread_callback();
         }
+    }
+}
+
+impl PluginStateImpl for ExamplePluginMainThread<'_> {
+    fn save(&mut self, _output: &mut OutputStream) -> Result<(), PluginError> {
+        Ok(())
+    }
+
+    fn load(&mut self, _input: &mut InputStream) -> Result<(), PluginError> {
+        Ok(())
     }
 }
 
