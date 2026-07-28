@@ -33,7 +33,7 @@ use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessContext, ExtendedUser32, Rect,
     WindowStyle,
 };
-use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSettings, WindowSize};
+use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 
 #[allow(non_snake_case)]
 fn HIWORD(wparam: WPARAM) -> u16 {
