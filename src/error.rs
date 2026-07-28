@@ -88,3 +88,9 @@ impl<E: std::error::Error + 'static> From<E> for HandlerError {
         Self { inner: Box::new(value) }
     }
 }
+
+impl From<HandlerError> for Box<dyn std::error::Error + 'static> {
+    fn from(value: HandlerError) -> Self {
+        value.inner
+    }
+}
