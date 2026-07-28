@@ -26,6 +26,7 @@ impl ParentWindowHandler {
             .with_title("baseview child");
 
         let child_window = Window::create(window_open_options, ChildWindowHandler::new)?;
+        child_window.show()?;
 
         Ok(Self { surface: surface.into(), damaged: true.into(), child_window })
     }

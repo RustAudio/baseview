@@ -69,16 +69,18 @@ impl Window {
     /// Calling this function with [`None`] for the `host` value is equivalent to calling
     /// [`create`](Self::create).
     pub fn create_with_host<H: WindowHandler>(
-        options: WindowSettings,
+        settings: WindowSettings,
         handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
         host: impl Into<Option<Host>>,
     ) -> Result<Window, Error> {
+        let initializer = WindowInitializer {
+            settings,
+            builder: WindowHandlerBuilder::new(handler),
+            host: host.into().unwrap_or_else(Host::default),
+        };
+
         Ok(Self {
-            inner: platform::WindowHandle::create_window(
-                options,
-                WindowHandlerBuilder::new(handler),
-                host.into().unwrap_or_else(Host::default),
-            )?,
+            inner: platform::WindowHandle::create_window(initializer)?,
             phantom: PhantomData,
         })
     }
@@ -188,6 +190,12 @@ impl Window {
         self.inner.hide()?;
         Ok(())
     }
+}
+
+pub(crate) struct WindowInitializer {
+    pub settings: WindowSettings,
+    pub builder: WindowHandlerBuilder,
+    pub host: Host,
 }
 
 /// A window's size, which can be read in either logical or physical pixels.

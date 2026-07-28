@@ -1,9 +1,10 @@
 use super::*;
 use crate::handler::WindowHandlerBuilder;
-use crate::host::{Host, HostCallbacks};
+use crate::host::HostCallbacks;
 use crate::platform::x11::event_loop::{EventLoop, MainThreadCaller};
 use crate::platform::x11::window_shared::WindowInner;
 use crate::warn;
+use crate::window::WindowInitializer;
 use crate::{WindowContext, WindowSettings, WindowSize};
 use calloop::LoopSignal;
 use dpi::{PhysicalSize, Size};
@@ -101,14 +102,13 @@ pub struct WindowThreadHandle {
 }
 
 impl WindowThreadHandle {
-    pub fn create_window(
-        options: WindowSettings, handler: WindowHandlerBuilder, host: Host,
-    ) -> Result<Self> {
+    pub fn create_window(init: WindowInitializer) -> Result<Self> {
         let (tx, rx) = result_channel();
         let shared = Arc::new(WindowThreadShared::new());
         let (request_sender, request_receiver) = calloop::channel::sync_channel(1);
         let (response_sender, response_receiver) = mpsc::channel();
-        let (main_thread_caller, main_thread_receiver) = MainThreadCaller::new(host.main_thread);
+        let (main_thread_caller, main_thread_receiver) =
+            MainThreadCaller::new(init.host.main_thread);
 
         let join_handle = {
             let shared = shared.clone();
@@ -116,8 +116,8 @@ impl WindowThreadHandle {
 
             thread::spawn(move || {
                 let thread = match WindowThread::create(
-                    options,
-                    handler,
+                    init.settings,
+                    init.builder,
                     shared,
                     request_receiver,
                     response_sender,
@@ -144,7 +144,7 @@ impl WindowThreadHandle {
             loop_signal,
             request_sender,
             response_receiver,
-            host_callbacks: host.callbacks.map(|c| c.into_inner()),
+            host_callbacks: init.host.callbacks.map(|c| c.into_inner()),
             callback_receiver: main_thread_receiver,
         })
     }

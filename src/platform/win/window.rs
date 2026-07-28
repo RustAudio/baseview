@@ -26,13 +26,14 @@ use crate::handler::WindowHandlerBuilder;
 use crate::host::Host;
 use crate::platform::win::window_state::{WindowSharedState, WindowState};
 use crate::platform::Error;
+use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessContext, ExtendedUser32, Rect,
     WindowStyle,
 };
-use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSettings, WindowSize};
+use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 
 #[allow(non_snake_case)]
 fn HIWORD(wparam: WPARAM) -> u16 {
@@ -50,6 +51,7 @@ const WIN_FRAME_TIMER: NonZeroUsize = match NonZeroUsize::new(4242) {
 };
 
 pub struct WindowHandle {
+    init: Cell<Option<WindowInitializer>>,
     hwnd: Cell<Option<HWnd>>,
     state: Rc<WindowSharedState>,
 }
@@ -71,8 +73,15 @@ impl WindowHandle {
     }
 
     pub fn resize(&self, new_size: Size) -> Result<()> {
-        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
         let new_size = new_size.to_physical(self.state.scale_factor());
+        let hwnd = match self.hwnd.get() {
+            Some(hwnd) => hwnd,
+            None => {
+                self.state.current_size.set(new_size);
+                return Ok(());
+            }
+        };
+
         let _guard = self.state.originate_host_resize();
         hwnd.resize_and_activate(new_size, self.state.current_dpi.get(), &self.state.user32)?;
 
@@ -84,14 +93,14 @@ impl WindowHandle {
     }
 
     pub fn suggest_scale_factor(&self, scale_factor: f64) -> Result<()> {
-        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
-
         let current_scale_factor = self.state.scale_factor();
         self.state.fallback_scale_factor.set(Some(scale_factor));
 
         if self.state.current_dpi.get().is_some() {
             return Ok(());
         }
+
+        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
 
         let current_size = self.state.current_size.get();
         let new_size = self
@@ -118,7 +127,18 @@ impl WindowHandle {
     }
 
     pub fn set_parent(&self, new_parent: ParentWindowHandle) -> Result<()> {
-        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
+        let hwnd = match self.hwnd.get() {
+            Some(hwnd) => hwnd,
+            None => {
+                let Some(mut init) = self.init.take() else { return Ok(()) };
+                init.settings.parent = Some(new_parent.into());
+
+                let window = BaseviewWindow::create(self.state.clone(), init)?;
+                self.hwnd.set(Some(window));
+
+                return Ok(());
+            }
+        };
 
         hwnd.set_parent(&new_parent.handle)?;
 
@@ -140,7 +160,18 @@ impl WindowHandle {
     }
 
     pub fn show(&self) -> Result<()> {
-        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
+        let hwnd = match self.hwnd.get() {
+            Some(hwnd) => hwnd,
+            None => {
+                let Some(init) = self.init.take() else { return Ok(()) };
+
+                let window = BaseviewWindow::create(self.state.clone(), init)?;
+                self.hwnd.set(Some(window));
+
+                return Ok(());
+            }
+        };
+
         hwnd.show_and_activate();
 
         Ok(())
@@ -182,6 +213,58 @@ pub struct BaseviewWindow {
 }
 
 impl BaseviewWindow {
+    pub fn create(shared_state: Rc<WindowSharedState>, init: WindowInitializer) -> Result<HWnd> {
+        let dpi_ctx = DpiAwarenessContext::new(&shared_state.user32)?;
+
+        let style = if init.settings.parent.is_some() {
+            WindowStyle::parented()
+        } else {
+            WindowStyle::embedded()
+        };
+
+        let window_size = shared_state.current_size.get();
+
+        let initializer = {
+            let shared_state = shared_state.clone();
+
+            move |hwnd: HWnd| {
+                let window_state = Rc::new(WindowState::new(
+                    hwnd,
+                    shared_state.user32.clone(),
+                    shared_state.clone(),
+                ));
+
+                BaseviewWindow {
+                    window_state,
+                    initial_size: init.settings.size,
+                    handler_builder: Cell::new(Some(init.builder)),
+                    shared_state,
+                    host: init.host,
+
+                    _drop_target: None.into(),
+                    _keyboard_hook: None.into(),
+
+                    #[cfg(feature = "opengl")]
+                    gl_config: init.settings.gl_config,
+                }
+            }
+        };
+
+        let parent = init.settings.parent.map(|p| p.inner.handle);
+        let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, None)?;
+        let title = HSTRING::from(init.settings.title);
+        let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
+
+        // FIXME: this SetTimer call could be in after_create, but for some reason it changes the ordering
+        // for a parent+child window situation, which results in the parent drawing over the child.
+        // This timer should be replaced by proper window redrawing/damage/vsync handling, but this
+        // would be a breaking change, so we'll do that later.
+        // TODO: create a new timer instead of hard-coding a specific ID
+        window.set_timer(WIN_FRAME_TIMER, 15)?;
+
+        Ok(window)
+    }
+
     fn notify_destroyed_to_host(&self) {
         if self.shared_state.destroy_host_originated.get() {
             return;
@@ -560,62 +643,25 @@ unsafe fn wnd_proc_inner(
 }
 
 impl WindowHandle {
-    pub fn create_window(
-        options: WindowSettings, build: WindowHandlerBuilder, host: Host,
-    ) -> Result<WindowHandle> {
+    pub fn create_window(init: WindowInitializer) -> Result<WindowHandle> {
         let extended_user_32 = ExtendedUser32::load()?;
-        let title = HSTRING::from(options.title);
 
-        let scaling_factor = 1.0;
+        let window_size = init.settings.size.to_physical(1.0);
 
-        let window_size = options.size.to_physical(scaling_factor);
-
-        let style = if options.parent.is_some() {
-            WindowStyle::parented()
-        } else {
-            WindowStyle::embedded()
-        };
-        let dpi_ctx = DpiAwarenessContext::new(&extended_user_32)?;
         let shared_state =
-            WindowSharedState::new(window_size, extended_user_32.clone(), options.parent.is_some());
+            WindowSharedState::new(window_size, extended_user_32, init.settings.parent.is_some());
 
-        let initializer = {
-            let extended_user_32 = extended_user_32.clone();
-            let shared_state = shared_state.clone();
+        if init.settings.parented && init.settings.parent.is_none() {
+            return Ok(WindowHandle {
+                hwnd: None.into(),
+                state: shared_state,
+                init: Some(init).into(),
+            });
+        }
 
-            move |hwnd: HWnd| {
-                let window_state =
-                    Rc::new(WindowState::new(hwnd, extended_user_32, shared_state.clone()));
+        let window = BaseviewWindow::create(shared_state.clone(), init)?;
 
-                BaseviewWindow {
-                    window_state,
-                    initial_size: options.size,
-                    handler_builder: Cell::new(Some(build)),
-                    shared_state,
-                    host,
-
-                    _drop_target: None.into(),
-                    _keyboard_hook: None.into(),
-
-                    #[cfg(feature = "opengl")]
-                    gl_config: options.gl_config,
-                }
-            }
-        };
-
-        let parent = options.parent.map(|p| p.inner.handle);
-        let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, None)?;
-
-        let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
-
-        // FIXME: this SetTimer call could be in after_create, but for some reason it changes the ordering
-        // for a parent+child window situation, which results in the parent drawing over the child.
-        // This timer should be replaced by proper window redrawing/damage/vsync handling, but this
-        // would be a breaking change, so we'll do that later.
-        // TODO: create a new timer instead of hard-coding a specific ID
-        window.set_timer(WIN_FRAME_TIMER, 15)?;
-
-        Ok(WindowHandle { hwnd: Some(window).into(), state: shared_state })
+        Ok(WindowHandle { hwnd: Some(window).into(), state: shared_state, init: None.into() })
     }
 }
 

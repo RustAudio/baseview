@@ -6,8 +6,6 @@ use objc2_foundation::{NSSize, NSString};
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::handler::WindowHandlerBuilder;
-use crate::host::Host;
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
 use crate::platform::ParentWindowHandle;
 use crate::platform::Result;
@@ -31,9 +29,7 @@ impl Drop for WindowHandle {
 }
 
 impl WindowHandle {
-    pub fn create_window(
-        mut options: WindowSettings, handler: WindowHandlerBuilder, host: Host,
-    ) -> Result<Self> {
+    pub fn create_window(mut init: WindowInitializer) -> Result<Self> {
         autoreleasepool(|_| {
             let Some(mtm) = MainThreadMarker::new() else {
                 panic!("macOS: Windows can only be created on the main thread!")
@@ -42,48 +38,40 @@ impl WindowHandle {
             // Creates the global NSApplication instance, if it doesn't exist yet
             let _ = NSApplication::sharedApplication(mtm);
 
-            if let Some(parent) = options.parent.take() {
-                return Self::create_window_parented(
-                    options,
-                    handler,
-                    host,
-                    parent.inner.view,
-                    mtm,
-                );
+            if let Some(parent) = init.settings.parent.take() {
+                return Self::create_window_parented(init, parent.inner.view, mtm);
             }
 
-            Self::create_window_standalone(options, handler, host, mtm)
+            Self::create_window_standalone(init, mtm)
         })
     }
 
     pub fn create_window_parented(
-        builder: WindowSettings, handler: WindowHandlerBuilder, host: Host,
-        parent_view: Retained<NSView>, mtm: MainThreadMarker,
+        init: WindowInitializer, parent_view: Retained<NSView>, mtm: MainThreadMarker,
     ) -> Result<Self> {
         let parenting =
             ViewParentingType::Parented { parent_view: Weak::from_retained(&parent_view) };
 
         let backing_scale_factor =
             parent_view.window().map(|w| w.backingScaleFactor()).unwrap_or(1.0);
-        let final_size = builder.size.to_logical(backing_scale_factor);
+        let final_size = init.settings.size.to_logical(backing_scale_factor);
 
-        let (ns_view, state) =
-            BaseviewView::new(builder, handler, parenting, host, final_size, mtm)?;
+        let (ns_view, state) = BaseviewView::new(init, parenting, final_size, mtm)?;
 
         Ok(Self { mtm, state, _window: None, view: Weak::from_retained(&ns_view) })
     }
 
     pub fn create_window_standalone(
-        builder: WindowSettings, handler: WindowHandlerBuilder, host: Host, mtm: MainThreadMarker,
+        init: WindowInitializer, mtm: MainThreadMarker,
     ) -> Result<Self> {
-        let window = create_window_with_options(&builder, mtm);
+        let window = create_window_with_options(&init.settings, mtm);
 
         let final_size = window.contentRectForFrameRect(window.frame()).size;
         let final_size = LogicalSize::new(final_size.width, final_size.height);
 
         let parenting = ViewParentingType::Windowed { owned_window: Weak::from_retained(&window) };
 
-        let (view, state) = BaseviewView::new(builder, handler, parenting, host, final_size, mtm)?;
+        let (view, state) = BaseviewView::new(init, parenting, final_size, mtm)?;
 
         Ok(Self { mtm, state, view: Weak::from_retained(&view), _window: Some(window) })
     }

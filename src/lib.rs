@@ -6,9 +6,9 @@ mod handler;
 pub mod host;
 mod keyboard;
 mod mouse_cursor;
+mod settings;
 mod tracing;
 mod window;
-mod window_open_options;
 
 pub(crate) mod platform;
 
@@ -22,8 +22,8 @@ pub use error::*;
 pub use event::*;
 pub use handler::WindowHandler;
 pub use mouse_cursor::MouseCursor;
+pub use settings::*;
 pub use window::*;
-pub use window_open_options::*;
 
 #[allow(unused)]
 pub(crate) use tracing::*;

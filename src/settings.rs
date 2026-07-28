@@ -19,6 +19,12 @@ pub struct WindowSettings {
     /// If `None`, the window will be standalone.
     pub parent: Option<ParentWindowHandle>,
 
+    /// If the window expects to have a parent when first displayed.
+    ///
+    /// Setting this will delay the actual creation of the window until the parent is set (unless
+    /// the window is shown first).
+    pub parented: bool,
+
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
     /// access this context through [crate::WindowContext::gl_context].
     ///
@@ -53,6 +59,12 @@ impl WindowSettings {
         self
     }
 
+    #[inline]
+    pub fn parented(mut self) -> Self {
+        self.parented = true;
+        self
+    }
+
     #[cfg(feature = "opengl")]
     #[inline]
     pub fn with_gl_config(mut self, gl_config: impl Into<Option<GlConfig>>) -> Self {
@@ -67,6 +79,7 @@ impl Default for WindowSettings {
             title: String::from("baseview window"),
             size: LogicalSize { width: 500.0, height: 400.0 }.into(),
             parent: None,
+            parented: false,
             #[cfg(feature = "opengl")]
             gl_config: None,
         }
@@ -100,5 +113,11 @@ impl ParentWindowHandle {
 impl<W: HasWindowHandle> From<&W> for ParentWindowHandle {
     fn from(window: &W) -> Self {
         Self::from_window(window)
+    }
+}
+
+impl From<platform::ParentWindowHandle> for ParentWindowHandle {
+    fn from(inner: platform::ParentWindowHandle) -> Self {
+        Self { inner }
     }
 }
