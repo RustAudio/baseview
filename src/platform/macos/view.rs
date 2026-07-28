@@ -2,15 +2,15 @@
 
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
-use crate::handler::WindowHandlerBuilder;
 use crate::host::Host;
 use crate::platform::*;
 use crate::tracing::warn;
+use crate::window::WindowInitializer;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
     DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowSettings, WindowSize,
+    WindowHandler, WindowSize,
 };
 use dpi::{LogicalPosition, LogicalSize, Size};
 use objc2::__framework_prelude::Retained;
@@ -79,8 +79,8 @@ pub(crate) struct BaseviewView {
 
 impl BaseviewView {
     pub fn new(
-        _options: WindowSettings, builder: WindowHandlerBuilder, parenting: ViewParentingType,
-        host: Host, final_size: LogicalSize<f64>, mtm: MainThreadMarker,
+        init: WindowInitializer, parenting: ViewParentingType, final_size: LogicalSize<f64>,
+        mtm: MainThreadMarker,
     ) -> Result<(Retained<View<Self>>, Rc<WindowSharedState>)> {
         let view_rect =
             NSRect::new(NSPoint::ZERO, NSSize::new(final_size.width, final_size.height));
@@ -96,7 +96,7 @@ impl BaseviewView {
             window_handler: WindowHandlerContainer::new(),
             notification_center_observer: None.into(),
             parenting: ViewParentingType::Uninitialized.into(),
-            host,
+            host: init.host,
             lifetime_tied_to_app: None.into(),
 
             #[cfg(feature = "opengl")]
@@ -112,13 +112,13 @@ impl BaseviewView {
             view.state.size.set(view.view.size());
 
             #[cfg(feature = "opengl")]
-            if let Some(gl_config) = _options.gl_config {
+            if let Some(gl_config) = init.settings.gl_config {
                 let gl_context = super::gl::GlContext::create(view.view, gl_config, view.mtm)?;
                 let Ok(()) = view.gl_context.set(gl_context) else { unreachable!() };
             }
 
             let context = WindowContext::new(view);
-            let handler = builder.build(crate::WindowContext::new(context))?;
+            let handler = init.builder.build(crate::WindowContext::new(context))?;
 
             // Initialize handler
             view.window_handler.set(handler);
