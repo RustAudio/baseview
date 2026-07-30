@@ -25,6 +25,22 @@ pub struct WindowSettings {
     /// the window is shown first).
     pub parented: bool,
 
+    /// A fallback scale factor, if Baseview couldn't get one from the platform.
+    ///
+    /// If the platform does already provide an accurate scaling factor, this doesn't do anything.
+    ///
+    /// If the given fallback scale factor is actually useful and different from the current one
+    /// (1.0 by default), this will resize and redraw the window accordingly.
+    ///
+    /// # Platform compatibility notes.
+    ///
+    /// On Win32, this value is used if running on early versions of Windows 10 (or earlier).
+    ///
+    /// On X11, this value is used if no `Xft.dpi`setting is set.
+    ///
+    /// On macOS, this function is always a no-op.
+    pub fallback_scale_factor: Option<f64>,
+
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
     /// access this context through [crate::WindowContext::gl_context].
     ///
@@ -65,6 +81,12 @@ impl WindowSettings {
         self
     }
 
+    #[inline]
+    pub fn with_fallback_scale_factor(mut self, scale_factor: impl Into<Option<f64>>) -> Self {
+        self.fallback_scale_factor = scale_factor.into();
+        self
+    }
+
     #[cfg(feature = "opengl")]
     #[inline]
     pub fn with_gl_config(mut self, gl_config: impl Into<Option<GlConfig>>) -> Self {
@@ -80,6 +102,7 @@ impl Default for WindowSettings {
             size: LogicalSize { width: 500.0, height: 400.0 }.into(),
             parent: None,
             parented: false,
+            fallback_scale_factor: None,
             #[cfg(feature = "opengl")]
             gl_config: None,
         }

@@ -646,10 +646,7 @@ impl WindowHandle {
     pub fn create_window(init: WindowInitializer) -> Result<WindowHandle> {
         let extended_user_32 = ExtendedUser32::load()?;
 
-        let window_size = init.settings.size.to_physical(1.0);
-
-        let shared_state =
-            WindowSharedState::new(window_size, extended_user_32, init.settings.parent.is_some());
+        let shared_state = WindowSharedState::new(extended_user_32, &init.settings);
 
         if init.settings.parented && init.settings.parent.is_none() {
             return Ok(WindowHandle {

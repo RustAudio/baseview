@@ -1,10 +1,10 @@
 use crate::platform::win::keyboard::KeyboardState;
 use crate::platform::PlatformHandle;
-use crate::warn;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Dpi, ExtendedUser32};
+use crate::{warn, WindowSettings};
 use crate::{Event, EventStatus, MouseCursor, WindowHandler, WindowSize};
 use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
@@ -154,15 +154,13 @@ pub struct WindowSharedState {
 }
 
 impl WindowSharedState {
-    pub fn new(
-        current_size: PhysicalSize<u32>, user32: ExtendedUser32, parented: bool,
-    ) -> Rc<Self> {
+    pub fn new(user32: ExtendedUser32, settings: &WindowSettings) -> Rc<Self> {
         Self {
-            parented: parented.into(),
+            parented: (settings.parent.is_some() || settings.parented).into(),
             is_alive: true.into(),
             current_dpi: None.into(),
-            current_size: current_size.into(),
-            fallback_scale_factor: None.into(),
+            current_size: settings.size.to_physical(1.0).into(),
+            fallback_scale_factor: settings.fallback_scale_factor.into(),
             resize_host_originated: false.into(),
             destroy_host_originated: false.into(),
             user32,
