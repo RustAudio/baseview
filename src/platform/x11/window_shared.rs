@@ -38,12 +38,6 @@ impl ScalingFactor {
     }
 }
 
-impl From<Option<f64>> for ScalingFactor {
-    fn from(value: Option<f64>) -> Self {
-        Self { system: value.into(), suggested: None.into() }
-    }
-}
-
 pub(crate) struct WindowInner {
     // GlContext should be dropped **before** XcbConnection is dropped
     #[cfg(feature = "opengl")]
@@ -123,7 +117,10 @@ impl WindowInner {
             xcb_window,
             visual_id: visual_info.visual_id,
             window_size: physical_size.into(),
-            scaling_factor: scaling.into(),
+            scaling_factor: ScalingFactor {
+                system: scaling.into(),
+                suggested: options.fallback_scale_factor.into(),
+            },
             mouse_cursor: MouseCursor::default().into(),
             loop_signal: ev_loop.get_signal(),
 
