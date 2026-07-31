@@ -106,8 +106,8 @@ impl Window {
     ///
     /// Using this method does *not* trigger the [`HostCallbacks::request_resize`](host::HostCallbacks) callback.
     #[inline]
-    pub fn resize(&self, size: Size) -> Result<(), Error> {
-        self.inner.resize(size)?;
+    pub fn resize(&self, size: impl Into<Size>) -> Result<(), Error> {
+        self.inner.resize(size.into())?;
         Ok(())
     }
 
