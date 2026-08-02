@@ -8,10 +8,10 @@ use raw_window_handle::HasWindowHandle;
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct WindowSettings {
-    /// The window title
+    /// The window title.
     pub title: String,
 
-    /// The size of the window, either in physical or logical coordinates
+    /// The size of the window, either in physical or logical coordinates.
     pub size: Size,
 
     /// If the window is to be embedded in a parent window, the handle to that window.
@@ -23,7 +23,9 @@ pub struct WindowSettings {
     ///
     /// Setting this will delay the actual creation of the window until the parent is set (unless
     /// the window is shown first).
-    pub parented: bool,
+    ///
+    /// If the `parent` field is already set, this does nothing and is ignored.
+    pub wait_for_parent: bool,
 
     /// A fallback scale factor, if Baseview couldn't get one from the platform.
     ///
@@ -50,23 +52,27 @@ pub struct WindowSettings {
 }
 
 impl WindowSettings {
+    /// Creates a new [`WindowSettings`] with all default values.
     #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets [`title`](Self::title) to the given value.
     #[inline]
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
         self
     }
 
+    /// Sets [`size`](Self::size) to the given value.
     #[inline]
     pub fn with_size(mut self, size: impl Into<Size>) -> Self {
         self.size = size.into();
         self
     }
 
+    /// Sets [`size`](Self::size) to the given value.
     #[inline]
     pub fn with_parent<'a, P: HasWindowHandle + 'a>(
         mut self, parent: impl Into<Option<&'a P>>,
@@ -75,23 +81,27 @@ impl WindowSettings {
         self
     }
 
+    /// Sets [`wait_for_parent`](Self::wait_for_parent) to `true`.
     #[inline]
-    pub fn parented(mut self) -> Self {
-        self.parented = true;
+    pub fn wait_for_parent(mut self) -> Self {
+        self.wait_for_parent = true;
         self
     }
 
-    pub fn with_parented(mut self, parented: bool) -> Self {
-        self.parented = parented;
+    /// Sets [`wait_for_parent`](Self::wait_for_parent) to the given value.
+    pub fn with_wait_for_parent(mut self, wait_for_parent: bool) -> Self {
+        self.wait_for_parent = wait_for_parent;
         self
     }
 
+    /// Sets [`fallback_scale_factor`](Self::fallback_scale_factor) to the given value.
     #[inline]
     pub fn with_fallback_scale_factor(mut self, scale_factor: impl Into<Option<f64>>) -> Self {
         self.fallback_scale_factor = scale_factor.into();
         self
     }
 
+    /// Sets [`gl_config`](Self::gl_config) to the given value.
     #[cfg(feature = "opengl")]
     #[inline]
     pub fn with_gl_config(mut self, gl_config: impl Into<Option<GlConfig>>) -> Self {
@@ -106,7 +116,7 @@ impl Default for WindowSettings {
             title: String::from("baseview window"),
             size: LogicalSize { width: 500.0, height: 400.0 }.into(),
             parent: None,
-            parented: false,
+            wait_for_parent: false,
             fallback_scale_factor: None,
             #[cfg(feature = "opengl")]
             gl_config: None,

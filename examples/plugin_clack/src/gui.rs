@@ -32,7 +32,7 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
 
     fn create(&mut self, _configuration: GuiConfiguration) -> Result<(), PluginError> {
         let options = WindowSettings::new()
-            .parented()
+            .wait_for_parent()
             .with_size(PhysicalSize::new(400, 200))
             .with_gl_config(GlConfig::default());
 

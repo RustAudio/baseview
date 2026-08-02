@@ -167,7 +167,12 @@ impl Window {
 
     /// Reparents this window using the given `parent`.
     ///
-    /// If the window was a floating window, it will become parented.
+    /// # Panics
+    ///
+    /// This function can panic if the window did not have a parent, but was already created as a floating window.
+    ///
+    /// This happens when the given [`WindowSettings`] had its [`parent`](WindowSettings::parent) set to [`None`] and
+    /// [`wait_for_parent`](WindowSettings::wait_for_parent) set to false.
     #[inline]
     pub fn set_parent(&self, parent: impl Into<ParentWindowHandle>) -> Result<(), Error> {
         self.inner.set_parent(parent.into().inner)?;

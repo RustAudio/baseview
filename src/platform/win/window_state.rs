@@ -156,7 +156,7 @@ pub struct WindowSharedState {
 impl WindowSharedState {
     pub fn new(user32: ExtendedUser32, settings: &WindowSettings) -> Rc<Self> {
         Self {
-            parented: (settings.parent.is_some() || settings.parented).into(),
+            parented: (settings.parent.is_some() || settings.wait_for_parent).into(),
             is_alive: true.into(),
             current_dpi: None.into(),
             current_size: settings.size.to_physical(1.0).into(),

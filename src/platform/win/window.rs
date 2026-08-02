@@ -140,16 +140,11 @@ impl WindowHandle {
             }
         };
 
-        hwnd.set_parent(&new_parent.handle)?;
-
         if !self.state.parented.get() {
-            self.state.parented.set(true);
-
-            hwnd.set_style(WindowStyle::parented())?;
-            let _guard = self.state.originate_host_resize();
-            let dpi = self.state.current_dpi.get();
-            hwnd.resize_and_activate(self.state.current_size.get(), dpi, &self.state.user32)?;
+            panic!("Called set_parent on a floating window")
         }
+
+        hwnd.set_parent(&new_parent.handle)?;
 
         Ok(())
     }
@@ -648,7 +643,7 @@ impl WindowHandle {
 
         let shared_state = WindowSharedState::new(extended_user_32, &init.settings);
 
-        if init.settings.parented && init.settings.parent.is_none() {
+        if init.settings.wait_for_parent && init.settings.parent.is_none() {
             return Ok(WindowHandle {
                 hwnd: None.into(),
                 state: shared_state,
