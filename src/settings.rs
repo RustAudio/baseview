@@ -81,6 +81,11 @@ impl WindowSettings {
         self
     }
 
+    pub fn with_parented(mut self, parented: bool) -> Self {
+        self.parented = parented;
+        self
+    }
+
     #[inline]
     pub fn with_fallback_scale_factor(mut self, scale_factor: impl Into<Option<f64>>) -> Self {
         self.fallback_scale_factor = scale_factor.into();
