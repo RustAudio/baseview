@@ -67,7 +67,7 @@ impl WindowContext {
             return Ok(());
         }
 
-        BaseviewView::resize(view, size, true);
+        BaseviewView::resize(view, size, true, false);
 
         Ok(())
     }

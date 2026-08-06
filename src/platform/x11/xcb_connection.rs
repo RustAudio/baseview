@@ -13,6 +13,8 @@ use crate::MouseCursor;
 
 mod get_property;
 pub use get_property::GetPropertyError;
+mod size_hints;
+pub use size_hints::{get_size_hints, WmSizeHintsExt};
 
 x11rb::atom_manager! {
     pub Atoms: AtomsCookie {

@@ -7,6 +7,7 @@ use std::rc::Rc;
 use x11rb::connection::Connection;
 use x11rb::cookie::VoidCookie;
 use x11rb::errors::{ConnectionError, ReplyOrIdError};
+use x11rb::properties::WmSizeHints;
 use x11rb::protocol::xproto::{
     AtomEnum, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, PropMode,
     WindowClass,
@@ -117,6 +118,13 @@ impl XcbWindow {
             AtomEnum::ATOM,
             &[5u32], // Latest version; hasn't changed since 2002
         )?)
+    }
+
+    pub fn set_size_hints(
+        &self, size_hints: WmSizeHints,
+    ) -> Result<VoidCookie<'_, XCBConnection>, ReplyOrIdError> {
+        Ok(size_hints
+            .set_normal_hints(&self.connection.conn as &XCBConnection, self.window_id.get())?)
     }
 
     #[inline]

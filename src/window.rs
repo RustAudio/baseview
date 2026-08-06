@@ -151,6 +151,14 @@ impl Window {
         self.inner.is_open()
     }
 
+    /// Returns `true` if the window can be resized by the user, `false` otherwise.
+    ///
+    /// This is set by the [`WindowSettings::resizable`] field.
+    #[inline]
+    pub fn is_resizable(&self) -> bool {
+        self.inner.is_resizable()
+    }
+
     /// Performs the work the window thread had scheduled for the main thread.
     ///
     /// This must be called back on the main thread, as a response to [`HostMainThreadCaller::call_main_thread`](host::HostMainThreadCaller::call_main_thread).

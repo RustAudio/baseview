@@ -68,6 +68,10 @@ impl WindowHandle {
         self.state.is_alive.get()
     }
 
+    pub fn is_resizable(&self) -> bool {
+        self.state.resizable
+    }
+
     pub fn size(&self) -> WindowSize {
         self.state.size()
     }
@@ -211,11 +215,7 @@ impl BaseviewWindow {
     pub fn create(shared_state: Rc<WindowSharedState>, init: WindowInitializer) -> Result<HWnd> {
         let dpi_ctx = DpiAwarenessContext::new(&shared_state.user32)?;
 
-        let style = if init.settings.parent.is_some() {
-            WindowStyle::parented()
-        } else {
-            WindowStyle::embedded()
-        };
+        let style = WindowStyle::from_settings(&init.settings);
 
         let window_size = shared_state.current_size.get();
 
