@@ -15,7 +15,7 @@ impl From<MouseCursor> for Cursor {
     fn from(cursor: MouseCursor) -> Self {
         match cursor {
             MouseCursor::Default => Cursor::Native(NSCursor::arrowCursor),
-            MouseCursor::Hand => Cursor::Native(NSCursor::openHandCursor),
+            MouseCursor::Hand => Cursor::Native(NSCursor::pointingHandCursor),
             MouseCursor::HandGrabbing => Cursor::Native(NSCursor::closedHandCursor),
             MouseCursor::Text => Cursor::Native(NSCursor::IBeamCursor),
             MouseCursor::VerticalText => Cursor::Native(NSCursor::IBeamCursorForVerticalLayout),
