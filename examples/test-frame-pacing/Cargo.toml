@@ -1,0 +1,10 @@
+[package]
+name = "test-frame-pacing"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+baseview = { path = "../..", features = ["opengl", "tracing"] }
+femtovg = "0.26.0"
+tracing-subscriber = { workspace = true }
+keyboard-types = "0.8.3"
