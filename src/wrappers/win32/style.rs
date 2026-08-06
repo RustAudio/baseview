@@ -1,3 +1,4 @@
+use crate::WindowSettings;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 #[derive(Copy, Clone)]
@@ -7,19 +8,20 @@ pub struct WindowStyle {
 }
 
 impl WindowStyle {
-    pub const fn parented() -> Self {
-        Self { style: WS_CHILD, style_ex: 0 }
-    }
-
-    pub const fn embedded() -> Self {
-        Self {
-            style: WS_POPUPWINDOW
-                | WS_CAPTION
-                | WS_SIZEBOX
-                | WS_MINIMIZEBOX
-                | WS_MAXIMIZEBOX
-                | WS_CLIPSIBLINGS,
-            style_ex: 0,
+    pub fn from_settings(settings: &WindowSettings) -> Self {
+        if settings.parent.is_some() || settings.wait_for_parent {
+            return Self { style: WS_CHILD, style_ex: 0 };
         }
+
+        let mut style = Self {
+            style: WS_POPUPWINDOW | WS_CAPTION | WS_MINIMIZEBOX | WS_CLIPSIBLINGS,
+            style_ex: 0,
+        };
+
+        if settings.resizable {
+            style.style |= WS_SIZEBOX | WS_MAXIMIZEBOX;
+        }
+
+        style
     }
 }

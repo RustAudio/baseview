@@ -151,6 +151,7 @@ pub struct WindowSharedState {
     pub destroy_host_originated: Cell<bool>,
 
     pub user32: ExtendedUser32,
+    pub resizable: bool,
 }
 
 impl WindowSharedState {
@@ -163,6 +164,7 @@ impl WindowSharedState {
             fallback_scale_factor: settings.fallback_scale_factor.into(),
             resize_host_originated: false.into(),
             destroy_host_originated: false.into(),
+            resizable: settings.resizable,
             user32,
         }
         .into()
