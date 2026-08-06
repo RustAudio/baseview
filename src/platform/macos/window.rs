@@ -95,6 +95,10 @@ impl WindowHandle {
         self.state.closed.get()
     }
 
+    pub fn is_resizable(&self) -> bool {
+        self.state.resizable
+    }
+
     #[inline]
     pub fn handle_main_thread_callback(&self) {
         // No-op
@@ -145,18 +149,18 @@ impl WindowHandle {
 }
 
 fn create_window_with_options(
-    options: &WindowSettings, mtm: MainThreadMarker,
+    settings: &WindowSettings, mtm: MainThreadMarker,
 ) -> Retained<NSWindow> {
-    let initial_size = options.size.to_logical(1.0);
-    let window = create_window(initial_size, mtm);
+    let initial_size = settings.size.to_logical(1.0);
+    let window = create_window(initial_size, &settings, mtm);
     window.center();
 
-    let final_size = options.size.to_logical(window.backingScaleFactor());
+    let final_size = settings.size.to_logical(window.backingScaleFactor());
     if final_size != initial_size {
         window.setContentSize(NSSize::new(final_size.width, final_size.height));
     }
 
-    let title = NSString::from_str(&options.title);
+    let title = NSString::from_str(&settings.title);
     window.setTitle(&title);
 
     window
@@ -166,11 +170,17 @@ pub(crate) struct WindowSharedState {
     pub closed: Cell<bool>,
     pub size: Cell<LogicalSize<f64>>,
     pub scale_factor: Cell<f64>,
+    pub resizable: bool,
 }
 
 impl WindowSharedState {
-    pub fn new(size: LogicalSize<f64>, scale_factor: f64) -> Self {
-        Self { closed: false.into(), size: size.into(), scale_factor: scale_factor.into() }
+    pub fn new(size: LogicalSize<f64>, scale_factor: f64, resizable: bool) -> Self {
+        Self {
+            closed: false.into(),
+            size: size.into(),
+            scale_factor: scale_factor.into(),
+            resizable,
+        }
     }
 }
 

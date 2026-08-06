@@ -85,7 +85,7 @@ impl BaseviewView {
         let view_rect =
             NSRect::new(NSPoint::ZERO, NSSize::new(final_size.width, final_size.height));
 
-        let state = Rc::new(WindowSharedState::new(final_size, 1.0));
+        let state = Rc::new(WindowSharedState::new(final_size, 1.0, init.settings.resizable));
 
         let inner = BaseviewView {
             mtm,
