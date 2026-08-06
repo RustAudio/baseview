@@ -23,9 +23,7 @@ pub fn create_window(
         NSWindow::initWithContentRect_styleMask_backing_defer(
             NSWindow::alloc(mtm),
             rect,
-            NSWindowStyleMask::Titled
-                | NSWindowStyleMask::Closable
-                | NSWindowStyleMask::Miniaturizable,
+            style_mask,
             NSBackingStoreType::Buffered,
             false,
         )

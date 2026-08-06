@@ -112,7 +112,7 @@ impl WindowHandle {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
-        BaseviewView::resize(view, size, false);
+        BaseviewView::resize(view, size, false, false);
 
         Ok(())
     }
@@ -152,7 +152,7 @@ fn create_window_with_options(
     settings: &WindowSettings, mtm: MainThreadMarker,
 ) -> Retained<NSWindow> {
     let initial_size = settings.size.to_logical(1.0);
-    let window = create_window(initial_size, &settings, mtm);
+    let window = create_window(initial_size, settings, mtm);
     window.center();
 
     let final_size = settings.size.to_logical(window.backingScaleFactor());

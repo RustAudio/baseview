@@ -205,7 +205,7 @@ impl BaseviewView {
         this.parenting.replace(parenting);
     }
 
-    pub fn resize(this: ViewRef<Self>, size: Size, notify_host: bool) {
+    pub fn resize(this: ViewRef<Self>, size: Size, notify_host: bool, from_window: bool) {
         let size = size.to_logical::<f64>(this.view.backing_scale_factor());
         // NOTE: macOS gives you a personal rave if you pass in fractional pixels here. Even
         // though the size is in fractional pixels.
@@ -221,10 +221,12 @@ impl BaseviewView {
             gl_context.resize(size);
         }
 
-        // If this is a standalone window then we'll also need to resize the window itself
-        if let ViewParentingType::Windowed { owned_window } = &*this.parenting.borrow() {
-            if let Some(owned_window) = owned_window.load() {
-                owned_window.setContentSize(size);
+        if !from_window {
+            // If this is a standalone window then we'll also need to resize the window itself
+            if let ViewParentingType::Windowed { owned_window } = &*this.parenting.borrow() {
+                if let Some(owned_window) = owned_window.load() {
+                    owned_window.setContentSize(size);
+                }
             }
         }
 
@@ -275,6 +277,15 @@ impl ViewImpl for BaseviewView {
         true
     }
 
+    fn window_did_resize(this: ViewRef<Self>) {
+        let Some(window) = this.view.window() else { return };
+
+        let size = window.contentRectForFrameRect(window.frame()).size;
+        let size = LogicalSize::new(size.width, size.height);
+
+        BaseviewView::resize(this, size.into(), true, true);
+    }
+
     fn view_did_change_backing_properties(this: ViewRef<Self>, notify_host: bool) {
         let current_size = this.view.size();
         let current_scale_factor = this.view.backing_scale_factor();
@@ -294,7 +305,7 @@ impl ViewImpl for BaseviewView {
                 warn!("Window Handler failed to resize: {}", e);
                 this.state.size.set(previous);
 
-                Self::resize(this, previous.into(), false);
+                Self::resize(this, previous.into(), false, false);
                 return;
             }
 
@@ -302,7 +313,7 @@ impl ViewImpl for BaseviewView {
                 if let Err(e) = this.host.request_resize(new_size) {
                     warn!("Host failed to resize parent view: {}", e);
 
-                    Self::resize(this, previous.into(), false);
+                    Self::resize(this, previous.into(), false, false);
                 }
             }
         }

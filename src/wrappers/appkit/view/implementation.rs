@@ -55,6 +55,10 @@ pub unsafe fn create_view_class<V: ViewImpl>() -> &'static AnyClass {
             sel!(windowShouldClose:),
             window_should_close::<V> as extern "C-unwind" fn(_, _, _) -> _,
         );
+        class.add_method(
+            sel!(windowDidResize:),
+            window_did_resize::<V> as extern "C-unwind" fn(_, _, _) -> _,
+        );
         class.add_method(sel!(dealloc), dealloc::<V> as extern "C-unwind" fn(_, _));
         class.add_method(
             sel!(viewWillMoveToWindow:),
@@ -313,4 +317,11 @@ extern "C-unwind" fn other_mouse_down<V: ViewImpl>(this: &View<V>, _sel: Sel, ev
 extern "C-unwind" fn other_mouse_up<V: ViewImpl>(this: &View<V>, _sel: Sel, event: &NSEvent) {
     let Some(inner) = this.inner_ref() else { return };
     V::other_mouse_up(inner, event);
+}
+
+extern "C-unwind" fn window_did_resize<V: ViewImpl>(
+    this: &View<V>, _sel: Sel, _notification: &NSNotification,
+) {
+    let Some(inner) = this.inner_ref() else { return };
+    V::window_did_resize(inner);
 }
