@@ -27,6 +27,9 @@ pub struct WindowSettings {
     /// If the `parent` field is already set, this does nothing and is ignored.
     pub wait_for_parent: bool,
 
+    /// Whether the window can be resized.
+    pub resizable: bool,
+
     /// A fallback scale factor, if Baseview couldn't get one from the platform.
     ///
     /// If the platform does already provide an accurate scaling factor, this doesn't do anything.
@@ -101,6 +104,13 @@ impl WindowSettings {
         self
     }
 
+    /// Sets [`resizable`](Self::resizable) to the given value.
+    #[inline]
+    pub fn with_resizable(mut self, resizable: bool) -> Self {
+        self.resizable = resizable;
+        self
+    }
+
     /// Sets [`gl_config`](Self::gl_config) to the given value.
     #[cfg(feature = "opengl")]
     #[inline]
@@ -118,6 +128,7 @@ impl Default for WindowSettings {
             parent: None,
             wait_for_parent: false,
             fallback_scale_factor: None,
+            resizable: true,
             #[cfg(feature = "opengl")]
             gl_config: None,
         }

@@ -77,16 +77,19 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 
     fn can_resize(&mut self) -> bool {
-        true // Non-resizeable windows not supported yet
+        let Some(gui) = &self.gui else { return false };
+
+        gui.handle.is_resizable()
     }
 
     fn get_resize_hints(&mut self) -> Option<GuiResizeHints> {
+        let can_resize = self.can_resize();
+
         Some(GuiResizeHints {
             strategy: AspectRatioStrategy::Disregard, // Not supported
 
-            // Non-resizeable windows not supported yet
-            can_resize_vertically: true,
-            can_resize_horizontally: true,
+            can_resize_vertically: can_resize,
+            can_resize_horizontally: can_resize,
         })
     }
 

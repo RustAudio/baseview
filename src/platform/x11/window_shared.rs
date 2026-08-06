@@ -1,6 +1,7 @@
 use crate::platform::x11::event_loop::EventLoop;
 use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::x11::window_thread::WindowThreadShared;
+use crate::platform::x11::xcb_connection::{get_size_hints, WmSizeHintsExt};
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::*;
 use crate::{warn, MouseCursor, WindowHandler, WindowSettings, WindowSize};
@@ -10,6 +11,7 @@ use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
+use x11rb::properties::WmSizeHints;
 use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, InputFocus, Visualid};
 use x11rb::CURRENT_TIME;
 
@@ -49,6 +51,7 @@ pub(crate) struct WindowInner {
     pub(crate) scaling_factor: ScalingFactor,
 
     window_size: Cell<PhysicalSize<u16>>,
+    pub(crate) is_resizable: bool,
     mouse_cursor: Cell<MouseCursor>,
     pub(crate) visual_id: Visualid,
 
@@ -73,6 +76,8 @@ impl WindowInner {
 
         let physical_size = options.size.to_physical(initial_scale_factor);
 
+        let size_hints = get_size_hints(&options, initial_scale_factor);
+
         #[cfg(feature = "opengl")]
         let visual_info =
             WindowVisualConfig::find_best_visual_config_for_gl(&xcb_connection, options.gl_config)?;
@@ -93,6 +98,7 @@ impl WindowInner {
             xcb_window.set_title(&options.title)?,
             xcb_window.enable_wm_protocols()?,
             xcb_window.enable_dnd_protocols()?,
+            xcb_window.set_size_hints(size_hints)?,
         ];
 
         for cookie in cookies {
@@ -121,6 +127,7 @@ impl WindowInner {
                 system: scaling.into(),
                 suggested: options.fallback_scale_factor.into(),
             },
+            is_resizable: options.resizable,
             mouse_cursor: MouseCursor::default().into(),
             loop_signal: ev_loop.get_signal(),
 
@@ -186,6 +193,11 @@ impl WindowInner {
         let new_physical_size = size.to_physical(self.scaling_factor.get());
         self.xcb_window.resize(new_physical_size)?.check()?;
 
+        if !self.is_resizable {
+            let size_hints = WmSizeHints::new().with_fixed_size(new_physical_size.cast());
+            self.xcb_window.set_size_hints(size_hints)?.check()?;
+        }
+
         // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
         // and notify the window handler about it
 
@@ -210,6 +222,10 @@ impl WindowInner {
         }
 
         self.xcb_window.resize(new_size.cast())?.check()?; // Will not call handler, as size is the same as above.
+        if !self.is_resizable {
+            let size_hints = WmSizeHints::new().with_fixed_size(new_size.cast());
+            self.xcb_window.set_size_hints(size_hints)?.check()?;
+        }
 
         // These come from the Host, no need to notify it about the new size
 
