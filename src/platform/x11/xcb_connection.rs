@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
-use x11rb::connection::Connection;
+use x11rb::connection::{Connection, RequestConnection};
 use x11rb::cursor::Handle as CursorHandle;
+use x11rb::protocol::present;
 use x11rb::protocol::xproto::{self, Cursor, Screen};
 use x11rb::resource_manager;
 
@@ -50,6 +51,8 @@ pub struct X11Connection {
     pub(crate) resources: resource_manager::Database,
     pub(crate) cursor_handle: CursorHandle,
     pub(crate) cursor_cache: RefCell<HashMap<MouseCursor, u32>>,
+
+    pub(crate) present_supported: bool,
 }
 
 impl X11Connection {
@@ -62,12 +65,15 @@ impl X11Connection {
         let resources = resource_manager::new_from_default(xcb_conn)?;
         let cursor_handle = CursorHandle::new(xcb_conn, screen as usize, &resources)?.reply()?;
 
+        let present_supported = conn.extension_information(present::X11_EXTENSION_NAME)?.is_some();
+
         Ok(Self {
             conn: Arc::new(conn),
             atoms,
             resources,
             cursor_handle,
             cursor_cache: RefCell::new(HashMap::new()),
+            present_supported,
         })
     }
 

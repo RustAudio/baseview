@@ -62,6 +62,8 @@ pub(crate) struct EventLoop {
 
     response_sender: mpsc::Sender<WindowThreadResponseMessage>,
     main_thread: Option<MainThreadCaller>,
+
+    last_rendered_msc: Option<u64>,
 }
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(15);
@@ -75,9 +77,9 @@ impl EventLoop {
     ) -> Result<Self, Error> {
         let loop_handle = inner.handle();
 
-        loop_handle
-            .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| e.handle_frame(i))
-            .map_err(|e| e.error)?;
+        /*loop_handle
+        .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| e.handle_frame(i))
+        .map_err(|e| e.error)?;*/
 
         loop_handle
             .insert_source(
@@ -101,6 +103,7 @@ impl EventLoop {
 
             window,
             response_sender,
+            last_rendered_msc: None,
         })
     }
 
@@ -111,7 +114,18 @@ impl EventLoop {
         // when they've all been coalesced.
         self.new_physical_size = None;
 
+        let mut current_sequence_number = None;
+
         while let Some(event) = self.window.connection.conn.poll_for_event()? {
+            let sequence = event.wire_sequence_number();
+
+            if sequence == current_sequence_number {
+                continue;
+            }
+
+            current_sequence_number = sequence;
+
+            //dbg!(event.wire_sequence_number());
             self.handle_xcb_event(event)?;
         }
 
@@ -207,7 +221,10 @@ impl EventLoop {
                 Ok(())
             }
             WindowThreadRequest::Show => {
+                self.window.xcb_window.present_select_input()?.unwrap(); // TODO: unwrap: fallback to timer
                 self.window.xcb_window.map_window()?.check()?;
+                self.window.xcb_window.present_notify(0)?.check().unwrap(); // TODO: unwrap
+                self.window.connection.conn.flush()?;
                 Ok(())
             }
             WindowThreadRequest::Hide => {
@@ -330,6 +347,7 @@ impl EventLoop {
             }
 
             XEvent::ConfigureNotify(event) => {
+                //dbg!(event.width, event.height);
                 let new_physical_size = PhysicalSize::new(event.width, event.height);
 
                 if self.new_physical_size.is_some() || new_physical_size != self.window.get_size() {
@@ -406,14 +424,34 @@ impl EventLoop {
                 self.handle_event(ev);
             }
 
-            XEvent::FocusIn(_) => {
+            XEvent::FocusIn(e) => {
                 self.window.is_focused.set(true);
+                dbg!(e.sequence);
                 self.handle_event(Event::Window(WindowEvent::Focused));
             }
 
             XEvent::FocusOut(_) => {
                 self.window.is_focused.set(false);
                 self.handle_event(Event::Window(WindowEvent::Unfocused));
+            }
+
+            XEvent::PresentCompleteNotify(e) => {
+                //dbg!(e.msc);
+                if Some(e.msc) != self.last_rendered_msc {
+                    //return Ok(());
+
+                    //dbg!(e.msc, self.last_rendered_msc);
+
+                    if let Err(e) = self.handler.on_frame() {
+                        self.run_error = Some(e.into());
+                        self.stop_now();
+                    } else {
+                        self.last_rendered_msc = Some(e.msc);
+                        //dbg!("Present_notify");
+                    }
+                }
+                self.window.xcb_window.present_notify(e.msc.wrapping_add(1))?; // TODO: unwrap
+                self.window.connection.conn.flush()?;
             }
 
             _ => {}

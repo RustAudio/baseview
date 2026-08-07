@@ -132,6 +132,7 @@ impl WindowHandler for FramePacingTest {
     }
 
     fn on_event(&self, event: Event) -> EventStatus {
+        dbg!(&event);
         if let Event::Keyboard(KeyboardEvent { key, state: KeyState::Down, .. }) = event {
             match key {
                 Key::Named(NamedKey::ArrowLeft) => {
@@ -154,7 +155,7 @@ fn main() -> Result<(), baseview::Error> {
     let window_open_options = WindowSettings::new()
         .with_title("Femtovg on Baseview")
         .with_size(LogicalSize::new(512, 512))
-        .with_gl_config(GlConfig { alpha_bits: 8, ..GlConfig::default() });
+        .with_gl_config(GlConfig { alpha_bits: 8, vsync: true, ..GlConfig::default() });
 
     Window::create(window_open_options, FramePacingTest::new)?.run_until_closed()?;
     Ok(())
