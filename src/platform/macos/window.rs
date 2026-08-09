@@ -9,6 +9,7 @@ use std::rc::Rc;
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
 use crate::platform::ParentWindowHandle;
 use crate::platform::Result;
+use crate::utils::SizingStrategy;
 use crate::wrappers::appkit::{create_window, View};
 use crate::*;
 
@@ -96,7 +97,15 @@ impl WindowHandle {
     }
 
     pub fn is_resizable(&self) -> bool {
-        self.state.resizable
+        self.state.sizing_strategy.is_resizable()
+    }
+
+    pub fn min_size(&self) -> Option<Size> {
+        self.state.sizing_strategy.min_size()
+    }
+
+    pub fn max_size(&self) -> Option<Size> {
+        self.state.sizing_strategy.max_size()
     }
 
     #[inline]
@@ -170,16 +179,16 @@ pub(crate) struct WindowSharedState {
     pub closed: Cell<bool>,
     pub size: Cell<LogicalSize<f64>>,
     pub scale_factor: Cell<f64>,
-    pub resizable: bool,
+    pub sizing_strategy: SizingStrategy,
 }
 
 impl WindowSharedState {
-    pub fn new(size: LogicalSize<f64>, scale_factor: f64, resizable: bool) -> Self {
+    pub fn new(size: LogicalSize<f64>, scale_factor: f64, sizing_strategy: SizingStrategy) -> Self {
         Self {
             closed: false.into(),
             size: size.into(),
             scale_factor: scale_factor.into(),
-            resizable,
+            sizing_strategy,
         }
     }
 }

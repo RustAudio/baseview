@@ -77,7 +77,7 @@ impl WindowInner {
 
         let physical_size = options.size.to_physical(initial_scale_factor);
 
-        let sizing_strategy = SizingStrategy::from_settings(&options, initial_scale_factor);
+        let sizing_strategy = SizingStrategy::from_settings(&options);
 
         let size_hints = get_size_hints(&sizing_strategy, physical_size);
 

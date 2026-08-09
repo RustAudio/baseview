@@ -163,7 +163,7 @@ impl Window {
     ///
     /// This is set by the [`WindowSettings::min_size`] field.
     #[inline]
-    pub fn min_size(&self) -> Option<WindowSize> {
+    pub fn min_size(&self) -> Option<Size> {
         self.inner.min_size()
     }
 
@@ -171,7 +171,7 @@ impl Window {
     ///
     /// This is set by the [`WindowSettings::max_size`] field.
     #[inline]
-    pub fn max_size(&self) -> Option<WindowSize> {
+    pub fn max_size(&self) -> Option<Size> {
         self.inner.max_size()
     }
 
