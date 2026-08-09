@@ -8,7 +8,7 @@ use crate::window::WindowInitializer;
 use crate::{WindowContext, WindowSettings, WindowSize};
 use calloop::LoopSignal;
 use dpi::{PhysicalSize, Size};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::panic::resume_unwind;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -109,7 +109,7 @@ pub struct WindowThreadHandle {
     request_sender: calloop::channel::SyncSender<WindowThreadRequest>,
     response_receiver: mpsc::Receiver<WindowThreadResponseMessage>,
     callback_receiver: Option<mpsc::Receiver<HostCallback>>,
-    host_callbacks: Option<Box<dyn HostCallbacks>>,
+    host_callbacks: Option<RefCell<Box<dyn HostCallbacks>>>,
 }
 
 impl WindowThreadHandle {
@@ -155,7 +155,7 @@ impl WindowThreadHandle {
             loop_signal,
             request_sender,
             response_receiver,
-            host_callbacks: init.host.callbacks.map(|c| c.into_inner()),
+            host_callbacks: init.host.callbacks.map(|c| c.into_inner().into()),
             callback_receiver: main_thread_receiver,
         })
     }
@@ -216,9 +216,9 @@ impl WindowThreadHandle {
         self.shared.is_resizable()
     }
 
-    pub fn handle_main_thread_callback(&mut self) {
+    pub fn handle_main_thread_callback(&self) {
         loop {
-            let Some(receiver) = self.callback_receiver.as_mut() else { return };
+            let Some(receiver) = self.callback_receiver.as_ref() else { return };
             let Some(callback) = receiver.try_recv().ok() else { return };
 
             self.handle_main_thread_message(callback);
@@ -229,8 +229,9 @@ impl WindowThreadHandle {
         self.request(WindowThreadRequest::SetParent(new_parent))
     }
 
-    fn handle_main_thread_message(&mut self, msg: HostCallback) {
-        let Some(host_callbacks) = self.host_callbacks.as_mut() else { return };
+    fn handle_main_thread_message(&self, msg: HostCallback) {
+        let Some(host_callbacks) = self.host_callbacks.as_ref() else { return };
+        let mut host_callbacks = host_callbacks.borrow_mut();
 
         match msg {
             HostCallback::Destroyed => host_callbacks.destroyed(),

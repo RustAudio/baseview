@@ -169,7 +169,7 @@ impl Window {
     ///
     /// On Windows and macOS, this is always a no-op.
     #[inline]
-    pub fn host_main_thread_callback(&mut self) {
+    pub fn host_main_thread_callback(&self) {
         self.inner.handle_main_thread_callback()
     }
 
