@@ -12,7 +12,7 @@ use dispatch2::MainThreadBound;
 pub use error::Error;
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
-use objc2::MainThreadMarker;
+use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::NSView;
 use raw_window_handle::{DisplayHandle, HasWindowHandle};
 use std::fmt;
@@ -69,9 +69,9 @@ impl fmt::Debug for PlatformHandle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ParentWindowHandle {
-    view: Retained<NSView>,
+    view: MainThreadBound<Retained<NSView>>,
 }
 
 impl ParentWindowHandle {
@@ -80,6 +80,26 @@ impl ParentWindowHandle {
     ) -> core::result::Result<Self, ParentWindowHandleError> {
         let view = extract_raw_window_handle(window.window_handle()?)?;
 
-        Ok(Self { view })
+        let mtm = view.mtm();
+        Ok(Self { view: MainThreadBound::new(view, mtm) })
     }
 }
+
+impl Clone for ParentWindowHandle {
+    fn clone(&self) -> Self {
+        // SAFETY: We only use Retained::clone, which is thread-safe
+        let mtm = unsafe { MainThreadMarker::new_unchecked() };
+        let view = self.view.get(mtm);
+        Self { view: MainThreadBound::new(view.clone(), mtm) }
+    }
+}
+
+impl PartialEq for ParentWindowHandle {
+    fn eq(&self, other: &Self) -> bool {
+        // SAFETY: We only use Retained::eq, which is thread-safe
+        let mtm = unsafe { MainThreadMarker::new_unchecked() };
+        Retained::eq(self.view.get(mtm), other.view.get(mtm))
+    }
+}
+
+impl Eq for ParentWindowHandle {}

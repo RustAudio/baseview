@@ -145,6 +145,12 @@ pub struct ParentWindowHandle {
     pub(crate) inner: platform::ParentWindowHandle,
 }
 
+// Assert this is Send+Sync
+const _: () = {
+    const fn foo<T: Send + Sync>() {}
+    foo::<ParentWindowHandle>();
+};
+
 impl ParentWindowHandle {
     /// Grabs a handle to the given `parent_window`, to later create a child window in it.
     pub fn from_window(parent_window: &impl HasWindowHandle) -> Self {
