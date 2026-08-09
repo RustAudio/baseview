@@ -39,7 +39,7 @@ impl WindowHandle {
             let _ = NSApplication::sharedApplication(mtm);
 
             if let Some(parent) = init.settings.parent.take() {
-                return Self::create_window_parented(init, parent.inner.view, mtm);
+                return Self::create_window_parented(init, parent.inner.view.into_inner(mtm), mtm);
             }
 
             Self::create_window_standalone(init, mtm)
@@ -126,7 +126,7 @@ impl WindowHandle {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
-        BaseviewView::set_parent(view, new_parent.view);
+        BaseviewView::set_parent(view, new_parent.view.into_inner(view.mtm));
 
         Ok(())
     }

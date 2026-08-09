@@ -54,6 +54,11 @@ pub struct ParentWindowHandle {
     handle: HWnd,
 }
 
+// SAFETY: ParentWindowHandle does not actually expose any thread-unsafe operation
+unsafe impl Send for ParentWindowHandle {}
+// SAFETY: ParentWindowHandle does not actually expose any thread-unsafe operation
+unsafe impl Sync for ParentWindowHandle {}
+
 impl ParentWindowHandle {
     pub fn extract(
         parent: &impl HasWindowHandle,
