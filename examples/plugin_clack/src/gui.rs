@@ -93,8 +93,22 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
         })
     }
 
-    fn adjust_size(&mut self, size: GuiSize) -> Option<GuiSize> {
-        Some(size) // Not supported yet
+    fn adjust_size(&mut self, mut size: GuiSize) -> Option<GuiSize> {
+        let Some(gui) = &self.gui else { return None };
+
+        if let Some(max_size) = gui.handle.max_size() {
+            let max_size = window_size_to_gui_size(max_size);
+            size.width = size.width.min(max_size.width);
+            size.height = size.height.min(max_size.height);
+        }
+
+        if let Some(min_size) = gui.handle.min_size() {
+            let min_size = window_size_to_gui_size(min_size);
+            size.width = size.width.max(min_size.width);
+            size.height = size.height.max(min_size.height);
+        }
+
+        Some(size)
     }
 
     fn set_size(&mut self, size: GuiSize) -> Result<(), PluginError> {

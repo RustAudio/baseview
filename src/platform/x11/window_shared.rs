@@ -1,9 +1,10 @@
 use crate::platform::x11::event_loop::EventLoop;
 use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::x11::window_thread::WindowThreadShared;
-use crate::platform::x11::xcb_connection::{get_size_hints, WmSizeHintsExt};
+use crate::platform::x11::xcb_connection::get_size_hints;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::*;
+use crate::utils::SizingStrategy;
 use crate::{warn, MouseCursor, WindowHandler, WindowSettings, WindowSize};
 use calloop::LoopSignal;
 use dpi::{PhysicalSize, Size};
@@ -51,7 +52,7 @@ pub(crate) struct WindowInner {
     pub(crate) scaling_factor: ScalingFactor,
 
     window_size: Cell<PhysicalSize<u16>>,
-    pub(crate) is_resizable: bool,
+    pub(crate) sizing_strategy: SizingStrategy,
     mouse_cursor: Cell<MouseCursor>,
     pub(crate) visual_id: Visualid,
 
@@ -76,7 +77,9 @@ impl WindowInner {
 
         let physical_size = options.size.to_physical(initial_scale_factor);
 
-        let size_hints = get_size_hints(&options, initial_scale_factor);
+        let sizing_strategy = SizingStrategy::from_settings(&options, initial_scale_factor);
+
+        let size_hints = get_size_hints(&sizing_strategy, physical_size);
 
         #[cfg(feature = "opengl")]
         let visual_info =
@@ -127,7 +130,7 @@ impl WindowInner {
                 system: scaling.into(),
                 suggested: options.fallback_scale_factor.into(),
             },
-            is_resizable: options.resizable,
+            sizing_strategy,
             mouse_cursor: MouseCursor::default().into(),
             loop_signal: ev_loop.get_signal(),
 
@@ -193,8 +196,8 @@ impl WindowInner {
         let new_physical_size = size.to_physical(self.scaling_factor.get());
         self.xcb_window.resize(new_physical_size)?.check()?;
 
-        if !self.is_resizable {
-            let size_hints = WmSizeHints::new().with_fixed_size(new_physical_size.cast());
+        if !self.sizing_strategy.is_resizable() {
+            let size_hints = get_size_hints(&self.sizing_strategy, new_physical_size);
             self.xcb_window.set_size_hints(size_hints)?.check()?;
         }
 
@@ -222,8 +225,8 @@ impl WindowInner {
         }
 
         self.xcb_window.resize(new_size.cast())?.check()?; // Will not call handler, as size is the same as above.
-        if !self.is_resizable {
-            let size_hints = WmSizeHints::new().with_fixed_size(new_size.cast());
+        if !self.sizing_strategy.is_resizable() {
+            let size_hints = get_size_hints(&self.sizing_strategy, new_size);
             self.xcb_window.set_size_hints(size_hints)?.check()?;
         }
 

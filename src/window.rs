@@ -159,6 +159,22 @@ impl Window {
         self.inner.is_resizable()
     }
 
+    /// Returns the minimum size of the window, if it has one.
+    ///
+    /// This is set by the [`WindowSettings::min_size`] field.
+    #[inline]
+    pub fn min_size(&self) -> Option<WindowSize> {
+        self.inner.min_size()
+    }
+
+    /// Returns the minimum size of the window, if it has one.
+    ///
+    /// This is set by the [`WindowSettings::max_size`] field.
+    #[inline]
+    pub fn max_size(&self) -> Option<WindowSize> {
+        self.inner.max_size()
+    }
+
     /// Performs the work the window thread had scheduled for the main thread.
     ///
     /// This must be called back on the main thread, as a response to [`HostMainThreadCaller::call_main_thread`](host::HostMainThreadCaller::call_main_thread).
