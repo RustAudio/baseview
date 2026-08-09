@@ -16,7 +16,7 @@ use dpi::{LogicalPosition, LogicalSize, Size};
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
-use objc2::{msg_send, AllocAnyThread, MainThreadMarker};
+use objc2::{msg_send, AllocAnyThread, ClassType, MainThreadMarker};
 use objc2_app_kit::{
     NSApplication, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
     NSTrackingAreaOptions, NSView, NSWindow,
@@ -342,8 +342,16 @@ impl ViewImpl for BaseviewView {
     /// No-op without the `opengl` feature: there's no GL subview to
     /// collapse, so the override pass-through is equivalent to the
     /// default implementation.
-    fn hit_test(this: ViewRef<'_, Self>, point: NSPoint) -> Option<&NSView> {
-        let superclass = this.view.class().superclass().unwrap();
+    fn hit_test(this: ViewRef<'_, Self>, point: NSPoint) -> Option<&NSView> {  
+        // Use the statically-known NSView class instead of a live `this.view.class()` lookup.
+        // baseview itself registers this class's superclass as NSView::class() at creation time
+        // (see src/wrappers/appkit/view/implementation.rs), so this isn't a new assumption — it's
+        // the same value, fetched safely instead of re-derived at hitTest call time, where the
+        // live lookup was returning something else on macOS 26.6 and causing infinite recursion.
+        // prior:
+        // let superclass = this.view.class().superclass().unwrap();
+
+        let superclass = NSView::class();
 
         // SAFETY: Our superclass is NSView
         let super_result: Option<&NSView> =
