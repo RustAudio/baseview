@@ -5,6 +5,7 @@ use super::window::WindowSharedState;
 use crate::host::Host;
 use crate::platform::*;
 use crate::tracing::warn;
+use crate::utils::SizingStrategy;
 use crate::window::WindowInitializer;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
@@ -85,7 +86,11 @@ impl BaseviewView {
         let view_rect =
             NSRect::new(NSPoint::ZERO, NSSize::new(final_size.width, final_size.height));
 
-        let state = Rc::new(WindowSharedState::new(final_size, 1.0, init.settings.resizable));
+        let state = Rc::new(WindowSharedState::new(
+            final_size,
+            1.0,
+            SizingStrategy::from_settings(&init.settings),
+        ));
 
         let inner = BaseviewView {
             mtm,
@@ -110,6 +115,8 @@ impl BaseviewView {
 
             view.state.scale_factor.set(view.view.backing_scale_factor());
             view.state.size.set(view.view.size());
+
+            Self::apply_size_constraints(view);
 
             #[cfg(feature = "opengl")]
             if let Some(gl_config) = init.settings.gl_config {
@@ -244,6 +251,24 @@ impl BaseviewView {
             Self::close(this, false);
         }
     }
+
+    fn apply_size_constraints(this: ViewRef<Self>) {
+        let ViewParentingType::Windowed { owned_window } = &*this.parenting.borrow() else {
+            return;
+        };
+        let Some(window) = owned_window.load() else { return };
+        let scale_factor = window.backingScaleFactor();
+
+        if let Some(min_size) = this.state.sizing_strategy.min_size() {
+            let min_size = min_size.to_logical(scale_factor);
+            window.setContentMinSize(NSSize::new(min_size.width, min_size.height));
+        }
+
+        if let Some(max_size) = this.state.sizing_strategy.max_size() {
+            let max_size = max_size.to_logical(scale_factor);
+            window.setContentMaxSize(NSSize::new(max_size.width, max_size.height));
+        }
+    }
 }
 
 impl Drop for BaseviewView {
@@ -289,6 +314,10 @@ impl ViewImpl for BaseviewView {
     fn view_did_change_backing_properties(this: ViewRef<Self>, notify_host: bool) {
         let current_size = this.view.size();
         let current_scale_factor = this.view.backing_scale_factor();
+
+        if this.state.scale_factor.get() != current_scale_factor {
+            Self::apply_size_constraints(this);
+        }
 
         // Only send the event when the window's size has actually changed to be in line with the
         // other platform implementations

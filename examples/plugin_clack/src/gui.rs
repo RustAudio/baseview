@@ -93,8 +93,23 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
         })
     }
 
-    fn adjust_size(&mut self, size: GuiSize) -> Option<GuiSize> {
-        Some(size) // Not supported yet
+    fn adjust_size(&mut self, mut size: GuiSize) -> Option<GuiSize> {
+        let Some(gui) = &self.gui else { return None };
+        let scale_factor = gui.handle.size().scale_factor;
+
+        if let Some(max_size) = gui.handle.max_size() {
+            let max_size = size_to_gui_size(max_size, scale_factor);
+            size.width = size.width.min(max_size.width);
+            size.height = size.height.min(max_size.height);
+        }
+
+        if let Some(min_size) = gui.handle.min_size() {
+            let min_size = size_to_gui_size(min_size, scale_factor);
+            size.width = size.width.max(min_size.width);
+            size.height = size.height.max(min_size.height);
+        }
+
+        Some(size)
     }
 
     fn set_size(&mut self, size: GuiSize) -> Result<(), PluginError> {
@@ -147,6 +162,20 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
         gui.handle.show()?;
 
         Ok(())
+    }
+}
+
+fn size_to_gui_size(size: Size, scale_factor: f64) -> GuiSize {
+    #[cfg(target_os = "macos")]
+    {
+        let size = size.to_logical(scale_factor);
+        GuiSize { width: size.width, height: size.height }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let size = size.to_physical(scale_factor);
+        GuiSize { width: size.width, height: size.height }
     }
 }
 

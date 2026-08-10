@@ -30,6 +30,9 @@ pub struct WindowSettings {
     /// Whether the window can be resized.
     pub resizable: bool,
 
+    pub min_size: Option<Size>,
+    pub max_size: Option<Size>,
+
     /// A fallback scale factor, if Baseview couldn't get one from the platform.
     ///
     /// If the platform does already provide an accurate scaling factor, this doesn't do anything.
@@ -111,6 +114,18 @@ impl WindowSettings {
         self
     }
 
+    #[inline]
+    pub fn with_min_size<S: Into<Size>>(mut self, min_size: impl Into<Option<S>>) -> Self {
+        self.min_size = min_size.into().map(S::into);
+        self
+    }
+
+    #[inline]
+    pub fn with_max_size<S: Into<Size>>(mut self, max_size: impl Into<Option<S>>) -> Self {
+        self.max_size = max_size.into().map(S::into);
+        self
+    }
+
     /// Sets [`gl_config`](Self::gl_config) to the given value.
     #[cfg(feature = "opengl")]
     #[inline]
@@ -129,6 +144,8 @@ impl Default for WindowSettings {
             wait_for_parent: false,
             fallback_scale_factor: None,
             resizable: true,
+            min_size: None,
+            max_size: None,
             #[cfg(feature = "opengl")]
             gl_config: None,
         }

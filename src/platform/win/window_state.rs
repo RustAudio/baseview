@@ -1,5 +1,6 @@
 use crate::platform::win::keyboard::KeyboardState;
 use crate::platform::PlatformHandle;
+use crate::utils::SizingStrategy;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
@@ -151,7 +152,7 @@ pub struct WindowSharedState {
     pub destroy_host_originated: Cell<bool>,
 
     pub user32: ExtendedUser32,
-    pub resizable: bool,
+    pub sizing_strategy: SizingStrategy,
 }
 
 impl WindowSharedState {
@@ -164,7 +165,7 @@ impl WindowSharedState {
             fallback_scale_factor: settings.fallback_scale_factor.into(),
             resize_host_originated: false.into(),
             destroy_host_originated: false.into(),
-            resizable: settings.resizable,
+            sizing_strategy: SizingStrategy::from_settings(settings),
             user32,
         }
         .into()

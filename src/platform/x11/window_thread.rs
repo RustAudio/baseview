@@ -3,6 +3,7 @@ use crate::handler::WindowHandlerBuilder;
 use crate::host::HostCallbacks;
 use crate::platform::x11::event_loop::{EventLoop, MainThreadCaller};
 use crate::platform::x11::window_shared::WindowInner;
+use crate::utils::SizingStrategy;
 use crate::warn;
 use crate::window::WindowInitializer;
 use crate::{WindowContext, WindowSettings, WindowSize};
@@ -12,7 +13,7 @@ use std::cell::{Cell, RefCell};
 use std::panic::resume_unwind;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::{mpsc, Mutex};
+use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
 use std::thread::JoinHandle;
 
@@ -22,7 +23,7 @@ pub(crate) struct WindowThreadShared {
     size: AtomicU32,
     final_error: Mutex<Option<String>>,
     stopped_requested_from_host: AtomicBool,
-    is_resizable: AtomicBool,
+    sizing_strategy: OnceLock<SizingStrategy>,
 }
 
 impl WindowThreadShared {
@@ -33,14 +34,14 @@ impl WindowThreadShared {
             size: 0.into(),
             scaling_factor: 0.into(),
             stopped_requested_from_host: false.into(),
-            is_resizable: true.into(),
+            sizing_strategy: OnceLock::new(),
         }
     }
 
     fn init(&self, window: &WindowInner) {
         self.set_size(window.get_size());
         self.set_scaling_factor(window.scale_factor());
-        self.set_resizable(window.is_resizable);
+        let Ok(()) = self.sizing_strategy.set(window.sizing_strategy) else { unreachable!() };
     }
 
     pub fn get_size(&self) -> PhysicalSize<u16> {
@@ -56,12 +57,8 @@ impl WindowThreadShared {
         self.size.store(bytes, Ordering::Relaxed);
     }
 
-    pub fn set_resizable(&self, resizable: bool) {
-        self.is_resizable.store(resizable, Ordering::Relaxed);
-    }
-
-    pub fn is_resizable(&self) -> bool {
-        self.is_resizable.load(Ordering::Relaxed)
+    pub fn sizing_strategy(&self) -> SizingStrategy {
+        self.sizing_strategy.get().copied().unwrap_or_default()
     }
 
     pub fn get_scaling_factor(&self) -> f64 {
@@ -213,7 +210,15 @@ impl WindowThreadHandle {
     }
 
     pub fn is_resizable(&self) -> bool {
-        self.shared.is_resizable()
+        self.shared.sizing_strategy().is_resizable()
+    }
+
+    pub fn min_size(&self) -> Option<Size> {
+        self.shared.sizing_strategy().min_size()
+    }
+
+    pub fn max_size(&self) -> Option<Size> {
+        self.shared.sizing_strategy().max_size()
     }
 
     pub fn handle_main_thread_callback(&self) {
