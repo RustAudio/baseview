@@ -21,17 +21,17 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
 
             let Some(inner_ptr) = NonNull::new(inner_ptr) else {
                 // If the state pointer was null for some weird reason, we just abort.
-                // TODO: log error
+                crate::error!("Failed to create window: lpCreateParams was NULL");
                 return -1;
             };
 
-            if let Err(_e) = window.set_userdata_ptr(inner_ptr.as_ptr()) {
+            if let Err(e) = window.set_userdata_ptr(inner_ptr.as_ptr()) {
                 // The call to SetWindowLongPtrW failed for some reason, we cannot continue.
 
                 // Recover and free the received pointer data.
                 drop(Rc::from_raw(inner_ptr.as_ptr()));
 
-                // TODO: log error
+                crate::error!("Failed to create window: SetWindowLongPtrW failed: {}", e);
                 return -1;
             }
 
@@ -48,7 +48,7 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
                 Ok(()) => 0,
 
                 // If initializer failed, abort.
-                Err(_) => {
+                Err(e) => {
                     // First, revoke ownership from the window, we don't want it to be used by any subsequent messages.
                     let _ = window.set_userdata_ptr(core::ptr::null::<W>());
 
@@ -56,7 +56,7 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
                     // it than risk crashing
                     drop(Rc::from_raw(inner_ptr.as_ptr()));
 
-                    // TODO: log error
+                    crate::error!("Window initializer failed while trying to create window: {}", e);
                     -1
                 }
             }
@@ -83,13 +83,13 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
 
             // This guarantees WindowData remains valid until the end of this scope,
             // even if the event handler leads to the window being destroyed
-            let inner = unsafe { WindowData::from_raw(inner_ptr) };
-
-            let result = inner.handle_message(window, message_code, w_param, l_param);
-
-            drop(inner);
-
-            result.unwrap_or_else(handle_default)
+            unsafe {
+                WindowData::handle(inner_ptr, |inner| {
+                    inner
+                        .handle_message(window, message_code, w_param, l_param)
+                        .unwrap_or_else(handle_default)
+                })
+            }
         }
     }
 }

@@ -186,6 +186,10 @@ impl WindowHandle {
 
 impl Drop for WindowHandle {
     fn drop(&mut self) {
+        if !self.state.is_alive.get() {
+            return;
+        }
+
         if let Some(hwnd) = self.hwnd.take() {
             let _guard = self.state.originate_host_destroy();
             if let Err(e) = hwnd.destroy() {
