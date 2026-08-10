@@ -8,8 +8,8 @@ use crate::platform::x11::error::FatalError;
 use crate::platform::x11::window_thread::{
     HostCallback, WindowThreadRequest, WindowThreadResponseMessage,
 };
-use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
+use crate::{warn, Notification};
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use calloop::generic::Generic;
 use calloop::timer::{TimeoutAction, Timer};
@@ -319,6 +319,16 @@ impl EventLoop {
                 }
             }
 
+            XEvent::MapNotify(_) => {
+                self.window.is_mapped.set(true);
+                self.handle_notify(Notification::Shown);
+            }
+
+            XEvent::UnmapNotify(_) => {
+                self.window.is_mapped.set(false);
+                self.handle_notify(Notification::Hidden);
+            }
+
             XEvent::SelectionNotify(event) => {
                 if event.property == self.window.connection.atoms.XdndSelection {
                     self.drag_n_drop.handle_selection_notify_event(
@@ -424,6 +434,12 @@ impl EventLoop {
 
     fn handle_event(&mut self, event: Event) {
         self.handler.on_event(event);
+    }
+
+    fn handle_notify(&self, notification: Notification) {
+        if let Err(e) = self.handler.notify(notification) {
+            crate::warn!("Failed to handle notification {:?}: {}", notification, e);
+        }
     }
 }
 

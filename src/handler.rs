@@ -21,6 +21,24 @@ pub trait WindowHandler: 'static {
     /// previous size, but this is only a best-effort attempt since those operations can also fail.
     fn resized(&self, new_size: WindowSize) -> core::result::Result<(), HandlerError>;
     fn on_event(&self, event: Event) -> EventStatus;
+
+    /// Notifies the window handler about a given event.
+    ///
+    /// Unlike [`on_event`](Self::on_event), this method indicates that the platform does not need
+    /// any kind of return value from the [`WindowHandler`], and doesn't care whether the notification
+    /// has been processed in any way.
+    ///
+    /// # Errors
+    ///
+    /// If this operation fails, the failure reason will be logged, if the `tracing` feature is enabled.
+    /// Otherwise, the error is completely ignored.
+    ///
+    /// Implementations should be able to gracefully continue execution in case this method returns
+    /// an error.
+    fn notify(&self, notification: Notification) -> core::result::Result<(), HandlerError> {
+        let _ = notification;
+        Ok(())
+    }
 }
 
 type DynBuilderResult = core::result::Result<Box<dyn WindowHandler>, HandlerError>;

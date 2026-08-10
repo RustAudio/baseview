@@ -1,5 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
+use std::thread;
 use std::time::Duration;
 
 use rtrb::{Consumer, RingBuffer};
@@ -8,8 +9,8 @@ use rtrb::{Consumer, RingBuffer};
 use baseview::copy_to_clipboard;
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::{
-    Event, EventStatus, HandlerError, MouseEvent, Window, WindowContext, WindowHandler,
-    WindowSettings, WindowSize,
+    Event, EventStatus, HandlerError, MouseEvent, Notification, Window, WindowContext,
+    WindowHandler, WindowSettings, WindowSize,
 };
 
 #[derive(Debug, Clone)]
@@ -45,6 +46,8 @@ impl WindowHandler for OpenWindowExample {
         if !self.damaged.get() {
             return Ok(());
         }
+
+        eprintln!("Redraw!");
 
         let mut surface = self.surface.borrow_mut();
         let mut pixels = surface.buffer_mut()?;
@@ -137,6 +140,14 @@ impl WindowHandler for OpenWindowExample {
 
         EventStatus::Captured
     }
+
+    fn notify(&self, notification: Notification) -> Result<(), HandlerError> {
+        if let Notification::Shown = notification {
+            self.damaged.set(true);
+        }
+
+        Ok(())
+    }
 }
 
 fn main() -> Result<(), baseview::Error> {
@@ -152,7 +163,7 @@ fn main() -> Result<(), baseview::Error> {
         }
     });
 
-    Window::create(window_open_options, |window| {
+    let w = Window::create(window_open_options, |window| {
         let ctx = softbuffer::Context::new(window.clone())?;
         let mut surface = softbuffer::Surface::new(&ctx, window.clone())?;
         let size = window.size().physical;
@@ -166,8 +177,11 @@ fn main() -> Result<(), baseview::Error> {
             is_cursor_inside: false.into(),
             damaged: true.into(),
         })
-    })?
-    .run_until_closed()?;
+    })?;
+
+    thread::sleep(Duration::from_secs(1));
+
+    w.run_until_closed()?;
 
     Ok(())
 }

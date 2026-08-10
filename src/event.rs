@@ -164,3 +164,15 @@ pub enum EventStatus {
     /// result in [DropEffect]
     AcceptDrop(DropEffect),
 }
+
+/// A notification given to a [`WindowHandler`](crate::WindowHandler), via its
+/// [`notify`](crate::WindowHandler::notify) method.
+///
+/// These differ from [`Event`]s, in that the platform does not expect any kind of [`EventStatus`] as
+/// a result of handling (or not) a notification.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Notification {
+    Shown,
+    Hidden,
+}

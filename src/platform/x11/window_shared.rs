@@ -56,6 +56,7 @@ pub(crate) struct WindowInner {
     pub(crate) visual_id: Visualid,
 
     pub(crate) is_focused: Cell<bool>,
+    pub(crate) is_mapped: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
 
     pub(crate) main_thread_shared: Arc<WindowThreadShared>,
@@ -134,6 +135,7 @@ impl WindowInner {
             loop_signal: ev_loop.get_signal(),
 
             is_focused: false.into(),
+            is_mapped: false.into(),
             main_thread_shared: shared,
 
             #[cfg(feature = "opengl")]
@@ -264,5 +266,9 @@ impl WindowInner {
 
     pub fn size(&self) -> WindowSize {
         WindowSize::from_physical(self.window_size.get().cast(), self.scaling_factor.get())
+    }
+
+    pub fn is_shown(&self) -> bool {
+        self.is_mapped.get()
     }
 }

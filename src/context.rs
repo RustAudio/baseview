@@ -64,6 +64,15 @@ impl WindowContext {
         self.inner.size()
     }
 
+    /// Returns whether the window has been shown to the user.
+    ///
+    /// Note that this is distinct to whether the window is actually visible.
+    /// For instance, this will still return `true` if the window is minimized, or obscured by other
+    /// window.
+    pub fn is_shown(&self) -> bool {
+        self.inner.is_shown()
+    }
+
     /// Returns a new lightweight [`PlatformHandle`] to this window.
     ///
     /// It can be sent across threads to access the underlying platform window and display connection.
