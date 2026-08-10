@@ -24,7 +24,6 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
 use std::cell::{Cell, RefCell};
-use std::cmp::min;
 use std::rc::Rc;
 
 pub enum ViewParentingType {
