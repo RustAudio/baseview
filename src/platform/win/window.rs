@@ -637,14 +637,22 @@ unsafe fn wnd_proc_inner(
 
             let info = lparam as *mut MINMAXINFO;
 
+            let ctx = DpiAwarenessContext::new(&window_state.user32).unwrap();
+            let style = window.get_style().unwrap();
+            let dpi = window_state.shared.current_dpi.get();
+
             if let Some(size) = sizing.min_size() {
                 let size = size.to_physical(window_state.shared.scale_factor());
+                let size =
+                    ctx.client_area_to_nc_area(size.into(), style, dpi).unwrap().size().cast();
                 let pt = POINT { x: size.width, y: size.height };
                 (&raw mut (*info).ptMinTrackSize).write(pt);
             }
 
             if let Some(size) = sizing.max_size() {
                 let size = size.to_physical(window_state.shared.scale_factor());
+                let size =
+                    ctx.client_area_to_nc_area(size.into(), style, dpi).unwrap().size().cast();
                 let pt = POINT { x: size.width, y: size.height };
                 (&raw mut (*info).ptMaxTrackSize).write(pt);
             }
