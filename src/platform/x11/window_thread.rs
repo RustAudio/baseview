@@ -213,18 +213,12 @@ impl WindowThreadHandle {
         self.shared.sizing_strategy().is_resizable()
     }
 
-    pub fn min_size(&self) -> Option<WindowSize> {
-        let min_size = self.shared.sizing_strategy().min_size()?;
-        let scale_factor = self.shared.get_scaling_factor();
-
-        Some(WindowSize::from_physical(min_size.cast(), scale_factor))
+    pub fn min_size(&self) -> Option<Size> {
+        self.shared.sizing_strategy().min_size()
     }
 
-    pub fn max_size(&self) -> Option<WindowSize> {
-        let max_size = self.shared.sizing_strategy().max_size()?;
-        let scale_factor = self.shared.get_scaling_factor();
-
-        Some(WindowSize::from_physical(max_size.cast(), scale_factor))
+    pub fn max_size(&self) -> Option<Size> {
+        self.shared.sizing_strategy().max_size()
     }
 
     pub fn handle_main_thread_callback(&self) {

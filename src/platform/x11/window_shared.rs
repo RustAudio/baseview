@@ -12,7 +12,6 @@ use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
-use x11rb::properties::WmSizeHints;
 use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, InputFocus, Visualid};
 use x11rb::CURRENT_TIME;
 
@@ -79,7 +78,7 @@ impl WindowInner {
 
         let sizing_strategy = SizingStrategy::from_settings(&options);
 
-        let size_hints = get_size_hints(&sizing_strategy, physical_size);
+        let size_hints = get_size_hints(&sizing_strategy, physical_size, initial_scale_factor);
 
         #[cfg(feature = "opengl")]
         let visual_info =
@@ -197,7 +196,8 @@ impl WindowInner {
         self.xcb_window.resize(new_physical_size)?.check()?;
 
         if !self.sizing_strategy.is_resizable() {
-            let size_hints = get_size_hints(&self.sizing_strategy, new_physical_size);
+            let size_hints =
+                get_size_hints(&self.sizing_strategy, new_physical_size, self.scale_factor());
             self.xcb_window.set_size_hints(size_hints)?.check()?;
         }
 
@@ -226,7 +226,7 @@ impl WindowInner {
 
         self.xcb_window.resize(new_size.cast())?.check()?; // Will not call handler, as size is the same as above.
         if !self.sizing_strategy.is_resizable() {
-            let size_hints = get_size_hints(&self.sizing_strategy, new_size);
+            let size_hints = get_size_hints(&self.sizing_strategy, new_size, self.scale_factor());
             self.xcb_window.set_size_hints(size_hints)?.check()?;
         }
 

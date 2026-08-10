@@ -3,7 +3,7 @@ use dpi::{PhysicalSize, Pixel};
 use x11rb::properties::WmSizeHints;
 
 pub fn get_size_hints(
-    strategy: &SizingStrategy, current_size: PhysicalSize<impl Pixel>,
+    strategy: &SizingStrategy, current_size: PhysicalSize<impl Pixel>, scale_factor: f64,
 ) -> WmSizeHints {
     let mut size_hints = WmSizeHints::default();
 
@@ -13,8 +13,10 @@ pub fn get_size_hints(
             size_hints.max_size = size_hints.min_size;
         }
         SizingStrategy::Resizable { min_size, max_size } => {
-            size_hints.min_size = min_size.map(to_size_hint);
-            size_hints.max_size = max_size.map(to_size_hint);
+            size_hints.min_size =
+                min_size.map(|s| to_size_hint(s.to_physical::<i32>(scale_factor)));
+            size_hints.max_size =
+                max_size.map(|s| to_size_hint(s.to_physical::<i32>(scale_factor)));
         }
     }
 
