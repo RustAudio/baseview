@@ -5,8 +5,8 @@ use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Dpi, ExtendedUser32};
-use crate::{warn, WindowSettings};
-use crate::{Event, EventStatus, MouseCursor, WindowHandler, WindowSize};
+use crate::WindowSettings;
+use crate::{MouseCursor, WindowSize};
 use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, OnceCell, Ref, RefCell};
@@ -22,8 +22,6 @@ pub(crate) struct WindowState {
     pub mouse_button_counter: Cell<usize>,
     pub mouse_was_outside_window: Cell<bool>,
     pub cursor_icon: Cell<MouseCursor>,
-    // Initialized late so the `Window` can hold a reference to this `WindowState`
-    pub handler: OnceCell<Box<dyn WindowHandler>>,
 
     pub user32: ExtendedUser32,
     pub shared: Rc<WindowSharedState>,
@@ -40,30 +38,12 @@ impl WindowState {
             mouse_button_counter: Cell::new(0),
             mouse_was_outside_window: true.into(),
             cursor_icon: Cell::new(MouseCursor::Default),
-            handler: OnceCell::new(),
             user32,
             shared,
 
             #[cfg(feature = "opengl")]
             gl_context: OnceCell::new(),
         }
-    }
-
-    pub(crate) fn handle_on_frame(&self) {
-        let Some(handler) = self.handler.get() else { return };
-
-        if let Err(e) = handler.on_frame() {
-            warn!("Error while rendering frame: {}", e);
-            self.request_close();
-        }
-    }
-
-    pub(crate) fn handle_event(&self, event: Event) -> EventStatus {
-        let Some(handler) = self.handler.get() else {
-            return EventStatus::Ignored;
-        };
-
-        handler.on_event(event)
     }
 
     /// Returns the current size of this window.
