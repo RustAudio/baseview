@@ -1,22 +1,14 @@
 use windows_core::{ComObject, HSTRING};
 use windows_sys::Win32::{
     Foundation::{LPARAM, LRESULT, RECT, WPARAM},
-    UI::{
-        Controls::WM_MOUSELEAVE,
-        WindowsAndMessaging::{
-            HTCLIENT, WHEEL_DELTA, WM_CHAR, WM_CLOSE, WM_DPICHANGED, WM_INPUTLANGCHANGE,
-            WM_KEYDOWN, WM_KEYUP, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-            WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN,
-            WM_RBUTTONUP, WM_SETCURSOR, WM_SETFOCUS, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN,
-            WM_SYSKEYUP, WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP,
-        },
-    },
+    UI::{Controls::WM_MOUSELEAVE, WindowsAndMessaging::*},
 };
 
 use crate::{warn, HandlerError};
 use dpi::{PhysicalPosition, PhysicalSize, Size};
 use std::cell::Cell;
 use std::num::NonZeroUsize;
+use windows_sys::Win32::Foundation::POINT;
 
 pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
@@ -69,7 +61,15 @@ impl WindowHandle {
     }
 
     pub fn is_resizable(&self) -> bool {
-        self.state.resizable
+        self.state.sizing_strategy.is_resizable()
+    }
+
+    pub fn min_size(&self) -> Option<Size> {
+        self.state.sizing_strategy.min_size()
+    }
+
+    pub fn max_size(&self) -> Option<Size> {
+        self.state.sizing_strategy.max_size()
     }
 
     pub fn size(&self) -> WindowSize {
@@ -626,6 +626,30 @@ unsafe fn wnd_proc_inner(
                 // Cursor is being changed by some other window, e.g. when having mouse on the borders to resize it
                 None
             }
+        }
+        WM_GETMINMAXINFO => {
+            let sizing = window_state.shared.sizing_strategy;
+
+            // Only implement this message if we actually need to specify a min/max size
+            if let (None, None) = (sizing.min_size(), sizing.max_size()) {
+                return None;
+            }
+
+            let info = lparam as *mut MINMAXINFO;
+
+            if let Some(size) = sizing.min_size() {
+                let size = size.to_physical(window_state.shared.scale_factor());
+                let pt = POINT { x: size.width, y: size.height };
+                (&raw mut (*info).ptMinTrackSize).write(pt);
+            }
+
+            if let Some(size) = sizing.max_size() {
+                let size = size.to_physical(window_state.shared.scale_factor());
+                let pt = POINT { x: size.width, y: size.height };
+                (&raw mut (*info).ptMaxTrackSize).write(pt);
+            }
+
+            Some(0)
         }
         // NOTE: `WM_NCDESTROY` is handled in the outer function because this deallocates the window
         //        state
