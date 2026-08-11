@@ -9,8 +9,8 @@ use rtrb::{Consumer, RingBuffer};
 use baseview::copy_to_clipboard;
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::{
-    Event, EventStatus, HandlerError, MouseEvent, Notification, Window, WindowContext,
-    WindowHandler, WindowSettings, WindowSize,
+    DamageRegion, Event, EventStatus, HandlerError, MouseEvent, Notification, Window,
+    WindowContext, WindowHandler, WindowSettings, WindowSize,
 };
 
 #[derive(Debug, Clone)]
@@ -146,6 +146,12 @@ impl WindowHandler for OpenWindowExample {
             self.damaged.set(true);
         }
 
+        Ok(())
+    }
+
+    fn damage(&self, _: DamageRegion) -> Result<(), HandlerError> {
+        eprintln!("Damage!");
+        self.damaged.set(true);
         Ok(())
     }
 }

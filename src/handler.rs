@@ -39,6 +39,11 @@ pub trait WindowHandler: 'static {
         let _ = notification;
         Ok(())
     }
+
+    fn damage(&self, region: DamageRegion) -> core::result::Result<(), HandlerError> {
+        let _ = region;
+        Ok(())
+    }
 }
 
 type DynBuilderResult = core::result::Result<Box<dyn WindowHandler>, HandlerError>;
@@ -61,4 +66,10 @@ impl WindowHandlerBuilder {
             Err(e) => Err(platform::Error::Handler(e)),
         }
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DamageRegion {
+    FullWindow, // later: rects
 }

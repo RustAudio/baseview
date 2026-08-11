@@ -3,13 +3,14 @@ use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mo
 use super::*;
 use std::result::Result;
 
+use crate::handler::DamageRegion;
 use crate::host::HostMainThreadCaller;
 use crate::platform::x11::error::FatalError;
 use crate::platform::x11::window_thread::{
     HostCallback, WindowThreadRequest, WindowThreadResponseMessage,
 };
 use crate::wrappers::xkbcommon::XkbcommonState;
-use crate::{warn, Notification};
+use crate::{warn, HandlerError, Notification};
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use calloop::generic::Generic;
 use calloop::timer::{TimeoutAction, Timer};
@@ -426,6 +427,11 @@ impl EventLoop {
                 self.handle_event(Event::Window(WindowEvent::Unfocused));
             }
 
+            XEvent::Expose(e) => {
+                dbg!(e);
+                self.handle_damage(DamageRegion::FullWindow);
+            }
+
             _ => {}
         }
 
@@ -439,6 +445,12 @@ impl EventLoop {
     fn handle_notify(&self, notification: Notification) {
         if let Err(e) = self.handler.notify(notification) {
             crate::warn!("Failed to handle notification {:?}: {}", notification, e);
+        }
+    }
+
+    fn handle_damage(&self, damage_region: DamageRegion) {
+        if let Err(e) = self.handler.damage(damage_region) {
+            crate::warn!("Error while notifying handler of window damage: {}", e);
         }
     }
 }
