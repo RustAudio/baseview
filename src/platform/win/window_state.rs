@@ -9,7 +9,7 @@ use crate::WindowSettings;
 use crate::{MouseCursor, WindowSize};
 use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
-use std::cell::{Cell, OnceCell, Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::num::NonZeroIsize;
 use std::rc::Rc;
 use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
@@ -27,7 +27,7 @@ pub(crate) struct WindowState {
     pub shared: Rc<WindowSharedState>,
 
     #[cfg(feature = "opengl")]
-    pub gl_context: OnceCell<super::gl::GlContext>,
+    pub gl_context: std::cell::OnceCell<super::gl::GlContext>,
 }
 
 impl WindowState {
@@ -42,7 +42,7 @@ impl WindowState {
             shared,
 
             #[cfg(feature = "opengl")]
-            gl_context: OnceCell::new(),
+            gl_context: std::cell::OnceCell::new(),
         }
     }
 
