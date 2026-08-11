@@ -12,13 +12,11 @@ use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use calloop::generic::Generic;
-use calloop::timer::{TimeoutAction, Timer};
 use calloop::{Interest, LoopSignal, Mode, PostAction};
 use dpi::{PhysicalPosition, PhysicalSize};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
-use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::errors::ConnectionError;
 use x11rb::protocol::Event as XEvent;
@@ -52,6 +50,7 @@ pub(crate) struct EventLoop {
     window: Rc<WindowInner>,
 
     new_physical_size: Option<PhysicalSize<u16>>,
+    exposed: bool,
 
     loop_signal: LoopSignal,
 
@@ -64,8 +63,6 @@ pub(crate) struct EventLoop {
     main_thread: Option<MainThreadCaller>,
 }
 
-const FRAME_INTERVAL: Duration = Duration::from_millis(15);
-
 impl EventLoop {
     pub fn new(
         window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
@@ -74,10 +71,6 @@ impl EventLoop {
         main_thread: Option<MainThreadCaller>, inner: &mut calloop::EventLoop<'static, Self>,
     ) -> Result<Self, Error> {
         let loop_handle = inner.handle();
-
-        loop_handle
-            .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| e.handle_frame(i))
-            .map_err(|e| e.error)?;
 
         loop_handle
             .insert_source(
@@ -94,6 +87,7 @@ impl EventLoop {
             loop_signal: inner.get_signal(),
             handler,
             new_physical_size: None,
+            exposed: false,
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
             run_error: None,
@@ -106,16 +100,32 @@ impl EventLoop {
 
     #[inline]
     fn drain_xcb_events(&mut self) -> Result<(), FatalError> {
-        // the X server has a tendency to send spurious/extraneous configure notify events when a
-        // window is resized, and we need to batch those together and just send one resize event
-        // when they've all been coalesced.
-        self.new_physical_size = None;
-
         while let Some(event) = self.window.connection.conn.poll_for_event()? {
             self.handle_xcb_event(event)?;
         }
 
-        self.handle_coalesced_resize_events()
+        Ok(())
+    }
+
+    fn handle_coalesced_expose_events(&mut self) -> Result<(), FatalError> {
+        if !self.exposed {
+            return Ok(());
+        }
+        self.exposed = false;
+
+        if !self.window.is_mapped.get() {
+            return Ok(());
+        }
+
+        let _ = self.window.xcb_window.trigger_expose()?;
+
+        if let Err(e) = self.handler.on_frame() {
+            self.run_error = Some(e.into());
+            self.stop_now();
+            return Ok(());
+        }
+
+        Ok(())
     }
 
     fn handle_coalesced_resize_events(&mut self) -> Result<(), FatalError> {
@@ -143,6 +153,9 @@ impl EventLoop {
                     previous: WindowSize::from_physical(previous.cast(), scale_factor),
                 })?;
             }
+
+            // Immediately schedule a redraw, do not wait for an "expose" event
+            self.exposed = true;
         }
 
         Ok(())
@@ -223,30 +236,14 @@ impl EventLoop {
         Ok(PostAction::Continue)
     }
 
-    fn handle_frame(&mut self, previous_deadline: Instant) -> TimeoutAction {
-        if let Err(e) = self.handler.on_frame() {
-            self.run_error = Some(e.into());
-            self.stop_now();
-            return TimeoutAction::Drop;
-        }
-
-        // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
-        // the expected frame time, this will throttle down to prevent multiple frames from
-        // being queued up.
-
-        let now = Instant::now();
-        let next_deadline = if previous_deadline + FRAME_INTERVAL >= now {
-            now + FRAME_INTERVAL
-        } else {
-            previous_deadline + FRAME_INTERVAL
-        };
-
-        TimeoutAction::ToInstant(next_deadline)
-    }
-
     fn handle_idle(&mut self) {
         // Check for any events in the internal buffers before going to sleep:
-        let _ = self.drain_xcb_events();
+        let _ = self.drain_xcb_events(); // TODO: handle error
+
+        self.handle_coalesced_resize_events().unwrap(); // TODO: handle error
+        self.handle_coalesced_expose_events().unwrap();
+
+        self.window.connection.conn.flush().unwrap(); // TODO: handle error
     }
 
     pub fn run(mut self, mut inner: calloop::EventLoop<Self>) -> Result<(), Error> {
@@ -329,13 +326,16 @@ impl EventLoop {
                 }
             }
 
-            XEvent::ConfigureNotify(event) => {
-                let new_physical_size = PhysicalSize::new(event.width, event.height);
-
-                if self.new_physical_size.is_some() || new_physical_size != self.window.get_size() {
-                    self.new_physical_size = Some(new_physical_size);
-                }
+            XEvent::Error(e) => {
+                warn!("Received leftover X11 error: {:?}", e);
             }
+
+            XEvent::ConfigureNotify(event) => {
+                // These are coalesced and then handled asynchronously at the end of the event loop
+                self.new_physical_size = Some(PhysicalSize::new(event.width, event.height));
+            }
+
+            XEvent::Expose(_) => self.exposed = true,
 
             ////
             // mouse
@@ -415,6 +415,12 @@ impl EventLoop {
                 self.window.is_focused.set(false);
                 self.handle_event(Event::Window(WindowEvent::Unfocused));
             }
+
+            XEvent::MapNotify(_) => {
+                self.window.is_mapped.set(true);
+                self.window.xcb_window.trigger_expose()?;
+            }
+            XEvent::UnmapNotify(_) => self.window.is_mapped.set(false),
 
             _ => {}
         }

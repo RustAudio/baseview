@@ -56,6 +56,7 @@ pub(crate) struct WindowInner {
     pub(crate) visual_id: Visualid,
 
     pub(crate) is_focused: Cell<bool>,
+    pub(crate) is_mapped: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
 
     pub(crate) main_thread_shared: Arc<WindowThreadShared>,
@@ -134,6 +135,7 @@ impl WindowInner {
             loop_signal: ev_loop.get_signal(),
 
             is_focused: false.into(),
+            is_mapped: false.into(),
             main_thread_shared: shared,
 
             #[cfg(feature = "opengl")]
@@ -165,7 +167,11 @@ impl WindowInner {
 
     pub fn store_size(&self, size: PhysicalSize<u16>) -> PhysicalSize<u16> {
         let previous = self.window_size.replace(size);
-        self.main_thread_shared.set_size(size);
+
+        if previous != size {
+            self.main_thread_shared.set_size(size);
+        }
+
         previous
     }
 

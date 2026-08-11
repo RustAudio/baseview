@@ -62,12 +62,16 @@ impl XcbWindow {
         Ok(Self { window_id, connection })
     }
 
-    pub fn map_window(&self) -> Result<VoidCookie<'_, XCBConnection>, ReplyOrIdError> {
-        Ok(self.connection.conn.map_window(self.window_id.get())?)
+    pub fn map_window(&self) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
+        self.connection.conn.map_window(self.window_id.get())
     }
 
-    pub fn unmap_window(&self) -> Result<VoidCookie<'_, XCBConnection>, ReplyOrIdError> {
-        Ok(self.connection.conn.unmap_window(self.window_id.get())?)
+    pub fn unmap_window(&self) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
+        self.connection.conn.unmap_window(self.window_id.get())
+    }
+
+    pub fn trigger_expose(&self) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
+        self.connection.conn.clear_area(true, self.window_id.get(), 0, 0, 0, 0)
     }
 
     pub fn resize(
@@ -90,41 +94,40 @@ impl XcbWindow {
         )
     }
 
-    pub fn set_title(&self, title: &str) -> Result<VoidCookie<'_, XCBConnection>, ReplyOrIdError> {
-        Ok(self.connection.conn.change_property8(
+    pub fn set_title(&self, title: &str) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
+        self.connection.conn.change_property8(
             PropMode::REPLACE,
             self.window_id.get(),
             AtomEnum::WM_NAME,
             AtomEnum::STRING,
             title.as_bytes(),
-        )?)
+        )
     }
 
-    pub fn enable_wm_protocols(&self) -> Result<VoidCookie<'_, XCBConnection>, ReplyOrIdError> {
-        Ok(self.connection.conn.change_property32(
+    pub fn enable_wm_protocols(&self) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
+        self.connection.conn.change_property32(
             PropMode::REPLACE,
             self.window_id.get(),
             self.connection.atoms.WM_PROTOCOLS,
             AtomEnum::ATOM,
             &[self.connection.atoms.WM_DELETE_WINDOW],
-        )?)
+        )
     }
 
-    pub fn enable_dnd_protocols(&self) -> Result<VoidCookie<'_, XCBConnection>, ReplyOrIdError> {
-        Ok(self.connection.conn.change_property32(
+    pub fn enable_dnd_protocols(&self) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
+        self.connection.conn.change_property32(
             PropMode::REPLACE,
             self.window_id.get(),
             self.connection.atoms.XdndAware,
             AtomEnum::ATOM,
             &[5u32], // Latest version; hasn't changed since 2002
-        )?)
+        )
     }
 
     pub fn set_size_hints(
         &self, size_hints: WmSizeHints,
-    ) -> Result<VoidCookie<'_, XCBConnection>, ReplyOrIdError> {
-        Ok(size_hints
-            .set_normal_hints(&self.connection.conn as &XCBConnection, self.window_id.get())?)
+    ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
+        size_hints.set_normal_hints(&self.connection.conn as &XCBConnection, self.window_id.get())
     }
 
     #[inline]
