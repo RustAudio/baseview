@@ -125,6 +125,7 @@ impl WindowHandler for FramePacingTest {
     }
 
     fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError> {
+        dbg!(new_size);
         let size = new_size.physical;
         self.canvas.borrow_mut().set_size(size.width, size.height, new_size.scale_factor as f32);
 
@@ -132,7 +133,7 @@ impl WindowHandler for FramePacingTest {
     }
 
     fn on_event(&self, event: Event) -> EventStatus {
-        dbg!(&event);
+        //dbg!(&event);
         if let Event::Keyboard(KeyboardEvent { key, state: KeyState::Down, .. }) = event {
             match key {
                 Key::Named(NamedKey::ArrowLeft) => {

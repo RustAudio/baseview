@@ -50,8 +50,10 @@ impl MainThreadCaller {
 pub(crate) struct EventLoop {
     handler: Box<dyn WindowHandler>,
     window: Rc<WindowInner>,
+    foo: usize,
 
     new_physical_size: Option<PhysicalSize<u16>>,
+    expose_requested: bool,
 
     loop_signal: LoopSignal,
 
@@ -62,11 +64,7 @@ pub(crate) struct EventLoop {
 
     response_sender: mpsc::Sender<WindowThreadResponseMessage>,
     main_thread: Option<MainThreadCaller>,
-
-    last_rendered_msc: Option<u64>,
 }
-
-const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 
 impl EventLoop {
     pub fn new(
@@ -100,10 +98,11 @@ impl EventLoop {
             xkb_state: XkbcommonState::new(&window.connection),
             run_error: None,
             main_thread,
+            foo: 0,
+            expose_requested: false,
 
             window,
             response_sender,
-            last_rendered_msc: None,
         })
     }
 
@@ -129,7 +128,10 @@ impl EventLoop {
             self.handle_xcb_event(event)?;
         }
 
-        self.handle_coalesced_resize_events()
+        self.handle_coalesced_resize_events()?;
+        self.handle_coalesced_expose_events()?;
+
+        Ok(())
     }
 
     fn handle_coalesced_resize_events(&mut self) -> Result<(), FatalError> {
@@ -158,6 +160,18 @@ impl EventLoop {
                 })?;
             }
         }
+
+        Ok(())
+    }
+
+    fn handle_coalesced_expose_events(&mut self) -> Result<(), FatalError> {
+        if !self.expose_requested {
+            return Ok(());
+        }
+
+        let _ = self.handler.on_frame(); // TODO
+
+        self.window.xcb_window.clear_area();
 
         Ok(())
     }
@@ -221,10 +235,7 @@ impl EventLoop {
                 Ok(())
             }
             WindowThreadRequest::Show => {
-                self.window.xcb_window.present_select_input()?.unwrap(); // TODO: unwrap: fallback to timer
                 self.window.xcb_window.map_window()?.check()?;
-                self.window.xcb_window.present_notify(0)?.check().unwrap(); // TODO: unwrap
-                self.window.connection.conn.flush()?;
                 Ok(())
             }
             WindowThreadRequest::Hide => {
@@ -238,27 +249,6 @@ impl EventLoop {
         self.drain_xcb_events()?;
 
         Ok(PostAction::Continue)
-    }
-
-    fn handle_frame(&mut self, previous_deadline: Instant) -> TimeoutAction {
-        if let Err(e) = self.handler.on_frame() {
-            self.run_error = Some(e.into());
-            self.stop_now();
-            return TimeoutAction::Drop;
-        }
-
-        // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
-        // the expected frame time, this will throttle down to prevent multiple frames from
-        // being queued up.
-
-        let now = Instant::now();
-        let next_deadline = if previous_deadline + FRAME_INTERVAL >= now {
-            now + FRAME_INTERVAL
-        } else {
-            previous_deadline + FRAME_INTERVAL
-        };
-
-        TimeoutAction::ToInstant(next_deadline)
     }
 
     fn handle_idle(&mut self) {
@@ -435,23 +425,8 @@ impl EventLoop {
                 self.handle_event(Event::Window(WindowEvent::Unfocused));
             }
 
-            XEvent::PresentCompleteNotify(e) => {
-                //dbg!(e.msc);
-                if Some(e.msc) != self.last_rendered_msc {
-                    //return Ok(());
-
-                    //dbg!(e.msc, self.last_rendered_msc);
-
-                    if let Err(e) = self.handler.on_frame() {
-                        self.run_error = Some(e.into());
-                        self.stop_now();
-                    } else {
-                        self.last_rendered_msc = Some(e.msc);
-                        //dbg!("Present_notify");
-                    }
-                }
-                self.window.xcb_window.present_notify(e.msc.wrapping_add(1))?; // TODO: unwrap
-                self.window.connection.conn.flush()?;
+            XEvent::Expose(e) => {
+                self.expose_requested = true;
             }
 
             _ => {}

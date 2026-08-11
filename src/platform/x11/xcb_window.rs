@@ -32,6 +32,8 @@ impl XcbWindow {
             unreachable!();
         };
 
+        dbg!(window_id);
+
         connection.conn.create_window(
             visual_info.visual_depth,
             window_id.get(),
@@ -73,6 +75,16 @@ impl XcbWindow {
         };
 
         Ok(Self { window_id, connection, present_notify_event_id })
+    }
+
+    pub fn clear_area(&self) {
+        // TODO: unwrap
+        self.connection
+            .conn
+            .clear_area(true, self.window_id.get(), 0, 0, 0, 0)
+            .unwrap()
+            .check()
+            .unwrap();
     }
 
     pub fn present_select_input(
@@ -151,17 +163,6 @@ impl XcbWindow {
         &self, size_hints: WmSizeHints,
     ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
         size_hints.set_normal_hints(&self.connection.conn as &XCBConnection, self.window_id.get())
-    }
-
-    pub fn present_supported(&self) -> bool {
-        self.present_notify_event_id.is_some()
-    }
-
-    pub fn present_notify(
-        &self, target_msc: u64,
-    ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
-        //dbg!(target_msc);
-        self.connection.conn.present_notify_msc(self.window_id.get(), 0, target_msc, 1, 0)
     }
 
     #[inline]
