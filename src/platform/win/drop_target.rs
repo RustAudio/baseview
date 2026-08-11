@@ -13,7 +13,8 @@ use windows_core::Ref;
 use windows_sys::Win32::UI::Shell::DragQueryFileW;
 
 use super::window_state::WindowState;
-use crate::wrappers::win32::window::HWnd;
+use crate::platform::BaseviewWindow;
+use crate::wrappers::win32::window::{HWnd, WindowData};
 use crate::{DropData, DropEffect, Event, EventStatus, MouseEvent};
 
 #[implement(IDropTarget)]
@@ -39,18 +40,22 @@ impl DropTarget {
 
     #[allow(non_snake_case)]
     fn on_event(&self, pdwEffect: Option<*mut DROPEFFECT>, event: MouseEvent) {
-        let Some(window_state) = self.window_state.upgrade() else {
+        let Some(window_data_ptr) = self.hwnd.get_userdata_ptr() else {
             return;
         };
 
         let event = Event::Mouse(event);
-        let event_status = window_state.handle_event(event);
+        let event_status = unsafe {
+            WindowData::<BaseviewWindow>::handle(window_data_ptr, |window| {
+                window.inner().map(|w| w.handle_event(event))
+            })
+        };
 
         let effect = match event_status {
-            EventStatus::AcceptDrop(DropEffect::Copy) => DROPEFFECT_COPY,
-            EventStatus::AcceptDrop(DropEffect::Move) => DROPEFFECT_MOVE,
-            EventStatus::AcceptDrop(DropEffect::Link) => DROPEFFECT_LINK,
-            EventStatus::AcceptDrop(DropEffect::Scroll) => DROPEFFECT_SCROLL,
+            Some(EventStatus::AcceptDrop(DropEffect::Copy)) => DROPEFFECT_COPY,
+            Some(EventStatus::AcceptDrop(DropEffect::Move)) => DROPEFFECT_MOVE,
+            Some(EventStatus::AcceptDrop(DropEffect::Link)) => DROPEFFECT_LINK,
+            Some(EventStatus::AcceptDrop(DropEffect::Scroll)) => DROPEFFECT_SCROLL,
             _ => DROPEFFECT_NONE,
         };
 

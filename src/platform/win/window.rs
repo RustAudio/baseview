@@ -4,9 +4,9 @@ use windows_sys::Win32::{
     UI::{Controls::WM_MOUSELEAVE, WindowsAndMessaging::*},
 };
 
-use crate::{warn, HandlerError};
+use crate::{warn, EventStatus, HandlerError, WindowHandler};
 use dpi::{PhysicalPosition, PhysicalSize, Size};
-use std::cell::Cell;
+use std::cell::{Cell, OnceCell};
 use std::num::NonZeroUsize;
 use windows_sys::Win32::Foundation::POINT;
 
@@ -186,6 +186,10 @@ impl WindowHandle {
 
 impl Drop for WindowHandle {
     fn drop(&mut self) {
+        if !self.state.is_alive.get() {
+            return;
+        }
+
         if let Some(hwnd) = self.hwnd.take() {
             let _guard = self.state.originate_host_destroy();
             if let Err(e) = hwnd.destroy() {
@@ -201,6 +205,7 @@ pub struct BaseviewWindow {
     initial_size: Size,
 
     handler_builder: Cell<Option<WindowHandlerBuilder>>,
+    handler: OnceCell<Box<dyn WindowHandler>>,
     host: Host,
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
@@ -233,6 +238,7 @@ impl BaseviewWindow {
                     window_state,
                     initial_size: init.settings.size,
                     handler_builder: Cell::new(Some(init.builder)),
+                    handler: OnceCell::new(),
                     shared_state,
                     host: init.host,
 
@@ -276,6 +282,23 @@ impl BaseviewWindow {
         };
 
         self.host.request_resize(new_size)
+    }
+
+    pub(crate) fn handle_on_frame(&self) {
+        let Some(handler) = self.handler.get() else { return };
+
+        if let Err(e) = handler.on_frame() {
+            warn!("Error while rendering frame: {}", e);
+            self.window_state.request_close();
+        }
+    }
+
+    pub(crate) fn handle_event(&self, event: Event) -> EventStatus {
+        let Some(handler) = self.handler.get() else {
+            return EventStatus::Ignored;
+        };
+
+        handler.on_event(event)
     }
 }
 
@@ -333,7 +356,7 @@ impl WindowImpl for BaseviewWindow {
             let context = crate::WindowContext::new(Rc::clone(&self.window_state));
             self.handler_builder.take().unwrap().build(context)?
         };
-        let Ok(()) = window_state.handler.set(handler) else { unreachable!() };
+        let Ok(()) = self.handler.set(handler) else { unreachable!() };
 
         Ok(())
     }
@@ -366,7 +389,7 @@ unsafe fn wnd_proc_inner(
                 window_state.mouse_was_outside_window.set(false);
 
                 let enter_event = Event::Mouse(MouseEvent::CursorEntered);
-                window_state.handle_event(enter_event);
+                window_bv.handle_event(enter_event);
             }
 
             let x = (lparam & 0xFFFF) as i16 as i32;
@@ -380,12 +403,12 @@ unsafe fn wnd_proc_inner(
                     .get_modifiers_from_mouse_wparam(wparam),
             });
 
-            window_state.handle_event(move_event);
+            window_bv.handle_event(move_event);
             Some(0)
         }
 
         WM_MOUSELEAVE => {
-            window_state.handle_event(Event::Mouse(MouseEvent::CursorLeft));
+            window_bv.handle_event(Event::Mouse(MouseEvent::CursorLeft));
 
             window_state.mouse_was_outside_window.set(true);
             Some(0)
@@ -407,7 +430,7 @@ unsafe fn wnd_proc_inner(
                     .get_modifiers_from_mouse_wparam(wparam),
             });
 
-            window_state.handle_event(event);
+            window_bv.handle_event(event);
             Some(0)
         }
         WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
@@ -469,20 +492,20 @@ unsafe fn wnd_proc_inner(
                 };
 
                 window_state.mouse_button_counter.set(mouse_button_counter);
-                window_state.handle_event(Event::Mouse(event));
+                window_bv.handle_event(Event::Mouse(event));
             }
 
             None
         }
         WM_TIMER => {
             if wparam == WIN_FRAME_TIMER.get() {
-                window_state.handle_on_frame()
+                window_bv.handle_on_frame()
             }
 
             Some(0)
         }
         WM_CLOSE => {
-            window_state.handle_event(Event::Window(WindowEvent::WillClose));
+            window_bv.handle_event(Event::Window(WindowEvent::WillClose));
 
             None
         }
@@ -496,7 +519,7 @@ unsafe fn wnd_proc_inner(
             );
 
             if let Some(event) = opt_event {
-                window_state.handle_event(Event::Keyboard(event));
+                window_bv.handle_event(Event::Keyboard(event));
             }
 
             if msg != WM_SYSKEYDOWN {
@@ -506,12 +529,12 @@ unsafe fn wnd_proc_inner(
             }
         }
         WM_SETFOCUS => {
-            window_state.handle_event(Event::Window(WindowEvent::Focused));
+            window_bv.handle_event(Event::Window(WindowEvent::Focused));
 
             None
         }
         WM_KILLFOCUS => {
-            window_state.handle_event(Event::Window(WindowEvent::Unfocused));
+            window_bv.handle_event(Event::Window(WindowEvent::Unfocused));
 
             None
         }
@@ -530,7 +553,7 @@ unsafe fn wnd_proc_inner(
             let previous = window_state.shared.current_size.replace(new_size);
             let new_size = WindowSize::from_physical(new_size, window_state.shared.scale_factor());
 
-            let handler = window_state.handler.get()?;
+            let handler = window_bv.handler.get()?;
             if let Err(e) = handler.resized(new_size) {
                 warn!("Window Handler failed to resize: {}", e);
                 window_state.shared.current_size.set(previous);
@@ -581,7 +604,7 @@ unsafe fn wnd_proc_inner(
             let _ = window.set_nc_rect(suggested_nc_rect);
 
             if changed {
-                let handler = window_state.handler.get()?;
+                let handler = window_bv.handler.get()?;
                 let new_size = WindowSize::from_physical(new_size, dpi.scale_factor());
 
                 if let Err(e) = handler.resized(new_size) {

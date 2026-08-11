@@ -12,7 +12,7 @@ mod wgl;
 #[cfg(feature = "opengl")]
 pub use wgl::*;
 
-use data::WindowData;
+pub use data::WindowData;
 use dpi::PhysicalSize;
 pub use handle::HWnd;
 pub use proc::wnd_proc;
