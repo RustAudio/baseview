@@ -12,11 +12,13 @@ use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use calloop::generic::Generic;
-use calloop::{Interest, LoopSignal, Mode, PostAction};
+use calloop::timer::{TimeoutAction, Timer};
+use calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction};
 use dpi::{PhysicalPosition, PhysicalSize};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
+use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::errors::ConnectionError;
 use x11rb::protocol::Event as XEvent;
@@ -72,6 +74,8 @@ impl EventLoop {
     ) -> Result<Self, Error> {
         let loop_handle = inner.handle();
 
+        Self::setup_fallback_frame_timer(&loop_handle)?;
+
         loop_handle
             .insert_source(
                 Generic::new_with_error(window.connection.conn.clone(), Interest::READ, Mode::Edge),
@@ -99,33 +103,63 @@ impl EventLoop {
     }
 
     #[inline]
-    fn drain_xcb_events(&mut self) -> Result<(), FatalError> {
+    fn drain_xcb_events(&mut self) -> Result<bool, ConnectionError> {
+        let mut event_received = false;
         while let Some(event) = self.window.connection.conn.poll_for_event()? {
+            event_received = true;
             self.handle_xcb_event(event)?;
         }
+
+        Ok(event_received)
+    }
+
+    fn setup_fallback_frame_timer(
+        loop_handle: &LoopHandle<'_, Self>,
+    ) -> Result<(), calloop::Error> {
+        const FRAME_INTERVAL: Duration = Duration::from_millis(15);
+
+        fn handle_frame(evloop: &mut EventLoop, previous_deadline: Instant) -> TimeoutAction {
+            evloop.exposed = true;
+
+            // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
+            // the expected frame time, this will throttle down to prevent multiple frames from
+            // being queued up.
+
+            let now = Instant::now();
+            let next_deadline = if previous_deadline + FRAME_INTERVAL >= now {
+                now + FRAME_INTERVAL
+            } else {
+                previous_deadline + FRAME_INTERVAL
+            };
+
+            TimeoutAction::ToInstant(next_deadline)
+        }
+
+        loop_handle
+            .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| handle_frame(e, i))
+            .map_err(|e| e.error)?;
 
         Ok(())
     }
 
-    fn handle_coalesced_expose_events(&mut self) -> Result<(), FatalError> {
+    fn handle_redraw(&mut self) {
         if !self.exposed {
-            return Ok(());
+            return;
         }
         self.exposed = false;
 
         if !self.window.is_mapped.get() {
-            return Ok(());
+            return;
         }
-
-        let _ = self.window.xcb_window.trigger_expose()?;
 
         if let Err(e) = self.handler.on_frame() {
             self.run_error = Some(e.into());
             self.stop_now();
-            return Ok(());
+            return;
         }
 
-        Ok(())
+        // Any socket error will be handled in the next poll
+        let _ = self.window.connection.conn.flush();
     }
 
     fn handle_coalesced_resize_events(&mut self) -> Result<(), FatalError> {
@@ -237,13 +271,28 @@ impl EventLoop {
     }
 
     fn handle_idle(&mut self) {
+        if let Err(e) = self.try_handle_idle() {
+            self.run_error = Some(e.into());
+            self.stop_now();
+        }
+    }
+
+    fn try_handle_idle(&mut self) -> Result<(), FatalError> {
         // Check for any events in the internal buffers before going to sleep:
-        let _ = self.drain_xcb_events(); // TODO: handle error
+        self.drain_xcb_events()?;
 
-        self.handle_coalesced_resize_events().unwrap(); // TODO: handle error
-        self.handle_coalesced_expose_events().unwrap();
+        loop {
+            self.handle_coalesced_resize_events()?;
+            self.handle_redraw();
 
-        self.window.connection.conn.flush().unwrap(); // TODO: handle error
+            if !self.drain_xcb_events()? {
+                break;
+            }
+        }
+
+        self.window.connection.conn.flush()?;
+
+        Ok(())
     }
 
     pub fn run(mut self, mut inner: calloop::EventLoop<Self>) -> Result<(), Error> {
@@ -418,7 +467,7 @@ impl EventLoop {
 
             XEvent::MapNotify(_) => {
                 self.window.is_mapped.set(true);
-                self.window.xcb_window.trigger_expose()?;
+                self.exposed = true;
             }
             XEvent::UnmapNotify(_) => self.window.is_mapped.set(false),
 

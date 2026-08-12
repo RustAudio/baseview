@@ -54,6 +54,7 @@ pub enum Error {
     MainThreadRecvResult,
     Calloop(calloop::Error),
     RequestFromMainThreadFailed(RequestFailed),
+    SendMainThread,
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
     #[cfg(feature = "opengl")]
@@ -81,6 +82,7 @@ impl Display for Error {
             }
             Error::Calloop(e) => e.fmt(f),
             Error::RequestFromMainThreadFailed(e) => e.fmt(f),
+            Error::SendMainThread => FatalError::SendMainThread.fmt(f),
             #[cfg(feature = "opengl")]
             Error::XLib(e) => e.fmt(f),
             #[cfg(feature = "opengl")]
@@ -154,6 +156,15 @@ impl From<calloop::Error> for Error {
 impl From<RequestFailed> for Error {
     fn from(value: RequestFailed) -> Self {
         Self::RequestFromMainThreadFailed(value)
+    }
+}
+
+impl From<FatalError> for Error {
+    fn from(value: FatalError) -> Self {
+        match value {
+            FatalError::Connection(e) => Self::Connection(e),
+            FatalError::SendMainThread => Self::SendMainThread,
+        }
     }
 }
 

@@ -70,10 +70,6 @@ impl XcbWindow {
         self.connection.conn.unmap_window(self.window_id.get())
     }
 
-    pub fn trigger_expose(&self) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
-        self.connection.conn.clear_area(true, self.window_id.get(), 0, 0, 0, 0)
-    }
-
     pub fn resize(
         &self, size: PhysicalSize<u32>,
     ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
