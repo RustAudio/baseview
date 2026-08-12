@@ -153,8 +153,7 @@ impl EventLoop {
         }
 
         if let Err(e) = self.handler.on_frame() {
-            self.run_error = Some(e.into());
-            self.stop_now();
+            self.trigger_fatal_error(e.into());
             return;
         }
 
@@ -225,6 +224,13 @@ impl EventLoop {
         self.loop_signal.wakeup();
     }
 
+    fn trigger_fatal_error(&mut self, error: Error) {
+        if self.run_error.is_none() {
+            self.run_error = Some(error);
+        }
+        self.stop_now();
+    }
+
     fn handle_request(&mut self, req: WindowThreadRequest) -> Result<(), Error> {
         match req {
             WindowThreadRequest::Resize(new_size) => {
@@ -272,8 +278,7 @@ impl EventLoop {
 
     fn handle_idle(&mut self) {
         if let Err(e) = self.try_handle_idle() {
-            self.run_error = Some(e.into());
-            self.stop_now();
+            self.trigger_fatal_error(e.into());
         }
     }
 
