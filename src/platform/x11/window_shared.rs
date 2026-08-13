@@ -1,4 +1,5 @@
 use crate::platform::x11::event_loop::EventLoop;
+use crate::platform::x11::visibility_tree::AncestorVisibilityState;
 use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::x11::window_thread::WindowThreadShared;
 use crate::platform::x11::xcb_connection::get_size_hints;
@@ -60,6 +61,8 @@ pub(crate) struct WindowInner {
     pub(crate) is_mapped: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
 
+    pub(crate) visibility_state: AncestorVisibilityState,
+
     pub(crate) main_thread_shared: Arc<WindowThreadShared>,
 }
 
@@ -97,6 +100,12 @@ impl WindowInner {
             &visual_info,
             options.parent.map(|p| p.inner.window_id),
         )?;
+
+        connection.register_tree_structure_events()?.check()?;
+
+        let visibility_state =
+            AncestorVisibilityState::discover(&connection.conn, xcb_window.id().get())?;
+        dbg!(&visibility_state);
 
         let cookies = [
             xcb_window.set_title(&options.title)?,
@@ -138,6 +147,8 @@ impl WindowInner {
             is_focused: false.into(),
             is_mapped: false.into(),
             main_thread_shared: shared,
+
+            visibility_state,
 
             #[cfg(feature = "opengl")]
             gl_context,

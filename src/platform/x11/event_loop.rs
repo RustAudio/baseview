@@ -148,7 +148,7 @@ impl EventLoop {
         }
         self.exposed = false;
 
-        if !self.window.is_mapped.get() {
+        if !self.window.visibility_state.own_window_is_viewable() {
             return;
         }
 
@@ -474,13 +474,34 @@ impl EventLoop {
                 self.handle_event(Event::Window(WindowEvent::Unfocused));
             }
 
-            XEvent::MapNotify(e) if e.window == self.window.raw_id() => {
-                self.window.is_mapped.set(true);
-                self.exposed = true;
+            XEvent::MapNotify(e) => {
+                if e.window == self.window.raw_id() {
+                    self.window.is_mapped.set(true);
+                }
+
+                let previously_viewable = self.window.visibility_state.own_window_is_viewable();
+
+                if self.window.visibility_state.window_mapped(e.window) {
+                    if !previously_viewable && self.window.visibility_state.own_window_is_viewable()
+                    {
+                        self.exposed = true;
+                    }
+                }
             }
 
-            XEvent::UnmapNotify(e) if e.window == self.window.raw_id() => {
-                self.window.is_mapped.set(false)
+            XEvent::UnmapNotify(e) => {
+                dbg!(e, e.window);
+                if e.window == self.window.raw_id() {
+                    self.window.is_mapped.set(false)
+                }
+            }
+
+            XEvent::ReparentNotify(e) => {
+                dbg!(e, e.window, e.parent);
+            }
+
+            XEvent::DestroyNotify(e) => {
+                dbg!(e, e.window);
             }
 
             _ => {}

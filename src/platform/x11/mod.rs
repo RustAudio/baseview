@@ -20,6 +20,7 @@ mod keyboard;
 mod visual_info;
 mod xcb_window;
 
+mod visibility_tree;
 mod window_shared;
 mod window_thread;
 
