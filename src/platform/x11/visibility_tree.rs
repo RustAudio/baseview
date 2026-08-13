@@ -8,7 +8,6 @@ use x11rb::xcb_ffi::XCBConnection;
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct AncestorVisibilityState {
     ancestry: RefCell<Vec<Ancestor>>,
-    own_window_id: Window,
     own_window_viewable: Cell<bool>,
 }
 
@@ -78,7 +77,6 @@ impl AncestorVisibilityState {
         }
 
         Ok(Self {
-            own_window_id,
             own_window_viewable: ancestry.iter().all(|a| a.mapped.get()).into(),
             ancestry: ancestry.into(),
         })
@@ -88,7 +86,7 @@ impl AncestorVisibilityState {
         self.own_window_viewable.get()
     }
 
-    /// Returns `true` if the window is currently tracked, `false` otherwise
+    /// Returns `true` if this operation made our own window visible
     pub fn window_mapped(&self, mapped_window_id: Window) -> bool {
         let ancestry = self.ancestry.borrow();
         let Some(ancestor) = ancestry.iter().find(|a| a.id == mapped_window_id) else {
@@ -97,12 +95,16 @@ impl AncestorVisibilityState {
 
         ancestor.mapped.set(true);
 
+        if self.own_window_viewable.get() {
+            return false;
+        }
+
         let all_mapped = ancestry.iter().all(|a| a.mapped.get());
         if all_mapped {
             self.own_window_viewable.set(true);
         }
 
-        true
+        all_mapped
     }
 
     pub fn window_unmapped(&self, mapped_window_id: Window) -> bool {

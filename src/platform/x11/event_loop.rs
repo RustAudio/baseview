@@ -479,29 +479,27 @@ impl EventLoop {
                     self.window.is_mapped.set(true);
                 }
 
-                let previously_viewable = self.window.visibility_state.own_window_is_viewable();
+                let became_viewable = self.window.visibility_state.window_mapped(e.window);
 
-                if self.window.visibility_state.window_mapped(e.window) {
-                    if !previously_viewable && self.window.visibility_state.own_window_is_viewable()
-                    {
-                        self.exposed = true;
-                    }
+                if became_viewable {
+                    self.exposed = true;
                 }
             }
 
             XEvent::UnmapNotify(e) => {
-                dbg!(e, e.window);
                 if e.window == self.window.raw_id() {
                     self.window.is_mapped.set(false)
                 }
+
+                self.window.visibility_state.window_unmapped(e.window);
             }
 
             XEvent::ReparentNotify(e) => {
-                dbg!(e, e.window, e.parent);
+                dbg!(e, e.window, e.parent); // TODO
             }
 
             XEvent::DestroyNotify(e) => {
-                dbg!(e, e.window);
+                dbg!(e, e.window); // TODO
             }
 
             _ => {}
