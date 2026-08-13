@@ -346,7 +346,7 @@ impl EventLoop {
             ////
             // window
             ////
-            XEvent::ClientMessage(event) => {
+            XEvent::ClientMessage(event) if event.window == self.window.raw_id() => {
                 if event.format != 32 {
                     return Ok(());
                 }
@@ -384,17 +384,17 @@ impl EventLoop {
                 warn!("Received leftover X11 error: {:?}", e);
             }
 
-            XEvent::ConfigureNotify(event) => {
+            XEvent::ConfigureNotify(event) if event.window == self.window.raw_id() => {
                 // These are coalesced and then handled asynchronously at the end of the event loop
                 self.new_physical_size = Some(PhysicalSize::new(event.width, event.height));
             }
 
-            XEvent::Expose(_) => self.exposed = true,
+            XEvent::Expose(e) if e.window == self.window.raw_id() => self.exposed = true,
 
             ////
             // mouse
             ////
-            XEvent::MotionNotify(event) => {
+            XEvent::MotionNotify(event) if event.event == self.window.raw_id() => {
                 let physical_pos = PhysicalPosition::new(event.event_x, event.event_y);
 
                 self.handle_event(Event::Mouse(MouseEvent::CursorMoved {
@@ -403,7 +403,7 @@ impl EventLoop {
                 }));
             }
 
-            XEvent::EnterNotify(event) => {
+            XEvent::EnterNotify(event) if event.event == self.window.raw_id() => {
                 self.handle_event(Event::Mouse(MouseEvent::CursorEntered));
                 // since no `MOTION_NOTIFY` event is generated when `ENTER_NOTIFY` is generated,
                 // we generate a CursorMoved as well, so the mouse position from here isn't lost
@@ -414,32 +414,36 @@ impl EventLoop {
                 }));
             }
 
-            XEvent::LeaveNotify(_) => {
+            XEvent::LeaveNotify(event) if event.event == self.window.raw_id() => {
                 self.handle_event(Event::Mouse(MouseEvent::CursorLeft));
             }
 
-            XEvent::ButtonPress(event) => match event.detail {
-                4..=7 => {
-                    self.handle_event(Event::Mouse(MouseEvent::WheelScrolled {
-                        delta: match event.detail {
-                            4 => ScrollDelta::Lines { x: 0.0, y: 1.0 },
-                            5 => ScrollDelta::Lines { x: 0.0, y: -1.0 },
-                            6 => ScrollDelta::Lines { x: -1.0, y: 0.0 },
-                            7 => ScrollDelta::Lines { x: 1.0, y: 0.0 },
-                            _ => unreachable!(),
-                        },
-                        modifiers: key_mods(event.state),
-                    }));
+            XEvent::ButtonPress(event) if event.event == self.window.raw_id() => {
+                match event.detail {
+                    4..=7 => {
+                        self.handle_event(Event::Mouse(MouseEvent::WheelScrolled {
+                            delta: match event.detail {
+                                4 => ScrollDelta::Lines { x: 0.0, y: 1.0 },
+                                5 => ScrollDelta::Lines { x: 0.0, y: -1.0 },
+                                6 => ScrollDelta::Lines { x: -1.0, y: 0.0 },
+                                7 => ScrollDelta::Lines { x: 1.0, y: 0.0 },
+                                _ => unreachable!(),
+                            },
+                            modifiers: key_mods(event.state),
+                        }));
+                    }
+                    detail => {
+                        self.handle_event(Event::Mouse(MouseEvent::ButtonPressed {
+                            button: mouse_id(detail),
+                            modifiers: key_mods(event.state),
+                        }));
+                    }
                 }
-                detail => {
-                    self.handle_event(Event::Mouse(MouseEvent::ButtonPressed {
-                        button: mouse_id(detail),
-                        modifiers: key_mods(event.state),
-                    }));
-                }
-            },
+            }
 
-            XEvent::ButtonRelease(event) if !(4..=7).contains(&event.detail) => {
+            XEvent::ButtonRelease(event)
+                if event.event == self.window.raw_id() && !(4..=7).contains(&event.detail) =>
+            {
                 let button_id = mouse_id(event.detail);
                 self.handle_event(Event::Mouse(MouseEvent::ButtonReleased {
                     button: button_id,
@@ -450,31 +454,34 @@ impl EventLoop {
             ////
             // keys
             ////
-            XEvent::KeyPress(event) => {
+            XEvent::KeyPress(event) if event.event == self.window.raw_id() => {
                 let ev = Event::Keyboard(convert_key_press_event(&event, &mut self.xkb_state));
                 self.handle_event(ev);
             }
 
-            XEvent::KeyRelease(event) => {
+            XEvent::KeyRelease(event) if event.event == self.window.raw_id() => {
                 let ev = Event::Keyboard(convert_key_release_event(&event, &mut self.xkb_state));
                 self.handle_event(ev);
             }
 
-            XEvent::FocusIn(_) => {
+            XEvent::FocusIn(event) if event.event == self.window.raw_id() => {
                 self.window.is_focused.set(true);
                 self.handle_event(Event::Window(WindowEvent::Focused));
             }
 
-            XEvent::FocusOut(_) => {
+            XEvent::FocusOut(e) if e.event == self.window.raw_id() => {
                 self.window.is_focused.set(false);
                 self.handle_event(Event::Window(WindowEvent::Unfocused));
             }
 
-            XEvent::MapNotify(_) => {
+            XEvent::MapNotify(e) if e.window == self.window.raw_id() => {
                 self.window.is_mapped.set(true);
                 self.exposed = true;
             }
-            XEvent::UnmapNotify(_) => self.window.is_mapped.set(false),
+
+            XEvent::UnmapNotify(e) if e.window == self.window.raw_id() => {
+                self.window.is_mapped.set(false)
+            }
 
             _ => {}
         }

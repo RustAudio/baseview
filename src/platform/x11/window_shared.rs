@@ -12,6 +12,7 @@ use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
+use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, InputFocus, Visualid};
 use x11rb::CURRENT_TIME;
 
@@ -270,5 +271,9 @@ impl WindowInner {
 
     pub fn size(&self) -> WindowSize {
         WindowSize::from_physical(self.window_size.get().cast(), self.scaling_factor.get())
+    }
+
+    pub fn raw_id(&self) -> xproto::Window {
+        self.xcb_window.id().get()
     }
 }
