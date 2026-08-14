@@ -1,15 +1,19 @@
-use std::cell::RefCell;
-use std::collections::hash_map::{Entry, HashMap};
-use std::sync::Arc;
-use x11rb::connection::Connection;
-use x11rb::cursor::Handle as CursorHandle;
-use x11rb::protocol::xproto::{self, Cursor, Screen};
-use x11rb::resource_manager;
-
 use super::cursor;
 use crate::platform::*;
 use crate::wrappers::xlib::XlibXcbConnection;
 use crate::MouseCursor;
+use std::cell::RefCell;
+use std::collections::hash_map::{Entry, HashMap};
+use std::sync::Arc;
+use x11rb::connection::Connection;
+use x11rb::cookie::VoidCookie;
+use x11rb::cursor::Handle as CursorHandle;
+use x11rb::errors::ConnectionError;
+use x11rb::protocol::xproto::{
+    self, ChangeWindowAttributesAux, ConnectionExt, Cursor, EventMask, Screen,
+};
+use x11rb::resource_manager;
+use x11rb::xcb_ffi::XCBConnection;
 
 mod get_property;
 pub use get_property::GetPropertyError;
@@ -108,5 +112,16 @@ impl X11Connection {
         &self, window: xproto::Window, property: xproto::Atom, property_type: xproto::Atom,
     ) -> core::result::Result<Vec<T>, GetPropertyError> {
         get_property::get_property(window, property, property_type, &self.conn)
+    }
+
+    pub fn register_tree_structure_events(
+        &self,
+    ) -> core::result::Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
+        let root = self.screen().root;
+
+        self.conn.change_window_attributes(
+            root,
+            &ChangeWindowAttributesAux::new().event_mask(EventMask::SUBSTRUCTURE_NOTIFY),
+        )
     }
 }

@@ -51,7 +51,8 @@ pub(crate) struct EventLoop {
     handler: Box<dyn WindowHandler>,
     window: Rc<WindowInner>,
 
-    new_physical_size: Option<PhysicalSize<u16>>,
+    new_size: Option<PhysicalSize<u16>>,
+    new_parent_size: Option<PhysicalSize<u16>>,
     exposed: bool,
 
     loop_signal: LoopSignal,
@@ -90,7 +91,8 @@ impl EventLoop {
         Ok(Self {
             loop_signal: inner.get_signal(),
             handler,
-            new_physical_size: None,
+            new_size: None,
+            new_parent_size: None,
             exposed: false,
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
@@ -148,7 +150,7 @@ impl EventLoop {
         }
         self.exposed = false;
 
-        if !self.window.is_mapped.get() {
+        if !self.window.visibility_state.own_window_is_viewable() {
             return;
         }
 
@@ -162,7 +164,20 @@ impl EventLoop {
     }
 
     fn handle_coalesced_resize_events(&mut self) -> Result<(), FatalError> {
-        let Some(new_size) = self.new_physical_size.take() else { return Ok(()) };
+        if let Some(new_parent_size) = self.new_parent_size.take() {
+            if new_parent_size != self.window.get_size() {
+                // The parent was resized, which means we should resize ourselves too.
+                if let Err(e) = self.window.xcb_window.resize(new_parent_size.cast()) {
+                    crate::warn!("Failed to resize window: {}", e);
+                } else {
+                    // Makes the rest of this function run on the new parent size immediately (without waiting for a ConfigureNotify round-trip)
+                    // Also overrides any new sizes we may have received this event loop iteration,it would probably be invalidated anyway
+                    self.new_size = Some(new_parent_size);
+                }
+            }
+        }
+
+        let Some(new_size) = self.new_size.take() else { return Ok(()) };
         let previous = self.window.store_size(new_size);
 
         if previous == new_size {
@@ -346,7 +361,7 @@ impl EventLoop {
             ////
             // window
             ////
-            XEvent::ClientMessage(event) => {
+            XEvent::ClientMessage(event) if event.window == self.window.raw_id() => {
                 if event.format != 32 {
                     return Ok(());
                 }
@@ -386,15 +401,21 @@ impl EventLoop {
 
             XEvent::ConfigureNotify(event) => {
                 // These are coalesced and then handled asynchronously at the end of the event loop
-                self.new_physical_size = Some(PhysicalSize::new(event.width, event.height));
+                if event.window == self.window.raw_id() {
+                    self.new_size = Some(PhysicalSize::new(event.width, event.height));
+                } else if Some(event.window) == self.window.visibility_state.parent_id() {
+                    // Also resize the window if the parent is resized
+                    // This works around some hosts that might not call set_size() right away (or at all...)
+                    self.new_parent_size = Some(PhysicalSize::new(event.width, event.height));
+                }
             }
 
-            XEvent::Expose(_) => self.exposed = true,
+            XEvent::Expose(e) if e.window == self.window.raw_id() => self.exposed = true,
 
             ////
             // mouse
             ////
-            XEvent::MotionNotify(event) => {
+            XEvent::MotionNotify(event) if event.event == self.window.raw_id() => {
                 let physical_pos = PhysicalPosition::new(event.event_x, event.event_y);
 
                 self.handle_event(Event::Mouse(MouseEvent::CursorMoved {
@@ -403,7 +424,7 @@ impl EventLoop {
                 }));
             }
 
-            XEvent::EnterNotify(event) => {
+            XEvent::EnterNotify(event) if event.event == self.window.raw_id() => {
                 self.handle_event(Event::Mouse(MouseEvent::CursorEntered));
                 // since no `MOTION_NOTIFY` event is generated when `ENTER_NOTIFY` is generated,
                 // we generate a CursorMoved as well, so the mouse position from here isn't lost
@@ -414,32 +435,36 @@ impl EventLoop {
                 }));
             }
 
-            XEvent::LeaveNotify(_) => {
+            XEvent::LeaveNotify(event) if event.event == self.window.raw_id() => {
                 self.handle_event(Event::Mouse(MouseEvent::CursorLeft));
             }
 
-            XEvent::ButtonPress(event) => match event.detail {
-                4..=7 => {
-                    self.handle_event(Event::Mouse(MouseEvent::WheelScrolled {
-                        delta: match event.detail {
-                            4 => ScrollDelta::Lines { x: 0.0, y: 1.0 },
-                            5 => ScrollDelta::Lines { x: 0.0, y: -1.0 },
-                            6 => ScrollDelta::Lines { x: -1.0, y: 0.0 },
-                            7 => ScrollDelta::Lines { x: 1.0, y: 0.0 },
-                            _ => unreachable!(),
-                        },
-                        modifiers: key_mods(event.state),
-                    }));
+            XEvent::ButtonPress(event) if event.event == self.window.raw_id() => {
+                match event.detail {
+                    4..=7 => {
+                        self.handle_event(Event::Mouse(MouseEvent::WheelScrolled {
+                            delta: match event.detail {
+                                4 => ScrollDelta::Lines { x: 0.0, y: 1.0 },
+                                5 => ScrollDelta::Lines { x: 0.0, y: -1.0 },
+                                6 => ScrollDelta::Lines { x: -1.0, y: 0.0 },
+                                7 => ScrollDelta::Lines { x: 1.0, y: 0.0 },
+                                _ => unreachable!(),
+                            },
+                            modifiers: key_mods(event.state),
+                        }));
+                    }
+                    detail => {
+                        self.handle_event(Event::Mouse(MouseEvent::ButtonPressed {
+                            button: mouse_id(detail),
+                            modifiers: key_mods(event.state),
+                        }));
+                    }
                 }
-                detail => {
-                    self.handle_event(Event::Mouse(MouseEvent::ButtonPressed {
-                        button: mouse_id(detail),
-                        modifiers: key_mods(event.state),
-                    }));
-                }
-            },
+            }
 
-            XEvent::ButtonRelease(event) if !(4..=7).contains(&event.detail) => {
+            XEvent::ButtonRelease(event)
+                if event.event == self.window.raw_id() && !(4..=7).contains(&event.detail) =>
+            {
                 let button_id = mouse_id(event.detail);
                 self.handle_event(Event::Mouse(MouseEvent::ButtonReleased {
                     button: button_id,
@@ -450,31 +475,56 @@ impl EventLoop {
             ////
             // keys
             ////
-            XEvent::KeyPress(event) => {
+            XEvent::KeyPress(event) if event.event == self.window.raw_id() => {
                 let ev = Event::Keyboard(convert_key_press_event(&event, &mut self.xkb_state));
                 self.handle_event(ev);
             }
 
-            XEvent::KeyRelease(event) => {
+            XEvent::KeyRelease(event) if event.event == self.window.raw_id() => {
                 let ev = Event::Keyboard(convert_key_release_event(&event, &mut self.xkb_state));
                 self.handle_event(ev);
             }
 
-            XEvent::FocusIn(_) => {
+            XEvent::FocusIn(event) if event.event == self.window.raw_id() => {
                 self.window.is_focused.set(true);
                 self.handle_event(Event::Window(WindowEvent::Focused));
             }
 
-            XEvent::FocusOut(_) => {
+            XEvent::FocusOut(e) if e.event == self.window.raw_id() => {
                 self.window.is_focused.set(false);
                 self.handle_event(Event::Window(WindowEvent::Unfocused));
             }
 
-            XEvent::MapNotify(_) => {
-                self.window.is_mapped.set(true);
-                self.exposed = true;
+            XEvent::MapNotify(e) => {
+                if e.window == self.window.raw_id() {
+                    self.window.is_mapped.set(true);
+                }
+
+                let became_viewable = self.window.visibility_state.window_mapped(e.window);
+
+                if became_viewable {
+                    self.exposed = true;
+                }
             }
-            XEvent::UnmapNotify(_) => self.window.is_mapped.set(false),
+
+            XEvent::UnmapNotify(e) => {
+                if e.window == self.window.raw_id() {
+                    self.window.is_mapped.set(false)
+                }
+
+                self.window.visibility_state.window_unmapped(e.window);
+            }
+
+            XEvent::ReparentNotify(e) => self.window.visibility_state.window_reparented(
+                e.window,
+                e.parent,
+                &self.window.connection.conn,
+            ),
+
+            XEvent::DestroyNotify(e) => self
+                .window
+                .visibility_state
+                .window_destroyed(e.window, &self.window.connection.conn),
 
             _ => {}
         }

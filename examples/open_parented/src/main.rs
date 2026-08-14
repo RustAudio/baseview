@@ -20,10 +20,8 @@ impl ParentWindowHandler {
         let size = window.size().physical;
         surface.resize(size.width.try_into()?, size.height.try_into()?)?;
 
-        let window_open_options = WindowSettings::new()
-            .with_size(LogicalSize::new(256, 256))
-            .with_parent(&window)
-            .with_title("baseview child");
+        let window_open_options =
+            WindowSettings::new().with_size(size).with_parent(&window).with_title("baseview child");
 
         let child_window = Window::create(window_open_options, ChildWindowHandler::new)?;
         child_window.show()?;
@@ -37,7 +35,7 @@ impl WindowHandler for ParentWindowHandler {
         let mut surface = self.surface.borrow_mut();
         let mut buf = surface.buffer_mut()?;
         if self.damaged.get() {
-            buf.fill(0xFFAAAAAA);
+            buf.fill(0xFFAA0000);
             self.damaged.set(false);
         }
         buf.present()?;
@@ -55,10 +53,7 @@ impl WindowHandler for ParentWindowHandler {
             self.damaged.set(true);
         }
 
-        let child_size =
-            LogicalSize::new(new_size.logical.width / 2., new_size.logical.height / 2.);
         self.child_window.suggest_fallback_scale_factor(new_size.scale_factor)?;
-        self.child_window.resize(child_size)?;
         Ok(())
     }
 
@@ -95,7 +90,7 @@ impl WindowHandler for ChildWindowHandler {
         let mut surface = self.surface.borrow_mut();
         let mut buf = surface.buffer_mut()?;
         if self.damaged.get() {
-            buf.fill(0xFFAA0000);
+            buf.fill(0xFFAAAAAA);
             self.damaged.set(false);
         }
         buf.present()?;
