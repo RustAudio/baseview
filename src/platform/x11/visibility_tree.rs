@@ -17,8 +17,8 @@ struct AncestryList {
 }
 
 impl AncestryList {
-    pub fn new() -> Self {
-        Self { inner: RefCell::new(Vec::new()) }
+    pub fn new(own_window: Window) -> Self {
+        Self { inner: RefCell::new(vec![Ancestor { id: own_window, mapped: false.into() }]) }
     }
 
     pub fn pop_id(&self) -> Option<Window> {
@@ -31,6 +31,32 @@ impl AncestryList {
 
     pub fn push(&self, ancestor: Ancestor) {
         self.inner.borrow_mut().push(ancestor);
+    }
+
+    pub fn parent_id(&self) -> Option<Window> {
+        self.inner.borrow().get(1).map(|a| a.id)
+    }
+
+    pub fn remove_window(&self, id: Window) -> bool {
+        let mut inner = self.inner.borrow_mut();
+        let Some(index) = inner.iter().position(|a| a.id == id) else {
+            return false;
+        };
+
+        inner.truncate(index.saturating_add(1));
+
+        true
+    }
+
+    pub fn remove_after_window(&self, id: Window) -> bool {
+        let mut inner = self.inner.borrow_mut();
+        let Some(index) = inner.iter().position(|a| a.id == id) else {
+            return false;
+        };
+
+        inner.truncate(index.saturating_add(2));
+
+        true
     }
 
     pub fn check_all_mapped(&self) -> bool {
@@ -56,73 +82,27 @@ struct Ancestor {
 
 impl AncestorVisibilityState {
     pub fn discover(connection: &XCBConnection, own_window_id: Window) -> Result<Self, ReplyError> {
-        let mut current_window = own_window_id;
-        let ancestry = AncestryList::new();
+        let this = Self {
+            ancestry: AncestryList::new(own_window_id),
+            own_window_viewable: Cell::new(false),
+        };
 
-        loop {
-            let (Some(mapped), Some(tree)) = (
-                fetch_is_window_mapped(connection, current_window)?,
-                fetch_window_tree(connection, current_window)?,
-            ) else {
-                // We got a BadWindow while trying to get a window's info, it must have been destroyed.
-                // Try to go back a layer and fetch the window's state and parent again
+        this.try_regenerate_from_last_window(connection)?;
 
-                crate::warn!("Failed to get info for window {}: XBadWindow", current_window);
-
-                let Some(previous_parent) = ancestry.pop_id() else {
-                    // No previous parent, this was the first window. Stop everything and return an empty state
-                    break;
-                };
-
-                current_window = previous_parent;
-                continue;
-            };
-
-            if tree.parent == current_window {
-                // Weird, but that might also mean we're at the end of the tree (or the window has no parent yet)
-                break;
-            }
-
-            // Sanity check if the current parent is actually registered to have the child in its children list
-            if let Some(child_id) = ancestry.last_id() {
-                if !tree.children.contains(&child_id) {
-                    // The child has been orphaned, it must have been reparented between our server queries.
-                    // Go back a step and check again.
-
-                    crate::warn!(
-                        "Children of parent {} does not contain {}: {:?}",
-                        current_window,
-                        child_id,
-                        &tree.children
-                    );
-
-                    let Some(_) = ancestry.pop_id() else { unreachable!() };
-                    current_window = child_id;
-                    continue;
-                }
-            }
-
-            // All checks succeeded, now register the current window info and fetch info from the parent
-            ancestry.push(Ancestor { id: current_window, mapped: mapped.into() });
-
-            if tree.parent == tree.root {
-                // No need to get info for the root, we assume it's always there. We can just stop here.
-                break;
-            }
-
-            current_window = tree.parent;
-        }
-
-        Ok(Self { own_window_viewable: ancestry.check_all_mapped().into(), ancestry })
+        Ok(this)
     }
 
     pub fn own_window_is_viewable(&self) -> bool {
         self.own_window_viewable.get()
     }
 
+    pub fn parent_id(&self) -> Option<Window> {
+        self.ancestry.parent_id()
+    }
+
     /// Returns `true` if this operation made our own window visible
-    pub fn window_mapped(&self, mapped_window_id: Window) -> bool {
-        if !self.ancestry.set_mapped(mapped_window_id, true) {
+    pub fn window_mapped(&self, window_id: Window) -> bool {
+        if !self.ancestry.set_mapped(window_id, true) {
             return false;
         }
 
@@ -138,33 +118,128 @@ impl AncestorVisibilityState {
         all_mapped
     }
 
-    pub fn window_unmapped(&self, mapped_window_id: Window) {
-        if !self.ancestry.set_mapped(mapped_window_id, false) {
+    pub fn window_unmapped(&self, window_id: Window) {
+        if !self.ancestry.set_mapped(window_id, false) {
             return;
         }
 
         self.own_window_viewable.set(false);
     }
-}
 
-/// Returns Ok(None) on BadWindow
-fn fetch_is_window_mapped(
-    connection: &XCBConnection, window: Window,
-) -> Result<Option<bool>, ReplyError> {
-    match connection.get_window_attributes(window)?.reply() {
-        Ok(attr) => Ok(Some(attr.map_state != MapState::UNMAPPED)),
-        Err(ReplyError::X11Error(X11Error { error_kind: ErrorKind::Window, .. })) => Ok(None),
-        Err(e) => Err(e),
+    pub fn window_destroyed(&self, window_id: Window, connection: &XCBConnection) {
+        if !self.ancestry.remove_window(window_id) {
+            return;
+        }
+
+        self.regenerate_from_last_window(connection);
+    }
+
+    pub fn window_reparented(
+        &self, window_id: Window, new_parent: Window, connection: &XCBConnection,
+    ) {
+        if !self.ancestry.remove_after_window(window_id) {
+            return;
+        }
+
+        self.ancestry.push(Ancestor { id: new_parent, mapped: Cell::new(false) });
+
+        self.regenerate_from_last_window(connection);
+    }
+
+    pub fn regenerate_from_last_window(&self, connection: &XCBConnection) {
+        if let Err(e) = self.try_regenerate_from_last_window(connection) {
+            crate::warn!("Failed to generate window ancestry list: {}", e)
+        }
+    }
+
+    fn try_regenerate_from_last_window(
+        &self, connection: &XCBConnection,
+    ) -> Result<(), ReplyError> {
+        let Some(mut current_window) = self.ancestry.pop_id() else { return Ok(()) };
+
+        loop {
+            let Some((mapped, tree)) = fetch_window_info(connection, current_window)? else {
+                // We got a BadWindow while trying to get a window's info, it must have been destroyed.
+                // Try to go back a layer and fetch the window's state and parent again
+
+                crate::warn!("Failed to get info for window {}: XBadWindow", current_window);
+
+                let Some(previous_parent) = self.ancestry.pop_id() else {
+                    // No previous parent, this was the first window. Stop everything and return an empty state
+                    break;
+                };
+
+                current_window = previous_parent;
+                continue;
+            };
+
+            if tree.parent == current_window {
+                // Weird, but that might also mean we're at the end of the tree (or the window has no parent yet)
+                break;
+            }
+
+            // Sanity check if the current parent is actually registered to have the child in its children list
+            if let Some(child_id) = self.ancestry.last_id() {
+                if !tree.children.contains(&child_id) {
+                    // The child has been orphaned, it must have been reparented between our server queries.
+                    // Go back a step and check again.
+
+                    crate::warn!(
+                        "Children of parent {} does not contain {}: {:?}",
+                        current_window,
+                        child_id,
+                        &tree.children
+                    );
+
+                    let Some(_) = self.ancestry.pop_id() else { unreachable!() };
+                    current_window = child_id;
+                    continue;
+                }
+            }
+
+            // All checks succeeded, now register the current window info and fetch info from the parent
+            self.ancestry.push(Ancestor { id: current_window, mapped: mapped.into() });
+
+            if tree.parent == tree.root {
+                // No need to get info for the root, we assume it's always there. We can just stop here.
+                break;
+            }
+
+            current_window = tree.parent;
+        }
+
+        self.own_window_viewable.set(self.ancestry.check_all_mapped());
+
+        Ok(())
     }
 }
 
 /// Returns Ok(None) on BadWindow
-fn fetch_window_tree(
+fn fetch_window_info(
     connection: &XCBConnection, window: Window,
-) -> Result<Option<QueryTreeReply>, ReplyError> {
-    match connection.query_tree(window)?.reply() {
-        Ok(tree) => Ok(Some(tree)),
-        Err(ReplyError::X11Error(X11Error { error_kind: ErrorKind::Window, .. })) => Ok(None),
-        Err(e) => Err(e),
-    }
+) -> Result<Option<(bool, QueryTreeReply)>, ReplyError> {
+    let attrs_cookie = connection.get_window_attributes(window)?;
+    let tree_cookie = connection.query_tree(window)?;
+
+    let mapped = match attrs_cookie.reply() {
+        Ok(attr) => attr.map_state != MapState::UNMAPPED,
+        Err(ReplyError::X11Error(X11Error { error_kind: ErrorKind::Window, .. })) => {
+            tree_cookie.discard_reply_and_errors();
+            return Ok(None);
+        }
+        Err(e) => {
+            tree_cookie.discard_reply_and_errors();
+            return Err(e);
+        }
+    };
+
+    let tree = match tree_cookie.reply() {
+        Ok(tree) => tree,
+        Err(ReplyError::X11Error(X11Error { error_kind: ErrorKind::Window, .. })) => {
+            return Ok(None)
+        }
+        Err(e) => return Err(e),
+    };
+
+    Ok(Some((mapped, tree)))
 }

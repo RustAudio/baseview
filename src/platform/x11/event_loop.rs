@@ -51,7 +51,8 @@ pub(crate) struct EventLoop {
     handler: Box<dyn WindowHandler>,
     window: Rc<WindowInner>,
 
-    new_physical_size: Option<PhysicalSize<u16>>,
+    new_size: Option<PhysicalSize<u16>>,
+    new_parent_size: Option<PhysicalSize<u16>>,
     exposed: bool,
 
     loop_signal: LoopSignal,
@@ -90,7 +91,8 @@ impl EventLoop {
         Ok(Self {
             loop_signal: inner.get_signal(),
             handler,
-            new_physical_size: None,
+            new_size: None,
+            new_parent_size: None,
             exposed: false,
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
@@ -162,7 +164,20 @@ impl EventLoop {
     }
 
     fn handle_coalesced_resize_events(&mut self) -> Result<(), FatalError> {
-        let Some(new_size) = self.new_physical_size.take() else { return Ok(()) };
+        if let Some(new_parent_size) = self.new_parent_size.take() {
+            if new_parent_size != self.window.get_size() {
+                // The parent was resized, which means we should resize ourselves too.
+                if let Err(e) = self.window.xcb_window.resize(new_parent_size.cast()) {
+                    crate::warn!("Failed to resize window: {}", e);
+                } else {
+                    // Makes the rest of this function run on the new parent size immediately (without waiting for a ConfigureNotify round-trip)
+                    // Also overrides any new sizes we may have received this event loop iteration,it would probably be invalidated anyway
+                    self.new_size = Some(new_parent_size);
+                }
+            }
+        }
+
+        let Some(new_size) = self.new_size.take() else { return Ok(()) };
         let previous = self.window.store_size(new_size);
 
         if previous == new_size {
@@ -384,9 +399,15 @@ impl EventLoop {
                 warn!("Received leftover X11 error: {:?}", e);
             }
 
-            XEvent::ConfigureNotify(event) if event.window == self.window.raw_id() => {
+            XEvent::ConfigureNotify(event) => {
                 // These are coalesced and then handled asynchronously at the end of the event loop
-                self.new_physical_size = Some(PhysicalSize::new(event.width, event.height));
+                if event.window == self.window.raw_id() {
+                    self.new_size = Some(PhysicalSize::new(event.width, event.height));
+                } else if Some(event.window) == self.window.visibility_state.parent_id() {
+                    // Also resize the window if the parent is resized
+                    // This works around some hosts that might not call set_size() right away (or at all...)
+                    self.new_parent_size = Some(PhysicalSize::new(event.width, event.height));
+                }
             }
 
             XEvent::Expose(e) if e.window == self.window.raw_id() => self.exposed = true,
@@ -494,13 +515,16 @@ impl EventLoop {
                 self.window.visibility_state.window_unmapped(e.window);
             }
 
-            XEvent::ReparentNotify(e) => {
-                dbg!(e, e.window, e.parent); // TODO
-            }
+            XEvent::ReparentNotify(e) => self.window.visibility_state.window_reparented(
+                e.window,
+                e.parent,
+                &self.window.connection.conn,
+            ),
 
-            XEvent::DestroyNotify(e) => {
-                dbg!(e, e.window); // TODO
-            }
+            XEvent::DestroyNotify(e) => self
+                .window
+                .visibility_state
+                .window_destroyed(e.window, &self.window.connection.conn),
 
             _ => {}
         }
