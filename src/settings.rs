@@ -218,6 +218,11 @@ impl AspectRatio {
     pub fn new(numerator: u32, denominator: u32) -> Self {
         Self { numerator, denominator }
     }
+
+    #[inline]
+    pub fn ratio(&self) -> f64 {
+        (self.numerator as f64) / (self.denominator as f64)
+    }
 }
 
 impl From<(u32, u32)> for AspectRatio {
