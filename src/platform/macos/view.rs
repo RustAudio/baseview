@@ -268,6 +268,13 @@ impl BaseviewView {
             let max_size = max_size.to_logical(scale_factor);
             window.setContentMaxSize(NSSize::new(max_size.width, max_size.height));
         }
+
+        if let Some(aspect_ratio) = this.state.sizing_strategy.aspect_ratio() {
+            window.setContentAspectRatio(NSSize::new(
+                aspect_ratio.numerator as _,
+                aspect_ratio.denominator as _,
+            ))
+        }
     }
 }
 

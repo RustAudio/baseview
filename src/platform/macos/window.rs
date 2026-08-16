@@ -108,6 +108,10 @@ impl WindowHandle {
         self.state.sizing_strategy.max_size()
     }
 
+    pub fn aspect_ratio(&self) -> Option<AspectRatio> {
+        self.state.sizing_strategy.aspect_ratio()
+    }
+
     #[inline]
     pub fn handle_main_thread_callback(&self) {
         // No-op
