@@ -33,6 +33,8 @@ pub struct WindowSettings {
     pub min_size: Option<Size>,
     pub max_size: Option<Size>,
 
+    pub aspect_ratio: Option<AspectRatio>,
+
     /// A fallback scale factor, if Baseview couldn't get one from the platform.
     ///
     /// If the platform does already provide an accurate scaling factor, this doesn't do anything.
@@ -126,6 +128,12 @@ impl WindowSettings {
         self
     }
 
+    #[inline]
+    pub fn with_aspect_ratio<A: Into<AspectRatio>>(mut self, aspect_ratio: Option<A>) -> Self {
+        self.aspect_ratio = aspect_ratio.map(A::into);
+        self
+    }
+
     /// Sets [`gl_config`](Self::gl_config) to the given value.
     #[cfg(feature = "opengl")]
     #[inline]
@@ -146,6 +154,7 @@ impl Default for WindowSettings {
             resizable: true,
             min_size: None,
             max_size: None,
+            aspect_ratio: None,
             #[cfg(feature = "opengl")]
             gl_config: None,
         }
@@ -191,5 +200,29 @@ impl<W: HasWindowHandle> From<&W> for ParentWindowHandle {
 impl From<platform::ParentWindowHandle> for ParentWindowHandle {
     fn from(inner: platform::ParentWindowHandle) -> Self {
         Self { inner }
+    }
+}
+
+/// An aspect ratio `numerator` / `denominator`.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct AspectRatio {
+    /// The numerator of the aspect ratio.
+    pub numerator: u32,
+    /// The denominator of the aspect ratio.
+    pub denominator: u32,
+}
+
+impl AspectRatio {
+    /// Create a new aspect ratio with the given `numerator` and `denominator`.
+    #[inline]
+    pub fn new(numerator: u32, denominator: u32) -> Self {
+        Self { numerator, denominator }
+    }
+}
+
+impl From<(u32, u32)> for AspectRatio {
+    #[inline]
+    fn from((numerator, denominator): (u32, u32)) -> Self {
+        Self::new(numerator, denominator)
     }
 }
