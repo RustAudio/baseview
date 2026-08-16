@@ -1,10 +1,10 @@
-use crate::WindowSettings;
+use crate::{AspectRatio, WindowSettings};
 use dpi::Size;
 
 #[derive(Copy, Clone)]
 pub(crate) enum SizingStrategy {
     Fixed,
-    Resizable { min_size: Option<Size>, max_size: Option<Size> },
+    Resizable { min_size: Option<Size>, max_size: Option<Size>, aspect_ratio: Option<AspectRatio> },
 }
 
 impl SizingStrategy {
@@ -19,7 +19,11 @@ impl SizingStrategy {
             }
         }
 
-        Self::Resizable { min_size: settings.min_size, max_size: settings.max_size }
+        Self::Resizable {
+            min_size: settings.min_size,
+            max_size: settings.max_size,
+            aspect_ratio: settings.aspect_ratio,
+        }
     }
 
     pub fn is_resizable(&self) -> bool {
@@ -39,10 +43,17 @@ impl SizingStrategy {
             Self::Resizable { max_size, .. } => *max_size,
         }
     }
+
+    pub fn aspect_ratio(&self) -> Option<AspectRatio> {
+        match self {
+            Self::Fixed => None,
+            Self::Resizable { aspect_ratio, .. } => *aspect_ratio,
+        }
+    }
 }
 
 impl Default for SizingStrategy {
     fn default() -> Self {
-        Self::Resizable { min_size: None, max_size: None }
+        Self::Resizable { min_size: None, max_size: None, aspect_ratio: None }
     }
 }

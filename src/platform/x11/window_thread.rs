@@ -4,8 +4,8 @@ use crate::host::HostCallbacks;
 use crate::platform::x11::event_loop::{EventLoop, MainThreadCaller};
 use crate::platform::x11::window_shared::WindowInner;
 use crate::utils::SizingStrategy;
-use crate::warn;
 use crate::window::WindowInitializer;
+use crate::{warn, AspectRatio};
 use crate::{WindowContext, WindowSettings, WindowSize};
 use calloop::LoopSignal;
 use dpi::{PhysicalSize, Size};
@@ -219,6 +219,10 @@ impl WindowThreadHandle {
 
     pub fn max_size(&self) -> Option<Size> {
         self.shared.sizing_strategy().max_size()
+    }
+
+    pub fn aspect_ratio(&self) -> Option<AspectRatio> {
+        self.shared.sizing_strategy().aspect_ratio()
     }
 
     pub fn handle_main_thread_callback(&self) {

@@ -175,6 +175,14 @@ impl Window {
         self.inner.max_size()
     }
 
+    /// Returns the fixed aspect ratio of the window, if it has one.
+    ///
+    /// This is set by the [`WindowSettings::aspect_ratio`] field.
+    #[inline]
+    pub fn aspect_ratio(&self) -> Option<AspectRatio> {
+        self.inner.aspect_ratio()
+    }
+
     /// Performs the work the window thread had scheduled for the main thread.
     ///
     /// This must be called back on the main thread, as a response to [`HostMainThreadCaller::call_main_thread`](host::HostMainThreadCaller::call_main_thread).

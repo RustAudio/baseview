@@ -214,7 +214,7 @@ fn main() -> Result<(), baseview::Error> {
     let window_open_options = WindowSettings::new()
         .with_title("WGPU on Baseview")
         .with_size(LogicalSize::new(512, 512))
-        .with_max_size(LogicalSize::new(512, 512));
+        .with_aspect_ratio(Some((1, 1)));
 
     Window::create(window_open_options, |c| pollster::block_on(WgpuExample::new(c)))?
         .run_until_closed()?;
