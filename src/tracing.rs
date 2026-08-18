@@ -1,8 +1,7 @@
-#[cfg(feature = "tracing")]
-pub use tracing::warn;
+#![allow(unused, reason = "Some platform may not use all macros")]
 
-#[cfg(all(feature = "tracing", not(target_os = "macos")))]
-pub use tracing::error;
+#[cfg(feature = "tracing")]
+pub use tracing::{error, warn};
 
 #[cfg(not(feature = "tracing"))]
 mod tracing_impl {
@@ -15,7 +14,6 @@ mod tracing_impl {
     }
 
     pub(crate) use __warn as warn;
-    #[cfg(target_os = "macos")]
     pub(crate) use __warn as error;
 }
 

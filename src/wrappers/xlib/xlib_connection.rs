@@ -109,7 +109,7 @@ impl XlibConnection {
         &self.xlib
     }
 
-    /// Calls XSync(0)
+    /// Calls XSync(0).
     pub fn sync(&self) {
         // SAFETY: This type ensures the display pointer is always valid.
         unsafe { (self.xlib.XSync)(self.display.as_ptr(), 0) };
@@ -121,7 +121,7 @@ impl XlibConnection {
         }
 
         // PANIC: we just checked above that buf.len > 0
-        let buf_len = buf.len() - 1;
+        let Some(buf_len) = buf.len().checked_sub(1) else { unreachable!() };
         let Ok(buf_len) = buf_len.try_into() else {
             // Buffers should never get that big, something went horribly wrong.
             return c"";
@@ -139,7 +139,8 @@ impl XlibConnection {
         };
 
         // PANIC: we checked above that buf.len > 0
-        *buf.last_mut().unwrap() = 0;
+        let Some(last_byte) = buf.last_mut() else { unreachable!() };
+        *last_byte = 0;
 
         // SAFETY: whatever XGetErrorText did or not, we guaranteed there is a nul byte at the end of the buffer
         unsafe { CStr::from_ptr(buf.as_mut_ptr().cast()) }

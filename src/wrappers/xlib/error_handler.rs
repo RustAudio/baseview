@@ -14,14 +14,14 @@ thread_local! {
     static CURRENT_X11_ERROR: Cell<Option<CaughtXLibError>> = const { Cell::new(None) };
 }
 
-/// A helper struct for safe X11 error handling
+/// A helper struct for safe X11 error handling.
 pub struct XErrorHandler<'a> {
     conn: &'a XlibConnection,
     error: &'a Cell<Option<CaughtXLibError>>,
 }
 
 impl<'a> XErrorHandler<'a> {
-    /// Syncs and checks if any previous X11 calls from the given display returned an error
+    /// Syncs and checks if any previous X11 calls from the given display returned an error.
     pub fn check(&self) -> Result<(), XLibError> {
         // Flush all possible previous errors
         self.conn.sync();
