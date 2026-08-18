@@ -9,5 +9,3 @@ baseview = { path = "../.." }
 softbuffer = "0.4.8"
 rtrb = "0.3.4"
 
-[lints]
-workspace = true

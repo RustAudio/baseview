@@ -7,6 +7,3 @@ publish = false
 [dependencies]
 baseview = { path = "../.." }
 softbuffer = "0.4.8"
-
-[lints]
-workspace = true
