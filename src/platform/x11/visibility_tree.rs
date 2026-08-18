@@ -5,13 +5,11 @@ use x11rb::protocol::ErrorKind;
 use x11rb::x11_utils::X11Error;
 use x11rb::xcb_ffi::XCBConnection;
 
-#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct AncestorVisibilityState {
     ancestry: AncestryList,
     own_window_viewable: Cell<bool>,
 }
 
-#[cfg_attr(debug_assertions, derive(Debug))]
 struct AncestryList {
     inner: RefCell<Vec<Ancestor>>,
 }
