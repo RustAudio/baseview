@@ -16,7 +16,7 @@
 // - collect functions from various files
 // - update imports, paths etc
 
-//! X11 keyboard handling
+//! X11 keyboard handling.
 
 use x11rb::protocol::xproto::{KeyButMask, KeyPressEvent, KeyReleaseEvent};
 

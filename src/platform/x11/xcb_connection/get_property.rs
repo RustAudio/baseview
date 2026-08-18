@@ -183,11 +183,9 @@ impl<'a, T: Pod> PropIterator<'a, T> {
             // We can just do a bytewise append.
             data.extend_from_slice(bytemuck::cast_slice(&reply.value));
         } else {
-            let old_len = data.len();
-            let added_len = reply.value.len() / mem::size_of::<T>();
-
-            data.resize(old_len + added_len, T::zeroed());
-            bytemuck::cast_slice_mut::<T, u8>(&mut data[old_len..]).copy_from_slice(&reply.value);
+            // Reply may not be properly aligned, but we can afford to use an intermediary vec here
+            let mut reply = bytemuck::allocation::pod_collect_to_vec(&reply.value);
+            data.append(&mut reply);
         }
 
         // Check `bytes_after` to see if there are more windows to fetch.

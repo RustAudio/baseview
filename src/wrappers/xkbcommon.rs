@@ -1,7 +1,7 @@
 use xkbcommon_dl as xkbc;
 
 pub(crate) type Keycode = xkbcommon_dl::xkb_keycode_t;
-/// A xkbcommon state object
+/// A xkbcommon state object.
 pub struct XkbcommonState {
     state: *mut xkbc::xkb_state,
     xkb_common: &'static xkbc::XkbCommon,

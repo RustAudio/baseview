@@ -100,7 +100,7 @@ impl AncestorVisibilityState {
         self.ancestry.parent_id()
     }
 
-    /// Returns `true` if this operation made our own window visible
+    /// Returns `true` if this operation made our own window visible.
     pub fn window_mapped(&self, window_id: Window) -> bool {
         if !self.ancestry.set_mapped(window_id, true) {
             return false;
@@ -214,7 +214,7 @@ impl AncestorVisibilityState {
     }
 }
 
-/// Returns Ok(None) on BadWindow
+/// Returns Ok(None) on BadWindow.
 fn fetch_window_info(
     connection: &XCBConnection, window: Window,
 ) -> Result<Option<(bool, QueryTreeReply)>, ReplyError> {

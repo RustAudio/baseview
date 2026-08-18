@@ -6,7 +6,6 @@ mod tracing_impl {
     macro_rules! __warn {
         ($($f:tt)*) => {
             {
-                #[allow(unused, dead_code)]
                 let _ = ($($f)*);
             }
         };

@@ -4,7 +4,6 @@ use crate::wrappers::xlib::ScreenIndex;
 use raw_window_handle::{DisplayHandle, XcbDisplayHandle, XlibDisplayHandle};
 use std::ops::Deref;
 use std::os::fd::{AsFd, BorrowedFd};
-use std::os::raw::c_int;
 use std::ptr::NonNull;
 use x11_dl::xlib_xcb::Xlib_xcb;
 use x11rb::connection::Connection;

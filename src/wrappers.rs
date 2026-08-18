@@ -1,4 +1,4 @@
-#![allow(unsafe_code)]
+#![allow(unsafe_code, reason = "This is where the unsafe code lives")]
 
 //! A set of safe wrappers around C or platform APIs.
 //!
@@ -11,11 +11,11 @@
 //! However, all of these APIs should always be sound (i.e. no UB can be triggered by safe code).
 //! Otherwise, this should be considered a bug and reported accordingly.
 
-/// Wrappers and utilities around Xlib. (provided by x11_dl)
+/// Wrappers and utilities around Xlib (provided by x11_dl).
 #[cfg(target_os = "linux")]
 pub mod xlib;
 
-/// Wrappers and utilities around xkbcommon. (provided by xkbcommon_dl)
+/// Wrappers and utilities around xkbcommon (provided by xkbcommon_dl).
 #[cfg(target_os = "linux")]
 pub mod xkbcommon;
 

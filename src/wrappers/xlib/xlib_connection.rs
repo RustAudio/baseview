@@ -64,7 +64,7 @@ impl XlibConnection {
         unsafe { CStr::from_ptr(ptr) }
     }
 
-    /// Safe wrapper for XDefaultScreen
+    /// Safe wrapper for XDefaultScreen.
     fn fetch_default_screen(&self) -> c_int {
         // SAFETY: This type ensures the display pointer is always valid.
         unsafe { (self.xlib.XDefaultScreen)(self.display.as_ptr()) }

@@ -114,8 +114,8 @@ impl HasDisplayHandle for WindowContext {
 /// # Platform compatibility notes
 ///
 /// Depending on the platform, the [`PlatformHandle::window_handle`] method may return
-/// [`HandleError::Unavailable`] if called from a thread other than the main thread. (Even if the
-/// window is still alive and well)
+/// [`HandleError::Unavailable`] if called from a thread other than the main thread (Even if the
+/// window is still alive and well).
 #[derive(Clone)]
 pub struct PlatformHandle {
     inner: platform::PlatformHandle,

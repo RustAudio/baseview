@@ -5,7 +5,6 @@ use crate::MouseCursor;
 use std::cell::RefCell;
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
-use x11rb::connection::Connection;
 use x11rb::cookie::VoidCookie;
 use x11rb::cursor::Handle as CursorHandle;
 use x11rb::errors::ConnectionError;

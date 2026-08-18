@@ -48,8 +48,8 @@ impl Window {
     /// create the associated [`WindowHandler`].
     ///
     /// This function creates the window but does not open or show it.
-    /// You must use the [`show`](Self::show) method to actually open it.
-    /// (unless you use [`run_until_closed`](Self::run_until_closed), which does it automatically)
+    /// You must use the [`show`](Self::show) method to actually open it
+    /// (unless you use [`run_until_closed`](Self::run_until_closed), which does it automatically).
     #[inline]
     pub fn create<H: WindowHandler>(
         options: WindowSettings,
@@ -63,8 +63,8 @@ impl Window {
     /// to a potential system that is hosting the window (e.g. in a plug-in setting).
     ///
     /// This function creates the window but does not open or show it.
-    /// You must use the [`show`](Self::show) method to actually open it.
-    /// (unless you use [`run_until_closed`](Self::run_until_closed), which does it automatically)
+    /// You must use the [`show`](Self::show) method to actually open it
+    /// (unless you use [`run_until_closed`](Self::run_until_closed), which does it automatically).
     ///
     /// Calling this function with [`None`] for the `host` value is equivalent to calling
     /// [`create`](Self::create).
@@ -236,9 +236,9 @@ pub(crate) struct WindowInitializer {
 /// which minimizes errors that may occur due to rounding.
 #[derive(Debug, Copy, Clone)]
 pub struct WindowSize {
-    /// The window's size in physical pixels
+    /// The window's size in physical pixels.
     pub physical: PhysicalSize<u32>,
-    /// The window's size in logical pixels
+    /// The window's size in logical pixels.
     pub logical: LogicalSize<f64>,
     /// The backing scale factor of the window.
     ///

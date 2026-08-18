@@ -9,6 +9,7 @@ use std::fmt::{Debug, Display, Formatter};
 /// not possible on e.g. Windows or macOS.
 ///
 /// This is the general Baseview error type.
+#[expect(clippy::error_impl_error, reason = "This is fine for the global error type")]
 pub struct Error {
     inner: crate::platform::PlatformError,
 }
