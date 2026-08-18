@@ -35,7 +35,7 @@ impl WindowVisualConfig {
     }
 
     pub fn find_best_visual_config(connection: &X11Connection) -> Result<Self> {
-        match find_visual_for_depth(connection.screen(), 32) {
+        match find_visual_for_depth(connection.default_screen(), 32) {
             None => Ok(Self::copy_from_parent()),
             Some(visual_id) => Ok(Self {
                 #[cfg(feature = "opengl")]
@@ -65,7 +65,7 @@ fn create_color_map(connection: &X11Connection, visual_id: Visualid) -> Result<C
     connection.conn.create_colormap(
         ColormapAlloc::NONE,
         colormap,
-        connection.screen().root,
+        connection.default_screen().root,
         visual_id,
     )?;
 

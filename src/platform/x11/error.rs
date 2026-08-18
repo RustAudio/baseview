@@ -37,7 +37,7 @@ impl From<ConnectionError> for FatalError {
 }
 
 #[derive(Debug)]
-pub enum Error {
+pub enum PlatformError {
     CreationFailed(String),
     Run(String),
     Io(std::io::Error),
@@ -61,105 +61,105 @@ pub enum Error {
     Gl(super::gl::CreationFailedError),
 }
 
-impl Display for Error {
+impl Display for PlatformError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Io(e) => e.fmt(f),
+            PlatformError::Io(e) => e.fmt(f),
             Self::IdsExhausted => f.write_str("X11 IDs have been exhausted"),
-            Error::CreationFailed(e) => write!(f, "Failed to create window: {e}"),
-            Error::Run(e) => write!(f, "Error in running X11 thread: {e}"),
-            Error::DylibOpen(e) => e.fmt(f),
-            Error::InitThreadsFailed(e) => e.fmt(f),
-            Error::X11(e) => write!(f, "X server replied with error: {e:?}"),
-            Error::Connection(e) => e.fmt(f),
-            Error::Parse(e) => e.fmt(f),
-            Error::GetProperty(e) => e.fmt(f),
-            Error::Connect(e) => e.fmt(f),
-            Error::DisplayOpenFailed(e) => e.fmt(f),
-            Error::Handler(e) => e.fmt(f),
-            Error::MainThreadRecvResult => {
+            PlatformError::CreationFailed(e) => write!(f, "Failed to create window: {e}"),
+            PlatformError::Run(e) => write!(f, "Error in running X11 thread: {e}"),
+            PlatformError::DylibOpen(e) => e.fmt(f),
+            PlatformError::InitThreadsFailed(e) => e.fmt(f),
+            PlatformError::X11(e) => write!(f, "X server replied with error: {e:?}"),
+            PlatformError::Connection(e) => e.fmt(f),
+            PlatformError::Parse(e) => e.fmt(f),
+            PlatformError::GetProperty(e) => e.fmt(f),
+            PlatformError::Connect(e) => e.fmt(f),
+            PlatformError::DisplayOpenFailed(e) => e.fmt(f),
+            PlatformError::Handler(e) => e.fmt(f),
+            PlatformError::MainThreadRecvResult => {
                 f.write_str("Failed to receive Window creation response from X11 thread: channel was closed unexpectedly")
             }
-            Error::Calloop(e) => e.fmt(f),
-            Error::RequestFromMainThreadFailed(e) => e.fmt(f),
-            Error::SendMainThread => FatalError::SendMainThread.fmt(f),
+            PlatformError::Calloop(e) => e.fmt(f),
+            PlatformError::RequestFromMainThreadFailed(e) => e.fmt(f),
+            PlatformError::SendMainThread => FatalError::SendMainThread.fmt(f),
             #[cfg(feature = "opengl")]
-            Error::XLib(e) => e.fmt(f),
+            PlatformError::XLib(e) => e.fmt(f),
             #[cfg(feature = "opengl")]
-            Error::Gl(e) => e.fmt(f),
+            PlatformError::Gl(e) => e.fmt(f),
         }
     }
 }
 
-impl std::error::Error for Error {
+impl std::error::Error for PlatformError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Io(e) => Some(e),
-            Error::DylibOpen(e) => Some(e),
-            Error::Connect(e) => Some(e),
-            Error::Handler(e) => Some(e.source()),
+            PlatformError::Io(e) => Some(e),
+            PlatformError::DylibOpen(e) => Some(e),
+            PlatformError::Connect(e) => Some(e),
+            PlatformError::Handler(e) => Some(e.source()),
             #[cfg(feature = "opengl")]
-            Error::XLib(e) => Some(e),
+            PlatformError::XLib(e) => Some(e),
             _ => None,
         }
     }
 }
 
-impl From<std::io::Error> for Error {
+impl From<std::io::Error> for PlatformError {
     fn from(value: std::io::Error) -> Self {
         Self::Io(value)
     }
 }
 
-impl From<OpenError> for Error {
+impl From<OpenError> for PlatformError {
     fn from(value: OpenError) -> Self {
         Self::DylibOpen(value)
     }
 }
 
-impl From<InitThreadsFailedError> for Error {
+impl From<InitThreadsFailedError> for PlatformError {
     fn from(value: InitThreadsFailedError) -> Self {
         Self::InitThreadsFailed(value)
     }
 }
 
-impl From<DisplayOpenFailedError> for Error {
+impl From<DisplayOpenFailedError> for PlatformError {
     fn from(value: DisplayOpenFailedError) -> Self {
         Self::DisplayOpenFailed(value)
     }
 }
 
-impl From<ConnectionError> for Error {
+impl From<ConnectionError> for PlatformError {
     fn from(value: ConnectionError) -> Self {
         Self::Connection(value)
     }
 }
 
-impl From<X11Error> for Error {
+impl From<X11Error> for PlatformError {
     fn from(value: X11Error) -> Self {
         Self::X11(value)
     }
 }
 
-impl From<HandlerError> for Error {
+impl From<HandlerError> for PlatformError {
     fn from(value: HandlerError) -> Self {
         Self::Handler(value)
     }
 }
 
-impl From<calloop::Error> for Error {
+impl From<calloop::Error> for PlatformError {
     fn from(value: calloop::Error) -> Self {
         Self::Calloop(value)
     }
 }
 
-impl From<RequestFailed> for Error {
+impl From<RequestFailed> for PlatformError {
     fn from(value: RequestFailed) -> Self {
         Self::RequestFromMainThreadFailed(value)
     }
 }
 
-impl From<FatalError> for Error {
+impl From<FatalError> for PlatformError {
     fn from(value: FatalError) -> Self {
         match value {
             FatalError::Connection(e) => Self::Connection(e),
@@ -169,25 +169,25 @@ impl From<FatalError> for Error {
 }
 
 #[cfg(feature = "opengl")]
-impl From<crate::wrappers::xlib::XLibError> for Error {
+impl From<crate::wrappers::xlib::XLibError> for PlatformError {
     fn from(value: crate::wrappers::xlib::XLibError) -> Self {
         Self::XLib(value)
     }
 }
 
-impl From<ParseError> for Error {
+impl From<ParseError> for PlatformError {
     fn from(value: ParseError) -> Self {
         Self::Parse(value)
     }
 }
 
-impl From<GetPropertyError> for Error {
+impl From<GetPropertyError> for PlatformError {
     fn from(value: GetPropertyError) -> Self {
         Self::GetProperty(value)
     }
 }
 
-impl From<ConnectError> for Error {
+impl From<ConnectError> for PlatformError {
     fn from(value: ConnectError) -> Self {
         Self::Connect(value)
     }
@@ -195,7 +195,7 @@ impl From<ConnectError> for Error {
 
 // X11rb aggregate error types
 
-impl From<ReplyOrIdError> for Error {
+impl From<ReplyOrIdError> for PlatformError {
     fn from(value: ReplyOrIdError) -> Self {
         match value {
             ReplyOrIdError::IdsExhausted => Self::IdsExhausted,
@@ -205,7 +205,7 @@ impl From<ReplyOrIdError> for Error {
     }
 }
 
-impl From<ReplyError> for Error {
+impl From<ReplyError> for PlatformError {
     fn from(value: ReplyError) -> Self {
         match value {
             ReplyError::ConnectionError(e) => Self::Connection(e),
@@ -215,7 +215,7 @@ impl From<ReplyError> for Error {
 }
 
 #[cfg(feature = "opengl")]
-impl From<super::gl::CreationFailedError> for Error {
+impl From<super::gl::CreationFailedError> for PlatformError {
     fn from(value: super::gl::CreationFailedError) -> Self {
         Self::Gl(value)
     }

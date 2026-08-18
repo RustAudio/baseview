@@ -94,8 +94,41 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
 [workspace]
 members = ["examples/open_parented", "examples/open_window", "examples/plugin_clack", "examples/render_femtovg", "examples/render_wgpu"]
 
-[lints.clippy]
+[lints]
+workspace = true
+
+[workspace.lints.clippy]
 missing-safety-doc = "allow"
+
+allow-attributes = "deny"
+allow-attributes-without-reason = "warn"
+arithmetic-side-effects = "warn"
+clone-on-ref-ptr = "warn"
+dbg-macro = "warn"
+default-union-representation = "deny"
+deref-by-slicing = "warn"
+docs-paragraphs-missing-punctuation = "warn"
+empty-drop = "warn"
+empty-enum-variants-with-brackets = "warn"
+empty-structs-with-brackets = "warn"
+error-impl-error = "warn"
+exhaustive-enums = "warn"
+exit = "deny"
+expect-used = "warn"
+float-cmp-const = "warn"
+get-unwrap = "warn"
+indexing-slicing = "warn"
+integer-division = "warn"
+lossy-float-literal = "warn"
+non-ascii-idents = "deny"
+non-zero-suggestions = "warn"
+print-stderr = "warn"
+print-stdout = "warn"
+todo = "warn"
+try-err = "warn"
+unnecessary-safety-comment = "warn"
+unwrap-used = "warn"
+
 
 [package.metadata.docs.rs]
 all-features = true

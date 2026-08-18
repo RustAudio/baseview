@@ -27,7 +27,7 @@ pub enum GlError {
     OpenGlBundleNotFound,
 }
 
-impl From<GlError> for Error {
+impl From<GlError> for PlatformError {
     fn from(value: GlError) -> Self {
         Self::GlError(value)
     }

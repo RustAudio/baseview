@@ -24,8 +24,8 @@ mod visibility_tree;
 mod window_shared;
 mod window_thread;
 
-pub use error::{CookieExt as _, Error};
-pub(crate) type Result<T> = std::result::Result<T, Error>;
+pub use error::{CookieExt as _, PlatformError};
+pub(crate) type Result<T> = std::result::Result<T, PlatformError>;
 
 use crate::platform::x11::window_shared::WindowInner;
 use crate::wrappers::xlib::XlibXcbConnection;
@@ -80,7 +80,7 @@ impl ParentWindowHandle {
                 NonZeroU32::new(h.window.try_into()?).ok_or(ParentWindowHandleError::NullId)?
             }
             RawWindowHandle::Xcb(h) => h.window,
-            h => Err(ParentWindowHandleError::UnsupportedWindowHandleType(h))?,
+            h => return Err(ParentWindowHandleError::UnsupportedWindowHandleType(h)),
         };
 
         Ok(Self { window_id })

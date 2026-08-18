@@ -35,7 +35,9 @@ impl<W: WindowImpl> WindowData<W> {
         handler(&this)
     }
 
-    pub fn initialize(&self, window: HWnd) -> core::result::Result<(), crate::platform::Error> {
+    pub fn initialize(
+        &self, window: HWnd,
+    ) -> core::result::Result<(), crate::platform::PlatformError> {
         let Some(initializer) = self.initializer.take() else {
             panic!("WindowData is already initialized");
         };

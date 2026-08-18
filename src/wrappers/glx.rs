@@ -69,7 +69,7 @@ impl Glx {
         let result = unsafe {
             (self.inner.glXChooseFBConfig)(
                 connection.as_raw(),
-                connection.default_screen_index(),
+                connection.default_screen_index().into(),
                 fb_attribs.as_ptr(),
                 &mut nelements,
             )

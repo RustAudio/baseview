@@ -25,7 +25,6 @@ pub trait WindowHandler: 'static {
 
 type DynBuilderResult = core::result::Result<Box<dyn WindowHandler>, HandlerError>;
 
-#[allow(unused)]
 pub struct WindowHandlerBuilder {
     inner: Box<dyn FnOnce(WindowContext) -> DynBuilderResult + Send + 'static>,
 }
@@ -40,7 +39,7 @@ impl WindowHandlerBuilder {
     pub fn build(self, ctx: WindowContext) -> Result<Box<dyn WindowHandler>> {
         match (self.inner)(ctx) {
             Ok(handle) => Ok(handle),
-            Err(e) => Err(platform::Error::Handler(e)),
+            Err(e) => Err(platform::PlatformError::Handler(e)),
         }
     }
 }

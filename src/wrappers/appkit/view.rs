@@ -42,8 +42,8 @@ impl<V> Deref for View<V> {
 impl<V: ViewImpl> View<V> {
     pub fn new(
         frame: CGRect, inner: V,
-        init: impl FnOnce(ViewRef<V>) -> Result<(), crate::platform::Error>,
-    ) -> Result<Retained<View<V>>, crate::platform::Error> {
+        init: impl FnOnce(ViewRef<V>) -> Result<(), crate::platform::PlatformError>,
+    ) -> Result<Retained<View<V>>, crate::platform::PlatformError> {
         // SAFETY: We don't access this reference after this function
         let class = unsafe { implementation::create_view_class::<V>() };
 

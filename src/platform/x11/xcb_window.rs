@@ -32,7 +32,7 @@ impl XcbWindow {
         connection.conn.create_window(
             visual_info.visual_depth,
             window_id.get(),
-            parent_id.map_or(connection.screen().root, NonZeroU32::get),
+            parent_id.map_or(connection.default_screen().root, NonZeroU32::get),
             0,           // x coordinate of the new window
             0,           // y coordinate of the new window
             size.width,  // window width

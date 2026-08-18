@@ -37,12 +37,11 @@ Copies of those licenses can be respectively found at:
 
 */
 
+use bytemuck::Pod;
 use std::error::Error;
 use std::ffi::c_int;
 use std::fmt;
 use std::mem;
-
-use bytemuck::Pod;
 use x11rb::errors::{ConnectionError, ReplyError};
 use x11rb::protocol::xproto::{self, ConnectionExt};
 use x11rb::xcb_ffi::XCBConnection;
@@ -53,6 +52,7 @@ pub enum GetPropertyError {
     ReplyError(ReplyError),
     TypeMismatch(xproto::Atom),
     FormatMismatch(c_int),
+    Overflow,
 }
 
 impl fmt::Display for GetPropertyError {
@@ -62,6 +62,9 @@ impl fmt::Display for GetPropertyError {
             GetPropertyError::FormatMismatch(err) => write!(f, "format mismatch: {err}"),
             GetPropertyError::ConnectionError(e) => e.fmt(f),
             GetPropertyError::ReplyError(e) => e.fmt(f),
+            GetPropertyError::Overflow => {
+                f.write_str("Overflow while trying to read property value")
+            }
         }
     }
 }
@@ -176,7 +179,7 @@ impl<'a, T: Pod> PropIterator<'a, T> {
         }
 
         // Append the data to the output.
-        if mem::size_of::<T>() == 1 && mem::align_of::<T>() == 1 {
+        if size_of::<T>() == 1 && align_of::<T>() == 1 {
             // We can just do a bytewise append.
             data.extend_from_slice(bytemuck::cast_slice(&reply.value));
         } else {
@@ -188,7 +191,11 @@ impl<'a, T: Pod> PropIterator<'a, T> {
         }
 
         // Check `bytes_after` to see if there are more windows to fetch.
-        self.offset += PROPERTY_BUFFER_SIZE;
+        let Some(new_offset) = self.offset.checked_add(PROPERTY_BUFFER_SIZE) else {
+            return Err(GetPropertyError::Overflow);
+        };
+        self.offset = new_offset;
+
         Ok(reply.bytes_after != 0)
     }
 }

@@ -16,7 +16,7 @@ use x11_dl::xlib_xcb::{XEventQueueOwner, Xlib_xcb};
 pub struct XlibConnection {
     display: NonNull<Display>,
     xlib: Box<Xlib>,
-    default_screen: c_int,
+    default_screen: ScreenIndex,
 }
 
 // SAFETY: Xlib functions should be thread-safe, since we initialize it with XInitThreads below
@@ -37,9 +37,9 @@ impl XlibConnection {
 
         let Some(display) = NonNull::new(ptr) else { return Err(DisplayOpenFailedError.into()) };
 
-        let mut this = Self { display, xlib, default_screen: 0 };
+        let mut this = Self { display, xlib, default_screen: ScreenIndex(0) };
 
-        this.default_screen = this.fetch_default_screen();
+        this.default_screen = ScreenIndex::new(this.fetch_default_screen());
 
         Ok(this)
     }
@@ -55,7 +55,7 @@ impl XlibConnection {
     }
 
     /// Returns the index of the default screen for this X server.
-    pub fn default_screen_index(&self) -> c_int {
+    pub fn default_screen_index(&self) -> ScreenIndex {
         self.default_screen
     }
 
@@ -72,6 +72,34 @@ impl XlibConnection {
 
     pub fn as_raw(&self) -> *mut Display {
         self.display.as_ptr()
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct ScreenIndex(c_int);
+
+impl ScreenIndex {
+    pub fn new(value: c_int) -> Self {
+        if let Err(e) = usize::try_from(value) {
+            panic!("Default screen index {value} could not be used: {e}");
+        }
+
+        Self(value)
+    }
+}
+
+impl From<ScreenIndex> for usize {
+    #[inline]
+    fn from(value: ScreenIndex) -> Self {
+        // This will not panic or overflow, we checked it in the constructor
+        value.0 as usize
+    }
+}
+
+impl From<ScreenIndex> for c_int {
+    #[inline]
+    fn from(value: ScreenIndex) -> Self {
+        value.0
     }
 }
 

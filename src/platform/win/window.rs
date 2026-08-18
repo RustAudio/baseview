@@ -17,7 +17,7 @@ use super::*;
 use crate::handler::WindowHandlerBuilder;
 use crate::host::Host;
 use crate::platform::win::window_state::{WindowSharedState, WindowState};
-use crate::platform::Error;
+use crate::platform::PlatformError;
 use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
@@ -92,7 +92,7 @@ impl WindowHandle {
         if self.state.current_size.get() == new_size {
             Ok(())
         } else {
-            Err(Error::ResizeFailed)
+            Err(PlatformError::ResizeFailed)
         }
     }
 
@@ -126,7 +126,7 @@ impl WindowHandle {
         if self.state.current_size.get() == new_size {
             Ok(())
         } else {
-            Err(Error::ResizeFailed)
+            Err(PlatformError::ResizeFailed)
         }
     }
 
@@ -310,7 +310,7 @@ impl Drop for BaseviewWindow {
 }
 
 impl WindowImpl for BaseviewWindow {
-    fn after_create(&self, window: HWnd) -> core::result::Result<(), Error> {
+    fn after_create(&self, window: HWnd) -> core::result::Result<(), PlatformError> {
         let hwnd = window.as_raw();
         let window_state = &self.window_state;
 

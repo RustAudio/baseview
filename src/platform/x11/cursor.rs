@@ -4,12 +4,13 @@ use x11rb::protocol::xproto::{ConnectionExt as _, Cursor};
 use x11rb::xcb_ffi::XCBConnection;
 
 use crate::platform::*;
+use crate::wrappers::xlib::XlibXcbConnection;
 use crate::MouseCursor;
 
-fn create_empty_cursor(conn: &XCBConnection, screen: usize) -> Result<Cursor> {
+fn create_empty_cursor(conn: &XlibXcbConnection) -> Result<Cursor> {
     let cursor_id = conn.generate_id()?;
     let pixmap_id = conn.generate_id()?;
-    let root_window = conn.setup().roots[screen].root;
+    let root_window = conn.default_screen().root;
     conn.create_pixmap(1, pixmap_id, root_window, 1, 1)?;
     conn.create_cursor(cursor_id, pixmap_id, pixmap_id, 0, 0, 0, 0, 0, 0, 0, 0)?;
     conn.free_pixmap(pixmap_id)?;
@@ -42,7 +43,7 @@ fn load_first_existing_cursor(
 }
 
 pub(crate) fn get_xcursor(
-    conn: &XCBConnection, screen: usize, cursor_handle: &CursorHandle, cursor: MouseCursor,
+    conn: &XlibXcbConnection, cursor_handle: &CursorHandle, cursor: MouseCursor,
 ) -> Result<Cursor> {
     let load = |name: &str| load_cursor(conn, cursor_handle, name);
     let loadn = |names: &[&str]| load_first_existing_cursor(conn, cursor_handle, names);
@@ -54,7 +55,7 @@ pub(crate) fn get_xcursor(
         MouseCursor::HandGrabbing => loadn(&["closedhand", "grabbing"])?,
         MouseCursor::Help => load("question_arrow")?,
 
-        MouseCursor::Hidden => Some(create_empty_cursor(conn, screen)?),
+        MouseCursor::Hidden => Some(create_empty_cursor(conn)?),
 
         MouseCursor::Text => loadn(&["text", "xterm"])?,
         MouseCursor::VerticalText => load("vertical-text")?,

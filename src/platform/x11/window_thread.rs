@@ -119,8 +119,8 @@ impl WindowThreadHandle {
             MainThreadCaller::new(init.host.main_thread);
 
         let join_handle = {
-            let shared = shared.clone();
-            let stop_watcher = ThreadStopWatcher(shared.clone());
+            let shared = Arc::clone(&shared);
+            let stop_watcher = ThreadStopWatcher(Arc::clone(&shared));
 
             thread::spawn(move || {
                 let thread = match WindowThread::create(
@@ -190,8 +190,9 @@ impl WindowThreadHandle {
             resume_unwind(panic);
         }
 
-        if let Some(e) = self.shared.final_error.lock().unwrap().take() {
-            return Err(Error::Run(e));
+        // Ignore poisoned mutex
+        if let Some(e) = self.shared.final_error.lock().unwrap_or_else(|g| g.into_inner()).take() {
+            return Err(PlatformError::Run(e));
         }
 
         Ok(())
@@ -304,7 +305,7 @@ impl WindowThread {
         main_thread_caller: Option<MainThreadCaller>,
     ) -> Result<Self> {
         let mut ev_loop = calloop::EventLoop::try_new()?;
-        let inner = WindowInner::create(options, &ev_loop, shared.clone())?;
+        let inner = WindowInner::create(options, &ev_loop, Arc::clone(&shared))?;
 
         shared.init(&inner);
 
@@ -317,7 +318,10 @@ impl WindowThread {
 
     pub fn run(self) {
         if let Err(e) = self.event_loop.run(self.ev_loop) {
-            self.shared.final_error.lock().unwrap().replace(e.to_string());
+            // Ignore a poisoned mutex, we just fully override this value anyway.
+            let mut guard = self.shared.final_error.lock().unwrap_or_else(|g| g.into_inner());
+
+            guard.replace(e.to_string());
         }
     }
 }
@@ -329,7 +333,7 @@ fn result_channel() -> (WindowResultSender, WindowResultReceiver) {
 
 struct WindowResultSender(mpsc::SyncSender<WindowOpenResult>);
 impl WindowResultSender {
-    pub fn send_error(self, error: Error) {
+    pub fn send_error(self, error: PlatformError) {
         if let Err(err) = self.0.send(WindowOpenResult::Error(format!("{}", error))) {
             crate::error!("Window creation failed: {}", error);
             crate::warn!("Failed to send error to main thread: {}", err);
@@ -351,10 +355,10 @@ impl WindowResultSender {
 struct WindowResultReceiver(mpsc::Receiver<WindowOpenResult>);
 impl WindowResultReceiver {
     pub fn receive(self) -> Result<LoopSignal> {
-        let result = self.0.recv().map_err(|_| Error::MainThreadRecvResult)?;
+        let result = self.0.recv().map_err(|_| PlatformError::MainThreadRecvResult)?;
 
         match result {
-            WindowOpenResult::Error(e) => Err(Error::CreationFailed(e)),
+            WindowOpenResult::Error(e) => Err(PlatformError::CreationFailed(e)),
             WindowOpenResult::Success { loop_signal } => Ok(loop_signal),
         }
     }
