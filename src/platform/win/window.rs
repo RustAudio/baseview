@@ -27,13 +27,11 @@ use crate::wrappers::win32::{
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 
-#[allow(non_snake_case)]
-fn HIWORD(wparam: WPARAM) -> u16 {
+fn hi_word(wparam: WPARAM) -> u16 {
     ((wparam >> 16) & 0xffff) as u16
 }
 
-#[allow(non_snake_case)]
-fn LOWORD(lparam: LPARAM) -> u16 {
+fn lo_word(lparam: LPARAM) -> u16 {
     (lparam & 0xffff) as u16
 }
 
@@ -137,7 +135,7 @@ impl WindowHandle {
                 let Some(mut init) = self.init.take() else { return Ok(()) };
                 init.settings.parent = Some(new_parent.into());
 
-                let window = BaseviewWindow::create(self.state.clone(), init)?;
+                let window = BaseviewWindow::create(Rc::clone(&self.state), init)?;
                 self.hwnd.set(Some(window));
 
                 return Ok(());
@@ -164,7 +162,7 @@ impl WindowHandle {
             None => {
                 let Some(init) = self.init.take() else { return Ok(()) };
 
-                let window = BaseviewWindow::create(self.state.clone(), init)?;
+                let window = BaseviewWindow::create(Rc::clone(&self.state), init)?;
                 self.hwnd.set(Some(window));
 
                 return Ok(());
@@ -225,13 +223,13 @@ impl BaseviewWindow {
         let window_size = shared_state.current_size.get();
 
         let initializer = {
-            let shared_state = shared_state.clone();
+            let shared_state = Rc::clone(&shared_state);
 
             move |hwnd: HWnd| {
                 let window_state = Rc::new(WindowState::new(
                     hwnd,
                     shared_state.user32.clone(),
-                    shared_state.clone(),
+                    Rc::clone(&shared_state),
                 ));
 
                 BaseviewWindow {
@@ -344,8 +342,7 @@ impl WindowImpl for BaseviewWindow {
 
         #[cfg(feature = "opengl")]
         if let Some(gl_config) = self.gl_config.clone() {
-            let gl_context = gl::GlContextInner::create(window, gl_config)
-                .expect("Could not create OpenGL context");
+            let gl_context = gl::GlContextInner::create(window, gl_config)?;
 
             let Ok(()) = self.window_state.gl_context.set(Rc::new(gl_context)) else {
                 unreachable!();
@@ -354,7 +351,11 @@ impl WindowImpl for BaseviewWindow {
 
         let handler = {
             let context = crate::WindowContext::new(Rc::clone(&self.window_state));
-            self.handler_builder.take().unwrap().build(context)?
+            let Some(handler_builder) = self.handler_builder.take() else {
+                unreachable!();
+            };
+
+            handler_builder.build(context)?
         };
         let Ok(()) = self.handler.set(handler) else { unreachable!() };
 
@@ -374,6 +375,7 @@ impl WindowImpl for BaseviewWindow {
 
 /// Our custom `wnd_proc` handler. If the result contains a value, then this is returned after
 /// handling any deferred tasks. otherwise the default window procedure is invoked.
+#[allow(clippy::unwrap_used, reason = "Refactor this in a later PR")] // TODO
 unsafe fn wnd_proc_inner(
     window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM, window_bv: &BaseviewWindow,
 ) -> Option<LRESULT> {
@@ -437,9 +439,8 @@ unsafe fn wnd_proc_inner(
         | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
             let mut mouse_button_counter = window_state.mouse_button_counter.get();
 
-            #[allow(non_snake_case)]
-            fn GET_XBUTTON_WPARAM(wparam: WPARAM) -> u16 {
-                HIWORD(wparam)
+            fn get_xbutton_wparam(wparam: WPARAM) -> u16 {
+                hi_word(wparam)
             }
 
             const XBUTTON1: u16 = 0x1;
@@ -449,7 +450,7 @@ unsafe fn wnd_proc_inner(
                 WM_LBUTTONDOWN | WM_LBUTTONUP => Some(MouseButton::Left),
                 WM_MBUTTONDOWN | WM_MBUTTONUP => Some(MouseButton::Middle),
                 WM_RBUTTONDOWN | WM_RBUTTONUP => Some(MouseButton::Right),
-                WM_XBUTTONDOWN | WM_XBUTTONUP => match GET_XBUTTON_WPARAM(wparam) {
+                WM_XBUTTONDOWN | WM_XBUTTONUP => match get_xbutton_wparam(wparam) {
                     XBUTTON1 => Some(MouseButton::Back),
                     XBUTTON2 => Some(MouseButton::Forward),
                     _ => None,
@@ -637,7 +638,7 @@ unsafe fn wnd_proc_inner(
         // If WM_SETCURSOR returns `None`, WM_SETCURSOR continues to get handled by the outer window(s),
         // If it returns `Some(1)`, the current window decides what the cursor is
         WM_SETCURSOR => {
-            let low_word = LOWORD(lparam) as u32;
+            let low_word = lo_word(lparam) as u32;
             let mouse_in_window = low_word == HTCLIENT;
             if mouse_in_window {
                 // Here we need to set the cursor back to what the state says, since it can have changed when outside the window
@@ -706,12 +707,12 @@ impl WindowHandle {
             });
         }
 
-        let window = BaseviewWindow::create(shared_state.clone(), init)?;
+        let window = BaseviewWindow::create(Rc::clone(&shared_state), init)?;
 
         Ok(WindowHandle { hwnd: Some(window).into(), state: shared_state, init: None.into() })
     }
 }
 
 pub fn copy_to_clipboard(_data: &str) {
-    todo!()
+    unimplemented!()
 }

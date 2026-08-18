@@ -23,7 +23,7 @@ pub mod xkbcommon;
 #[cfg(all(target_os = "linux", feature = "opengl"))]
 pub mod glx;
 
-/// Wrappers and utilities around the Win32 API
+/// Wrappers and utilities around the Win32 API.
 #[cfg(target_os = "windows")]
 pub mod win32;
 

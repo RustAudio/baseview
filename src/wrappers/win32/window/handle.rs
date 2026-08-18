@@ -161,7 +161,7 @@ impl HWnd {
         self.resize_nc_and_activate(rect.size())
     }
 
-    /// Returns true if the window was previously visible, false otherwise
+    /// Returns true if the window was previously visible, false otherwise.
     pub fn show_and_activate(&self) -> bool {
         let result = unsafe { ShowWindow(self.as_raw(), SW_SHOW) };
 

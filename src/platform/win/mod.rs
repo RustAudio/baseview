@@ -7,7 +7,7 @@ mod window_state;
 
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
-pub use error::{Error, Result};
+pub use error::{PlatformError, Result};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle,
 };
@@ -68,7 +68,7 @@ impl ParentWindowHandle {
             h => return Err(ParentWindowHandleError::UnsupportedWindowHandleType(h)),
         };
 
-        let parent = NonNull::new(parent.get() as _).unwrap();
+        let Some(parent) = NonNull::new(parent.get() as _) else { unreachable!() };
 
         Ok(Self { handle: unsafe { HWnd::from_raw(parent) } })
     }

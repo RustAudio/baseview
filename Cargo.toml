@@ -100,7 +100,6 @@ workspace = true
 [workspace.lints.clippy]
 missing-safety-doc = "allow"
 
-allow-attributes = "deny"
 allow-attributes-without-reason = "warn"
 arithmetic-side-effects = "warn"
 clone-on-ref-ptr = "warn"

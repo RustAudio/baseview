@@ -75,10 +75,10 @@ impl<'a> DpiAwarenessContext<'a> {
         let result = self.client_area_to_nc_area(Rect::EMPTY, style, dpi)?;
 
         Ok(Rect(RECT {
-            left: rect.0.left - result.0.left,
-            top: rect.0.top - result.0.top,
-            bottom: rect.0.bottom - result.0.bottom,
-            right: rect.0.right - result.0.right,
+            left: rect.0.left.saturating_sub(result.0.left),
+            top: rect.0.top.saturating_sub(result.0.top),
+            bottom: rect.0.bottom.saturating_sub(result.0.bottom),
+            right: rect.0.right.saturating_sub(result.0.right),
         }))
     }
 }

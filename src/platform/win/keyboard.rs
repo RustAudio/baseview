@@ -15,6 +15,12 @@
 // Baseview modifications to druid code:
 // - update imports, paths etc
 
+#![expect(
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    reason = "Let's not touch this for now"
+)]
+
 //! Key event handling.
 
 use std::cmp::Ordering;
@@ -598,7 +604,7 @@ impl KeyboardState {
                 key_state[VK_LCONTROL as usize] = if has_altgr { 0x80 } else { 0 };
                 key_state[VK_MENU as usize] = if has_altgr { 0x80 } else { 0 };
                 key_state[VK_RMENU as usize] = if has_altgr { 0x80 } else { 0 };
-                #[allow(clippy::iter_overeager_cloned)]
+
                 for vk in PRINTABLE_VKS.iter().cloned().flatten() {
                     let ret = ToUnicodeEx(
                         vk.into(),

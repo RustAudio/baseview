@@ -1,4 +1,4 @@
-#![allow(non_snake_case)]
+#![expect(non_snake_case, reason = "For Win32 constants")]
 
 use crate::gl::{GlConfig, Profile};
 use crate::warn;
@@ -100,6 +100,7 @@ type WglChoosePixelFormatARB =
 // See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_create_context.txt
 type WglCreateContextAttribsARB = unsafe extern "system" fn(HDC, HGLRC, *const i32) -> HGLRC;
 
+#[allow(non_snake_case, reason = "To match the OpenGL API")]
 pub struct WglExtra {
     wglCreateContextAttribsARB: Option<WglCreateContextAttribsARB>,
     wglChoosePixelFormatARB: Option<WglChoosePixelFormatARB>,
