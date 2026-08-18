@@ -88,17 +88,18 @@ impl Host {
     ///
     /// This is only useful on X11. On Window and macOS, this is a no-op.
     #[inline]
-    pub fn with_main_thread(mut self, main_thread: impl HostMainThreadCaller) -> Self {
+    pub fn with_main_thread(self, main_thread: impl HostMainThreadCaller) -> Self {
         #[cfg(target_os = "linux")]
         {
-            self.main_thread = Some(Box::new(main_thread));
+            let mut this = self;
+            this.main_thread = Some(Box::new(main_thread));
+            this
         }
         #[cfg(not(target_os = "linux"))]
         {
             let _ = main_thread;
+            self
         }
-
-        self
     }
 
     /// Sets the [`HostCallbacks`] handler to be used.
@@ -110,7 +111,7 @@ impl Host {
         self
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     pub(crate) fn notify_destroyed(&self) {
         let Some(callbacks) = &self.callbacks else { return };
         let Ok(mut callbacks) = callbacks.try_borrow_mut() else { return };

@@ -9,7 +9,7 @@ use crate::platform::macos::view::BaseviewView;
 use crate::wrappers::appkit::{extract_raw_window_handle, ParentWindowHandleError, View};
 pub use context::WindowContext;
 use dispatch2::MainThreadBound;
-pub use error::Error;
+pub use error::PlatformError;
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::{MainThreadMarker, MainThreadOnly};
@@ -18,7 +18,7 @@ use raw_window_handle::{DisplayHandle, HasWindowHandle};
 use std::fmt;
 use std::fmt::Formatter;
 pub use window::*;
-pub(crate) type Result<T> = std::result::Result<T, Error>;
+pub(crate) type Result<T> = std::result::Result<T, PlatformError>;
 
 #[cfg(feature = "opengl")]
 pub mod gl;

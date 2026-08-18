@@ -1,4 +1,4 @@
-#![allow(deprecated)] // Allow use of NSFilenamesPboardType for now
+#![expect(deprecated, reason = "Allow use of NSFilenamesPboardType for now")]
 
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
@@ -17,7 +17,7 @@ use dpi::{LogicalPosition, LogicalSize, Size};
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
-use objc2::{msg_send, AllocAnyThread, MainThreadMarker};
+use objc2::{msg_send, AllocAnyThread, ClassType, MainThreadMarker};
 use objc2_app_kit::{
     NSApplication, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
     NSTrackingAreaOptions, NSView, NSWindow,
@@ -94,7 +94,7 @@ impl BaseviewView {
 
         let inner = BaseviewView {
             mtm,
-            state: state.clone(),
+            state: Rc::clone(&state),
 
             keyboard_state: KeyboardState::new(),
             frame_timer: None.into(),
@@ -372,7 +372,7 @@ impl ViewImpl for BaseviewView {
     /// collapse, so the override pass-through is equivalent to the
     /// default implementation.
     fn hit_test(this: ViewRef<'_, Self>, point: NSPoint) -> Option<&NSView> {
-        let superclass = this.view.class().superclass().unwrap();
+        let superclass = NSView::class();
 
         // SAFETY: Our superclass is NSView
         let super_result: Option<&NSView> =
@@ -670,7 +670,7 @@ impl ViewImpl for BaseviewView {
 /// Info:
 /// https://developer.apple.com/documentation/appkit/nstrackingarea
 /// https://developer.apple.com/documentation/appkit/nstrackingarea/options
-/// https://developer.apple.com/documentation/appkit/nstrackingareaoptions
+/// https://developer.apple.com/documentation/appkit/nstrackingareaoptions.
 fn new_tracking_area(this: &NSView) -> Retained<NSTrackingArea> {
     let options = NSTrackingAreaOptions::MouseEnteredAndExited
         | NSTrackingAreaOptions::MouseMoved

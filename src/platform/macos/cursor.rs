@@ -25,19 +25,19 @@ impl From<MouseCursor> for Cursor {
                 Cursor::Native(NSCursor::operationNotAllowedCursor)
             }
             MouseCursor::Crosshair => Cursor::Native(NSCursor::crosshairCursor),
-            #[allow(deprecated)]
+            #[expect(deprecated, reason = "TODO: resize curosrs are deprecated")]
             MouseCursor::EResize => Cursor::Native(NSCursor::resizeRightCursor),
-            #[allow(deprecated)]
+            #[expect(deprecated, reason = "TODO: resize curosrs are deprecated")]
             MouseCursor::NResize => Cursor::Native(NSCursor::resizeUpCursor),
-            #[allow(deprecated)]
+            #[expect(deprecated, reason = "TODO: resize curosrs are deprecated")]
             MouseCursor::WResize => Cursor::Native(NSCursor::resizeLeftCursor),
-            #[allow(deprecated)]
+            #[expect(deprecated, reason = "TODO: resize curosrs are deprecated")]
             MouseCursor::SResize => Cursor::Native(NSCursor::resizeDownCursor),
-            #[allow(deprecated)]
+            #[expect(deprecated, reason = "TODO: resize curosrs are deprecated")]
             MouseCursor::EwResize | MouseCursor::ColResize => {
                 Cursor::Native(NSCursor::resizeLeftRightCursor)
             }
-            #[allow(deprecated)]
+            #[expect(deprecated, reason = "TODO: resize curosrs are deprecated")]
             MouseCursor::NsResize | MouseCursor::RowResize => {
                 Cursor::Native(NSCursor::resizeUpDownCursor)
             }

@@ -1,4 +1,4 @@
-#![allow(deprecated)] // OpenGL is deprecated on macOS
+#![expect(deprecated, reason = "OpenGL is deprecated on macOS")]
 
 use crate::gl::{GlConfig, Profile};
 use crate::platform::*;
@@ -75,10 +75,17 @@ impl GlContext {
             .into());
         };
 
+        let Some(color_size) = (config.red_bits as u32)
+            .checked_add(config.blue_bits as u32)
+            .and_then(|c| c.checked_add(config.green_bits as u32))
+        else {
+            panic!("Overflow when computing color size")
+        };
+
         #[rustfmt::skip]
         let mut attrs = vec![
             NSOpenGLPFAOpenGLProfile, version,
-            NSOpenGLPFAColorSize, (config.red_bits + config.blue_bits + config.green_bits) as u32,
+            NSOpenGLPFAColorSize, color_size,
             NSOpenGLPFAAlphaSize, config.alpha_bits as u32,
             NSOpenGLPFADepthSize, config.depth_bits as u32,
             NSOpenGLPFAStencilSize, config.stencil_bits as u32,
