@@ -25,6 +25,7 @@ pub use mouse_cursor::MouseCursor;
 pub use settings::*;
 pub use window::*;
 
+#[allow(unused, reason = "")]
 pub(crate) use tracing::*;
 
 mod utils;
