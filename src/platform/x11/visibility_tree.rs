@@ -160,6 +160,8 @@ impl AncestorVisibilityState {
     ) -> Result<(), ReplyError> {
         let Some(mut current_window) = self.ancestry.pop_id() else { return Ok(()) };
 
+        let mut shitlist = Vec::new();
+
         loop {
             let Some((mapped, tree)) = fetch_window_info(connection, current_window)? else {
                 // We got a BadWindow while trying to get a window's info, it must have been destroyed.
@@ -171,6 +173,23 @@ impl AncestorVisibilityState {
                     // No previous parent, this was the first window. Stop everything and return an empty state
                     break;
                 };
+
+                if shitlist.contains(&previous_parent) {
+                    crate::warn!(
+                        "Failed to get info for window {} in the past already. Stopping.",
+                        previous_parent
+                    );
+                    break;
+                }
+
+                if shitlist.len() > 10 {
+                    crate::warn!(
+                        "Too many failures while trying to build X ancestry tree. Stopping."
+                    );
+                    break;
+                }
+
+                shitlist.push(previous_parent);
 
                 current_window = previous_parent;
                 continue;
