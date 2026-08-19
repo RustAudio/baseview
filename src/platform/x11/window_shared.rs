@@ -103,8 +103,9 @@ impl WindowInner {
 
         connection.register_tree_structure_events()?.check()?;
 
-        let visibility_state =
-            AncestorVisibilityState::discover(&connection.conn, xcb_window.id())?;
+        let visibility_state = AncestorVisibilityState::discover(&connection, xcb_window.id())?;
+
+        connection.dbg_event_mask();
 
         let cookies = [
             xcb_window.set_title(&options.title)?,

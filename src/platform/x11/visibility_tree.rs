@@ -1,3 +1,5 @@
+use crate::platform::x11::error::CookieExt;
+use crate::platform::X11Connection;
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 use x11rb::errors::ReplyError;
@@ -7,12 +9,13 @@ use x11rb::x11_utils::X11Error;
 use x11rb::xcb_ffi::XCBConnection;
 
 pub struct AncestorVisibilityState {
-    ancestry: AncestryList,
+    pub ancestry: AncestryList,
     own_window_viewable: Cell<bool>,
+    root_id: Cell<Option<NonZeroU32>>,
 }
 
 struct AncestryList {
-    inner: RefCell<Vec<Ancestor>>,
+    pub inner: RefCell<Vec<Ancestor>>,
 }
 
 impl AncestryList {
@@ -81,11 +84,12 @@ struct Ancestor {
 
 impl AncestorVisibilityState {
     pub fn discover(
-        connection: &XCBConnection, own_window_id: NonZeroU32,
+        connection: &X11Connection, own_window_id: NonZeroU32,
     ) -> Result<Self, ReplyError> {
         let this = Self {
             ancestry: AncestryList::new(own_window_id),
             own_window_viewable: Cell::new(false),
+            root_id: Cell::new(NonZeroU32::new(connection.default_screen().root)),
         };
 
         this.try_regenerate_from_last_window(connection)?;
@@ -107,6 +111,8 @@ impl AncestorVisibilityState {
             return false;
         }
 
+        eprintln!("Mapped {window_id}");
+
         if self.own_window_viewable.get() {
             return false;
         }
@@ -124,43 +130,59 @@ impl AncestorVisibilityState {
             return;
         }
 
+        eprintln!("Unmapped {window_id}");
+
         self.own_window_viewable.set(false);
     }
 
-    pub fn window_destroyed(&self, window_id: NonZeroU32, connection: &XCBConnection) {
+    pub fn window_destroyed(&self, window_id: NonZeroU32, connection: &X11Connection) {
         if !self.ancestry.remove_window(window_id) {
             return;
         }
+
+        eprintln!("Destroyed {window_id}");
 
         self.regenerate_from_last_window(connection);
     }
 
     pub fn window_reparented(
-        &self, window_id: NonZeroU32, new_parent: Option<NonZeroU32>, connection: &XCBConnection,
+        &self, window_id: NonZeroU32, new_parent: Option<NonZeroU32>, connection: &X11Connection,
     ) {
+        eprintln!("Reparent event {window_id} to {new_parent:?}");
+
         if !self.ancestry.remove_after_window(window_id) {
             return;
         }
 
         if let Some(new_parent) = new_parent {
+            if Some(new_parent) == self.root_id.get() {
+                return;
+            }
+
             self.ancestry.push(Ancestor { id: new_parent, mapped: Cell::new(false) });
 
+            eprintln!("Reparented {window_id} to new parent: {new_parent}");
             self.regenerate_from_last_window(connection);
+        } else {
+            eprintln!("Unparented {window_id}");
         }
+
+        dbg!(self.ancestry.inner.borrow());
     }
 
-    pub fn regenerate_from_last_window(&self, connection: &XCBConnection) {
+    pub fn regenerate_from_last_window(&self, connection: &X11Connection) {
         if let Err(e) = self.try_regenerate_from_last_window(connection) {
             crate::warn!("Failed to generate window ancestry list: {}", e)
         }
     }
 
     fn try_regenerate_from_last_window(
-        &self, connection: &XCBConnection,
+        &self, connection: &X11Connection,
     ) -> Result<(), ReplyError> {
         let Some(mut current_window) = self.ancestry.pop_id() else { return Ok(()) };
 
         let mut shitlist = Vec::new();
+        let mut rechecked_children = Vec::new();
 
         loop {
             let Some((mapped, tree)) = fetch_window_info(connection, current_window)? else {
@@ -206,12 +228,16 @@ impl AncestorVisibilityState {
                     // The child has been orphaned, it must have been reparented between our server queries.
                     // Go back a step and check again.
 
-                    crate::warn!(
-                        "Children of parent {} does not contain {}: {:?}",
-                        current_window,
-                        child_id,
-                        &tree.children
-                    );
+                    if rechecked_children.contains(&child_id) {
+                        crate::warn!(
+                            "Children of parent {} does not contain {}: {:?}",
+                            current_window,
+                            child_id,
+                            &tree.children
+                        );
+                    } else {
+                        rechecked_children.push(child_id);
+                    }
 
                     let Some(_) = self.ancestry.pop_id() else { unreachable!() };
                     current_window = child_id;
@@ -233,9 +259,17 @@ impl AncestorVisibilityState {
             } else {
                 break;
             }
+
+            if let Some(root) = NonZeroU32::new(tree.root) {
+                if Some(root) != self.root_id.get() {
+                    self.root_id.set(Some(root))
+                }
+            }
         }
 
         self.own_window_viewable.set(self.ancestry.check_all_mapped());
+
+        dbg!(&self.ancestry.inner.borrow());
 
         Ok(())
     }
@@ -243,10 +277,12 @@ impl AncestorVisibilityState {
 
 /// Returns Ok(None) on BadWindow.
 fn fetch_window_info(
-    connection: &XCBConnection, window: NonZeroU32,
+    connection: &X11Connection, window: NonZeroU32,
 ) -> Result<Option<(bool, QueryTreeReply)>, ReplyError> {
-    let attrs_cookie = connection.get_window_attributes(window.get())?;
-    let tree_cookie = connection.query_tree(window.get())?;
+    let attrs_cookie = connection.conn.get_window_attributes(window.get())?;
+    let tree_cookie = connection.conn.query_tree(window.get())?;
+
+    connection.register_tree_structure_events_for_window(window)?.check_warn();
 
     let mapped = match attrs_cookie.reply() {
         Ok(attr) => attr.map_state != MapState::UNMAPPED,
