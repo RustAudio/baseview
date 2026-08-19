@@ -25,7 +25,7 @@ pub use mouse_cursor::MouseCursor;
 pub use settings::*;
 pub use window::*;
 
-#[allow(unused)]
+#[allow(unused, reason = "Some platforms may not use all exports from this mod")]
 pub(crate) use tracing::*;
 
 mod utils;

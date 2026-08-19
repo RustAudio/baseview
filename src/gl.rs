@@ -37,6 +37,10 @@ impl Default for GlConfig {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[expect(
+    clippy::exhaustive_enums,
+    reason = "We don't expect to add new profiles until a new major version"
+)]
 pub enum Profile {
     Compatibility,
     Core,

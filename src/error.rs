@@ -9,12 +9,13 @@ use std::fmt::{Debug, Display, Formatter};
 /// not possible on e.g. Windows or macOS.
 ///
 /// This is the general Baseview error type.
+#[expect(clippy::error_impl_error, reason = "This is fine for the global error type")]
 pub struct Error {
-    inner: crate::platform::Error,
+    inner: crate::platform::PlatformError,
 }
 
-impl From<crate::platform::Error> for Error {
-    fn from(inner: crate::platform::Error) -> Error {
+impl From<crate::platform::PlatformError> for Error {
+    fn from(inner: crate::platform::PlatformError) -> Error {
         Error { inner }
     }
 }
@@ -40,7 +41,7 @@ impl std::error::Error for Error {
 
 impl From<HandlerError> for Error {
     fn from(e: HandlerError) -> Self {
-        Self { inner: crate::platform::Error::Handler(e) }
+        Self { inner: crate::platform::PlatformError::Handler(e) }
     }
 }
 

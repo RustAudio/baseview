@@ -12,6 +12,7 @@ pub enum Cursor {
 }
 
 impl From<MouseCursor> for Cursor {
+    #[expect(deprecated, reason = "TODO: resize curosrs are deprecated")]
     fn from(cursor: MouseCursor) -> Self {
         match cursor {
             MouseCursor::Default => Cursor::Native(NSCursor::arrowCursor),
@@ -25,19 +26,13 @@ impl From<MouseCursor> for Cursor {
                 Cursor::Native(NSCursor::operationNotAllowedCursor)
             }
             MouseCursor::Crosshair => Cursor::Native(NSCursor::crosshairCursor),
-            #[allow(deprecated)]
             MouseCursor::EResize => Cursor::Native(NSCursor::resizeRightCursor),
-            #[allow(deprecated)]
             MouseCursor::NResize => Cursor::Native(NSCursor::resizeUpCursor),
-            #[allow(deprecated)]
             MouseCursor::WResize => Cursor::Native(NSCursor::resizeLeftCursor),
-            #[allow(deprecated)]
             MouseCursor::SResize => Cursor::Native(NSCursor::resizeDownCursor),
-            #[allow(deprecated)]
             MouseCursor::EwResize | MouseCursor::ColResize => {
                 Cursor::Native(NSCursor::resizeLeftRightCursor)
             }
-            #[allow(deprecated)]
             MouseCursor::NsResize | MouseCursor::RowResize => {
                 Cursor::Native(NSCursor::resizeUpDownCursor)
             }

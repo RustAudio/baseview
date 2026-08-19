@@ -60,7 +60,7 @@ pub(crate) struct EventLoop {
     drag_n_drop: DragNDropState,
     xkb_state: Option<XkbcommonState>,
 
-    run_error: Option<Error>,
+    run_error: Option<PlatformError>,
 
     response_sender: mpsc::Sender<WindowThreadResponseMessage>,
     main_thread: Option<MainThreadCaller>,
@@ -72,14 +72,18 @@ impl EventLoop {
         request_receiver: calloop::channel::Channel<WindowThreadRequest>,
         response_sender: mpsc::Sender<WindowThreadResponseMessage>,
         main_thread: Option<MainThreadCaller>, inner: &mut calloop::EventLoop<'static, Self>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, PlatformError> {
         let loop_handle = inner.handle();
 
         Self::setup_fallback_frame_timer(&loop_handle)?;
 
         loop_handle
             .insert_source(
-                Generic::new_with_error(window.connection.conn.clone(), Interest::READ, Mode::Edge),
+                Generic::new_with_error(
+                    Arc::clone(&window.connection.conn),
+                    Interest::READ,
+                    Mode::Edge,
+                ),
                 |_, _, e| e.handle_connection_event_ready(),
             )
             .map_err(|e| e.error)?;
@@ -128,11 +132,14 @@ impl EventLoop {
             // being queued up.
 
             let now = Instant::now();
-            let next_deadline = if previous_deadline + FRAME_INTERVAL >= now {
-                now + FRAME_INTERVAL
-            } else {
-                previous_deadline + FRAME_INTERVAL
+
+            let Some(next_deadline) = previous_deadline.checked_add(FRAME_INTERVAL) else {
+                return TimeoutAction::ToDuration(FRAME_INTERVAL);
             };
+
+            if next_deadline >= now {
+                return TimeoutAction::ToDuration(FRAME_INTERVAL);
+            }
 
             TimeoutAction::ToInstant(next_deadline)
         }
@@ -239,14 +246,14 @@ impl EventLoop {
         self.loop_signal.wakeup();
     }
 
-    fn trigger_fatal_error(&mut self, error: Error) {
+    fn trigger_fatal_error(&mut self, error: PlatformError) {
         if self.run_error.is_none() {
             self.run_error = Some(error);
         }
         self.stop_now();
     }
 
-    fn handle_request(&mut self, req: WindowThreadRequest) -> Result<(), Error> {
+    fn handle_request(&mut self, req: WindowThreadRequest) -> Result<(), PlatformError> {
         match req {
             WindowThreadRequest::Resize(new_size) => {
                 let scale_factor = self.window.scaling_factor.get();
@@ -315,7 +322,7 @@ impl EventLoop {
         Ok(())
     }
 
-    pub fn run(mut self, mut inner: calloop::EventLoop<Self>) -> Result<(), Error> {
+    pub fn run(mut self, mut inner: calloop::EventLoop<Self>) -> Result<(), PlatformError> {
         inner.run(None, &mut self, Self::handle_idle)?;
 
         self.handle_event(Event::Window(WindowEvent::WillClose));

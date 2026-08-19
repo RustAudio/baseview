@@ -1,3 +1,5 @@
+#![expect(clippy::indexing_slicing, reason = "To be refactored later")]
+
 use dpi::PhysicalPosition;
 use std::cell::{Cell, RefCell};
 use std::ffi::OsString;
@@ -38,8 +40,7 @@ impl DropTarget {
         }
     }
 
-    #[allow(non_snake_case)]
-    fn on_event(&self, pdwEffect: Option<*mut DROPEFFECT>, event: MouseEvent) {
+    fn on_event(&self, pdw_effect: Option<*mut DROPEFFECT>, event: MouseEvent) {
         let Some(window_data_ptr) = self.hwnd.get_userdata_ptr() else {
             return;
         };
@@ -59,8 +60,8 @@ impl DropTarget {
             _ => DROPEFFECT_NONE,
         };
 
-        if let Some(pdwEffect) = pdwEffect {
-            unsafe { pdwEffect.write(effect) };
+        if let Some(pdw_effect) = pdw_effect {
+            unsafe { pdw_effect.write(effect) };
         }
     }
 
@@ -99,7 +100,7 @@ impl DropTarget {
 
             for i in 0..item_count {
                 let characters = DragQueryFileW(hdrop, i, null_mut(), 0);
-                let buffer_size = characters as usize + 1;
+                let buffer_size = (characters as usize).saturating_add(1);
                 let mut buffer = vec![0u16; buffer_size];
 
                 DragQueryFileW(hdrop, i, buffer.as_mut_ptr().cast(), buffer_size as u32);
@@ -112,7 +113,7 @@ impl DropTarget {
     }
 }
 
-#[allow(non_snake_case)]
+#[allow(non_snake_case, reason = "To match trait")]
 impl IDropTarget_Impl for DropTarget_Impl {
     fn DragEnter(
         &self, pdataobj: Ref<IDataObject>, grfkeystate: MODIFIERKEYS_FLAGS, pt: &POINTL,

@@ -75,12 +75,12 @@ impl WindowState {
         HWnd::get_focused_window() == self.hwnd.as_raw()
     }
 
-    pub fn focus(&self) -> Result<(), super::Error> {
+    pub fn focus(&self) -> Result<(), super::PlatformError> {
         self.hwnd.set_focus()?;
         Ok(())
     }
 
-    pub fn resize(&self, size: Size) -> Result<(), super::Error> {
+    pub fn resize(&self, size: Size) -> Result<(), super::PlatformError> {
         // `self.window_info` will be modified in response to the `WM_SIZE` event that
         // follows the `SetWindowPos()` call
         let dpi = self.shared.current_dpi.get();
@@ -90,7 +90,7 @@ impl WindowState {
         Ok(())
     }
 
-    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) -> Result<(), super::Error> {
+    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) -> Result<(), super::PlatformError> {
         self.cursor_icon.set(mouse_cursor);
         if let Ok(cursor) = SystemCursor::load(mouse_cursor) {
             cursor.set()

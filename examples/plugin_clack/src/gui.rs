@@ -10,8 +10,6 @@ use clack_extensions::gui::{
 };
 use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::{HostMainThreadHandle, HostSharedHandle};
-#[allow(deprecated)]
-use raw_window_handle::HasRawWindowHandle;
 
 pub struct ExamplePluginGui {
     pub handle: Window,
@@ -123,14 +121,13 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
         Ok(())
     }
 
-    #[allow(deprecated)]
     fn set_parent(&mut self, window: ClapWindow) -> Result<(), PluginError> {
         let Some(gui) = &self.gui else {
             return Err(PluginError::Message("set_parent called without a GUI active"));
         };
 
-        let parent = window.raw_window_handle()?;
-        let parent = unsafe { raw_window_handle::WindowHandle::borrow_raw(parent) };
+        // SAFETY: The CLAP spec ensures the parent window handle is valid for at least this call
+        let parent = unsafe { window.borrow_handle_unchecked()? };
 
         gui.handle.set_parent(&parent)?;
         gui.handle.show()?;

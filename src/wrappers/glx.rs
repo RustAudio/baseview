@@ -10,7 +10,7 @@ use x11_dl::glx::{arb::*, *};
 use x11_dl::xlib;
 use x11_dl::xlib::XVisualInfo;
 
-/// See https://www.khronos.org/registry/OpenGL/extensions/ARB/GLX_ARB_create_context.txt
+/// See https://www.khronos.org/registry/OpenGL/extensions/ARB/GLX_ARB_create_context.txt.
 type GlXCreateContextAttribsARB = unsafe extern "C" fn(
     dpy: *mut xlib::Display,
     fbc: GLXFBConfig,
@@ -19,11 +19,11 @@ type GlXCreateContextAttribsARB = unsafe extern "C" fn(
     attribs: *const c_int,
 ) -> GLXContext;
 
-/// See https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_swap_control.txt
+/// See https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_swap_control.txt.
 type GlXSwapIntervalEXT =
     unsafe extern "C" fn(dpy: *mut xlib::Display, drawable: GLXDrawable, interval: i32);
 
-/// See https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_framebuffer_sRGB.txt
+/// See https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_framebuffer_sRGB.txt.
 const GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB: i32 = 0x20B2;
 
 pub struct Glx {
@@ -69,7 +69,7 @@ impl Glx {
         let result = unsafe {
             (self.inner.glXChooseFBConfig)(
                 connection.as_raw(),
-                connection.default_screen_index(),
+                connection.default_screen_index().into(),
                 fb_attribs.as_ptr(),
                 &mut nelements,
             )

@@ -1,3 +1,4 @@
+#[expect(clippy::exhaustive_enums, reason = "TODO: next major version")]
 #[derive(Debug, Eq, PartialEq, Clone, Copy, PartialOrd, Ord, Hash, Default)]
 pub enum MouseCursor {
     #[default]

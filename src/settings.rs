@@ -4,7 +4,7 @@ use crate::platform;
 use dpi::{LogicalSize, Size};
 use raw_window_handle::HasWindowHandle;
 
-/// Settings used when creating a new window
+/// Settings used when creating a new window.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct WindowSettings {

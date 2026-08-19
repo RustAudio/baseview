@@ -15,20 +15,21 @@ pub enum MouseButton {
 
 /// A scroll movement.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[expect(clippy::exhaustive_enums, reason = "We don't expect new scroll types anytime soon")]
 pub enum ScrollDelta {
-    /// A line-based scroll movement
+    /// A line-based scroll movement.
     Lines {
-        /// The number of horizontal lines scrolled
+        /// The number of horizontal lines scrolled.
         x: f32,
 
-        /// The number of vertical lines scrolled
+        /// The number of vertical lines scrolled.
         y: f32,
     },
-    /// A pixel-based scroll movement
+    /// A pixel-based scroll movement.
     Pixels {
-        /// The number of horizontal pixels scrolled
+        /// The number of horizontal pixels scrolled.
         x: f32,
-        /// The number of vertical pixels scrolled
+        /// The number of vertical pixels scrolled.
         y: f32,
     },
 }
@@ -36,9 +37,9 @@ pub enum ScrollDelta {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum MouseEvent {
-    /// The mouse cursor was moved
+    /// The mouse cursor was moved.
     CursorMoved {
-        /// The logical coordinates of the mouse position
+        /// The logical coordinates of the mouse position.
         position: PhysicalPosition<f64>,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
@@ -79,31 +80,31 @@ pub enum MouseEvent {
     CursorLeft,
 
     DragEntered {
-        /// The logical coordinates of the mouse position
+        /// The logical coordinates of the mouse position.
         position: PhysicalPosition<f64>,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
-        /// Data being dragged
+        /// Data being dragged.
         data: DropData,
     },
 
     DragMoved {
-        /// The logical coordinates of the mouse position
+        /// The logical coordinates of the mouse position.
         position: PhysicalPosition<f64>,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
-        /// Data being dragged
+        /// Data being dragged.
         data: DropData,
     },
 
     DragLeft,
 
     DragDropped {
-        /// The logical coordinates of the mouse position
+        /// The logical coordinates of the mouse position.
         position: PhysicalPosition<f64>,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
-        /// Data being dragged
+        /// Data being dragged.
         data: DropData,
     },
 }
@@ -161,6 +162,6 @@ pub enum EventStatus {
     /// plugin window is in focus.
     Ignored,
     /// We are prepared to handle the data in the drag and dropping will
-    /// result in [DropEffect]
+    /// result in [DropEffect].
     AcceptDrop(DropEffect),
 }

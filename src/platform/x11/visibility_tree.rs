@@ -5,13 +5,11 @@ use x11rb::protocol::ErrorKind;
 use x11rb::x11_utils::X11Error;
 use x11rb::xcb_ffi::XCBConnection;
 
-#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct AncestorVisibilityState {
     ancestry: AncestryList,
     own_window_viewable: Cell<bool>,
 }
 
-#[cfg_attr(debug_assertions, derive(Debug))]
 struct AncestryList {
     inner: RefCell<Vec<Ancestor>>,
 }
@@ -100,7 +98,7 @@ impl AncestorVisibilityState {
         self.ancestry.parent_id()
     }
 
-    /// Returns `true` if this operation made our own window visible
+    /// Returns `true` if this operation made our own window visible.
     pub fn window_mapped(&self, window_id: Window) -> bool {
         if !self.ancestry.set_mapped(window_id, true) {
             return false;
@@ -214,7 +212,7 @@ impl AncestorVisibilityState {
     }
 }
 
-/// Returns Ok(None) on BadWindow
+/// Returns Ok(None) on BadWindow.
 fn fetch_window_info(
     connection: &XCBConnection, window: Window,
 ) -> Result<Option<(bool, QueryTreeReply)>, ReplyError> {

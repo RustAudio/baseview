@@ -1,14 +1,13 @@
+#![allow(unused, reason = "Some platform may not use all macros")]
+
 #[cfg(feature = "tracing")]
-#[allow(unused)]
 pub use tracing::{error, warn};
 
 #[cfg(not(feature = "tracing"))]
-#[allow(unused)]
 mod tracing_impl {
     macro_rules! __warn {
         ($($f:tt)*) => {
             {
-                #[allow(unused, dead_code)]
                 let _ = ($($f)*);
             }
         };

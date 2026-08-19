@@ -1,3 +1,5 @@
+#![expect(clippy::unwrap_used, reason = "To be refactored later")]
+
 use std::{
     collections::HashSet,
     ffi::c_int,

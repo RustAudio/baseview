@@ -5,7 +5,6 @@ use crate::MouseCursor;
 use std::cell::RefCell;
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
-use x11rb::connection::Connection;
 use x11rb::cookie::VoidCookie;
 use x11rb::cursor::Handle as CursorHandle;
 use x11rb::errors::ConnectionError;
@@ -59,12 +58,12 @@ pub struct X11Connection {
 impl X11Connection {
     pub fn new() -> Result<Self> {
         let conn = XlibXcbConnection::open()?;
-        let screen = conn.default_screen();
+        let screen = conn.default_screen_index();
         let xcb_conn = conn.xcb_connection();
 
         let atoms = Atoms::new(xcb_conn)?.reply()?;
         let resources = resource_manager::new_from_default(xcb_conn)?;
-        let cursor_handle = CursorHandle::new(xcb_conn, screen as usize, &resources)?.reply()?;
+        let cursor_handle = CursorHandle::new(xcb_conn, screen.into(), &resources)?.reply()?;
 
         Ok(Self {
             conn: Arc::new(conn),
@@ -92,20 +91,15 @@ impl X11Connection {
         match cursor_cache.entry(cursor) {
             Entry::Occupied(entry) => Ok(*entry.get()),
             Entry::Vacant(entry) => {
-                let cursor = cursor::get_xcursor(
-                    &self.conn,
-                    self.conn.default_screen() as usize,
-                    &self.cursor_handle,
-                    cursor,
-                )?;
+                let cursor = cursor::get_xcursor(&self.conn, &self.cursor_handle, cursor)?;
                 entry.insert(cursor);
                 Ok(cursor)
             }
         }
     }
 
-    pub fn screen(&self) -> &Screen {
-        &self.conn.setup().roots[self.conn.default_screen() as usize]
+    pub fn default_screen(&self) -> &Screen {
+        self.conn.default_screen()
     }
 
     pub fn get_property<T: bytemuck::Pod>(
@@ -117,7 +111,7 @@ impl X11Connection {
     pub fn register_tree_structure_events(
         &self,
     ) -> core::result::Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
-        let root = self.screen().root;
+        let root = self.default_screen().root;
 
         self.conn.change_window_attributes(
             root,

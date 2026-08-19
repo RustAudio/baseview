@@ -590,7 +590,7 @@ fn decode_xy(data: u32) -> (u16, u16) {
 fn translate_root_coordinates(
     window: &WindowInner, x: u16, y: u16,
 ) -> Result<Option<PhysicalPosition<i16>>, ConnectionError> {
-    let root_id = window.connection.screen().root;
+    let root_id = window.connection.default_screen().root;
     let x = x.try_into().unwrap_or(i16::MAX);
     let y = y.try_into().unwrap_or(i16::MAX);
 

@@ -45,7 +45,7 @@ xkbcommon-dl = { version = "0.4.2", features = ["x11"] }
 x11-dl = { version = "2.21.0" }
 calloop = "0.14.4"
 percent-encoding = "2.3.2"
-bytemuck = "1.25.0"
+bytemuck = { version = "1.25.0", features = ["extern_crate_alloc"] }
 
 [target.'cfg(target_os="windows")'.dependencies]
 windows = { version = "0.62.2", features = [
@@ -96,6 +96,34 @@ members = ["examples/open_parented", "examples/open_window", "examples/plugin_cl
 
 [lints.clippy]
 missing-safety-doc = "allow"
+
+allow-attributes-without-reason = "warn"
+arithmetic-side-effects = "warn"
+clone-on-ref-ptr = "warn"
+dbg-macro = "warn"
+default-union-representation = "deny"
+deref-by-slicing = "warn"
+doc-paragraphs-missing-punctuation = "warn"
+empty-drop = "warn"
+empty-enum-variants-with-brackets = "warn"
+empty-structs-with-brackets = "warn"
+error-impl-error = "warn"
+exhaustive-enums = "warn"
+exit = "deny"
+expect-used = "warn"
+float-cmp-const = "warn"
+get-unwrap = "warn"
+indexing-slicing = "warn"
+integer-division = "warn"
+lossy-float-literal = "warn"
+non-zero-suggestions = "warn"
+print-stderr = "warn"
+print-stdout = "warn"
+todo = "warn"
+try-err = "warn"
+unnecessary-safety-comment = "warn"
+unwrap-used = "warn"
+
 
 [package.metadata.docs.rs]
 all-features = true

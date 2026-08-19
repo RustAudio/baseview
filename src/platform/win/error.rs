@@ -1,42 +1,42 @@
 use crate::HandlerError;
 use std::fmt::Display;
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, PlatformError>;
 
 #[derive(Debug)]
-pub enum Error {
+pub enum PlatformError {
     Win32(windows_core::Error),
     ResizeFailed,
     Handler(HandlerError),
 }
 
-impl From<windows_core::Error> for Error {
+impl From<windows_core::Error> for PlatformError {
     fn from(value: windows_core::Error) -> Self {
-        Error::Win32(value)
+        PlatformError::Win32(value)
     }
 }
 
-impl From<HandlerError> for Error {
+impl From<HandlerError> for PlatformError {
     fn from(value: HandlerError) -> Self {
-        Error::Handler(value)
+        PlatformError::Handler(value)
     }
 }
 
-impl Display for Error {
+impl Display for PlatformError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Win32(e) => Display::fmt(e, f),
-            Error::Handler(e) => Display::fmt(e, f),
-            Error::ResizeFailed => f.write_str("Window resize request failed."),
+            PlatformError::Win32(e) => Display::fmt(e, f),
+            PlatformError::Handler(e) => Display::fmt(e, f),
+            PlatformError::ResizeFailed => f.write_str("Window resize request failed."),
         }
     }
 }
 
-impl std::error::Error for Error {
+impl std::error::Error for PlatformError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Win32(e) => Some(e),
-            Error::Handler(e) => Some(e.source()),
+            PlatformError::Win32(e) => Some(e),
+            PlatformError::Handler(e) => Some(e.source()),
             _ => None,
         }
     }

@@ -16,7 +16,7 @@ use x11_dl::xlib_xcb::{XEventQueueOwner, Xlib_xcb};
 pub struct XlibConnection {
     display: NonNull<Display>,
     xlib: Box<Xlib>,
-    default_screen: c_int,
+    default_screen: ScreenIndex,
 }
 
 // SAFETY: Xlib functions should be thread-safe, since we initialize it with XInitThreads below
@@ -37,9 +37,9 @@ impl XlibConnection {
 
         let Some(display) = NonNull::new(ptr) else { return Err(DisplayOpenFailedError.into()) };
 
-        let mut this = Self { display, xlib, default_screen: 0 };
+        let mut this = Self { display, xlib, default_screen: ScreenIndex(0) };
 
-        this.default_screen = this.fetch_default_screen();
+        this.default_screen = ScreenIndex::new(this.fetch_default_screen());
 
         Ok(this)
     }
@@ -55,7 +55,7 @@ impl XlibConnection {
     }
 
     /// Returns the index of the default screen for this X server.
-    pub fn default_screen_index(&self) -> c_int {
+    pub fn default_screen_index(&self) -> ScreenIndex {
         self.default_screen
     }
 
@@ -64,7 +64,7 @@ impl XlibConnection {
         unsafe { CStr::from_ptr(ptr) }
     }
 
-    /// Safe wrapper for XDefaultScreen
+    /// Safe wrapper for XDefaultScreen.
     fn fetch_default_screen(&self) -> c_int {
         // SAFETY: This type ensures the display pointer is always valid.
         unsafe { (self.xlib.XDefaultScreen)(self.display.as_ptr()) }
@@ -75,13 +75,41 @@ impl XlibConnection {
     }
 }
 
+#[derive(Copy, Clone)]
+pub struct ScreenIndex(c_int);
+
+impl ScreenIndex {
+    pub fn new(value: c_int) -> Self {
+        if let Err(e) = usize::try_from(value) {
+            panic!("Default screen index {value} could not be used: {e}");
+        }
+
+        Self(value)
+    }
+}
+
+impl From<ScreenIndex> for usize {
+    #[inline]
+    fn from(value: ScreenIndex) -> Self {
+        // This will not panic or overflow, we checked it in the constructor
+        value.0 as usize
+    }
+}
+
+impl From<ScreenIndex> for c_int {
+    #[inline]
+    fn from(value: ScreenIndex) -> Self {
+        value.0
+    }
+}
+
 #[cfg(feature = "opengl")]
 impl XlibConnection {
     pub fn xlib(&self) -> &Xlib {
         &self.xlib
     }
 
-    /// Calls XSync(0)
+    /// Calls XSync(0).
     pub fn sync(&self) {
         // SAFETY: This type ensures the display pointer is always valid.
         unsafe { (self.xlib.XSync)(self.display.as_ptr(), 0) };
@@ -93,7 +121,7 @@ impl XlibConnection {
         }
 
         // PANIC: we just checked above that buf.len > 0
-        let buf_len = buf.len() - 1;
+        let Some(buf_len) = buf.len().checked_sub(1) else { unreachable!() };
         let Ok(buf_len) = buf_len.try_into() else {
             // Buffers should never get that big, something went horribly wrong.
             return c"";
@@ -111,7 +139,8 @@ impl XlibConnection {
         };
 
         // PANIC: we checked above that buf.len > 0
-        *buf.last_mut().unwrap() = 0;
+        let Some(last_byte) = buf.last_mut() else { unreachable!() };
+        *last_byte = 0;
 
         // SAFETY: whatever XGetErrorText did or not, we guaranteed there is a nul byte at the end of the buffer
         unsafe { CStr::from_ptr(buf.as_mut_ptr().cast()) }
