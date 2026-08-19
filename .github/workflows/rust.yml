@@ -27,6 +27,8 @@ jobs:
         run: cargo build -p baseview --all-features --verbose
       - name: Run tests
         run: cargo test -p baseview --all-features --verbose
+      - name: Check Release
+        run: cargo check -p baseview --all-features --verbose --release
       - name: Build examples
         if: matrix.toolchain != 'msrv'
         run: cargo build --workspace --all-targets --verbose
