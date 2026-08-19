@@ -15,9 +15,7 @@ impl<'a> PluginAudioProcessor<'a, (), ExamplePluginMainThread<'a>> for ExamplePl
         &mut self, _process: Process, mut audio: Audio, _events: Events,
     ) -> Result<ProcessStatus, PluginError> {
         for mut port in audio.port_pairs() {
-            let Some(channels) = port.channels()?.into_f32() else {
-                panic!("Expected f32 channels");
-            };
+            let channels = port.channels()?.into_f32().expect("Expected f32 channels");
 
             for channel_pair in channels {
                 match channel_pair {
