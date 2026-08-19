@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::num::{NonZero, NonZeroU32};
 use x11rb::errors::ReplyError;
 use x11rb::protocol::xproto::{ConnectionExt, MapState, QueryTreeReply, Window};
 use x11rb::protocol::ErrorKind;
@@ -15,15 +16,15 @@ struct AncestryList {
 }
 
 impl AncestryList {
-    pub fn new(own_window: Window) -> Self {
+    pub fn new(own_window: NonZeroU32) -> Self {
         Self { inner: RefCell::new(vec![Ancestor { id: own_window, mapped: false.into() }]) }
     }
 
-    pub fn pop_id(&self) -> Option<Window> {
+    pub fn pop_id(&self) -> Option<NonZeroU32> {
         self.inner.borrow_mut().pop().map(|a| a.id)
     }
 
-    pub fn last_id(&self) -> Option<Window> {
+    pub fn last_id(&self) -> Option<NonZeroU32> {
         self.inner.borrow().last().map(|a| a.id)
     }
 
@@ -31,11 +32,11 @@ impl AncestryList {
         self.inner.borrow_mut().push(ancestor);
     }
 
-    pub fn parent_id(&self) -> Option<Window> {
+    pub fn parent_id(&self) -> Option<NonZeroU32> {
         self.inner.borrow().get(1).map(|a| a.id)
     }
 
-    pub fn remove_window(&self, id: Window) -> bool {
+    pub fn remove_window(&self, id: NonZeroU32) -> bool {
         let mut inner = self.inner.borrow_mut();
         let Some(index) = inner.iter().position(|a| a.id == id) else {
             return false;
@@ -46,7 +47,7 @@ impl AncestryList {
         true
     }
 
-    pub fn remove_after_window(&self, id: Window) -> bool {
+    pub fn remove_after_window(&self, id: NonZeroU32) -> bool {
         let mut inner = self.inner.borrow_mut();
         let Some(index) = inner.iter().position(|a| a.id == id) else {
             return false;
@@ -61,7 +62,7 @@ impl AncestryList {
         self.inner.borrow().iter().all(|a| a.mapped.get())
     }
 
-    pub fn set_mapped(&self, window: Window, mapped: bool) -> bool {
+    pub fn set_mapped(&self, window: NonZeroU32, mapped: bool) -> bool {
         let inner = self.inner.borrow();
         let Some(ancestor) = inner.iter().find(|a| a.id == window) else {
             return false;
@@ -74,12 +75,14 @@ impl AncestryList {
 
 #[cfg_attr(debug_assertions, derive(Debug))]
 struct Ancestor {
-    id: Window,
+    id: NonZeroU32,
     mapped: Cell<bool>,
 }
 
 impl AncestorVisibilityState {
-    pub fn discover(connection: &XCBConnection, own_window_id: Window) -> Result<Self, ReplyError> {
+    pub fn discover(
+        connection: &XCBConnection, own_window_id: NonZeroU32,
+    ) -> Result<Self, ReplyError> {
         let this = Self {
             ancestry: AncestryList::new(own_window_id),
             own_window_viewable: Cell::new(false),
@@ -94,12 +97,12 @@ impl AncestorVisibilityState {
         self.own_window_viewable.get()
     }
 
-    pub fn parent_id(&self) -> Option<Window> {
+    pub fn parent_id(&self) -> Option<NonZeroU32> {
         self.ancestry.parent_id()
     }
 
     /// Returns `true` if this operation made our own window visible.
-    pub fn window_mapped(&self, window_id: Window) -> bool {
+    pub fn window_mapped(&self, window_id: NonZeroU32) -> bool {
         if !self.ancestry.set_mapped(window_id, true) {
             return false;
         }
@@ -116,7 +119,7 @@ impl AncestorVisibilityState {
         all_mapped
     }
 
-    pub fn window_unmapped(&self, window_id: Window) {
+    pub fn window_unmapped(&self, window_id: NonZeroU32) {
         if !self.ancestry.set_mapped(window_id, false) {
             return;
         }
@@ -124,7 +127,7 @@ impl AncestorVisibilityState {
         self.own_window_viewable.set(false);
     }
 
-    pub fn window_destroyed(&self, window_id: Window, connection: &XCBConnection) {
+    pub fn window_destroyed(&self, window_id: NonZeroU32, connection: &XCBConnection) {
         if !self.ancestry.remove_window(window_id) {
             return;
         }
@@ -133,15 +136,17 @@ impl AncestorVisibilityState {
     }
 
     pub fn window_reparented(
-        &self, window_id: Window, new_parent: Window, connection: &XCBConnection,
+        &self, window_id: NonZeroU32, new_parent: Option<NonZeroU32>, connection: &XCBConnection,
     ) {
         if !self.ancestry.remove_after_window(window_id) {
             return;
         }
 
-        self.ancestry.push(Ancestor { id: new_parent, mapped: Cell::new(false) });
+        if let Some(new_parent) = new_parent {
+            self.ancestry.push(Ancestor { id: new_parent, mapped: Cell::new(false) });
 
-        self.regenerate_from_last_window(connection);
+            self.regenerate_from_last_window(connection);
+        }
     }
 
     pub fn regenerate_from_last_window(&self, connection: &XCBConnection) {
@@ -171,14 +176,14 @@ impl AncestorVisibilityState {
                 continue;
             };
 
-            if tree.parent == current_window {
+            if tree.parent == current_window.get() {
                 // Weird, but that might also mean we're at the end of the tree (or the window has no parent yet)
                 break;
             }
 
             // Sanity check if the current parent is actually registered to have the child in its children list
             if let Some(child_id) = self.ancestry.last_id() {
-                if !tree.children.contains(&child_id) {
+                if !tree.children.contains(&child_id.get()) {
                     // The child has been orphaned, it must have been reparented between our server queries.
                     // Go back a step and check again.
 
@@ -203,7 +208,12 @@ impl AncestorVisibilityState {
                 break;
             }
 
-            current_window = tree.parent;
+            // If parent == 0, assume there's no parent and just break
+            if let Some(parent) = NonZeroU32::new(tree.parent) {
+                current_window = parent;
+            } else {
+                break;
+            }
         }
 
         self.own_window_viewable.set(self.ancestry.check_all_mapped());
@@ -214,10 +224,10 @@ impl AncestorVisibilityState {
 
 /// Returns Ok(None) on BadWindow.
 fn fetch_window_info(
-    connection: &XCBConnection, window: Window,
+    connection: &XCBConnection, window: NonZeroU32,
 ) -> Result<Option<(bool, QueryTreeReply)>, ReplyError> {
-    let attrs_cookie = connection.get_window_attributes(window)?;
-    let tree_cookie = connection.query_tree(window)?;
+    let attrs_cookie = connection.get_window_attributes(window.get())?;
+    let tree_cookie = connection.query_tree(window.get())?;
 
     let mapped = match attrs_cookie.reply() {
         Ok(attr) => attr.map_state != MapState::UNMAPPED,
