@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
-use std::num::{NonZero, NonZeroU32};
+use std::num::NonZeroU32;
 use x11rb::errors::ReplyError;
-use x11rb::protocol::xproto::{ConnectionExt, MapState, QueryTreeReply, Window};
+use x11rb::protocol::xproto::{ConnectionExt, MapState, QueryTreeReply};
 use x11rb::protocol::ErrorKind;
 use x11rb::x11_utils::X11Error;
 use x11rb::xcb_ffi::XCBConnection;
