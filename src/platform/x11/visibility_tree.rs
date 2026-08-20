@@ -236,7 +236,9 @@ impl AncestorVisibilityState {
                 connection.register_tree_structure_events_for_window(current_window)?.check()
             {
                 crate::warn!(
-                    "Could not register SubstructureNotify event for window {current_window}: {e}"
+                    "Could not register SubstructureNotify event for window {}: {}",
+                    current_window,
+                    e
                 );
                 mapped = true; // Assume it is mapped, since we'll possibly not get any events from this window
             }
