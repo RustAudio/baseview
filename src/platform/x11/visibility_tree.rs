@@ -1,4 +1,3 @@
-use crate::platform::x11::error::CookieExt;
 use crate::platform::X11Connection;
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
@@ -6,16 +5,15 @@ use x11rb::errors::ReplyError;
 use x11rb::protocol::xproto::{ConnectionExt, MapState, QueryTreeReply};
 use x11rb::protocol::ErrorKind;
 use x11rb::x11_utils::X11Error;
-use x11rb::xcb_ffi::XCBConnection;
 
 pub struct AncestorVisibilityState {
-    pub ancestry: AncestryList,
+    ancestry: AncestryList,
     own_window_viewable: Cell<bool>,
     root_id: Cell<Option<NonZeroU32>>,
 }
 
 struct AncestryList {
-    pub inner: RefCell<Vec<Ancestor>>,
+    inner: RefCell<Vec<Ancestor>>,
 }
 
 impl AncestryList {
@@ -111,8 +109,6 @@ impl AncestorVisibilityState {
             return false;
         }
 
-        eprintln!("Mapped {window_id}");
-
         if self.own_window_viewable.get() {
             return false;
         }
@@ -130,8 +126,6 @@ impl AncestorVisibilityState {
             return;
         }
 
-        eprintln!("Unmapped {window_id}");
-
         self.own_window_viewable.set(false);
     }
 
@@ -140,16 +134,12 @@ impl AncestorVisibilityState {
             return;
         }
 
-        eprintln!("Destroyed {window_id}");
-
         self.regenerate_from_last_window(connection);
     }
 
     pub fn window_reparented(
         &self, window_id: NonZeroU32, new_parent: Option<NonZeroU32>, connection: &X11Connection,
     ) {
-        eprintln!("Reparent event {window_id} to {new_parent:?}");
-
         if !self.ancestry.remove_after_window(window_id) {
             return;
         }
@@ -161,13 +151,8 @@ impl AncestorVisibilityState {
 
             self.ancestry.push(Ancestor { id: new_parent, mapped: Cell::new(false) });
 
-            eprintln!("Reparented {window_id} to new parent: {new_parent}");
             self.regenerate_from_last_window(connection);
-        } else {
-            eprintln!("Unparented {window_id}");
         }
-
-        dbg!(self.ancestry.inner.borrow());
     }
 
     pub fn regenerate_from_last_window(&self, connection: &X11Connection) {
@@ -185,7 +170,7 @@ impl AncestorVisibilityState {
         let mut rechecked_children = Vec::new();
 
         loop {
-            let Some((mapped, tree)) = fetch_window_info(connection, current_window)? else {
+            let Some((mut mapped, tree)) = fetch_window_info(connection, current_window)? else {
                 // We got a BadWindow while trying to get a window's info, it must have been destroyed.
                 // Try to go back a layer and fetch the window's state and parent again
 
@@ -245,6 +230,17 @@ impl AncestorVisibilityState {
                 }
             }
 
+            // Despite what's documented, all windows down the parent tree must have the event mask
+            // bit set, otherwise events are not propagated through to us.
+            if let Err(e) =
+                connection.register_tree_structure_events_for_window(current_window)?.check()
+            {
+                crate::warn!(
+                    "Could not register SubstructureNotify event for window {current_window}: {e}"
+                );
+                mapped = true; // Assume it is mapped, since we'll possibly not get any events from this window
+            }
+
             // All checks succeeded, now register the current window info and fetch info from the parent
             self.ancestry.push(Ancestor { id: current_window, mapped: mapped.into() });
 
@@ -269,8 +265,6 @@ impl AncestorVisibilityState {
 
         self.own_window_viewable.set(self.ancestry.check_all_mapped());
 
-        dbg!(&self.ancestry.inner.borrow());
-
         Ok(())
     }
 }
@@ -281,8 +275,6 @@ fn fetch_window_info(
 ) -> Result<Option<(bool, QueryTreeReply)>, ReplyError> {
     let attrs_cookie = connection.conn.get_window_attributes(window.get())?;
     let tree_cookie = connection.conn.query_tree(window.get())?;
-
-    connection.register_tree_structure_events_for_window(window)?.check_warn();
 
     let mapped = match attrs_cookie.reply() {
         Ok(attr) => attr.map_state != MapState::UNMAPPED,

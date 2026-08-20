@@ -283,13 +283,11 @@ impl EventLoop {
             }
             WindowThreadRequest::Show => {
                 self.window.xcb_window.map_window()?.check()?;
-                dbg!("Show request!");
                 self.window.visibility_state.window_mapped(self.window.xcb_window.id());
                 Ok(())
             }
             WindowThreadRequest::Hide => {
                 self.window.xcb_window.unmap_window()?.check()?;
-                dbg!("Hide request!");
                 self.window.visibility_state.window_unmapped(self.window.xcb_window.id());
                 Ok(())
             }
@@ -510,9 +508,7 @@ impl EventLoop {
             }
 
             XEvent::MapNotify(e) => {
-                self.window.connection.dbg_event_mask();
                 if let Some(window_id) = NonZero::new(e.window) {
-                    eprintln!("MapNotify {window_id}");
                     if window_id == self.window.xcb_window.id() {
                         self.window.is_mapped.set(true);
                     }
@@ -527,7 +523,6 @@ impl EventLoop {
 
             XEvent::UnmapNotify(e) => {
                 if let Some(window_id) = NonZero::new(e.window) {
-                    eprintln!("UnmapNotify {window_id}");
                     if window_id == self.window.xcb_window.id() {
                         self.window.is_mapped.set(false)
                     }
@@ -538,7 +533,6 @@ impl EventLoop {
 
             XEvent::ReparentNotify(e) => {
                 if let Some(window_id) = NonZero::new(e.window) {
-                    eprintln!("ReparentNotify {window_id}");
                     self.window.visibility_state.window_reparented(
                         window_id,
                         NonZero::new(e.parent),
@@ -549,7 +543,6 @@ impl EventLoop {
 
             XEvent::DestroyNotify(e) => {
                 if let Some(window_id) = NonZero::new(e.window) {
-                    eprintln!("DestroyNotify {window_id}");
                     self.window
                         .visibility_state
                         .window_destroyed(window_id, &self.window.connection)

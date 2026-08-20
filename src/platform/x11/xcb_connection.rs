@@ -128,12 +128,4 @@ impl X11Connection {
             &ChangeWindowAttributesAux::new().event_mask(EventMask::SUBSTRUCTURE_NOTIFY),
         )
     }
-
-    pub fn dbg_event_mask(&self) {
-        let root = self.default_screen().root;
-
-        let events =
-            self.conn.get_window_attributes(root).unwrap().reply().unwrap().all_event_masks;
-        dbg!(events);
-    }
 }
