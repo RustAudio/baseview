@@ -283,10 +283,12 @@ impl EventLoop {
             }
             WindowThreadRequest::Show => {
                 self.window.xcb_window.map_window()?.check()?;
+                self.window.visibility_state.window_mapped(self.window.xcb_window.id());
                 Ok(())
             }
             WindowThreadRequest::Hide => {
                 self.window.xcb_window.unmap_window()?.check()?;
+                self.window.visibility_state.window_unmapped(self.window.xcb_window.id());
                 Ok(())
             }
         }
@@ -323,6 +325,7 @@ impl EventLoop {
     }
 
     pub fn run(mut self, mut inner: calloop::EventLoop<Self>) -> Result<(), PlatformError> {
+        self.drain_xcb_events()?;
         inner.run(None, &mut self, Self::handle_idle)?;
 
         self.handle_event(Event::Window(WindowEvent::WillClose));
@@ -410,7 +413,9 @@ impl EventLoop {
                 // These are coalesced and then handled asynchronously at the end of the event loop
                 if event.window == self.window.raw_id() {
                     self.new_size = Some(PhysicalSize::new(event.width, event.height));
-                } else if Some(event.window) == self.window.visibility_state.parent_id() {
+                } else if Some(event.window)
+                    == self.window.visibility_state.parent_id().map(|i| i.get())
+                {
                     // Also resize the window if the parent is resized
                     // This works around some hosts that might not call set_size() right away (or at all...)
                     self.new_parent_size = Some(PhysicalSize::new(event.width, event.height));
@@ -503,35 +508,46 @@ impl EventLoop {
             }
 
             XEvent::MapNotify(e) => {
-                if e.window == self.window.raw_id() {
-                    self.window.is_mapped.set(true);
-                }
+                if let Some(window_id) = NonZero::new(e.window) {
+                    if window_id == self.window.xcb_window.id() {
+                        self.window.is_mapped.set(true);
+                    }
 
-                let became_viewable = self.window.visibility_state.window_mapped(e.window);
+                    let became_viewable = self.window.visibility_state.window_mapped(window_id);
 
-                if became_viewable {
-                    self.exposed = true;
+                    if became_viewable {
+                        self.exposed = true;
+                    }
                 }
             }
 
             XEvent::UnmapNotify(e) => {
-                if e.window == self.window.raw_id() {
-                    self.window.is_mapped.set(false)
-                }
+                if let Some(window_id) = NonZero::new(e.window) {
+                    if window_id == self.window.xcb_window.id() {
+                        self.window.is_mapped.set(false)
+                    }
 
-                self.window.visibility_state.window_unmapped(e.window);
+                    self.window.visibility_state.window_unmapped(window_id);
+                }
             }
 
-            XEvent::ReparentNotify(e) => self.window.visibility_state.window_reparented(
-                e.window,
-                e.parent,
-                &self.window.connection.conn,
-            ),
+            XEvent::ReparentNotify(e) => {
+                if let Some(window_id) = NonZero::new(e.window) {
+                    self.window.visibility_state.window_reparented(
+                        window_id,
+                        NonZero::new(e.parent),
+                        &self.window.connection,
+                    )
+                }
+            }
 
-            XEvent::DestroyNotify(e) => self
-                .window
-                .visibility_state
-                .window_destroyed(e.window, &self.window.connection.conn),
+            XEvent::DestroyNotify(e) => {
+                if let Some(window_id) = NonZero::new(e.window) {
+                    self.window
+                        .visibility_state
+                        .window_destroyed(window_id, &self.window.connection)
+                }
+            }
 
             _ => {}
         }
