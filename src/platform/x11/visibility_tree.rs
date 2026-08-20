@@ -36,6 +36,9 @@ impl AncestryList {
     pub fn parent_id(&self) -> Option<NonZeroU32> {
         self.inner.borrow().get(1).map(|a| a.id)
     }
+    pub fn own_window_id(&self) -> Option<NonZeroU32> {
+        self.inner.borrow().first().map(|a| a.id)
+    }
 
     pub fn remove_window(&self, id: NonZeroU32) -> bool {
         let mut inner = self.inner.borrow_mut();
@@ -230,17 +233,19 @@ impl AncestorVisibilityState {
                 }
             }
 
-            // Despite what's documented, all windows down the parent tree must have the event mask
-            // bit set, otherwise events are not propagated through to us.
-            if let Err(e) =
-                connection.register_tree_structure_events_for_window(current_window)?.check()
-            {
-                crate::warn!(
-                    "Could not register SubstructureNotify event for window {}: {}",
-                    current_window,
-                    e
-                );
-                mapped = true; // Assume it is mapped, since we'll possibly not get any events from this window
+            if self.ancestry.own_window_id().is_some_and(|id| id != current_window) {
+                // Despite what's documented, all windows down the parent tree must have the event mask
+                // bit set, otherwise events are not propagated through to us.
+                if let Err(e) =
+                    connection.register_tree_structure_events_for_window(current_window)?.check()
+                {
+                    crate::warn!(
+                        "Could not register SubstructureNotify event for window {}: {}",
+                        current_window,
+                        e
+                    );
+                    mapped = true; // Assume it is mapped, since we'll possibly not get any events from this window
+                }
             }
 
             // All checks succeeded, now register the current window info and fetch info from the parent
