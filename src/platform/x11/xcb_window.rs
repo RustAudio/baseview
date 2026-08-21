@@ -8,6 +8,8 @@ use x11rb::connection::Connection;
 use x11rb::cookie::VoidCookie;
 use x11rb::errors::{ConnectionError, ReplyOrIdError};
 use x11rb::properties::WmSizeHints;
+use x11rb::protocol::present;
+use x11rb::protocol::present::ConnectionExt;
 use x11rb::protocol::xproto::{
     AtomEnum, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, PropMode,
     WindowClass,
@@ -18,6 +20,7 @@ use x11rb::xcb_ffi::XCBConnection;
 pub struct XcbWindow {
     connection: Rc<X11Connection>,
     window_id: NonZeroU32,
+    present_notify_event_id: Option<NonZeroU32>,
 }
 
 impl XcbWindow {
@@ -59,7 +62,33 @@ impl XcbWindow {
                 .border_pixel(0),
         )?;
 
-        Ok(Self { window_id, connection })
+        let present_notify_event_id = if !connection.present_supported {
+            None
+        } else {
+            let Some(event_id) = NonZero::new(connection.conn.generate_id()?) else {
+                unreachable!();
+            };
+
+            Some(event_id)
+        };
+
+        Ok(Self { window_id, connection, present_notify_event_id })
+    }
+
+    pub fn present_select_input(
+        &self,
+    ) -> Result<Option<VoidCookie<'_, XCBConnection>>, ConnectionError> {
+        let Some(event_id) = self.present_notify_event_id else {
+            return Ok(None);
+        };
+
+        eprintln!("Present input!");
+
+        Ok(Some(self.connection.conn.present_select_input(
+            event_id.get(),
+            self.window_id.get(),
+            present::EventMask::COMPLETE_NOTIFY,
+        )?))
     }
 
     pub fn map_window(&self) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
@@ -126,6 +155,16 @@ impl XcbWindow {
         size_hints.set_normal_hints(&self.connection.conn as &XCBConnection, self.window_id.get())
     }
 
+    pub fn present_supported(&self) -> bool {
+        self.present_notify_event_id.is_some()
+    }
+
+    pub fn present_notify(
+        &self, target_msc: u64, serial: u32,
+    ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
+        self.connection.conn.present_notify_msc(self.window_id.get(), serial, target_msc, 1, 0)
+    }
+
     #[inline]
     pub fn id(&self) -> NonZeroU32 {
         self.window_id
@@ -134,6 +173,17 @@ impl XcbWindow {
 
 impl Drop for XcbWindow {
     fn drop(&mut self) {
+        if let Some(event_id) = self.present_notify_event_id {
+            match self.connection.conn.present_select_input(
+                event_id.get(),
+                self.window_id.get(),
+                present::EventMask::NO_EVENT,
+            ) {
+                Err(e) => crate::warn!("Failed to send request to switch XPresent off: {}", e),
+                Ok(cookie) => cookie.check_warn(),
+            }
+        }
+
         match self.connection.conn.destroy_window(self.window_id.get()) {
             Err(e) => crate::warn!("Failed to send request to destroy X window: {}", e),
             Ok(cookie) => cookie.check_warn(),

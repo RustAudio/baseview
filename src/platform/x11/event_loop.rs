@@ -21,6 +21,7 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::errors::ConnectionError;
+use x11rb::protocol::present::CompleteKind;
 use x11rb::protocol::Event as XEvent;
 
 pub struct MainThreadCaller {
@@ -53,7 +54,9 @@ pub(crate) struct EventLoop {
 
     new_size: Option<PhysicalSize<u16>>,
     new_parent_size: Option<PhysicalSize<u16>>,
-    exposed: bool,
+    draw_now: bool,
+    last_requested_serial: Option<u32>,
+    last_received_present: Option<(u32, u64)>,
 
     loop_signal: LoopSignal,
 
@@ -75,7 +78,7 @@ impl EventLoop {
     ) -> Result<Self, PlatformError> {
         let loop_handle = inner.handle();
 
-        Self::setup_fallback_frame_timer(&loop_handle)?;
+        // Self::setup_fallback_frame_timer(&loop_handle)?;
 
         loop_handle
             .insert_source(
@@ -97,7 +100,9 @@ impl EventLoop {
             handler,
             new_size: None,
             new_parent_size: None,
-            exposed: false,
+            draw_now: false,
+            last_requested_serial: None,
+            last_received_present: None,
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
             run_error: None,
@@ -125,7 +130,7 @@ impl EventLoop {
         const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 
         fn handle_frame(evloop: &mut EventLoop, previous_deadline: Instant) -> TimeoutAction {
-            evloop.exposed = true;
+            evloop.draw_now = true;
 
             // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
             // the expected frame time, this will throttle down to prevent multiple frames from
@@ -152,22 +157,55 @@ impl EventLoop {
     }
 
     fn handle_redraw(&mut self) {
-        if !self.exposed {
+        if !self.draw_now {
             return;
         }
-        self.exposed = false;
+        self.draw_now = false;
 
         if !self.window.visibility_state.own_window_is_viewable() {
             return;
         }
 
-        if let Err(e) = self.handler.on_frame() {
+        if let Err(e) = self.handler.draw() {
             self.trigger_fatal_error(e.into());
             return;
         }
 
+        self.window.present_notify_requested.set(true);
+
         // Any socket error will be handled in the next poll
         let _ = self.window.connection.conn.flush();
+    }
+
+    fn handle_present_notify(&mut self) -> Result<(), ConnectionError> {
+        if !self.window.present_notify_requested.get() {
+            return Ok(());
+        }
+
+        let (next_serial, target_msc) =
+            match (self.last_requested_serial, self.last_received_present) {
+                // First request, always send
+                (None, None) => (0, 0),
+                (Some(sent_serial), Some((received_serial, last_msc)))
+                    if sent_serial == received_serial =>
+                {
+                    // TODO: why does 2 work but not 1 for next MSC??
+                    (sent_serial.wrapping_add(1), last_msc.wrapping_add(2))
+                }
+                // We sent our first request but have not gotten a response yet.
+                // Or, we sent a request, but the last response we've gotten isn't that one.
+                // Do not send.
+                _ => {
+                    self.window.present_notify_requested.set(false);
+                    return Ok(());
+                }
+            };
+
+        self.window.xcb_window.present_notify(target_msc, next_serial)?.check_warn(); // TODO: handle error
+        self.last_requested_serial = Some(next_serial);
+        self.window.present_notify_requested.set(false);
+
+        Ok(())
     }
 
     fn handle_coalesced_resize_events(&mut self) -> Result<(), FatalError> {
@@ -210,7 +248,7 @@ impl EventLoop {
             }
 
             // Immediately schedule a redraw, do not wait for an "expose" event
-            self.exposed = true;
+            self.window.present_notify_requested.set(true);
         }
 
         Ok(())
@@ -312,6 +350,7 @@ impl EventLoop {
 
         loop {
             self.handle_coalesced_resize_events()?;
+            self.handle_present_notify()?;
             self.handle_redraw();
 
             if !self.drain_xcb_events()? {
@@ -422,7 +461,9 @@ impl EventLoop {
                 }
             }
 
-            XEvent::Expose(e) if e.window == self.window.raw_id() => self.exposed = true,
+            XEvent::Expose(e) if e.window == self.window.raw_id() => {
+                self.window.present_notify_requested.set(true)
+            }
 
             ////
             // mouse
@@ -516,7 +557,8 @@ impl EventLoop {
                     let became_viewable = self.window.visibility_state.window_mapped(window_id);
 
                     if became_viewable {
-                        self.exposed = true;
+                        self.window.xcb_window.present_select_input()?.unwrap().check_warn(); // TODO: unwrap: fallback to timer
+                        self.window.present_notify_requested.set(true);
                     }
                 }
             }
@@ -547,6 +589,48 @@ impl EventLoop {
                         .visibility_state
                         .window_destroyed(window_id, &self.window.connection)
                 }
+            }
+
+            XEvent::PresentCompleteNotify(e) => {
+                if e.kind != CompleteKind::NOTIFY_MSC {
+                    return Ok(());
+                }
+
+                if e.window != self.window.raw_id() {
+                    dbg!(e.window);
+                    return Ok(());
+                }
+
+                let Some(last_requested_serial) = self.last_requested_serial else {
+                    eprintln!("Received serial without request: {}", e.serial);
+                    return Ok(());
+                };
+
+                if last_requested_serial != e.serial {
+                    eprintln!(
+                        "Received serial not matching: {}, requested: {}",
+                        e.serial, last_requested_serial
+                    );
+                    return Ok(());
+                }
+
+                if let Some((last_received_serial, last_received_msc)) = self.last_received_present
+                {
+                    if last_received_serial == e.serial {
+                        eprintln!("Already handled serial: {}", last_received_serial);
+                        return Ok(());
+                    }
+
+                    if e.msc <= last_received_msc {
+                        eprintln!("Already handled MSC: {}", e.msc);
+                        self.last_received_present = Some((e.serial, e.msc));
+                        //self.window.present_notify_requested.set(true);
+                        return Ok(());
+                    }
+                }
+
+                self.last_received_present = Some((e.serial, e.msc));
+                self.draw_now = true;
             }
 
             _ => {}

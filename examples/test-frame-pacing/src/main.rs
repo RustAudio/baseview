@@ -59,7 +59,7 @@ impl FramePacingTest {
 }
 
 impl WindowHandler for FramePacingTest {
-    fn on_frame(&self) -> Result<(), HandlerError> {
+    fn draw(&self) -> Result<(), HandlerError> {
         let now = Instant::now();
         let dt = (now - self.previous_frame_time.get()).as_secs_f32();
         self.previous_frame_time.set(now);
