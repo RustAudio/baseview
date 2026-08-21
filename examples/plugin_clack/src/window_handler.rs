@@ -29,7 +29,7 @@ impl WindowHandler for OpenWindowExample {
         Ok(())
     }
 
-    fn on_frame(&self) -> Result<(), HandlerError> {
+    fn draw(&self) -> Result<(), HandlerError> {
         if !self.damaged.get() {
             return Ok(());
         }

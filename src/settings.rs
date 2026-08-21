@@ -128,6 +128,12 @@ impl WindowSettings {
         self
     }
 
+    #[inline]
+    pub fn with_redraw_strategy(mut self, redraw_strategy: RedrawStrategy) -> Self {
+        self.redraw_strategy = redraw_strategy;
+        self
+    }
+
     /// Sets [`gl_config`](Self::gl_config) to the given value.
     #[cfg(feature = "opengl")]
     #[inline]
