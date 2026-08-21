@@ -194,6 +194,8 @@ impl WindowInner {
         self.loop_signal.wakeup();
     }
 
+    pub fn request_redraw(&self) {}
+
     pub fn has_focus(&self) -> bool {
         self.is_focused.get()
     }
