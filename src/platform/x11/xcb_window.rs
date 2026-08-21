@@ -82,8 +82,6 @@ impl XcbWindow {
             return Ok(None);
         };
 
-        eprintln!("Present input!");
-
         Ok(Some(self.connection.conn.present_select_input(
             event_id.get(),
             self.window_id.get(),

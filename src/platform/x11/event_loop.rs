@@ -8,8 +8,8 @@ use crate::platform::x11::error::FatalError;
 use crate::platform::x11::window_thread::{
     HostCallback, WindowThreadRequest, WindowThreadResponseMessage,
 };
-use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
+use crate::{warn, RedrawStrategy};
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use calloop::generic::Generic;
 use calloop::timer::{TimeoutAction, Timer};
@@ -171,7 +171,9 @@ impl EventLoop {
             return;
         }
 
-        self.window.present_notify_requested.set(true);
+        if self.window.redraw_strategy == RedrawStrategy::Continuous {
+            self.window.present_notify_requested.set(true);
+        }
 
         // Any socket error will be handled in the next poll
         let _ = self.window.connection.conn.flush();
@@ -597,34 +599,25 @@ impl EventLoop {
                 }
 
                 if e.window != self.window.raw_id() {
-                    dbg!(e.window);
                     return Ok(());
                 }
 
                 let Some(last_requested_serial) = self.last_requested_serial else {
-                    eprintln!("Received serial without request: {}", e.serial);
                     return Ok(());
                 };
 
                 if last_requested_serial != e.serial {
-                    eprintln!(
-                        "Received serial not matching: {}, requested: {}",
-                        e.serial, last_requested_serial
-                    );
                     return Ok(());
                 }
 
                 if let Some((last_received_serial, last_received_msc)) = self.last_received_present
                 {
                     if last_received_serial == e.serial {
-                        eprintln!("Already handled serial: {}", last_received_serial);
                         return Ok(());
                     }
 
                     if e.msc <= last_received_msc {
-                        eprintln!("Already handled MSC: {}", e.msc);
                         self.last_received_present = Some((e.serial, e.msc));
-                        //self.window.present_notify_requested.set(true);
                         return Ok(());
                     }
                 }
