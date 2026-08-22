@@ -352,8 +352,8 @@ impl EventLoop {
 
         loop {
             self.handle_coalesced_resize_events()?;
-            self.handle_present_notify()?;
             self.handle_redraw();
+            self.handle_present_notify()?;
 
             if !self.drain_xcb_events()? {
                 break;
