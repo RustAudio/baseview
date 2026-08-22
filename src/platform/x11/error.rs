@@ -65,6 +65,8 @@ pub enum PlatformError {
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
     #[cfg(feature = "opengl")]
+    EGl(crate::wrappers::egl::EglError),
+    #[cfg(feature = "opengl")]
     Gl(super::gl::CreationFailedError),
 }
 
@@ -94,6 +96,8 @@ impl Display for PlatformError {
             PlatformError::XLib(e) => e.fmt(f),
             #[cfg(feature = "opengl")]
             PlatformError::Gl(e) => e.fmt(f),
+            #[cfg(feature = "opengl")]
+            PlatformError::EGl(e) => e.fmt(f),
         }
     }
 }
@@ -107,6 +111,8 @@ impl std::error::Error for PlatformError {
             PlatformError::Handler(e) => Some(e.source()),
             #[cfg(feature = "opengl")]
             PlatformError::XLib(e) => Some(e),
+            #[cfg(feature = "opengl")]
+            PlatformError::EGl(e) => Some(e),
             _ => None,
         }
     }
@@ -226,6 +232,13 @@ impl From<ReplyError> for PlatformError {
 impl From<super::gl::CreationFailedError> for PlatformError {
     fn from(value: super::gl::CreationFailedError) -> Self {
         Self::Gl(value)
+    }
+}
+
+#[cfg(feature = "opengl")]
+impl From<crate::wrappers::egl::EglError> for PlatformError {
+    fn from(value: crate::wrappers::egl::EglError) -> Self {
+        Self::EGl(value)
     }
 }
 
