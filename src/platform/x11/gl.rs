@@ -82,10 +82,6 @@ impl GlContextInner {
                 return Err(CreationFailedError::GetProcAddressFailed.into());
             };
 
-            let Some(swap_interval) = glx.get_glx_swap_interval_ext() else {
-                return Err(CreationFailedError::GetProcAddressFailed.into());
-            };
-
             let context = create_context.call(
                 xlib_connection,
                 &config.gl_config,
@@ -93,33 +89,12 @@ impl GlContextInner {
                 error_handler,
             )?;
 
-            let window_id = window.id().get().into();
-            // Create context object here so that error or panic will properly free the context
-            let context = GlContextInner {
+            Ok(Rc::new(GlContextInner {
                 glx,
                 window: window.id(),
                 connection: Rc::clone(&connection),
                 context,
-            };
-
-            unsafe {
-                context.glx.with_current_context(
-                    xlib_connection,
-                    window_id,
-                    context.context,
-                    error_handler,
-                    || {
-                        swap_interval(
-                            xlib_connection.as_raw(),
-                            window_id,
-                            config.gl_config.vsync as i32,
-                        );
-                        error_handler.check()
-                    },
-                )??;
-            }
-
-            Ok(Rc::new(context))
+            }))
         })
     }
 

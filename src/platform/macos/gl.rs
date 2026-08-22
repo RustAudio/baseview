@@ -7,8 +7,8 @@ use objc2::rc::Retained;
 use objc2::AllocAnyThread;
 use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSOpenGLContext, NSOpenGLContextParameter, NSOpenGLPFAAccelerated, NSOpenGLPFAAlphaSize,
-    NSOpenGLPFAColorSize, NSOpenGLPFADepthSize, NSOpenGLPFADoubleBuffer, NSOpenGLPFAMultisample,
+    NSOpenGLContext, NSOpenGLPFAAccelerated, NSOpenGLPFAAlphaSize, NSOpenGLPFAColorSize,
+    NSOpenGLPFADepthSize, NSOpenGLPFADoubleBuffer, NSOpenGLPFAMultisample,
     NSOpenGLPFAOpenGLProfile, NSOpenGLPFASampleBuffers, NSOpenGLPFASamples, NSOpenGLPFAStencilSize,
     NSOpenGLPixelFormat, NSOpenGLProfileVersion3_2Core, NSOpenGLProfileVersion4_1Core,
     NSOpenGLProfileVersionLegacy, NSOpenGLView, NSView,
@@ -90,6 +90,7 @@ impl GlContext {
             NSOpenGLPFADepthSize, config.depth_bits as u32,
             NSOpenGLPFAStencilSize, config.stencil_bits as u32,
             NSOpenGLPFAAccelerated,
+            NSOpenGLPFADoubleBuffer,
         ];
 
         if let Some(samples) = config.samples {
@@ -99,10 +100,6 @@ impl GlContext {
                 NSOpenGLPFASampleBuffers, 1,
                 NSOpenGLPFASamples, samples as u32,
             ]);
-        }
-
-        if config.double_buffer {
-            attrs.push(NSOpenGLPFADoubleBuffer);
         }
 
         attrs.push(0);
@@ -131,13 +128,6 @@ impl GlContext {
 
         // NSOpenGlView::openGLContext is not documented to possibly return NULL.
         let Some(context) = view.openGLContext() else { unreachable!() };
-
-        let value = config.vsync as i32;
-
-        // SAFETY: pointer is a valid &i32, and is valid for SwapInterval
-        unsafe {
-            context.setValues_forParameter((&value).into(), NSOpenGLContextParameter::SwapInterval);
-        }
 
         let framework_name = CFString::from_static_str("com.apple.opengl");
         let gl_bundle = CFBundle::bundle_with_identifier(Some(&framework_name))

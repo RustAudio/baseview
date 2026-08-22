@@ -90,9 +90,6 @@ impl Drop for WglContext {
     }
 }
 
-// See https://www.khronos.org/registry/OpenGL/extensions/EXT/WGL_EXT_swap_control.txt
-type WglSwapIntervalEXT = unsafe extern "system" fn(i32) -> i32;
-
 // See https://www.khronos.org/registry/OpenGL/extensions/ARB/WGL_ARB_pixel_format.txt
 type WglChoosePixelFormatARB =
     unsafe extern "system" fn(HDC, *const i32, *const f32, u32, *mut i32, *mut u32) -> i32;
@@ -104,7 +101,6 @@ type WglCreateContextAttribsARB = unsafe extern "system" fn(HDC, HGLRC, *const i
 pub struct WglExtra {
     wglCreateContextAttribsARB: Option<WglCreateContextAttribsARB>,
     wglChoosePixelFormatARB: Option<WglChoosePixelFormatARB>,
-    wglSwapIntervalEXT: Option<WglSwapIntervalEXT>,
 }
 
 impl WglExtra {
@@ -116,9 +112,6 @@ impl WglExtra {
                 ),
                 wglChoosePixelFormatARB: transmute::<PROC, Option<WglChoosePixelFormatARB>>(
                     wglGetProcAddress(s!("wglChoosePixelFormatARB")),
-                ),
-                wglSwapIntervalEXT: transmute::<PROC, Option<WglSwapIntervalEXT>>(
-                    wglGetProcAddress(s!("wglSwapIntervalEXT")),
                 ),
             }
         }
@@ -150,20 +143,6 @@ impl WglExtra {
             NonNull::new(ctx).ok_or_else(|| CreateContextError::Win32(Error::from_thread()))?;
 
         Ok(WglContext { inner: ctx })
-    }
-
-    pub fn set_vsync(&self, vsync: bool) -> windows_core::Result<()> {
-        let Some(wglSwapIntervalEXT) = self.wglSwapIntervalEXT else {
-            warn!("Could not set vsync: wglSwapIntervalEXT is not available");
-            return Ok(());
-        };
-
-        let result = unsafe { wglSwapIntervalEXT(vsync.into()) };
-        if result == 0 {
-            return Err(Error::from_thread());
-        }
-
-        Ok(())
     }
 
     pub fn choose_pixel_format_from_attribs(
@@ -266,7 +245,7 @@ impl PixelFormatAttribs {
                 WGL_DRAW_TO_WINDOW_ARB, 1,
                 WGL_ACCELERATION_ARB, WGL_FULL_ACCELERATION_ARB,
                 WGL_SUPPORT_OPENGL_ARB, 1,
-                WGL_DOUBLE_BUFFER_ARB, config.double_buffer as i32,
+                WGL_DOUBLE_BUFFER_ARB, 1,
                 WGL_PIXEL_TYPE_ARB, WGL_TYPE_RGBA_ARB,
                 WGL_RED_BITS_ARB, config.red_bits as i32,
                 WGL_GREEN_BITS_ARB, config.green_bits as i32,

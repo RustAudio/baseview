@@ -13,11 +13,17 @@ pub struct GlConfig {
     pub stencil_bits: u8,
     pub samples: Option<u8>,
     pub srgb: bool,
+    #[deprecated(since = "0.3.3", note = "This is now always enabled.")]
     pub double_buffer: bool,
+    #[deprecated(
+        since = "0.3.3",
+        note = "This should never be enabled in plugins, it blocks the main thread until the next frame."
+    )]
     pub vsync: bool,
 }
 
 impl Default for GlConfig {
+    #[allow(deprecated, reason = "This is the Default impl, we need to set these still.")]
     fn default() -> Self {
         GlConfig {
             version: (3, 2),
