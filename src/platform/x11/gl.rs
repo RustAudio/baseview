@@ -62,6 +62,11 @@ pub struct FbConfig {
     fb_config: GlxFbConfig,
 }
 
+enum FbConfigInner {
+    Glx { glx: Glx, config: GlxFbConfig },
+    Egl { egl: Egl },
+}
+
 /// The configuration a window should be created with after calling
 /// [GlContextInner::get_fb_config_and_visual].
 pub struct WindowConfig {
@@ -82,9 +87,6 @@ impl GlContextInner {
         window: &XcbWindow, connection: Rc<X11Connection>, config: FbConfig,
     ) -> Result<Rc<GlContextInner>> {
         let glx = Glx::open()?;
-
-        let egl = Egl::open()?;
-        let exts = egl.query_client_extensions();
 
         let xlib_connection = connection.conn.xlib_connection();
 

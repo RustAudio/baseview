@@ -9,11 +9,16 @@ pub type Enum = c_uint;
 pub type Boolean = c_uint;
 pub type Int = c_int;
 pub type EGLDisplay = *mut c_void;
+pub type NativeDisplayType = *mut c_void;
 
 pub type eglGetError = unsafe extern "system" fn() -> c_int;
 pub type eglBindAPI = unsafe extern "system" fn(Enum) -> Boolean;
 pub type eglQueryAPI = unsafe extern "system" fn() -> Enum;
 pub type eglQueryString = unsafe extern "system" fn(EGLDisplay, Int) -> *const c_char;
+pub type eglGetDisplay = unsafe extern "system" fn(NativeDisplayType) -> EGLDisplay;
+pub type eglInitialize =
+    unsafe extern "system" fn(display: EGLDisplay, major: *mut Int, minor: *mut Int) -> Boolean;
+pub type eglTerminate = unsafe extern "system" fn(display: EGLDisplay) -> Boolean;
 
 pub const NONE: Int = 0x3038;
 pub const ENUM_NONE: Enum = 0x3038;
@@ -50,6 +55,9 @@ pub struct Functions {
     pub eglBindAPI: eglBindAPI,
     pub eglQueryAPI: eglQueryAPI,
     pub eglQueryString: eglQueryString,
+    pub eglGetDisplay: eglGetDisplay,
+    pub eglInitialize: eglInitialize,
+    pub eglTerminate: eglTerminate,
 }
 
 impl Functions {
@@ -59,6 +67,9 @@ impl Functions {
             eglBindAPI: Self::get(library, c"eglBindAPI")?,
             eglQueryAPI: Self::get(library, c"eglQueryAPI")?,
             eglQueryString: Self::get(library, c"eglQueryString")?,
+            eglGetDisplay: Self::get(library, c"eglGetDisplay")?,
+            eglInitialize: Self::get(library, c"eglInitialize")?,
+            eglTerminate: Self::get(library, c"eglTerminate")?,
         })
     }
 

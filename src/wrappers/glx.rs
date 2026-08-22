@@ -6,6 +6,8 @@ use crate::platform::*;
 use std::ffi::{c_ulong, c_void, CStr};
 use std::os::raw::c_int;
 use std::ptr::NonNull;
+use std::rc::Rc;
+use std::sync::Arc;
 use x11_dl::glx::{arb::*, *};
 use x11_dl::xlib;
 use x11_dl::xlib::XVisualInfo;
@@ -22,13 +24,14 @@ type GlXCreateContextAttribsARB = unsafe extern "C" fn(
 /// See https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_framebuffer_sRGB.txt.
 const GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB: i32 = 0x20B2;
 
+#[derive(Clone)]
 pub struct Glx {
-    inner: x11_dl::glx::Glx,
+    inner: Rc<x11_dl::glx::Glx>,
 }
 
 impl Glx {
     pub fn open() -> Result<Self> {
-        Ok(Self { inner: x11_dl::glx::Glx::open()? })
+        Ok(Self { inner: Rc::new(x11_dl::glx::Glx::open()?) })
     }
 
     fn get_fb_attribs(config: &GlConfig) -> [c_int; 29] {
