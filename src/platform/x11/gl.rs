@@ -2,8 +2,10 @@ use super::*;
 use crate::gl::*;
 use crate::wrappers::glx::*;
 use crate::wrappers::xlib::{XErrorHandler, XLibError};
+use std::error::Error;
 
 use crate::platform::x11::xcb_window::XcbWindow;
+use crate::wrappers::egl::{Egl, MissingSymbolError};
 use std::ffi::{c_ulong, c_void, CStr};
 use std::rc::Rc;
 use x11_dl::error::OpenError;
@@ -18,6 +20,8 @@ pub enum CreationFailedError {
     ContextCreationFailed,
     X11Error(XLibError),
     OpenError(OpenError),
+    EGLLoadError(libloading::Error),
+    EGLMissingSymbol(MissingSymbolError),
 }
 
 impl Display for CreationFailedError {
@@ -34,6 +38,10 @@ impl Display for CreationFailedError {
             CreationFailedError::ContextCreationFailed => f.write_str("Faile to create GL context"),
             CreationFailedError::X11Error(e) => e.fmt(f),
             CreationFailedError::OpenError(e) => e.fmt(f),
+            CreationFailedError::EGLLoadError(e) => {
+                write!(f, "Could not load EGL library: {e}, {:?}", e.source())
+            }
+            CreationFailedError::EGLMissingSymbol(e) => e.fmt(f),
         }
     }
 }
@@ -74,6 +82,8 @@ impl GlContextInner {
         window: &XcbWindow, connection: Rc<X11Connection>, config: FbConfig,
     ) -> Result<Rc<GlContextInner>> {
         let glx = Glx::open()?;
+
+        let egl = Egl::open()?;
 
         let xlib_connection = connection.conn.xlib_connection();
 
