@@ -8,8 +8,8 @@ use rtrb::{Consumer, RingBuffer};
 use baseview::copy_to_clipboard;
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::{
-    Event, EventStatus, HandlerError, MouseEvent, Window, WindowContext, WindowHandler,
-    WindowSettings, WindowSize,
+    Event, EventStatus, HandlerError, MouseEvent, RedrawStrategy, Window, WindowContext,
+    WindowHandler, WindowSettings, WindowSize,
 };
 
 #[derive(Debug, Clone)]
@@ -24,7 +24,6 @@ struct OpenWindowExample {
     surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
     mouse_pos: Cell<PhysicalPosition<f64>>,
     is_cursor_inside: Cell<bool>,
-    damaged: Cell<bool>,
 }
 
 impl WindowHandler for OpenWindowExample {
@@ -35,17 +34,12 @@ impl WindowHandler for OpenWindowExample {
             (NonZeroU32::new(new_size.physical.width), NonZeroU32::new(new_size.physical.height))
         {
             self.surface.borrow_mut().resize(width, height)?;
-            self.damaged.set(true);
         }
 
         Ok(())
     }
 
-    fn on_frame(&self) -> Result<(), HandlerError> {
-        if !self.damaged.get() {
-            return Ok(());
-        }
-
+    fn draw(&self) -> Result<(), HandlerError> {
         let mut surface = self.surface.borrow_mut();
         let mut pixels = surface.buffer_mut()?;
         let size = self.window_context.size();
@@ -105,7 +99,6 @@ impl WindowHandler for OpenWindowExample {
         }
 
         pixels.present()?;
-        self.damaged.set(false);
 
         while let Ok(message) = self.rx.borrow_mut().pop() {
             println!("Message: {:?}", message);
@@ -120,15 +113,15 @@ impl WindowHandler for OpenWindowExample {
             Event::Mouse(MouseEvent::ButtonPressed { .. }) => copy_to_clipboard("This is a test!"),
             Event::Mouse(MouseEvent::CursorMoved { position, .. }) => {
                 self.mouse_pos.set(position);
-                self.damaged.set(true);
+                self.window_context.request_redraw();
             }
             Event::Mouse(MouseEvent::CursorEntered) => {
                 self.is_cursor_inside.set(true);
-                self.damaged.set(true);
+                self.window_context.request_redraw();
             }
             Event::Mouse(MouseEvent::CursorLeft) => {
                 self.is_cursor_inside.set(false);
-                self.damaged.set(true);
+                self.window_context.request_redraw();
             }
             _ => {}
         }
@@ -140,7 +133,9 @@ impl WindowHandler for OpenWindowExample {
 }
 
 fn main() -> Result<(), baseview::Error> {
-    let window_open_options = WindowSettings::new().with_size(LogicalSize::new(512.0, 512.0));
+    let window_open_options = WindowSettings::new()
+        .with_redraw_strategy(RedrawStrategy::OnDemand)
+        .with_size(LogicalSize::new(512.0, 512.0));
 
     let (mut tx, rx) = RingBuffer::new(128);
 
@@ -164,7 +159,6 @@ fn main() -> Result<(), baseview::Error> {
             rx: rx.into(),
             mouse_pos: PhysicalPosition::new(0., 0.).into(),
             is_cursor_inside: false.into(),
-            damaged: true.into(),
         })
     })?
     .run_until_closed()?;

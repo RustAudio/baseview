@@ -113,7 +113,7 @@ impl AncestorVisibilityState {
         }
 
         if self.own_window_viewable.get() {
-            return false;
+            return true;
         }
 
         let all_mapped = self.ancestry.check_all_mapped();

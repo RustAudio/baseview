@@ -31,7 +31,7 @@ impl ParentWindowHandler {
 }
 
 impl WindowHandler for ParentWindowHandler {
-    fn on_frame(&self) -> Result<(), HandlerError> {
+    fn draw(&self) -> Result<(), HandlerError> {
         let mut surface = self.surface.borrow_mut();
         let mut buf = surface.buffer_mut()?;
         if self.damaged.get() {
@@ -86,7 +86,7 @@ impl ChildWindowHandler {
 }
 
 impl WindowHandler for ChildWindowHandler {
-    fn on_frame(&self) -> Result<(), HandlerError> {
+    fn draw(&self) -> Result<(), HandlerError> {
         let mut surface = self.surface.borrow_mut();
         let mut buf = surface.buffer_mut()?;
         if self.damaged.get() {
