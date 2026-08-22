@@ -49,10 +49,6 @@ impl GlContextInner {
             }
         };
 
-        if let Err(e) | Ok(Err(e)) = wgl_ctx.with_current(&hdc, || extra.set_vsync(config.vsync)) {
-            warn!("Could not set vsync: {}", e);
-        }
-
         Ok(Self { hdc, wgl_ctx, gl_library })
     }
 

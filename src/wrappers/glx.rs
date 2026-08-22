@@ -19,10 +19,6 @@ type GlXCreateContextAttribsARB = unsafe extern "C" fn(
     attribs: *const c_int,
 ) -> GLXContext;
 
-/// See https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_swap_control.txt.
-type GlXSwapIntervalEXT =
-    unsafe extern "C" fn(dpy: *mut xlib::Display, drawable: GLXDrawable, interval: i32);
-
 /// See https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_framebuffer_sRGB.txt.
 const GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB: i32 = 0x20B2;
 
@@ -48,7 +44,7 @@ impl Glx {
             GLX_ALPHA_SIZE, config.alpha_bits as i32,
             GLX_DEPTH_SIZE, config.depth_bits as i32,
             GLX_STENCIL_SIZE, config.stencil_bits as i32,
-            GLX_DOUBLEBUFFER, config.double_buffer as i32,
+            GLX_DOUBLEBUFFER, 1,
             GLX_SAMPLE_BUFFERS, config.samples.is_some() as i32,
             GLX_SAMPLES, config.samples.unwrap_or(0) as i32,
             GLX_FRAMEBUFFER_SRGB_CAPABLE_ARB, config.srgb as i32,
@@ -128,13 +124,6 @@ impl Glx {
         NonNull::new(result as *mut c_void)
     }
 
-    pub fn get_glx_swap_interval_ext(&self) -> Option<GlXSwapIntervalEXT> {
-        let ptr = self.get_proc_address(c"glXSwapIntervalEXT")?;
-
-        // SAFETY: NonNull is repr(transparent), GlXSwapIntervalEXT is the correct type for this function pointer
-        Some(unsafe { core::mem::transmute::<NonNull<c_void>, GlXSwapIntervalEXT>(ptr) })
-    }
-
     pub fn get_glx_create_context_attribs_arb(&self) -> Option<GlxCreateContextAttribsARB> {
         let ptr = self.get_proc_address(c"glXCreateContextAttribsARB")?;
 
@@ -168,34 +157,6 @@ impl Glx {
         &self, connection: &XlibConnection, error_handler: &XErrorHandler,
     ) -> Result<()> {
         self.make_current(connection, 0, core::ptr::null_mut(), error_handler)
-    }
-
-    pub unsafe fn with_current_context<T>(
-        &self, connection: &XlibConnection, window_id: c_ulong, context: GLXContext,
-        error_handler: &XErrorHandler, closure: impl FnOnce() -> T,
-    ) -> Result<T> {
-        self.make_current(connection, window_id, context, error_handler)?;
-
-        // Using a "drop" allows us to clear the GL context even if the given closure panics
-        let clearer = ContextClearOnDrop { glx: self, connection, error_handler };
-
-        let result = closure();
-
-        drop(clearer);
-
-        Ok(result)
-    }
-}
-
-pub struct ContextClearOnDrop<'a> {
-    glx: &'a Glx,
-    connection: &'a XlibConnection,
-    error_handler: &'a XErrorHandler<'a>,
-}
-
-impl Drop for ContextClearOnDrop<'_> {
-    fn drop(&mut self) {
-        let _ = unsafe { self.glx.clear_current(self.connection, self.error_handler) };
     }
 }
 
