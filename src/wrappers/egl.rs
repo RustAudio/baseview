@@ -1,8 +1,9 @@
 use crate::platform::gl::CreationFailedError;
 use libloading::Library;
-use std::sync::Arc;
+use std::rc::Rc;
 
 mod bound_api;
+mod display;
 mod error;
 mod extensions;
 mod sys;
@@ -21,7 +22,7 @@ struct EglInner {
 
 #[derive(Clone)]
 pub struct Egl {
-    inner: Arc<EglInner>,
+    inner: Rc<EglInner>,
 }
 
 impl Egl {
@@ -31,7 +32,7 @@ impl Egl {
 
         let functions = unsafe { Functions::load_from(&library)? };
 
-        Ok(Self { inner: Arc::new(EglInner { _library: library, functions }) })
+        Ok(Self { inner: Rc::new(EglInner { _library: library, functions }) })
     }
 
     pub fn with_opengl<T>(&self, handler: impl FnOnce(&BoundApi) -> T) -> Result<T, EglError> {
