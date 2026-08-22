@@ -84,6 +84,7 @@ impl GlContextInner {
         let glx = Glx::open()?;
 
         let egl = Egl::open()?;
+        let exts = egl.query_client_extensions();
 
         let xlib_connection = connection.conn.xlib_connection();
 

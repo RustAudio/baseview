@@ -4,11 +4,13 @@ use std::sync::Arc;
 
 mod bound_api;
 mod error;
+mod extensions;
 mod sys;
 
 use bound_api::BoundApi;
 use sys::Functions;
 
+use crate::wrappers::egl::extensions::Extensions;
 pub use error::EglError;
 pub use sys::MissingSymbolError;
 
@@ -35,5 +37,9 @@ impl Egl {
     pub fn with_opengl<T>(&self, handler: impl FnOnce(&BoundApi) -> T) -> Result<T, EglError> {
         let api = BoundApi::new(self)?;
         Ok(handler(&api))
+    }
+
+    pub fn query_client_extensions(&self) -> Extensions {
+        Extensions::new(self)
     }
 }
