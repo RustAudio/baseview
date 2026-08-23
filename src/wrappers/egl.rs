@@ -18,7 +18,7 @@ use crate::wrappers::egl::extensions::Extensions;
 pub use bound_api::BoundApi;
 pub use config::EglConfig;
 pub use context::EglContext;
-pub use display::EglDisplay;
+pub use display::{EglDisplay, EglVersion};
 pub use error::EglError;
 pub use surface::EglSurface;
 pub use sys::MissingSymbolError;

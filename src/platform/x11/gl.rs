@@ -7,7 +7,7 @@ use std::error::Error;
 use crate::platform::gl::egl::EglGlContext;
 use crate::platform::gl::glx::GlxGlContext;
 use crate::platform::x11::xcb_window::XcbWindow;
-use crate::wrappers::egl::{EglConfig, EglDisplay, MissingSymbolError};
+use crate::wrappers::egl::{EglConfig, EglDisplay, EglError, EglVersion, MissingSymbolError};
 use std::ffi::{c_void, CStr};
 use std::rc::Rc;
 use x11_dl::error::OpenError;
@@ -26,6 +26,9 @@ pub enum CreationFailedError {
     OpenError(OpenError),
     EGLLoadError(libloading::Error),
     EGLMissingSymbol(MissingSymbolError),
+    EglError(EglError),
+    EglNoDisplay,
+    EglUnsupportedVersion(EglVersion),
 }
 
 impl Display for CreationFailedError {
@@ -46,7 +49,18 @@ impl Display for CreationFailedError {
                 write!(f, "Could not load EGL library: {e}, {:?}", e.source())
             }
             CreationFailedError::EGLMissingSymbol(e) => e.fmt(f),
+            CreationFailedError::EglError(e) => e.fmt(f),
+            CreationFailedError::EglNoDisplay => f.write_str("EGL returned no valid display"),
+            CreationFailedError::EglUnsupportedVersion(e) => {
+                write!(f, "Unsupported EGL version: {}.{} (EGL 1.5 is required)", e.major, e.minor)
+            }
         }
+    }
+}
+
+impl From<EglError> for CreationFailedError {
+    fn from(err: EglError) -> Self {
+        CreationFailedError::EglError(err)
     }
 }
 

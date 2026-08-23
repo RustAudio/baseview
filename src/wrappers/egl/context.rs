@@ -26,6 +26,14 @@ impl EglContext {
     }
 }
 
+impl Drop for EglContext {
+    fn drop(&mut self) {
+        if let Err(e) = unsafe { self.display.egl().destroy_context(self) } {
+            crate::warn!("Failed to destroy EGL context: {e}");
+        }
+    }
+}
+
 impl Egl {
     fn get_context_attribs(gl_config: &GlConfig) -> [Int; 7] {
         let profile_mask = match gl_config.profile {
@@ -90,6 +98,18 @@ impl Egl {
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
             )
+        };
+
+        if result == FALSE {
+            Err(EglError::from_last_error(self))
+        } else {
+            Ok(())
+        }
+    }
+
+    unsafe fn destroy_context(&self, context: &EglContext) -> Result<(), EglError> {
+        let result = unsafe {
+            (self.inner.functions.eglDestroyContext)(context.display.as_raw(), context.raw.as_ptr())
         };
 
         if result == FALSE {
