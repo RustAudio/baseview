@@ -2,38 +2,40 @@ use crate::gl::GlConfig;
 use crate::platform::gl::{FbConfig, FbConfigInner, WindowConfig};
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::{PlatformError, X11Connection};
-use crate::wrappers::egl::{Egl, EglConfig, EglDisplay};
-use khronos_egl::EGLDisplay;
-use std::num::NonZeroU32;
+use crate::wrappers::egl::{Egl, EglConfig, EglContext, EglDisplay, EglSurface};
+use std::ffi::{c_void, CStr};
 use std::rc::Rc;
 use x11rb::protocol::xproto::Visualid;
 
 pub struct EglGlContext {
-    display: EGLDisplay,
-    window: NonZeroU32,
-    connection: Rc<X11Connection>,
+    surface: EglSurface,
+    context: EglContext,
 }
 
 impl EglGlContext {
     pub(crate) fn create(
-        window: &XcbWindow, connection: Rc<X11Connection>, gl_config: GlConfig,
-        egl_config: EglConfig, display: EglDisplay,
+        window: &XcbWindow, gl_config: &GlConfig, egl_config: EglConfig, display: EglDisplay,
     ) -> Result<Self, PlatformError> {
-        todo!()
+        let surface = display.create_surface(egl_config, window.id().get(), gl_config)?;
+        let context = display
+            .egl()
+            .with_opengl(|bound| display.create_context(egl_config, bound, gl_config))??;
+
+        Ok(Self { surface, context })
     }
 }
 
 impl EglGlContext {
     pub fn get_fb_config_and_visual(
-        connection: &X11Connection, gl_config: &GlConfig,
+        connection: &Rc<X11Connection>, gl_config: &GlConfig,
     ) -> Result<(FbConfig, WindowConfig), PlatformError> {
         let egl = Egl::open()?;
-        let display = egl.create_display(&connection.conn)?;
+        let display = egl.create_display(connection)?; // TODO: check EGL version
 
-        let config = display.choose_config(&gl_config)?.unwrap();
+        let config = display.choose_config(gl_config)?.unwrap();
         let visual = config.get_visual_id(&display)?;
 
-        let depth = Self::find_visual_depth_for_id(&connection, visual).unwrap(); // TODO
+        let depth = Self::find_visual_depth_for_id(connection, visual).unwrap(); // TODO
 
         let window_config = WindowConfig { depth, visual };
         let fb_config =
@@ -49,5 +51,26 @@ impl EglGlContext {
             .iter()
             .find(|d| d.visuals.iter().any(|v| v.visual_id == visual_id))
             .map(|d| d.depth)
+    }
+
+    pub fn make_current(&self) -> Result<(), PlatformError> {
+        self.context.make_current(&self.surface)?;
+
+        Ok(())
+    }
+
+    pub fn make_not_current(&self) -> Result<(), PlatformError> {
+        self.surface.display().egl().with_opengl(|gl| self.context.make_not_current(gl))??;
+
+        Ok(())
+    }
+
+    pub fn get_proc_address(&self, symbol: &CStr) -> *const c_void {
+        self.surface.display().egl().get_proc_address(symbol)
+    }
+
+    pub fn swap_buffers(&self) -> Result<(), PlatformError> {
+        self.surface.swap_buffers()?;
+        Ok(())
     }
 }

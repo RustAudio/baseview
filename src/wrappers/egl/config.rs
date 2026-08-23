@@ -6,6 +6,7 @@ use std::ffi::c_void;
 use std::ptr::NonNull;
 use x11rb::protocol::xproto::Visualid;
 
+#[derive(Copy, Clone)]
 pub struct EglConfig(pub(super) NonNull<c_void>);
 
 impl EglConfig {
@@ -16,8 +17,8 @@ impl EglConfig {
         let fb_attribs = get_fb_attribs(gl_config);
         let mut num_configs = 0;
         let result = unsafe {
-            (display.egl.inner.functions.eglChooseConfig)(
-                display.raw.as_ptr(),
+            (display.egl().inner.functions.eglChooseConfig)(
+                display.as_raw(),
                 fb_attribs.as_ptr(),
                 &mut config,
                 1,
@@ -26,7 +27,7 @@ impl EglConfig {
         };
 
         if result == FALSE {
-            return Err(EglError::from_last_error(&display.egl));
+            return Err(EglError::from_last_error(display.egl()));
         }
 
         if num_configs == 0 {
@@ -41,8 +42,8 @@ impl EglConfig {
     fn get_attrib(&self, display: &EglDisplay, attrib: Int) -> Result<Int, EglError> {
         let mut value = 0;
         let result = unsafe {
-            (display.egl.inner.functions.eglGetConfigAttrib)(
-                display.raw.as_ptr(),
+            (display.egl().inner.functions.eglGetConfigAttrib)(
+                display.as_raw(),
                 self.0.as_ptr(),
                 attrib,
                 &mut value,
@@ -50,7 +51,7 @@ impl EglConfig {
         };
 
         if result == FALSE {
-            return Err(EglError::from_last_error(&display.egl));
+            return Err(EglError::from_last_error(display.egl()));
         }
 
         Ok(value)
