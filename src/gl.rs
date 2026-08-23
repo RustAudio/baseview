@@ -1,7 +1,7 @@
 use std::ffi::{c_void, CStr, CString};
 use std::marker::PhantomData;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct GlConfig {
     pub version: (u8, u8),
     pub profile: Profile,
