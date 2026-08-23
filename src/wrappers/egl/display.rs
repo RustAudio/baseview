@@ -1,11 +1,13 @@
+use crate::gl::GlConfig;
+use crate::wrappers::egl::config::EglConfig;
 use crate::wrappers::egl::{sys, Egl, EglError};
 use crate::wrappers::xlib::{XlibConnection, XlibXcbConnection};
 use std::ffi::c_void;
 use std::ptr::NonNull;
 
 pub struct EglDisplay {
-    egl: Egl,
-    raw: NonNull<c_void>,
+    pub egl: Egl,
+    pub(super) raw: NonNull<c_void>,
 }
 
 impl EglDisplay {
@@ -14,6 +16,10 @@ impl EglDisplay {
 
         unsafe { egl.initialize_display(display)? };
         Ok(Self { egl: egl.clone(), raw: display })
+    }
+
+    pub fn choose_config(&self, config: &GlConfig) -> Result<Option<EglConfig>, EglError> {
+        EglConfig::choose_config(config, self)
     }
 }
 

@@ -3,6 +3,7 @@ use libloading::Library;
 use std::rc::Rc;
 
 mod bound_api;
+mod config;
 mod display;
 mod error;
 mod extensions;
@@ -12,6 +13,8 @@ use bound_api::BoundApi;
 use sys::Functions;
 
 use crate::wrappers::egl::extensions::Extensions;
+pub use config::EglConfig;
+pub use display::EglDisplay;
 pub use error::EglError;
 pub use sys::MissingSymbolError;
 
