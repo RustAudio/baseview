@@ -9,8 +9,11 @@ pub type Enum = c_uint;
 pub type Boolean = c_uint;
 pub type Int = c_int;
 pub type EGLDisplay = *mut c_void;
+pub type EGLSurface = *mut c_void;
 pub type NativeDisplayType = *mut c_void;
+pub type NativeWindowType = *mut c_void;
 pub type EGLConfig = *mut c_void;
+pub type EGLContext = *mut c_void;
 
 pub type eglGetError = unsafe extern "system" fn() -> c_int;
 pub type eglBindAPI = unsafe extern "system" fn(Enum) -> Boolean;
@@ -34,6 +37,32 @@ pub type eglGetConfigAttrib = unsafe extern "system" fn(
     attribute: Int,
     value: *mut Int,
 ) -> Boolean;
+pub type eglCreateWindowSurface = unsafe extern "system" fn(
+    display: EGLDisplay,
+    config: EGLConfig,
+    win: NativeWindowType,
+    attrib_list: *const Int,
+) -> EGLSurface;
+pub type eglCreateContext = unsafe extern "system" fn(
+    display: EGLDisplay,
+    config: EGLConfig,
+    share_context: EGLContext,
+    attrib_list: *const Int,
+) -> EGLContext;
+pub type eglDestroySurface =
+    unsafe extern "system" fn(display: EGLDisplay, surface: EGLSurface) -> Boolean;
+pub type eglDestroyContext =
+    unsafe extern "system" fn(display: EGLDisplay, context: EGLContext) -> Boolean;
+pub type eglMakeCurrent = unsafe extern "system" fn(
+    display: EGLDisplay,
+    draw: EGLSurface,
+    read: EGLSurface,
+    ctx: EGLContext,
+) -> Boolean;
+pub type eglGetProcAddress = unsafe extern "system" fn(procname: *const c_char) -> *const c_void;
+pub type eglGetCurrentContext = unsafe extern "system" fn() -> EGLContext;
+pub type eglSwapBuffers =
+    unsafe extern "system" fn(display: EGLDisplay, surface: EGLSurface) -> Boolean;
 
 pub const NONE: Int = 0x3038;
 pub const ENUM_NONE: Enum = 0x3038;
@@ -55,6 +84,16 @@ pub const EGL_BLUE_SIZE: Int = 0x3022;
 pub const EGL_ALPHA_SIZE: Int = 0x3021;
 pub const EGL_DEPTH_SIZE: Int = 0x3025;
 pub const EGL_STENCIL_SIZE: Int = 0x3026;
+
+pub const EGL_GL_COLORSPACE: Int = 0x309D;
+pub const EGL_GL_COLORSPACE_LINEAR: Int = 0x308A;
+pub const EGL_GL_COLORSPACE_SRGB: Int = 0x3089;
+
+pub const EGL_CONTEXT_MAJOR_VERSION: Int = 0x3098;
+pub const EGL_CONTEXT_MINOR_VERSION: Int = 0x30FB;
+pub const EGL_CONTEXT_OPENGL_PROFILE_MASK: Int = 0x30FD;
+pub const EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT: Int = 0x00000001;
+pub const EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT: Int = 0x00000002;
 
 pub const EGL_NATIVE_VISUAL_ID: Int = 0x302E;
 
@@ -91,6 +130,14 @@ pub struct Functions {
     pub eglTerminate: eglTerminate,
     pub eglChooseConfig: eglChooseConfig,
     pub eglGetConfigAttrib: eglGetConfigAttrib,
+    pub eglCreateWindowSurface: eglCreateWindowSurface,
+    pub eglDestroySurface: eglDestroySurface,
+    pub eglCreateContext: eglCreateContext,
+    pub eglGetProcAddress: eglGetProcAddress,
+    pub eglMakeCurrent: eglMakeCurrent,
+    pub eglDestroyContext: eglDestroyContext,
+    pub eglGetCurrentContext: eglGetCurrentContext,
+    pub eglSwapBuffers: eglSwapBuffers,
 }
 
 impl Functions {
@@ -105,6 +152,14 @@ impl Functions {
             eglTerminate: Self::get(library, c"eglTerminate")?,
             eglChooseConfig: Self::get(library, c"eglChooseConfig")?,
             eglGetConfigAttrib: Self::get(library, c"eglGetConfigAttrib")?,
+            eglCreateWindowSurface: Self::get(library, c"eglCreateWindowSurface")?,
+            eglDestroySurface: Self::get(library, c"eglDestroySurface")?,
+            eglCreateContext: Self::get(library, c"eglCreateContext")?,
+            eglMakeCurrent: Self::get(library, c"eglMakeCurrent")?,
+            eglGetProcAddress: Self::get(library, c"eglGetProcAddress")?,
+            eglDestroyContext: Self::get(library, c"eglDestroyContext")?,
+            eglGetCurrentContext: Self::get(library, c"eglGetCurrentContext")?,
+            eglSwapBuffers: Self::get(library, c"eglSwapBuffers")?,
         })
     }
 

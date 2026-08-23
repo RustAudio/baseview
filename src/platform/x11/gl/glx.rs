@@ -19,7 +19,7 @@ pub struct GlxGlContext {
 
 impl GlxGlContext {
     pub fn create(
-        window: &XcbWindow, connection: Rc<X11Connection>, gl_config: GlConfig,
+        window: &XcbWindow, connection: &Rc<X11Connection>, gl_config: GlConfig,
         fb_config: GlxFbConfig, glx: Glx,
     ) -> Result<Self> {
         let xlib_connection = connection.conn.xlib_connection();
@@ -32,7 +32,7 @@ impl GlxGlContext {
             let context =
                 create_context.call(xlib_connection, &gl_config, fb_config, error_handler)?;
 
-            Ok(Self { glx, window: window.id(), connection: Rc::clone(&connection), context })
+            Ok(Self { glx, window: window.id(), connection: Rc::clone(connection), context })
         })
     }
 
@@ -44,7 +44,7 @@ impl GlxGlContext {
         let xlib_connection = connection.conn.xlib_connection();
 
         XErrorHandler::handle(xlib_connection, |error_handler| {
-            let fb_config = glx.choose_best_fb_config(xlib_connection, &config, error_handler)?;
+            let fb_config = glx.choose_best_fb_config(xlib_connection, config, error_handler)?;
 
             // Now that we have a matching framebuffer config, we need to know which visual matches
             // this config so the window is compatible with the OpenGL context we're about to create
