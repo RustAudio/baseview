@@ -1,21 +1,26 @@
 use crate::platform::gl::CreationFailedError;
 use libloading::Library;
+use std::ffi::{c_void, CStr};
 use std::rc::Rc;
 
 mod bound_api;
 mod config;
+mod context;
 mod display;
 mod error;
 mod extensions;
+mod surface;
 mod sys;
 
-use bound_api::BoundApi;
 use sys::Functions;
 
 use crate::wrappers::egl::extensions::Extensions;
+pub use bound_api::BoundApi;
 pub use config::EglConfig;
+pub use context::EglContext;
 pub use display::EglDisplay;
 pub use error::EglError;
+pub use surface::EglSurface;
 pub use sys::MissingSymbolError;
 
 struct EglInner {
@@ -45,5 +50,9 @@ impl Egl {
 
     pub fn query_client_extensions(&self) -> Extensions {
         Extensions::new(self)
+    }
+
+    pub fn get_proc_address(&self, proc_name: &CStr) -> *const c_void {
+        unsafe { (self.inner.functions.eglGetProcAddress)(proc_name.as_ptr()) }
     }
 }

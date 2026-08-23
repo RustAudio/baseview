@@ -8,7 +8,6 @@ use crate::platform::gl::egl::EglGlContext;
 use crate::platform::gl::glx::GlxGlContext;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::wrappers::egl::{EglConfig, EglDisplay, MissingSymbolError};
-use khronos_egl::EGLDisplay;
 use std::ffi::{c_void, CStr};
 use std::rc::Rc;
 use x11_dl::error::OpenError;
@@ -87,7 +86,7 @@ impl GlContextInner {
     ///
     /// Use [Self::get_fb_config_and_visual] to create both of these things.
     pub fn create(
-        window: &XcbWindow, connection: Rc<X11Connection>, fb_config: FbConfig,
+        window: &XcbWindow, connection: &Rc<X11Connection>, fb_config: FbConfig,
     ) -> Result<Rc<GlContextInner>> {
         let inner =
             match fb_config.fb_config {
@@ -99,7 +98,7 @@ impl GlContextInner {
                     glx,
                 )?),
                 FbConfigInner::Egl { display, config } => GlContextInner::Egl(
-                    EglGlContext::create(window, connection, fb_config.gl_config, config, display)?,
+                    EglGlContext::create(window, &fb_config.gl_config, config, display)?,
                 ),
             };
 
@@ -110,7 +109,7 @@ impl GlContextInner {
     /// This needs to be passed to [Self::create] along with a handle to a window that was created
     /// using the visual also returned from this function.
     pub fn get_fb_config_and_visual(
-        connection: &X11Connection, config: GlConfig,
+        connection: &Rc<X11Connection>, config: GlConfig,
     ) -> Result<(FbConfig, WindowConfig)> {
         EglGlContext::get_fb_config_and_visual(connection, &config)
             .or_else(|_| GlxGlContext::get_fb_config_and_visual(connection, &config))
@@ -119,24 +118,28 @@ impl GlContextInner {
     pub unsafe fn make_current(&self) -> Result<()> {
         match self {
             GlContextInner::Glx(glx) => glx.make_current(),
+            GlContextInner::Egl(egl) => egl.make_current(),
         }
     }
 
     pub unsafe fn make_not_current(&self) -> Result<()> {
         match self {
             GlContextInner::Glx(glx) => glx.make_not_current(),
+            GlContextInner::Egl(egl) => egl.make_not_current(),
         }
     }
 
     pub fn get_proc_address(&self, symbol: &CStr) -> *const c_void {
         match self {
             GlContextInner::Glx(glx) => glx.get_proc_address(symbol),
+            GlContextInner::Egl(egl) => egl.get_proc_address(symbol),
         }
     }
 
     pub fn swap_buffers(&self) -> Result<()> {
         match self {
             GlContextInner::Glx(glx) => glx.swap_buffers(),
+            GlContextInner::Egl(egl) => egl.swap_buffers(),
         }
     }
 }

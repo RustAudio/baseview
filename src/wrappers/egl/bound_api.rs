@@ -8,10 +8,7 @@ pub struct BoundApi {
 impl BoundApi {
     pub(super) fn new(egl: &Egl) -> Result<Self, EglError> {
         let previous_api = egl.query_api();
-        let result = unsafe { (egl.inner.functions.eglBindAPI)(sys::OPENGL_API) };
-        if result == sys::FALSE {
-            return Err(EglError::from_last_error(egl));
-        }
+        egl.bind_api(sys::OPENGL_API)?;
 
         Ok(Self { previous_api, egl: egl.clone() })
     }
