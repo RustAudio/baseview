@@ -1,12 +1,12 @@
 use crate::gl::GlConfig;
+use crate::platform::gl::CreationFailedError;
 use crate::platform::X11Connection;
 use crate::wrappers::egl::bound_api::BoundApi;
 use crate::wrappers::egl::config::EglConfig;
 use crate::wrappers::egl::context::EglContext;
 use crate::wrappers::egl::surface::EglSurface;
-use crate::wrappers::egl::sys::EGLContext;
-use crate::wrappers::egl::{sys, Egl, EglError, EglInner};
-use crate::wrappers::xlib::{XlibConnection, XlibXcbConnection};
+use crate::wrappers::egl::{sys, Egl, EglError};
+use crate::wrappers::xlib::XlibConnection;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::rc::Rc;
@@ -25,15 +25,6 @@ pub struct EglDisplay {
 }
 
 impl EglDisplay {
-    pub(super) fn new(egl: &Egl, connection: &Rc<X11Connection>) -> Result<Self, EglError> {
-        let display = egl.create_display_basic(connection.conn.xlib_connection()).unwrap();
-        let egl = egl.clone();
-
-        unsafe { egl.initialize_display(display)? };
-        let inner = EglDisplayInner { egl, raw: display, _connection: Rc::clone(connection) };
-        Ok(Self { inner: Rc::new(inner) })
-    }
-
     pub fn choose_config(&self, config: &GlConfig) -> Result<Option<EglConfig>, EglError> {
         EglConfig::choose_config(config, self)
     }
@@ -67,14 +58,32 @@ impl Drop for EglDisplayInner {
     }
 }
 
-struct EglVersion {
-    major: sys::Int,
-    minor: sys::Int,
+#[derive(Debug, Copy, Clone)]
+pub struct EglVersion {
+    pub major: sys::Int,
+    pub minor: sys::Int,
 }
 
 impl Egl {
-    pub fn create_display(&self, connection: &Rc<X11Connection>) -> Result<EglDisplay, EglError> {
-        EglDisplay::new(self, connection)
+    pub fn create_display(
+        &self, connection: &Rc<X11Connection>,
+    ) -> Result<EglDisplay, CreationFailedError> {
+        let display = self
+            .create_display_basic(connection.conn.xlib_connection())
+            .ok_or(CreationFailedError::EglNoDisplay)?;
+
+        let egl = self.clone();
+
+        let version = unsafe { egl.initialize_display(display)? };
+
+        // Initialize DisplayInner here so its drop impl will run if code below fails
+        let inner = EglDisplayInner { egl, raw: display, _connection: Rc::clone(connection) };
+
+        if version.major != 1 || version.minor < 5 {
+            return Err(CreationFailedError::EglUnsupportedVersion(version));
+        }
+
+        Ok(EglDisplay { inner: Rc::new(inner) })
     }
 
     fn create_display_basic(&self, connection: &XlibConnection) -> Option<NonNull<c_void>> {
@@ -96,8 +105,6 @@ impl Egl {
         if result == sys::FALSE {
             return Err(EglError::from_last_error(self));
         }
-
-        dbg!(version.major, version.minor);
 
         Ok(version)
     }

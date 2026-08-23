@@ -3,17 +3,11 @@ use super::*;
 use crate::gl::GlConfig;
 use std::ffi::c_void;
 use std::ptr::NonNull;
-use std::rc::Rc;
 use x11rb::protocol::xproto::Window;
 
-struct EglSurfaceInner {
+pub struct EglSurface {
     display: EglDisplay,
     raw: NonNull<c_void>,
-}
-
-#[derive(Clone)]
-pub struct EglSurface {
-    inner: Rc<EglSurfaceInner>,
 }
 
 impl EglSurface {
@@ -21,21 +15,28 @@ impl EglSurface {
         display: &EglDisplay, config: EglConfig, window: Window, gl_config: &GlConfig,
     ) -> Result<EglSurface, EglError> {
         let raw = display.egl().create_surface(display, config, window, gl_config)?;
-        let inner = EglSurfaceInner { display: display.clone(), raw };
 
-        Ok(Self { inner: Rc::new(inner) })
+        Ok(Self { display: display.clone(), raw })
     }
 
     pub fn display(&self) -> &EglDisplay {
-        &self.inner.display
+        &self.display
     }
 
     pub fn as_raw(&self) -> *mut c_void {
-        self.inner.raw.as_ptr()
+        self.raw.as_ptr()
     }
 
     pub fn swap_buffers(&self) -> Result<(), EglError> {
         self.display().egl().swap_buffers(self)
+    }
+}
+
+impl Drop for EglSurface {
+    fn drop(&mut self) {
+        if let Err(e) = unsafe { self.display.egl().destroy_surface(self) } {
+            crate::warn!("Failed to destroy EGL surface: {e}");
+        }
     }
 }
 
@@ -70,6 +71,18 @@ impl Egl {
     fn swap_buffers(&self, surface: &EglSurface) -> Result<(), EglError> {
         let result = unsafe {
             (self.inner.functions.eglSwapBuffers)(surface.display().as_raw(), surface.as_raw())
+        };
+
+        if result == FALSE {
+            Err(EglError::from_last_error(self))
+        } else {
+            Ok(())
+        }
+    }
+
+    unsafe fn destroy_surface(&self, surface: &EglSurface) -> Result<(), EglError> {
+        let result = unsafe {
+            (self.inner.functions.eglDestroySurface)(surface.display().as_raw(), surface.as_raw())
         };
 
         if result == FALSE {

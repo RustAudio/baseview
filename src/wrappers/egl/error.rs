@@ -9,6 +9,7 @@ pub struct EglError {
 }
 
 impl EglError {
+    // TODO: handle NO_ERROR
     pub fn from_last_error(egl: &Egl) -> EglError {
         let code = unsafe { (egl.inner.functions.eglGetError)() };
         Self { code }
