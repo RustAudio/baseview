@@ -7,7 +7,6 @@ use std::ffi::{c_ulong, c_void, CStr};
 use std::os::raw::c_int;
 use std::ptr::NonNull;
 use std::rc::Rc;
-use std::sync::Arc;
 use x11_dl::glx::{arb::*, *};
 use x11_dl::xlib;
 use x11_dl::xlib::XVisualInfo;
