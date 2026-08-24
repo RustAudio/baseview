@@ -6,13 +6,19 @@ use x11rb::protocol::xproto::{ConnectionExt, MapState, QueryTreeReply};
 use x11rb::protocol::ErrorKind;
 use x11rb::x11_utils::X11Error;
 
-pub struct AncestorVisibilityState {
-    ancestry: AncestryList,
-    own_window_viewable: Cell<bool>,
-    root_id: Cell<Option<NonZeroU32>>,
+pub enum AncestorVisibilityState {
+    Floating {
+        own_window_viewable: Cell<bool>,
+        own_window_id: NonZeroU32,
+    },
+    Parented {
+        ancestry: AncestryList,
+        root_id: Cell<Option<NonZeroU32>>,
+        own_window_viewable: Cell<bool>,
+    },
 }
 
-struct AncestryList {
+pub struct AncestryList {
     inner: RefCell<Vec<Ancestor>>,
 }
 
@@ -78,16 +84,20 @@ impl AncestryList {
 }
 
 #[cfg_attr(debug_assertions, derive(Debug))]
-struct Ancestor {
+pub struct Ancestor {
     id: NonZeroU32,
     mapped: Cell<bool>,
 }
 
 impl AncestorVisibilityState {
     pub fn discover(
-        connection: &X11Connection, own_window_id: NonZeroU32,
+        connection: &X11Connection, own_window_id: NonZeroU32, parented: bool,
     ) -> Result<Self, ReplyError> {
-        let this = Self {
+        if !parented {
+            return Ok(Self::Floating { own_window_viewable: Cell::new(false), own_window_id });
+        }
+
+        let this = Self::Parented {
             ancestry: AncestryList::new(own_window_id),
             own_window_viewable: Cell::new(false),
             root_id: Cell::new(NonZeroU32::new(connection.default_screen().root)),
@@ -99,41 +109,78 @@ impl AncestorVisibilityState {
     }
 
     pub fn own_window_is_viewable(&self) -> bool {
-        self.own_window_viewable.get()
+        match self {
+            Self::Parented { own_window_viewable, .. } => own_window_viewable.get(),
+            Self::Floating { own_window_viewable, .. } => own_window_viewable.get(),
+        }
     }
 
     pub fn parent_id(&self) -> Option<NonZeroU32> {
-        self.ancestry.parent_id()
+        match self {
+            Self::Parented { ancestry, .. } => ancestry.parent_id(),
+            _ => None,
+        }
     }
 
     /// Returns `true` if this operation made our own window visible.
     pub fn window_mapped(&self, window_id: NonZeroU32) -> bool {
-        if !self.ancestry.set_mapped(window_id, true) {
-            return false;
-        }
+        match self {
+            Self::Floating { own_window_id, own_window_viewable } => {
+                if *own_window_id != window_id {
+                    return false;
+                }
 
-        if self.own_window_viewable.get() {
-            return false;
-        }
+                if own_window_viewable.get() {
+                    return false;
+                }
 
-        let all_mapped = self.ancestry.check_all_mapped();
-        if all_mapped {
-            self.own_window_viewable.set(true);
-        }
+                own_window_viewable.set(true);
+                true
+            }
+            Self::Parented { own_window_viewable, ancestry, .. } => {
+                if !ancestry.set_mapped(window_id, true) {
+                    return false;
+                }
 
-        all_mapped
+                if own_window_viewable.get() {
+                    return false;
+                }
+
+                let all_mapped = ancestry.check_all_mapped();
+                if all_mapped {
+                    own_window_viewable.set(true);
+                }
+
+                all_mapped
+            }
+        }
     }
 
     pub fn window_unmapped(&self, window_id: NonZeroU32) {
-        if !self.ancestry.set_mapped(window_id, false) {
-            return;
-        }
+        match self {
+            Self::Floating { own_window_id, own_window_viewable } => {
+                if *own_window_id != window_id {
+                    return;
+                }
 
-        self.own_window_viewable.set(false);
+                own_window_viewable.set(false);
+            }
+            Self::Parented { own_window_viewable, ancestry, .. } => {
+                if !ancestry.set_mapped(window_id, false) {
+                    return;
+                }
+
+                own_window_viewable.set(false);
+            }
+        }
     }
 
     pub fn window_destroyed(&self, window_id: NonZeroU32, connection: &X11Connection) {
-        if !self.ancestry.remove_window(window_id) {
+        let Self::Parented { ancestry, .. } = &self else {
+            return;
+        };
+
+        if !ancestry.remove_window(window_id) {
             return;
         }
 
@@ -143,16 +190,20 @@ impl AncestorVisibilityState {
     pub fn window_reparented(
         &self, window_id: NonZeroU32, new_parent: Option<NonZeroU32>, connection: &X11Connection,
     ) {
-        if !self.ancestry.remove_after_window(window_id) {
+        let Self::Parented { ancestry, root_id, .. } = &self else {
+            return;
+        };
+
+        if !ancestry.remove_after_window(window_id) {
             return;
         }
 
         if let Some(new_parent) = new_parent {
-            if Some(new_parent) == self.root_id.get() {
+            if Some(new_parent) == root_id.get() {
                 return;
             }
 
-            self.ancestry.push(Ancestor { id: new_parent, mapped: Cell::new(false) });
+            ancestry.push(Ancestor { id: new_parent, mapped: Cell::new(false) });
 
             self.regenerate_from_last_window(connection);
         }
@@ -167,7 +218,11 @@ impl AncestorVisibilityState {
     fn try_regenerate_from_last_window(
         &self, connection: &X11Connection,
     ) -> Result<(), ReplyError> {
-        let Some(mut current_window) = self.ancestry.pop_id() else { return Ok(()) };
+        let Self::Parented { ancestry, own_window_viewable, root_id } = &self else {
+            return Ok(());
+        };
+
+        let Some(mut current_window) = ancestry.pop_id() else { return Ok(()) };
 
         let mut shitlist = Vec::new();
         let mut rechecked_children = Vec::new();
@@ -179,7 +234,7 @@ impl AncestorVisibilityState {
 
                 crate::warn!("Failed to get info for window {}: XBadWindow", current_window);
 
-                let Some(previous_parent) = self.ancestry.pop_id() else {
+                let Some(previous_parent) = ancestry.pop_id() else {
                     // No previous parent, this was the first window. Stop everything and return an empty state
                     break;
                 };
@@ -211,7 +266,7 @@ impl AncestorVisibilityState {
             }
 
             // Sanity check if the current parent is actually registered to have the child in its children list
-            if let Some(child_id) = self.ancestry.last_id() {
+            if let Some(child_id) = ancestry.last_id() {
                 if !tree.children.contains(&child_id.get()) {
                     // The child has been orphaned, it must have been reparented between our server queries.
                     // Go back a step and check again.
@@ -227,13 +282,13 @@ impl AncestorVisibilityState {
                         rechecked_children.push(child_id);
                     }
 
-                    let Some(_) = self.ancestry.pop_id() else { unreachable!() };
+                    let Some(_) = ancestry.pop_id() else { unreachable!() };
                     current_window = child_id;
                     continue;
                 }
             }
 
-            if self.ancestry.own_window_id().is_some_and(|id| id != current_window) {
+            if ancestry.own_window_id().is_some_and(|id| id != current_window) {
                 // Despite what's documented, all windows down the parent tree must have the event mask
                 // bit set, otherwise events are not propagated through to us.
                 if let Err(e) =
@@ -249,7 +304,7 @@ impl AncestorVisibilityState {
             }
 
             // All checks succeeded, now register the current window info and fetch info from the parent
-            self.ancestry.push(Ancestor { id: current_window, mapped: mapped.into() });
+            ancestry.push(Ancestor { id: current_window, mapped: mapped.into() });
 
             if tree.parent == tree.root {
                 // No need to get info for the root, we assume it's always there. We can just stop here.
@@ -264,13 +319,13 @@ impl AncestorVisibilityState {
             }
 
             if let Some(root) = NonZeroU32::new(tree.root) {
-                if Some(root) != self.root_id.get() {
-                    self.root_id.set(Some(root))
+                if Some(root) != root_id.get() {
+                    root_id.set(Some(root))
                 }
             }
         }
 
-        self.own_window_viewable.set(self.ancestry.check_all_mapped());
+        own_window_viewable.set(ancestry.check_all_mapped());
 
         Ok(())
     }
