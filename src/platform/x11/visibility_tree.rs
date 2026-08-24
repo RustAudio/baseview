@@ -222,8 +222,6 @@ impl AncestorVisibilityState {
             return Ok(());
         };
 
-        eprintln!("Discover!");
-
         let Some(mut current_window) = ancestry.pop_id() else { return Ok(()) };
 
         let mut shitlist = Vec::new();
