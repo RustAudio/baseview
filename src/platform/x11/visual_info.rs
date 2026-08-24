@@ -1,6 +1,5 @@
 use super::xcb_connection::X11Connection;
 use crate::platform::*;
-use std::rc::Rc;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     Colormap, ColormapAlloc, ConnectionExt, Screen, VisualClass, Visualid,
@@ -20,7 +19,7 @@ pub(crate) struct WindowVisualConfig {
 impl WindowVisualConfig {
     #[cfg(feature = "opengl")]
     pub fn find_best_visual_config_for_gl(
-        connection: &Rc<X11Connection>, gl_config: Option<crate::gl::GlConfig>,
+        connection: &std::rc::Rc<X11Connection>, gl_config: Option<crate::gl::GlConfig>,
     ) -> Result<Self> {
         let Some(gl_config) = gl_config else { return Self::find_best_visual_config(connection) };
 
