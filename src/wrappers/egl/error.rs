@@ -1,4 +1,5 @@
 use super::*;
+use crate::wrappers::egl::sys::*;
 use std::error::Error;
 use std::ffi::c_int;
 use std::fmt::Display;
@@ -9,7 +10,6 @@ pub struct EglError {
 }
 
 impl EglError {
-    // TODO: handle NO_ERROR
     pub fn from_last_error(egl: &Egl) -> EglError {
         let code = unsafe { (egl.inner.functions.eglGetError)() };
         Self { code }
@@ -18,7 +18,11 @@ impl EglError {
 
 impl Display for EglError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        todo!()
+        if self.code == EGL_SUCCESS {
+            f.write_str("EGL call failed but error code is EGL_SUCCESS")
+        } else {
+            write!(f, "EGL error code: {:x}", self.code)
+        }
     }
 }
 

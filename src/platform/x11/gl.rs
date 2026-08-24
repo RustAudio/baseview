@@ -11,6 +11,7 @@ use crate::wrappers::egl::{EglConfig, EglDisplay, EglError, EglVersion, MissingS
 use std::ffi::{c_void, CStr};
 use std::rc::Rc;
 use x11_dl::error::OpenError;
+use x11rb::protocol::xproto::Visualid;
 
 mod egl;
 mod glx;
@@ -29,6 +30,8 @@ pub enum CreationFailedError {
     EglError(EglError),
     EglNoDisplay,
     EglUnsupportedVersion(EglVersion),
+    EglUnknownVisualId(Visualid),
+    EglInvalidVisualId(i32, TryFromIntError),
 }
 
 impl Display for CreationFailedError {
@@ -53,6 +56,12 @@ impl Display for CreationFailedError {
             CreationFailedError::EglNoDisplay => f.write_str("EGL returned no valid display"),
             CreationFailedError::EglUnsupportedVersion(e) => {
                 write!(f, "Unsupported EGL version: {}.{} (EGL 1.5 is required)", e.major, e.minor)
+            }
+            CreationFailedError::EglInvalidVisualId(id, e) => {
+                write!(f, "Invalid Visual ID ({id}) returned by EGL: {e}")
+            }
+            CreationFailedError::EglUnknownVisualId(id) => {
+                write!(f, "Unknown Visual ID returned by EGL: {id}")
             }
         }
     }
