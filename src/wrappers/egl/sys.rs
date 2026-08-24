@@ -164,7 +164,7 @@ impl Functions {
     unsafe fn get<T: Copy>(
         library: &Library, name: &'static CStr,
     ) -> Result<T, CreationFailedError> {
-        let symbol = library.get::<Option<T>>(name)?;
+        let symbol = library.get::<Option<T>>(name.to_bytes_with_nul())?;
         let symbol = symbol.lift_option().ok_or(MissingSymbolError { name })?;
         Ok(*symbol)
     }
