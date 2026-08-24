@@ -6,7 +6,7 @@ use crate::platform::x11::xcb_connection::get_size_hints;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::*;
 use crate::utils::SizingStrategy;
-use crate::{warn, MouseCursor, WindowHandler, WindowSettings, WindowSize};
+use crate::{warn, MouseCursor, RedrawStrategy, WindowHandler, WindowSettings, WindowSize};
 use calloop::LoopSignal;
 use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
@@ -54,11 +54,13 @@ pub(crate) struct WindowInner {
 
     window_size: Cell<PhysicalSize<u16>>,
     pub(crate) sizing_strategy: SizingStrategy,
+    pub(crate) redraw_strategy: RedrawStrategy,
     mouse_cursor: Cell<MouseCursor>,
     pub(crate) visual_id: Visualid,
 
     pub(crate) is_focused: Cell<bool>,
     pub(crate) is_mapped: Cell<bool>,
+    pub(crate) present_notify_requested: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
 
     pub(crate) visibility_state: AncestorVisibilityState,
@@ -139,11 +141,13 @@ impl WindowInner {
                 suggested: options.fallback_scale_factor.into(),
             },
             sizing_strategy,
+            redraw_strategy: options.redraw_strategy,
             mouse_cursor: MouseCursor::default().into(),
             loop_signal: ev_loop.get_signal(),
 
             is_focused: false.into(),
             is_mapped: false.into(),
+            present_notify_requested: false.into(),
             main_thread_shared: shared,
 
             visibility_state,
@@ -192,6 +196,12 @@ impl WindowInner {
     pub fn request_close(&self) {
         self.loop_signal.stop();
         self.loop_signal.wakeup();
+    }
+
+    pub fn request_redraw(&self) {
+        if self.redraw_strategy == RedrawStrategy::OnDemand {
+            self.present_notify_requested.set(true);
+        }
     }
 
     pub fn has_focus(&self) -> bool {

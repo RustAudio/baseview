@@ -34,6 +34,10 @@ impl WindowContext {
         self.inner.request_close();
     }
 
+    pub fn request_redraw(&self) {
+        self.inner.request_redraw()
+    }
+
     /// Returns `true` if this window currently has keyboard focus, `false` otherwise.
     pub fn has_focus(&self) -> bool {
         self.inner.has_focus()

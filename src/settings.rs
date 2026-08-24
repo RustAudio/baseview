@@ -49,6 +49,8 @@ pub struct WindowSettings {
     /// On macOS, this function is always a no-op.
     pub fallback_scale_factor: Option<f64>,
 
+    pub redraw_strategy: RedrawStrategy,
+
     /// If provided, then an OpenGL context will be created for this window. You'll be able to
     /// access this context through [crate::WindowContext::gl_context].
     ///
@@ -126,6 +128,12 @@ impl WindowSettings {
         self
     }
 
+    #[inline]
+    pub fn with_redraw_strategy(mut self, redraw_strategy: RedrawStrategy) -> Self {
+        self.redraw_strategy = redraw_strategy;
+        self
+    }
+
     /// Sets [`gl_config`](Self::gl_config) to the given value.
     #[cfg(feature = "opengl")]
     #[inline]
@@ -146,6 +154,7 @@ impl Default for WindowSettings {
             resizable: true,
             min_size: None,
             max_size: None,
+            redraw_strategy: RedrawStrategy::Continuous,
             #[cfg(feature = "opengl")]
             gl_config: None,
         }
@@ -192,4 +201,11 @@ impl From<platform::ParentWindowHandle> for ParentWindowHandle {
     fn from(inner: platform::ParentWindowHandle) -> Self {
         Self { inner }
     }
+}
+
+#[non_exhaustive]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum RedrawStrategy {
+    Continuous,
+    OnDemand,
 }
