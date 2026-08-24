@@ -94,6 +94,8 @@ impl WindowInner {
 
         let connection = Rc::new(xcb_connection);
 
+        let will_have_parent = options.parent.is_some() || options.wait_for_parent;
+
         let xcb_window = XcbWindow::new(
             Rc::clone(&connection),
             physical_size,
@@ -101,9 +103,12 @@ impl WindowInner {
             options.parent.map(|p| p.inner.window_id),
         )?;
 
-        connection.register_tree_structure_events()?.check()?;
+        if will_have_parent {
+            connection.register_tree_structure_events()?.check()?;
+        }
 
-        let visibility_state = AncestorVisibilityState::discover(&connection, xcb_window.id())?;
+        let visibility_state =
+            AncestorVisibilityState::discover(&connection, xcb_window.id(), will_have_parent)?;
 
         let cookies = [
             xcb_window.set_title(&options.title)?,
