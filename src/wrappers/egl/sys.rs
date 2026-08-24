@@ -64,17 +64,15 @@ pub type eglGetCurrentContext = unsafe extern "system" fn() -> EGLContext;
 pub type eglSwapBuffers =
     unsafe extern "system" fn(display: EGLDisplay, surface: EGLSurface) -> Boolean;
 
-pub const NONE: Int = 0x3038;
 pub const ENUM_NONE: Enum = 0x3038;
 pub const OPENGL_API: Enum = 0x30A2;
 pub const FALSE: Boolean = 0;
 pub const NO_DISPLAY: EGLDisplay = 0 as EGLDisplay;
 pub const EXTENSIONS: Int = 0x3055;
+pub const EGL_SUCCESS: Int = 0x3000;
 
 pub const EGL_SURFACE_TYPE: Int = 0x3033;
 pub const EGL_WINDOW_BIT: Int = 0x0004;
-
-pub const EGL_OPENGL_BIT: Int = 0x30A4;
 
 pub const EGL_NONE: Int = 0x3038;
 pub const EGL_BUFFER_SIZE: Int = 0x3020;
@@ -104,7 +102,7 @@ pub struct MissingSymbolError {
 
 impl Display for MissingSymbolError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        write!(f, "Missing EGL symbol: {}", self.name.to_string_lossy())
     }
 }
 
