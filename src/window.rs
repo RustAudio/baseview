@@ -1,8 +1,8 @@
+use crate::dpi::*;
 use crate::handler::WindowHandlerBuilder;
 use crate::host::Host;
 use crate::platform;
 use crate::*;
-use dpi::{LogicalSize, PhysicalSize, Pixel, Size};
 use std::marker::PhantomData;
 
 /// A handle to a Window created by baseview.
@@ -261,6 +261,11 @@ impl WindowSize {
     #[inline]
     pub fn from_logical(logical: LogicalSize<f64>, scale_factor: f64) -> Self {
         Self { physical: logical.to_physical(scale_factor), logical, scale_factor }
+    }
+
+    #[inline]
+    pub fn to_native_size<P: Pixel>(&self) -> NativeSize<P> {
+        (*self).into()
     }
 }
 

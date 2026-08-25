@@ -1,5 +1,6 @@
 mod clipboard;
 mod context;
+pub mod dpi;
 mod error;
 mod event;
 mod handler;
@@ -17,7 +18,6 @@ pub mod gl;
 
 pub use clipboard::*;
 pub use context::{PlatformHandle, WindowContext};
-pub use dpi;
 pub use error::*;
 pub use event::*;
 pub use handler::WindowHandler;
