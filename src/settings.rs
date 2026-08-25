@@ -1,7 +1,7 @@
+use crate::dpi::{LogicalSize, Size};
 #[cfg(feature = "opengl")]
 use crate::gl::GlConfig;
 use crate::platform;
-use dpi::{LogicalSize, Size};
 use raw_window_handle::HasWindowHandle;
 
 /// Settings used when creating a new window.

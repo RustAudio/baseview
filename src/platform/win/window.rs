@@ -5,7 +5,7 @@ use windows_sys::Win32::{
 };
 
 use crate::{warn, EventStatus, HandlerError, WindowHandler};
-use dpi::{PhysicalPosition, PhysicalSize, Size};
+use crate::{PhysicalPosition, PhysicalSize, Size};
 use std::cell::{Cell, OnceCell};
 use std::num::NonZeroUsize;
 use windows_sys::Win32::Foundation::POINT;

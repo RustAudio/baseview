@@ -3,6 +3,7 @@ use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mo
 use super::*;
 use std::result::Result;
 
+use crate::dpi::{PhysicalPosition, PhysicalSize};
 use crate::host::HostMainThreadCaller;
 use crate::platform::x11::error::FatalError;
 use crate::platform::x11::window_thread::{
@@ -14,7 +15,6 @@ use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHand
 use calloop::generic::Generic;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction};
-use dpi::{PhysicalPosition, PhysicalSize};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;

@@ -1,4 +1,4 @@
-use dpi::LogicalSize;
+use crate::dpi::LogicalSize;
 use objc2::__framework_prelude::{Allocated, AnyClass, ProtocolObject, Retained};
 use objc2::rc::Weak;
 use objc2::runtime::{AnyObject, Ivar};

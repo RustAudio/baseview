@@ -2,6 +2,7 @@
 
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
+use crate::dpi::{LogicalPosition, LogicalSize, Size};
 use crate::host::Host;
 use crate::platform::*;
 use crate::tracing::warn;
@@ -13,7 +14,6 @@ use crate::{
     DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, ScrollDelta, WindowEvent,
     WindowHandler, WindowSize,
 };
-use dpi::{LogicalPosition, LogicalSize, Size};
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};

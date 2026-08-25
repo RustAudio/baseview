@@ -1,7 +1,7 @@
-﻿use crate::wrappers::win32::style::WindowStyle;
+﻿use crate::dpi::{PhysicalPosition, PhysicalSize};
+use crate::wrappers::win32::style::WindowStyle;
 use crate::wrappers::win32::user32::ExtendedUser32;
 use crate::wrappers::win32::{Dpi, DpiAwarenessContext, Rect};
-use dpi::{PhysicalPosition, PhysicalSize};
 use std::ffi::c_void;
 use std::num::NonZeroUsize;
 use std::ptr::{null_mut, NonNull};

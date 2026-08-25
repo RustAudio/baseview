@@ -1,4 +1,4 @@
-use dpi::PhysicalSize;
+use crate::dpi::PhysicalSize;
 use windows_sys::Win32::Foundation::RECT;
 
 #[derive(Copy, Clone)]

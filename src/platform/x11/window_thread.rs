@@ -1,4 +1,5 @@
 use super::*;
+use crate::dpi::{PhysicalSize, Size};
 use crate::handler::WindowHandlerBuilder;
 use crate::host::HostCallbacks;
 use crate::platform::x11::event_loop::{EventLoop, MainThreadCaller};
@@ -8,7 +9,6 @@ use crate::warn;
 use crate::window::WindowInitializer;
 use crate::{WindowContext, WindowSettings, WindowSize};
 use calloop::LoopSignal;
-use dpi::{PhysicalSize, Size};
 use std::cell::{Cell, RefCell};
 use std::panic::resume_unwind;
 use std::rc::Rc;

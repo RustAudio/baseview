@@ -1,3 +1,4 @@
+use crate::dpi::Size;
 use crate::platform::macos::cursor::Cursor;
 use crate::platform::macos::view::BaseviewView;
 use crate::platform::Result;
@@ -5,7 +6,6 @@ use crate::platform::{PlatformHandle, WindowSharedState};
 use crate::wrappers::appkit::{View, ViewRef};
 use crate::*;
 use dispatch2::MainThreadBound;
-use dpi::Size;
 use objc2::rc::Weak;
 use objc2::runtime::NSObjectProtocol;
 use objc2::{MainThreadMarker, Message};
