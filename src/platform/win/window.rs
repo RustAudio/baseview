@@ -284,11 +284,14 @@ impl BaseviewWindow {
 
     pub(crate) fn handle_on_frame(&self) {
         let Some(handler) = self.handler.get() else { return };
+        let ctx = DpiAwarenessContext::new(&self.shared_state.user32);
 
         if let Err(e) = handler.on_frame() {
             warn!("Error while rendering frame: {}", e);
             self.window_state.request_close();
         }
+
+        drop(ctx)
     }
 
     pub(crate) fn handle_event(&self, event: Event) -> EventStatus {
