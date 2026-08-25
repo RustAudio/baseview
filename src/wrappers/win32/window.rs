@@ -21,9 +21,9 @@ use std::rc::Rc;
 use window_class::RegisteredClass;
 use windows_core::{Error, Result, HSTRING};
 
+use crate::wrappers::win32::dpi::DpiAwarenessContext;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::style::WindowStyle;
-use crate::wrappers::win32::DpiAwarenessContext;
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW;
 
