@@ -6,5 +6,5 @@ publish = false
 
 [dependencies]
 baseview = { path = "../..", features = ["opengl", "tracing"] }
-femtovg = "0.25.1"
+femtovg = "0.26"
 tracing-subscriber = { workspace = true }
