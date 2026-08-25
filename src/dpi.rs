@@ -1,6 +1,9 @@
 use crate::WindowSize;
 pub use dpi::*;
 
+/// A size represented in the platform's native pixels.
+///
+/// This size is represented in physical pixels on Windows and Linux, and in logical pixels on macOS.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct NativeSize<P> {
     pub width: P,
