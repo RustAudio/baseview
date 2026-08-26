@@ -341,7 +341,7 @@ impl WindowImpl for BaseviewWindow {
         window.register_drag_drop(drop_target.as_interface())?;
 
         #[cfg(feature = "opengl")]
-        if let Some(gl_config) = self.gl_config.clone() {
+        if let Some(gl_config) = self.gl_config {
             let gl_context = gl::GlContextInner::create(window, gl_config)?;
 
             let Ok(()) = self.window_state.gl_context.set(Rc::new(gl_context)) else {
