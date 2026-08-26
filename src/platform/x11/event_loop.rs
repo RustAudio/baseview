@@ -171,6 +171,7 @@ impl EventLoop {
     }
 
     fn handle_coalesced_resize_events(&mut self) -> Result<(), FatalError> {
+        let mut comes_from_parent = false;
         if let Some(new_parent_size) = self.new_parent_size.take() {
             if new_parent_size != self.window.get_size() {
                 // The parent was resized, which means we should resize ourselves too.
@@ -180,6 +181,7 @@ impl EventLoop {
                     // Makes the rest of this function run on the new parent size immediately (without waiting for a ConfigureNotify round-trip)
                     // Also overrides any new sizes we may have received this event loop iteration,it would probably be invalidated anyway
                     self.new_size = Some(new_parent_size);
+                    comes_from_parent = true;
                 }
             }
         }
@@ -198,20 +200,23 @@ impl EventLoop {
             warn!("Window Handler failed to resize: {}", e);
             self.window.store_size(previous);
             self.window.xcb_window.resize(previous.cast())?.check_warn();
-        } else {
-            // Host requests use resize_immediately, which stops the previous == new_size condition
-            // So if we're here, it's guaranteed not to be from a host request
+            return Ok(());
+        }
 
+        // Host requests use resize_immediately, which stops the previous == new_size condition
+        // So if we're here, it's guaranteed not to be from a host request
+
+        if !comes_from_parent {
             if let Some(host) = self.main_thread.as_mut() {
                 host.send(HostCallback::Resized {
                     new_size,
                     previous: WindowSize::from_physical(previous.cast(), scale_factor),
                 })?;
             }
-
-            // Immediately schedule a redraw, do not wait for an "expose" event
-            self.exposed = true;
         }
+
+        // Immediately schedule a redraw, do not wait for an "expose" event
+        self.exposed = true;
 
         Ok(())
     }
