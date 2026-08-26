@@ -77,8 +77,6 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     fn can_resize(&mut self) -> bool {
         let Some(gui) = &self.gui else { return false };
 
-        dbg!("can_resize", gui.handle.is_resizable());
-
         gui.handle.is_resizable()
     }
 
