@@ -312,6 +312,7 @@ impl Drop for BaseviewWindow {
 
 impl WindowImpl for BaseviewWindow {
     fn after_create(&self, window: HWnd) -> core::result::Result<(), PlatformError> {
+        let dac = DpiAwarenessContext::new(&self.shared_state.user32)?;
         let hwnd = window.as_raw();
         let window_state = &self.window_state;
 
@@ -361,6 +362,8 @@ impl WindowImpl for BaseviewWindow {
             handler_builder.build(context)?
         };
         let Ok(()) = self.handler.set(handler) else { unreachable!() };
+
+        drop(dac);
 
         Ok(())
     }
