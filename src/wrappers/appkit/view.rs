@@ -5,7 +5,7 @@ use objc2::runtime::{AnyObject, Ivar};
 use objc2::{msg_send, Encoding, Message, RefEncode};
 use objc2_app_kit::{NSDragOperation, NSDraggingInfo, NSEvent, NSView, NSWindow};
 use objc2_core_foundation::CGRect;
-use objc2_foundation::{NSNotification, NSPoint};
+use objc2_foundation::{NSNotification, NSPoint, NSRect};
 use raw_window_handle::{AppKitWindowHandle, WindowHandle};
 use std::ffi::{c_void, CStr};
 use std::marker::PhantomData;
@@ -156,6 +156,7 @@ pub trait ViewImpl: Sized {
     fn window_did_resize(this: ViewRef<Self>);
 
     fn view_did_change_backing_properties(this: ViewRef<Self>, from_host: bool);
+    fn draw_rect(this: ViewRef<Self>, rect: NSRect);
     fn hit_test(this: ViewRef<'_, Self>, point: NSPoint) -> Option<&NSView>;
     fn view_will_move_to_window(this: ViewRef<Self>, new_window: Option<&NSWindow>);
     fn update_tracking_areas(this: ViewRef<Self>);
