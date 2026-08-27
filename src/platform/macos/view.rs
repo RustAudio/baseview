@@ -10,8 +10,8 @@ use crate::window::WindowInitializer;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
-    DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowSize,
+    DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, RedrawStrategy, ScrollDelta,
+    WindowEvent, WindowHandler, WindowSize,
 };
 use dpi::{LogicalPosition, LogicalSize, Size};
 use objc2::__framework_prelude::Retained;
@@ -136,12 +136,14 @@ impl BaseviewView {
             let ns_filenames_pboard_type = unsafe { NSFilenamesPboardType };
             view.view.registerForDraggedTypes(&NSArray::from_slice(&[ns_filenames_pboard_type]));
 
-            let timer_view = Weak::new(view.view);
-            view.frame_timer.set(TimerHandle::new(0.015, move || {
-                if let Some(view) = timer_view.load() {
-                    view.setNeedsDisplay(true);
-                }
-            }));
+            if init.settings.redraw_strategy == RedrawStrategy::Continuous {
+                let timer_view = Weak::new(view.view);
+                view.frame_timer.set(TimerHandle::new(0.015, move || {
+                    if let Some(view) = timer_view.load() {
+                        view.setNeedsDisplay(true);
+                    }
+                }));
+            }
 
             let notifier_view = Weak::new(view.view);
             let observer = NotificationCenterObserver::register_window_key_change(move |n| {

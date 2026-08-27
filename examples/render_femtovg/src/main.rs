@@ -1,8 +1,8 @@
 use baseview::dpi::{LogicalSize, PhysicalPosition};
 use baseview::gl::{GlConfig, GlContext};
 use baseview::{
-    Event, EventStatus, HandlerError, MouseEvent, Window, WindowContext, WindowHandler,
-    WindowSettings, WindowSize,
+    Event, EventStatus, HandlerError, MouseEvent, RedrawStrategy, Window, WindowContext,
+    WindowHandler, WindowSettings, WindowSize,
 };
 use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
@@ -98,6 +98,7 @@ impl WindowHandler for FemtovgExample {
                 if position.y > 400. && !self.window_context.has_focus() {
                     let _ = self.window_context.focus();
                 }
+                self.window_context.request_redraw();
             }
             event => log_event(&event),
         };
@@ -112,6 +113,7 @@ fn main() -> Result<(), baseview::Error> {
     let window_open_options = WindowSettings::new()
         .with_title("Femtovg on Baseview")
         .with_size(LogicalSize::new(512, 512))
+        .with_redraw_strategy(RedrawStrategy::OnDemand)
         .with_gl_config(GlConfig { alpha_bits: 8, ..GlConfig::default() });
 
     Window::create(window_open_options, FemtovgExample::new)?.run_until_closed()?;
