@@ -139,9 +139,7 @@ impl BaseviewView {
             let timer_view = Weak::new(view.view);
             view.frame_timer.set(TimerHandle::new(0.015, move || {
                 if let Some(view) = timer_view.load() {
-                    if let Some(view) = view.inner_ref() {
-                        Self::trigger_frame(view);
-                    }
+                    view.setNeedsDisplay(true);
                 }
             }));
 
@@ -246,8 +244,8 @@ impl BaseviewView {
     }
 
     fn trigger_frame(this: ViewRef<Self>) {
-        if let Some(Err(e)) = this.window_handler.use_handler(|h| h.on_frame()) {
-            warn!("Error while rendering frame: {}", e);
+        if let Some(Err(e)) = this.window_handler.use_handler(|h| h.draw()) {
+            warn!("Error while drawing: {}", e);
             Self::close(this, false);
         }
     }
@@ -346,6 +344,10 @@ impl ViewImpl for BaseviewView {
                 }
             }
         }
+    }
+
+    fn draw_rect(this: ViewRef<Self>, _rect: NSRect) {
+        Self::trigger_frame(this);
     }
 
     /// `hitTest:` override that collapses hits on baseview's internal
