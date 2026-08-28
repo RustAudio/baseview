@@ -1,13 +1,20 @@
 use super::*;
 use crate::gl::*;
 use crate::wrappers::glx::*;
-use crate::wrappers::xlib::{XErrorHandler, XLibError};
+use crate::wrappers::xlib::XLibError;
+use std::error::Error;
 
+use crate::platform::gl::egl::EglGlContext;
+use crate::platform::gl::glx::GlxGlContext;
 use crate::platform::x11::xcb_window::XcbWindow;
-use std::ffi::{c_ulong, c_void, CStr};
+use crate::wrappers::egl::{EglConfig, EglDisplay, EglError, EglVersion, MissingSymbolError};
+use std::ffi::{c_void, CStr};
 use std::rc::Rc;
 use x11_dl::error::OpenError;
-use x11_dl::glx::GLXContext;
+use x11rb::protocol::xproto::Visualid;
+
+mod egl;
+mod glx;
 
 #[derive(Debug)]
 pub enum CreationFailedError {
@@ -18,6 +25,13 @@ pub enum CreationFailedError {
     ContextCreationFailed,
     X11Error(XLibError),
     OpenError(OpenError),
+    EGLLoadError(libloading::Error),
+    EGLMissingSymbol(MissingSymbolError),
+    EglError(EglError),
+    EglNoDisplay,
+    EglUnsupportedVersion(EglVersion),
+    EglUnknownVisualId(Visualid),
+    EglInvalidVisualId(i32, TryFromIntError),
 }
 
 impl Display for CreationFailedError {
@@ -34,24 +48,48 @@ impl Display for CreationFailedError {
             CreationFailedError::ContextCreationFailed => f.write_str("Faile to create GL context"),
             CreationFailedError::X11Error(e) => e.fmt(f),
             CreationFailedError::OpenError(e) => e.fmt(f),
+            CreationFailedError::EGLLoadError(e) => {
+                write!(f, "Could not load EGL library: {e}, {:?}", e.source())
+            }
+            CreationFailedError::EGLMissingSymbol(e) => e.fmt(f),
+            CreationFailedError::EglError(e) => e.fmt(f),
+            CreationFailedError::EglNoDisplay => f.write_str("EGL returned no valid display"),
+            CreationFailedError::EglUnsupportedVersion(e) => {
+                write!(f, "Unsupported EGL version: {}.{} (EGL 1.5 is required)", e.major, e.minor)
+            }
+            CreationFailedError::EglInvalidVisualId(id, e) => {
+                write!(f, "Invalid Visual ID ({id}) returned by EGL: {e}")
+            }
+            CreationFailedError::EglUnknownVisualId(id) => {
+                write!(f, "Unknown Visual ID returned by EGL: {id}")
+            }
         }
+    }
+}
+
+impl From<EglError> for CreationFailedError {
+    fn from(err: EglError) -> Self {
+        CreationFailedError::EglError(err)
     }
 }
 
 pub type GlContext = Rc<GlContextInner>;
 
-pub struct GlContextInner {
-    glx: Glx,
-    window: NonZeroU32,
-    connection: Rc<X11Connection>,
-    context: GLXContext,
+pub enum GlContextInner {
+    Glx(GlxGlContext),
+    Egl(EglGlContext),
 }
 
 /// The frame buffer configuration along with the general OpenGL configuration to somewhat minimize
 /// misuse.
 pub struct FbConfig {
     gl_config: GlConfig,
-    fb_config: GlxFbConfig,
+    fb_config: FbConfigInner,
+}
+
+enum FbConfigInner {
+    Glx { glx: Glx, config: GlxFbConfig },
+    Egl { display: EglDisplay, config: EglConfig },
 }
 
 /// The configuration a window should be created with after calling
@@ -71,99 +109,60 @@ impl GlContextInner {
     ///
     /// Use [Self::get_fb_config_and_visual] to create both of these things.
     pub fn create(
-        window: &XcbWindow, connection: Rc<X11Connection>, config: FbConfig,
+        window: &XcbWindow, connection: &Rc<X11Connection>, fb_config: FbConfig,
     ) -> Result<Rc<GlContextInner>> {
-        let glx = Glx::open()?;
-
-        let xlib_connection = connection.conn.xlib_connection();
-
-        XErrorHandler::handle(xlib_connection, |error_handler| {
-            let Some(create_context) = glx.get_glx_create_context_attribs_arb() else {
-                return Err(CreationFailedError::GetProcAddressFailed.into());
+        let inner =
+            match fb_config.fb_config {
+                FbConfigInner::Glx { glx, config } => GlContextInner::Glx(GlxGlContext::create(
+                    window,
+                    connection,
+                    fb_config.gl_config,
+                    config,
+                    glx,
+                )?),
+                FbConfigInner::Egl { display, config } => GlContextInner::Egl(
+                    EglGlContext::create(window, &fb_config.gl_config, config, display)?,
+                ),
             };
 
-            let context = create_context.call(
-                xlib_connection,
-                &config.gl_config,
-                config.fb_config,
-                error_handler,
-            )?;
-
-            Ok(Rc::new(GlContextInner {
-                glx,
-                window: window.id(),
-                connection: Rc::clone(&connection),
-                context,
-            }))
-        })
+        Ok(Rc::new(inner))
     }
 
     /// Find a matching framebuffer config and window visual for the given OpenGL configuration.
     /// This needs to be passed to [Self::create] along with a handle to a window that was created
     /// using the visual also returned from this function.
     pub fn get_fb_config_and_visual(
-        connection: &X11Connection, config: GlConfig,
+        connection: &Rc<X11Connection>, config: GlConfig,
     ) -> Result<(FbConfig, WindowConfig)> {
-        let glx = Glx::open()?;
-
-        let xlib_connection = connection.conn.xlib_connection();
-
-        XErrorHandler::handle(xlib_connection, |error_handler| {
-            let fb_config = glx.choose_best_fb_config(xlib_connection, &config, error_handler)?;
-
-            // Now that we have a matching framebuffer config, we need to know which visual matches
-            // this config so the window is compatible with the OpenGL context we're about to create
-            let visual =
-                glx.get_visual_from_fb_config(xlib_connection, fb_config, error_handler)?;
-
-            Ok((
-                FbConfig { fb_config, gl_config: config },
-                WindowConfig { depth: visual.depth as u8, visual: visual.visualid as u32 },
-            ))
-        })
+        EglGlContext::get_fb_config_and_visual(connection, &config)
+            .or_else(|_| GlxGlContext::get_fb_config_and_visual(connection, &config))
     }
 
     pub unsafe fn make_current(&self) -> Result<()> {
-        XErrorHandler::handle(self.connection.conn.xlib_connection(), |error_handler| {
-            self.glx.make_current(
-                self.connection.conn.xlib_connection(),
-                self.window_id(),
-                self.context,
-                error_handler,
-            )
-        })
+        match self {
+            GlContextInner::Glx(glx) => glx.make_current(),
+            GlContextInner::Egl(egl) => egl.make_current(),
+        }
     }
 
     pub unsafe fn make_not_current(&self) -> Result<()> {
-        XErrorHandler::handle(self.connection.conn.xlib_connection(), |error_handler| {
-            self.glx.clear_current(self.connection.conn.xlib_connection(), error_handler)
-        })
-    }
-
-    fn window_id(&self) -> c_ulong {
-        self.window.get().into()
+        match self {
+            GlContextInner::Glx(glx) => glx.make_not_current(),
+            GlContextInner::Egl(egl) => egl.make_not_current(),
+        }
     }
 
     pub fn get_proc_address(&self, symbol: &CStr) -> *const c_void {
-        match self.glx.get_proc_address(symbol) {
-            Some(ptr) => ptr.as_ptr(),
-            None => std::ptr::null(),
+        match self {
+            GlContextInner::Glx(glx) => glx.get_proc_address(symbol),
+            GlContextInner::Egl(egl) => egl.get_proc_address(symbol),
         }
     }
 
     pub fn swap_buffers(&self) -> Result<()> {
-        XErrorHandler::handle(self.connection.conn.xlib_connection(), |error_handler| {
-            self.glx.swap_buffers(
-                self.connection.conn.xlib_connection(),
-                self.window_id(),
-                error_handler,
-            )
-        })
-    }
-}
-
-impl Drop for GlContextInner {
-    fn drop(&mut self) {
-        unsafe { self.glx.destroy_context(self.connection.conn.xlib_connection(), self.context) }
+        match self {
+            GlContextInner::Glx(glx) => glx.swap_buffers(),
+            GlContextInner::Egl(egl) => egl.swap_buffers(),
+        }
     }
 }

@@ -46,6 +46,7 @@ x11-dl = { version = "2.21.0" }
 calloop = "0.14.4"
 percent-encoding = "2.3.2"
 bytemuck = { version = "1.25.0", features = ["extern_crate_alloc"] }
+libloading = "0.8.9" # Libloading 0.9 is out but its MSRV is 1.88
 
 [target.'cfg(target_os="windows")'.dependencies]
 windows = { version = "0.62.2", features = [

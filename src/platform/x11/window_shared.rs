@@ -85,14 +85,14 @@ impl WindowInner {
 
         let size_hints = get_size_hints(&sizing_strategy, physical_size, initial_scale_factor);
 
+        let connection = Rc::new(xcb_connection);
+
         #[cfg(feature = "opengl")]
         let visual_info =
-            WindowVisualConfig::find_best_visual_config_for_gl(&xcb_connection, options.gl_config)?;
+            WindowVisualConfig::find_best_visual_config_for_gl(&connection, options.gl_config)?;
 
         #[cfg(not(feature = "opengl"))]
-        let visual_info = WindowVisualConfig::find_best_visual_config(&xcb_connection)?;
-
-        let connection = Rc::new(xcb_connection);
+        let visual_info = WindowVisualConfig::find_best_visual_config(&connection)?;
 
         let will_have_parent = options.parent.is_some() || options.wait_for_parent;
 
@@ -126,11 +126,7 @@ impl WindowInner {
             None => None,
             Some(fb_config) => {
                 // Because of the visual negotation we had to take some extra steps to create this context
-                Some(super::gl::GlContextInner::create(
-                    &xcb_window,
-                    Rc::clone(&connection),
-                    fb_config,
-                )?)
+                Some(super::gl::GlContextInner::create(&xcb_window, &connection, fb_config)?)
             }
         };
 
