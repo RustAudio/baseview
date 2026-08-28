@@ -4,6 +4,7 @@ use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
 use crate::dpi::{LogicalPosition, LogicalSize, Size};
 use crate::host::Host;
+use crate::platform::macos::cursor::CursorManager;
 use crate::platform::*;
 use crate::tracing::warn;
 use crate::utils::SizingStrategy;
@@ -20,7 +21,7 @@ use objc2::runtime::{NSObjectProtocol, ProtocolObject};
 use objc2::{msg_send, AllocAnyThread, ClassType, MainThreadMarker};
 use objc2_app_kit::{
     NSApplication, NSCursor, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType,
-    NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow,
+    NSResponder, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow,
 };
 use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
 use std::cell::{Cell, RefCell};
@@ -73,6 +74,7 @@ pub(crate) struct BaseviewView {
     pub(crate) lifetime_tied_to_app: Cell<Option<Weak<NSApplication>>>,
 
     host: Host,
+    pub(crate) cursor_manager: CursorManager,
 
     #[cfg(feature = "opengl")]
     pub(crate) gl_context: std::cell::OnceCell<super::gl::GlContext>,
@@ -103,6 +105,7 @@ impl BaseviewView {
             parenting: ViewParentingType::Uninitialized.into(),
             host: init.host,
             lifetime_tied_to_app: None.into(),
+            cursor_manager: CursorManager::new(),
 
             #[cfg(feature = "opengl")]
             gl_context: std::cell::OnceCell::new(),
@@ -274,9 +277,6 @@ impl BaseviewView {
 impl Drop for BaseviewView {
     fn drop(&mut self) {
         self.state.closed.set(true);
-        if self.state.cursor_hidden.get() {
-            NSCursor::unhide();
-        }
     }
 }
 
@@ -416,9 +416,7 @@ impl ViewImpl for BaseviewView {
         }
 
         unsafe {
-            let superclass = msg_send![this.view, superclass];
-
-            let () = msg_send![super(this.view, superclass), viewWillMoveToWindow: new_window];
+            let () = msg_send![super(this.view, NSView::class()), viewWillMoveToWindow: new_window];
         }
     }
 
@@ -446,6 +444,9 @@ impl ViewImpl for BaseviewView {
                 modifiers: make_modifiers(event.modifierFlags()),
             }),
         );
+
+        // SAFETY: Our superclass is NSView
+        let _: () = unsafe { msg_send![super(this.view, NSView::class()), mouseMoved: event] };
     }
 
     fn scroll_wheel(this: ViewRef<Self>, event: &NSEvent) {
@@ -667,6 +668,10 @@ impl ViewImpl for BaseviewView {
                 }
             }
         }
+    }
+
+    fn reset_cursor_rects(this: ViewRef<Self>) {
+        this.cursor_manager.rebuild_cursor_rects(this.view)
     }
 }
 

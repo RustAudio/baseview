@@ -1,12 +1,78 @@
+use crate::platform::macos::view::BaseviewView;
+use crate::wrappers::appkit::View;
+use crate::MouseCursor;
 use objc2::__framework_prelude::Retained;
 use objc2::runtime::{MessageReceiver, Sel};
-use objc2::{msg_send, sel, ClassType};
-use objc2_app_kit::NSCursor;
+use objc2::{msg_send, sel, AnyThread, ClassType, Message};
+use objc2_app_kit::{NSCursor, NSImage};
+use objc2_foundation::{NSPoint, NSSize};
+use std::cell::{Cell, LazyCell, RefCell};
 
-use crate::MouseCursor;
+pub struct CursorManager {
+    current: Cell<MouseCursor>,
+    current_cursor: RefCell<Retained<NSCursor>>,
+    empty: LazyCell<Retained<NSCursor>>,
+}
+
+impl CursorManager {
+    pub fn new() -> Self {
+        Self {
+            current: MouseCursor::Default.into(),
+            current_cursor: NSCursor::arrowCursor().into(),
+            empty: LazyCell::new(Self::create_empty_cursor),
+        }
+    }
+
+    fn create_empty_cursor() -> Retained<NSCursor> {
+        let image = NSImage::initWithSize(NSImage::alloc(), NSSize::new(0.0, 0.0));
+        NSCursor::initWithImage_hotSpot(NSCursor::alloc(), &image, NSPoint::ZERO)
+    }
+
+    pub fn set_cursor(&self, cursor: MouseCursor, view: &View<BaseviewView>) {
+        if self.current.get() == cursor {
+            return;
+        }
+
+        self.current_cursor.replace(self.load(cursor.into()));
+        self.current.set(cursor);
+
+        dbg!(cursor);
+        view.window().unwrap().enableCursorRects();
+
+        view.window().unwrap().invalidateCursorRectsForView(view);
+        eprintln!("invalidated cursor");
+    }
+
+    pub fn rebuild_cursor_rects(&self, view: &View<BaseviewView>) {
+        dbg!("rebuild cursor rects", view.bounds());
+        view.addCursorRect_cursor(view.bounds(), &self.current_cursor.borrow())
+    }
+
+    fn load(&self, cursor: Cursor) -> Retained<NSCursor> {
+        match cursor {
+            Cursor::Native(loader) => loader(),
+            Cursor::Undocumented(sel) => {
+                let class = NSCursor::class();
+
+                // NOTE: class.responds_to does not yield the same result (probably because NSCursor overrides respondsToSelector)
+                let responds_to: bool = unsafe { msg_send![class, respondsToSelector: sel] };
+
+                if !responds_to {
+                    return NSCursor::arrowCursor();
+                }
+
+                let raw: *mut NSCursor = unsafe { class.send_message(sel, ()) };
+                let cursor = unsafe { Retained::retain(raw) };
+
+                cursor.unwrap_or_else(NSCursor::arrowCursor)
+            }
+            Cursor::Hidden => self.empty.retain(),
+        }
+    }
+}
 
 #[derive(Debug)]
-pub enum Cursor {
+enum Cursor {
     Native(fn() -> Retained<NSCursor>),
     Undocumented(Sel),
     Hidden,
@@ -60,30 +126,6 @@ impl From<MouseCursor> for Cursor {
             MouseCursor::AllScroll => Cursor::Native(NSCursor::arrowCursor),
             MouseCursor::Cell => Cursor::Native(NSCursor::crosshairCursor),
             MouseCursor::Hidden => Cursor::Hidden,
-        }
-    }
-}
-
-impl Cursor {
-    pub fn load(&self) -> Option<Retained<NSCursor>> {
-        match self {
-            Cursor::Native(loader) => Some(loader()),
-            Cursor::Undocumented(sel) => {
-                let class = NSCursor::class();
-
-                // NOTE: class.responds_to does not yield the same result (probably because NSCursor overrides respondsToSelector)
-                let responds_to: bool = unsafe { msg_send![class, respondsToSelector: *sel] };
-
-                if !responds_to {
-                    return Some(NSCursor::arrowCursor());
-                }
-
-                let raw: *mut NSCursor = unsafe { class.send_message(*sel, ()) };
-                let cursor = unsafe { Retained::retain(raw) };
-
-                Some(cursor.unwrap_or_else(NSCursor::arrowCursor))
-            }
-            Cursor::Hidden => None,
         }
     }
 }

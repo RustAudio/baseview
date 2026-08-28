@@ -138,6 +138,11 @@ pub unsafe fn create_view_class<V: ViewImpl>() -> &'static AnyClass {
         class.add_method(sel!(keyDown:), key_down::<V> as extern "C-unwind" fn(_, _, _));
         class.add_method(sel!(keyUp:), key_up::<V> as extern "C-unwind" fn(_, _, _));
         class.add_method(sel!(flagsChanged:), flags_changed::<V> as extern "C-unwind" fn(_, _, _));
+
+        class.add_method(
+            sel!(resetCursorRects),
+            reset_cursor_rects::<V> as extern "C-unwind" fn(_, _),
+        );
     }
 
     class.add_ivar::<*mut c_void>(BASEVIEW_STATE_IVAR);
@@ -264,14 +269,18 @@ extern "C-unwind" fn handle_notification<V: ViewImpl>(
     V::handle_notification(inner, notification)
 }
 
-extern "C-unwind" fn mouse_entered<V: ViewImpl>(this: &View<V>, _: Sel, _: &AnyObject) {
+extern "C-unwind" fn mouse_entered<V: ViewImpl>(this: &View<V>, _: Sel, event: &NSEvent) {
     let Some(inner) = this.inner_ref() else { return };
     V::mouse_entered(inner);
+    // SAFETY: Our superclass is NSView
+    let _: () = unsafe { msg_send![super(this, NSView::class()), mouseEntered: event] };
 }
 
-extern "C-unwind" fn mouse_exited<V: ViewImpl>(this: &View<V>, _: Sel, _: &AnyObject) {
+extern "C-unwind" fn mouse_exited<V: ViewImpl>(this: &View<V>, _: Sel, event: &NSEvent) {
     let Some(inner) = this.inner_ref() else { return };
     V::mouse_exited(inner);
+    // SAFETY: Our superclass is NSView
+    let _: () = unsafe { msg_send![super(this, NSView::class()), mouseExited: event] };
 }
 
 extern "C-unwind" fn key_down<V: ViewImpl>(this: &View<V>, _: Sel, event: &NSEvent) {
@@ -324,4 +333,11 @@ extern "C-unwind" fn window_did_resize<V: ViewImpl>(
 ) {
     let Some(inner) = this.inner_ref() else { return };
     V::window_did_resize(inner);
+}
+
+extern "C-unwind" fn reset_cursor_rects<V: ViewImpl>(this: &View<V>, _sel: Sel) {
+    let Some(inner) = this.inner_ref() else { return };
+    V::reset_cursor_rects(inner);
+    // SAFETY: Our superclass is NSView
+    let _: () = unsafe { msg_send![super(this, NSView::class()), resetCursorRects] };
 }

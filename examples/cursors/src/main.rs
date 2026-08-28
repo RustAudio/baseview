@@ -1,0 +1,111 @@
+use baseview::dpi::{LogicalSize, PhysicalPosition};
+use baseview::gl::{GlConfig, GlContext};
+use baseview::{
+    Event, EventStatus, HandlerError, MouseCursor, MouseEvent, Window, WindowContext,
+    WindowHandler, WindowSettings, WindowSize,
+};
+use femtovg::renderer::OpenGl;
+use femtovg::{Canvas, Color};
+use std::cell::{Cell, RefCell};
+
+struct CursorsExample {
+    window_context: WindowContext,
+    gl_context: GlContext,
+    canvas: RefCell<Canvas<OpenGl>>,
+    damaged: Cell<bool>,
+}
+
+impl CursorsExample {
+    fn new(window_context: WindowContext) -> Result<Self, HandlerError> {
+        let Some(gl_context) = window_context.gl_context() else { unreachable!() };
+        unsafe { gl_context.make_current()? };
+
+        let renderer =
+            unsafe { OpenGl::new_from_function_cstr(|s| gl_context.get_proc_address(s)) }?;
+
+        let mut canvas = Canvas::new(renderer)?;
+        let size = window_context.size();
+
+        canvas.set_size(size.physical.width, size.physical.height, size.scale_factor as f32);
+
+        unsafe { gl_context.make_not_current()? };
+        Ok(Self { gl_context, window_context, canvas: canvas.into(), damaged: true.into() })
+    }
+
+    fn in_blue_area(&self, position: PhysicalPosition<f64>) -> bool {
+        let window_size = self.window_context.size().physical.cast::<f64>();
+        let x = position.x / window_size.width;
+        let y = position.y / window_size.height;
+
+        let is_outside = x < 0.1 || y < 0.1 || x > 0.9 || y > 0.9;
+        !is_outside
+    }
+}
+
+impl WindowHandler for CursorsExample {
+    fn on_frame(&self) -> Result<(), HandlerError> {
+        if !self.damaged.get() {
+            return Ok(());
+        }
+
+        let context = &self.gl_context;
+        unsafe { context.make_current()? };
+
+        let mut canvas = self.canvas.borrow_mut();
+
+        let screen_height = canvas.height();
+        let screen_width = canvas.width();
+
+        // Clear
+        canvas.clear_rect(0, 0, screen_width, screen_height, Color::rgb(0xAA, 0xAA, 0xAA));
+
+        // Make big blue rectangle
+        canvas.clear_rect(
+            (screen_width as f32 * 0.1).floor() as u32,
+            (screen_height as f32 * 0.1).floor() as u32,
+            (screen_width as f32 * 0.8).floor() as u32,
+            (screen_height as f32 * 0.8).floor() as u32,
+            Color::rgbf(0., 0.3, 0.9),
+        );
+
+        // Tell renderer to execute all drawing commands
+        canvas.flush();
+        context.swap_buffers()?;
+        unsafe { context.make_not_current()? };
+        self.damaged.set(false);
+
+        Ok(())
+    }
+
+    fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError> {
+        let size = new_size.physical;
+        self.canvas.borrow_mut().set_size(size.width, size.height, new_size.scale_factor as f32);
+        self.damaged.set(true);
+
+        Ok(())
+    }
+
+    fn on_event(&self, event: Event) -> EventStatus {
+        if let Event::Mouse(MouseEvent::CursorMoved { position, .. }) = event {
+            if self.in_blue_area(position) {
+                self.window_context.set_mouse_cursor(MouseCursor::Working).unwrap();
+            } else {
+                self.window_context.set_mouse_cursor(MouseCursor::Hand).unwrap();
+            }
+        };
+
+        EventStatus::Captured
+    }
+}
+
+fn main() -> Result<(), baseview::Error> {
+    tracing_subscriber::fmt::init();
+
+    let window_open_options = WindowSettings::new()
+        .with_title("Baseview cursors")
+        .with_size(LogicalSize::new(512, 512))
+        .with_gl_config(GlConfig::default());
+
+    Window::create(window_open_options, CursorsExample::new)?.run_until_closed()?;
+    Ok(())
+}

@@ -1,5 +1,4 @@
 use crate::dpi::Size;
-use crate::platform::macos::cursor::Cursor;
 use crate::platform::macos::view::BaseviewView;
 use crate::platform::Result;
 use crate::platform::{PlatformHandle, WindowSharedState};
@@ -75,12 +74,10 @@ impl WindowContext {
 
     pub fn set_mouse_cursor(&self, cursor: MouseCursor) -> Result<()> {
         let Some(view) = self.view.load() else { return Ok(()) };
-        let native_cursor = Cursor::from(cursor);
-        if let Some(cursor) = native_cursor.load() {
-            view.addCursorRect_cursor(view.bounds(), &cursor);
-        } else {
-            NSCursor::hide()
-        }
+        let Some(view) = view.inner_ref() else { return Ok(()) };
+
+        view.inner.cursor_manager.set_cursor(cursor, view.view);
+
         Ok(())
     }
 
