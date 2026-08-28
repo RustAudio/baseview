@@ -1,3 +1,4 @@
+use crate::dpi::{PhysicalSize, Size};
 use crate::platform::win::keyboard::KeyboardState;
 use crate::platform::PlatformHandle;
 use crate::utils::SizingStrategy;
@@ -7,7 +8,6 @@ use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Dpi, ExtendedUser32};
 use crate::WindowSettings;
 use crate::{MouseCursor, WindowSize};
-use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, Ref, RefCell};
 use std::num::NonZeroIsize;

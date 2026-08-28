@@ -1,4 +1,4 @@
-use dpi::{LogicalSize, Size};
+use crate::dpi::{LogicalSize, Size};
 use objc2::rc::{autoreleasepool, Retained, Weak};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardTypeString, NSView, NSWindow};

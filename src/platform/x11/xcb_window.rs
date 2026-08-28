@@ -1,7 +1,7 @@
+use crate::dpi::PhysicalSize;
 use crate::platform::x11::error::CookieExt;
 use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::X11Connection;
-use dpi::PhysicalSize;
 use std::num::{NonZero, NonZeroU32};
 use std::rc::Rc;
 use x11rb::connection::Connection;

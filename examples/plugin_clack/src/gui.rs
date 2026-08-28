@@ -71,7 +71,9 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
             return None;
         };
 
-        Some(window_size_to_gui_size(gui.handle.size()))
+        let size = gui.handle.size().to_native_size();
+
+        Some(GuiSize { width: size.width, height: size.height })
     }
 
     fn can_resize(&mut self) -> bool {
@@ -96,13 +98,13 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
         let scale_factor = gui.handle.size().scale_factor;
 
         if let Some(max_size) = gui.handle.max_size() {
-            let max_size = size_to_gui_size(max_size, scale_factor);
+            let max_size = NativeSize::from_size(max_size, scale_factor);
             size.width = size.width.min(max_size.width);
             size.height = size.height.min(max_size.height);
         }
 
         if let Some(min_size) = gui.handle.min_size() {
-            let min_size = size_to_gui_size(min_size, scale_factor);
+            let min_size = NativeSize::from_size(min_size, scale_factor);
             size.width = size.width.max(min_size.width);
             size.height = size.height.max(min_size.height);
         }
@@ -115,8 +117,7 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
             return Err(PluginError::Message("set_size called without a GUI active"));
         };
 
-        let size = gui_size_to_window_size(size);
-        gui.handle.resize(size)?;
+        gui.handle.resize(NativeSize { width: size.width, height: size.height })?;
 
         Ok(())
     }
@@ -162,45 +163,6 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 }
 
-fn size_to_gui_size(size: Size, scale_factor: f64) -> GuiSize {
-    #[cfg(target_os = "macos")]
-    {
-        let size = size.to_logical(scale_factor);
-        GuiSize { width: size.width, height: size.height }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let size = size.to_physical(scale_factor);
-        GuiSize { width: size.width, height: size.height }
-    }
-}
-
-fn window_size_to_gui_size(size: WindowSize) -> GuiSize {
-    #[cfg(target_os = "macos")]
-    {
-        let size = size.logical.cast();
-        GuiSize { width: size.width, height: size.height }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let size = size.physical.cast();
-        GuiSize { width: size.width, height: size.height }
-    }
-}
-
-fn gui_size_to_window_size(size: GuiSize) -> Size {
-    #[cfg(target_os = "macos")]
-    {
-        Size::Logical(LogicalSize::new(size.width, size.height).cast())
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        Size::Physical(PhysicalSize::new(size.width, size.height))
-    }
-}
-
 struct MainThreadHandler {
     host: HostSharedHandle<'static>,
 }
@@ -218,8 +180,8 @@ struct HostGuiCallbacks {
 
 impl HostCallbacks for HostGuiCallbacks {
     fn request_resize(&mut self, new_size: WindowSize) -> Result<(), HandlerError> {
-        let size = window_size_to_gui_size(new_size);
-        self.ext.request_resize(&self.host, size.width, size.height)?;
+        let new_size = new_size.to_native_size();
+        self.ext.request_resize(&self.host, new_size.width, new_size.height)?;
         Ok(())
     }
 

@@ -1,11 +1,11 @@
 use super::xcb_connection::{Atoms, GetPropertyError};
 use super::*;
+use crate::dpi::PhysicalPosition;
 use crate::handler::WindowHandler;
 use crate::platform::x11::error::ReplyExt;
 use crate::warn;
 use crate::{DropData, Event, MouseEvent};
 use core::result::Result;
-use dpi::PhysicalPosition;
 use keyboard_types::Modifiers;
 use percent_encoding::percent_decode;
 use std::error::Error;

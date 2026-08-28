@@ -1,3 +1,4 @@
+use crate::dpi::{PhysicalSize, Size};
 use crate::platform::x11::event_loop::EventLoop;
 use crate::platform::x11::visibility_tree::AncestorVisibilityState;
 use crate::platform::x11::visual_info::WindowVisualConfig;
@@ -8,7 +9,6 @@ use crate::platform::*;
 use crate::utils::SizingStrategy;
 use crate::{warn, MouseCursor, WindowHandler, WindowSettings, WindowSize};
 use calloop::LoopSignal;
-use dpi::{PhysicalSize, Size};
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::cell::Cell;
 use std::rc::Rc;

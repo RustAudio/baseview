@@ -1,6 +1,6 @@
 use super::*;
+use crate::dpi::Size;
 use crate::{platform, MouseCursor, WindowSize};
-use dpi::Size;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };

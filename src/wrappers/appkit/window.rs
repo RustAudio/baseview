@@ -1,6 +1,6 @@
+use crate::dpi::LogicalSize;
 use crate::wrappers::appkit::{View, ViewImpl};
 use crate::WindowSettings;
-use dpi::LogicalSize;
 use objc2::rc::Retained;
 use objc2::{msg_send, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{NSBackingStoreType, NSWindow, NSWindowStyleMask};

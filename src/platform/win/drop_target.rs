@@ -1,6 +1,6 @@
 #![expect(clippy::indexing_slicing, reason = "To be refactored later")]
 
-use dpi::PhysicalPosition;
+use crate::dpi::PhysicalPosition;
 use std::cell::{Cell, RefCell};
 use std::ffi::OsString;
 use std::os::windows::prelude::OsStringExt;
