@@ -19,8 +19,8 @@ use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
 use objc2::{msg_send, AllocAnyThread, ClassType, MainThreadMarker};
 use objc2_app_kit::{
-    NSApplication, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
-    NSTrackingAreaOptions, NSView, NSWindow,
+    NSApplication, NSCursor, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType,
+    NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow,
 };
 use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
 use std::cell::{Cell, RefCell};
@@ -274,6 +274,9 @@ impl BaseviewView {
 impl Drop for BaseviewView {
     fn drop(&mut self) {
         self.state.closed.set(true);
+        if self.state.cursor_hidden.get() {
+            NSCursor::unhide();
+        }
     }
 }
 
