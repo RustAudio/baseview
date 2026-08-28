@@ -45,7 +45,7 @@ xkbcommon-dl = { version = "0.4.2", features = ["x11"] }
 x11-dl = { version = "2.21.0" }
 calloop = "0.14.4"
 percent-encoding = "2.3.2"
-bytemuck = { version = "1.25.0", features = ["extern_crate_alloc"] }
+bytemuck = { version = "1.25.2", features = ["extern_crate_alloc"] }
 
 [target.'cfg(target_os="windows")'.dependencies]
 windows = { version = "0.62.2", features = [
