@@ -76,7 +76,7 @@ impl WindowContext {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
-        view.inner.cursor_manager.set_cursor(cursor, view.view);
+        view.inner.cursor_manager.set_cursor(cursor);
 
         Ok(())
     }

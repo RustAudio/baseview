@@ -1,5 +1,3 @@
-use crate::platform::macos::view::BaseviewView;
-use crate::wrappers::appkit::View;
 use crate::MouseCursor;
 use objc2::__framework_prelude::Retained;
 use objc2::runtime::{MessageReceiver, Sel};
@@ -9,6 +7,7 @@ use objc2_foundation::{NSPoint, NSSize};
 use std::cell::{Cell, LazyCell, RefCell};
 
 pub struct CursorManager {
+    is_inside: Cell<bool>,
     current: Cell<MouseCursor>,
     current_cursor: RefCell<Retained<NSCursor>>,
     empty: LazyCell<Retained<NSCursor>>,
@@ -20,6 +19,7 @@ impl CursorManager {
             current: MouseCursor::Default.into(),
             current_cursor: NSCursor::arrowCursor().into(),
             empty: LazyCell::new(Self::create_empty_cursor),
+            is_inside: Cell::new(false),
         }
     }
 
@@ -28,24 +28,28 @@ impl CursorManager {
         NSCursor::initWithImage_hotSpot(NSCursor::alloc(), &image, NSPoint::ZERO)
     }
 
-    pub fn set_cursor(&self, cursor: MouseCursor, view: &View<BaseviewView>) {
+    pub fn set_is_inside(&self, is_inside: bool) {
+        self.is_inside.set(is_inside);
+    }
+
+    pub fn set_cursor(&self, cursor: MouseCursor) {
         if self.current.get() == cursor {
+            self.update_to_current_cursor();
             return;
         }
 
         self.current_cursor.replace(self.load(cursor.into()));
         self.current.set(cursor);
 
-        dbg!(cursor);
-        view.window().unwrap().enableCursorRects();
-
-        view.window().unwrap().invalidateCursorRectsForView(view);
-        eprintln!("invalidated cursor");
+        if self.is_inside.get() {
+            self.update_to_current_cursor();
+        }
     }
 
-    pub fn rebuild_cursor_rects(&self, view: &View<BaseviewView>) {
-        dbg!("rebuild cursor rects", view.bounds());
-        view.addCursorRect_cursor(view.bounds(), &self.current_cursor.borrow())
+    pub fn update_to_current_cursor(&self) {
+        //eprintln!("cursor set!");
+        NSCursor::crosshairCursor().set();
+        //self.current_cursor.borrow().set();
     }
 
     fn load(&self, cursor: Cursor) -> Retained<NSCursor> {

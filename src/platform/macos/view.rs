@@ -422,6 +422,7 @@ impl ViewImpl for BaseviewView {
 
     fn update_tracking_areas(this: ViewRef<Self>) {
         let tracking_areas = this.view.trackingAreas();
+        dbg!(tracking_areas.count());
         if tracking_areas.count() > 0 {
             let tracking_area = tracking_areas.objectAtIndex(0);
             this.view.removeTrackingArea(&tracking_area);
@@ -621,11 +622,20 @@ impl ViewImpl for BaseviewView {
     }
 
     fn mouse_entered(this: ViewRef<Self>) {
+        this.cursor_manager.set_is_inside(true);
+        // this.view.window().unwrap().disableCursorRects();
+        // NSCursor::pointingHandCursor().push();
         Self::trigger_event(this, Event::Mouse(MouseEvent::CursorEntered));
     }
 
     fn mouse_exited(this: ViewRef<Self>) {
+        // this.cursor_manager.set_is_inside(false);
+        // NSCursor::pointingHandCursor().pop();
         Self::trigger_event(this, Event::Mouse(MouseEvent::CursorLeft));
+    }
+
+    fn cursor_update(this: ViewRef<Self>) {
+        this.cursor_manager.update_to_current_cursor();
     }
 
     fn key_down(this: ViewRef<Self>, event: &NSEvent) {
@@ -669,10 +679,6 @@ impl ViewImpl for BaseviewView {
             }
         }
     }
-
-    fn reset_cursor_rects(this: ViewRef<Self>) {
-        this.cursor_manager.rebuild_cursor_rects(this.view)
-    }
 }
 
 /// Info:
@@ -683,7 +689,8 @@ fn new_tracking_area(this: &NSView) -> Retained<NSTrackingArea> {
     let options = NSTrackingAreaOptions::MouseEnteredAndExited
         | NSTrackingAreaOptions::MouseMoved
         | NSTrackingAreaOptions::CursorUpdate
-        | NSTrackingAreaOptions::ActiveInActiveApp
+        //| NSTrackingAreaOptions::ActiveInActiveApp
+        | NSTrackingAreaOptions::ActiveInKeyWindow
         | NSTrackingAreaOptions::InVisibleRect
         | NSTrackingAreaOptions::EnabledDuringMouseDrag;
 
@@ -691,7 +698,7 @@ fn new_tracking_area(this: &NSView) -> Retained<NSTrackingArea> {
     unsafe {
         NSTrackingArea::initWithRect_options_owner_userInfo(
             NSTrackingArea::alloc(),
-            this.bounds(),
+            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(0.0, 0.0)),
             options,
             Some(this),
             None,

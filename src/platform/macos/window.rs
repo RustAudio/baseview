@@ -66,6 +66,7 @@ impl WindowHandle {
         init: WindowInitializer, mtm: MainThreadMarker,
     ) -> Result<Self> {
         let window = create_window_with_options(&init.settings, mtm);
+        window.setAcceptsMouseMovedEvents(true);
 
         let final_size = window.contentRectForFrameRect(window.frame()).size;
         let final_size = LogicalSize::new(final_size.width, final_size.height);
