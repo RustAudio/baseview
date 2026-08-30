@@ -332,7 +332,15 @@ extern "C-unwind" fn window_did_resize<V: ViewImpl>(
     V::window_did_resize(inner);
 }
 
-extern "C-unwind" fn cursor_update<V: ViewImpl>(this: &View<V>, _sel: Sel, _: Option<&NSEvent>) {
-    let Some(inner) = this.inner_ref() else { return };
-    V::cursor_update(inner);
+extern "C-unwind" fn cursor_update<V: ViewImpl>(
+    this: &View<V>, _sel: Sel, event: Option<&NSEvent>,
+) {
+    if let Some(inner) = this.inner_ref() {
+        if V::cursor_update(inner, event) {
+            return;
+        };
+    }
+
+    // SAFETY: Our superclass is NSView
+    let _: () = unsafe { msg_send![super(this, NSView::class()), cursorUpdate: event] };
 }

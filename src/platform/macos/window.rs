@@ -1,7 +1,10 @@
 use crate::dpi::{LogicalSize, Size};
 use objc2::rc::{autoreleasepool, Retained, Weak};
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardTypeString, NSView, NSWindow};
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationPolicy, NSPasteboard, NSPasteboardTypeString, NSView,
+    NSWindow,
+};
 use objc2_foundation::{NSSize, NSString};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -85,6 +88,7 @@ impl WindowHandle {
         BaseviewView::show(view);
 
         let app = NSApplication::sharedApplication(self.mtm);
+        app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
 
         view.lifetime_tied_to_app.set(Some(Weak::from_retained(&app)));
         app.run();

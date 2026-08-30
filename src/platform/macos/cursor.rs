@@ -34,7 +34,6 @@ impl CursorManager {
 
     pub fn set_cursor(&self, cursor: MouseCursor) {
         if self.current.get() == cursor {
-            self.update_to_current_cursor();
             return;
         }
 
@@ -47,9 +46,8 @@ impl CursorManager {
     }
 
     pub fn update_to_current_cursor(&self) {
-        //eprintln!("cursor set!");
-        NSCursor::crosshairCursor().set();
-        //self.current_cursor.borrow().set();
+        //NSCursor::crosshairCursor().set();
+        self.current_cursor.borrow().set();
     }
 
     fn load(&self, cursor: Cursor) -> Retained<NSCursor> {

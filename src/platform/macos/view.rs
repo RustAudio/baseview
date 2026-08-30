@@ -20,10 +20,10 @@ use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
 use objc2::{msg_send, AllocAnyThread, ClassType, MainThreadMarker};
 use objc2_app_kit::{
-    NSApplication, NSCursor, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType,
-    NSResponder, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow,
+    NSApplication, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSResponder,
+    NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow,
 };
-use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{NSArray, NSNotification, NSPoint, NSPointInRect, NSRect, NSSize, NSString};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -422,7 +422,6 @@ impl ViewImpl for BaseviewView {
 
     fn update_tracking_areas(this: ViewRef<Self>) {
         let tracking_areas = this.view.trackingAreas();
-        dbg!(tracking_areas.count());
         if tracking_areas.count() > 0 {
             let tracking_area = tracking_areas.objectAtIndex(0);
             this.view.removeTrackingArea(&tracking_area);
@@ -623,19 +622,23 @@ impl ViewImpl for BaseviewView {
 
     fn mouse_entered(this: ViewRef<Self>) {
         this.cursor_manager.set_is_inside(true);
-        // this.view.window().unwrap().disableCursorRects();
-        // NSCursor::pointingHandCursor().push();
         Self::trigger_event(this, Event::Mouse(MouseEvent::CursorEntered));
     }
 
     fn mouse_exited(this: ViewRef<Self>) {
-        // this.cursor_manager.set_is_inside(false);
-        // NSCursor::pointingHandCursor().pop();
+        this.cursor_manager.set_is_inside(false);
         Self::trigger_event(this, Event::Mouse(MouseEvent::CursorLeft));
     }
 
-    fn cursor_update(this: ViewRef<Self>) {
-        this.cursor_manager.update_to_current_cursor();
+    fn cursor_update(this: ViewRef<Self>, event: Option<&NSEvent>) -> bool {
+        let Some(event) = event else { return false };
+        let point = this.view.convertPoint_fromView(event.locationInWindow(), None);
+        if NSPointInRect(point, this.view.frame()) {
+            this.cursor_manager.update_to_current_cursor();
+            true
+        } else {
+            false
+        }
     }
 
     fn key_down(this: ViewRef<Self>, event: &NSEvent) {
