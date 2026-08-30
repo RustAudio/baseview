@@ -8,7 +8,6 @@ use dispatch2::MainThreadBound;
 use objc2::rc::Weak;
 use objc2::runtime::NSObjectProtocol;
 use objc2::{MainThreadMarker, Message};
-use objc2_app_kit::NSCursor;
 use raw_window_handle::DisplayHandle;
 use std::rc::Rc;
 
