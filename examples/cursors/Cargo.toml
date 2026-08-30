@@ -1,0 +1,9 @@
+[package]
+name = "cursors"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+baseview = { path = "../..", features = ["opengl", "tracing"] }
+femtovg = "0.26"
+tracing-subscriber = { workspace = true }

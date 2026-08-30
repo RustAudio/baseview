@@ -1,7 +1,10 @@
 use crate::dpi::{LogicalSize, Size};
 use objc2::rc::{autoreleasepool, Retained, Weak};
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardTypeString, NSView, NSWindow};
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationPolicy, NSPasteboard, NSPasteboardTypeString, NSView,
+    NSWindow,
+};
 use objc2_foundation::{NSSize, NSString};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -66,6 +69,7 @@ impl WindowHandle {
         init: WindowInitializer, mtm: MainThreadMarker,
     ) -> Result<Self> {
         let window = create_window_with_options(&init.settings, mtm);
+        window.setAcceptsMouseMovedEvents(true);
 
         let final_size = window.contentRectForFrameRect(window.frame()).size;
         let final_size = LogicalSize::new(final_size.width, final_size.height);
@@ -84,6 +88,7 @@ impl WindowHandle {
         BaseviewView::show(view);
 
         let app = NSApplication::sharedApplication(self.mtm);
+        app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
 
         view.lifetime_tied_to_app.set(Some(Weak::from_retained(&app)));
         app.run();
@@ -180,7 +185,6 @@ pub(crate) struct WindowSharedState {
     pub size: Cell<LogicalSize<f64>>,
     pub scale_factor: Cell<f64>,
     pub sizing_strategy: SizingStrategy,
-    pub cursor_hidden: Cell<bool>,
 }
 
 impl WindowSharedState {
@@ -190,7 +194,6 @@ impl WindowSharedState {
             size: size.into(),
             scale_factor: scale_factor.into(),
             sizing_strategy,
-            cursor_hidden: false.into(),
         }
     }
 }

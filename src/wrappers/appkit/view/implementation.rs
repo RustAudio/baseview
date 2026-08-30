@@ -66,8 +66,8 @@ pub unsafe fn create_view_class<V: ViewImpl>() -> &'static AnyClass {
         );
         class.add_method(sel!(hitTest:), hit_test::<V> as extern "C-unwind" fn(_, _, _) -> _);
         class.add_method(
-            sel!(updateTrackingAreas:),
-            update_tracking_areas::<V> as extern "C-unwind" fn(_, _, _) -> _,
+            sel!(updateTrackingAreas),
+            update_tracking_areas::<V> as extern "C-unwind" fn(_, _) -> _,
         );
 
         class.add_method(sel!(mouseMoved:), mouse_moved::<V> as extern "C-unwind" fn(_, _, _) -> _);
@@ -90,8 +90,8 @@ pub unsafe fn create_view_class<V: ViewImpl>() -> &'static AnyClass {
         );
 
         class.add_method(
-            sel!(viewDidChangeBackingProperties:),
-            view_did_change_backing_properties::<V> as extern "C-unwind" fn(_, _, _) -> _,
+            sel!(viewDidChangeBackingProperties),
+            view_did_change_backing_properties::<V> as extern "C-unwind" fn(_, _) -> _,
         );
 
         class.add_method(
@@ -138,6 +138,8 @@ pub unsafe fn create_view_class<V: ViewImpl>() -> &'static AnyClass {
         class.add_method(sel!(keyDown:), key_down::<V> as extern "C-unwind" fn(_, _, _));
         class.add_method(sel!(keyUp:), key_up::<V> as extern "C-unwind" fn(_, _, _));
         class.add_method(sel!(flagsChanged:), flags_changed::<V> as extern "C-unwind" fn(_, _, _));
+
+        class.add_method(sel!(cursorUpdate:), cursor_update::<V> as extern "C-unwind" fn(_, _, _));
     }
 
     class.add_ivar::<*mut c_void>(BASEVIEW_STATE_IVAR);
@@ -187,9 +189,7 @@ extern "C-unwind" fn window_should_close<V: ViewImpl>(
     V::window_should_close(inner).into()
 }
 
-extern "C-unwind" fn view_did_change_backing_properties<V: ViewImpl>(
-    this: &View<V>, _: Sel, _: &AnyObject,
-) {
+extern "C-unwind" fn view_did_change_backing_properties<V: ViewImpl>(this: &View<V>, _: Sel) {
     let Some(inner) = this.inner_ref() else { return };
     V::view_did_change_backing_properties(inner, true);
 }
@@ -207,7 +207,7 @@ extern "C-unwind" fn view_will_move_to_window<V: ViewImpl>(
     V::view_will_move_to_window(inner, new_window);
 }
 
-extern "C-unwind" fn update_tracking_areas<V: ViewImpl>(this: &View<V>, _self: Sel, _: &AnyObject) {
+extern "C-unwind" fn update_tracking_areas<V: ViewImpl>(this: &View<V>, _self: Sel) {
     let Some(inner) = this.inner_ref() else { return };
     V::update_tracking_areas(inner);
 }
@@ -264,12 +264,18 @@ extern "C-unwind" fn handle_notification<V: ViewImpl>(
     V::handle_notification(inner, notification)
 }
 
-extern "C-unwind" fn mouse_entered<V: ViewImpl>(this: &View<V>, _: Sel, _: &AnyObject) {
+extern "C-unwind" fn mouse_entered<V: ViewImpl>(this: &View<V>, _: Sel, event: &NSEvent) {
+    // SAFETY: Our superclass is NSView
+    let _: () = unsafe { msg_send![super(this, NSView::class()), mouseEntered: event] };
+
     let Some(inner) = this.inner_ref() else { return };
     V::mouse_entered(inner);
 }
 
-extern "C-unwind" fn mouse_exited<V: ViewImpl>(this: &View<V>, _: Sel, _: &AnyObject) {
+extern "C-unwind" fn mouse_exited<V: ViewImpl>(this: &View<V>, _: Sel, event: &NSEvent) {
+    // SAFETY: Our superclass is NSView
+    let _: () = unsafe { msg_send![super(this, NSView::class()), mouseExited: event] };
+
     let Some(inner) = this.inner_ref() else { return };
     V::mouse_exited(inner);
 }
@@ -324,4 +330,17 @@ extern "C-unwind" fn window_did_resize<V: ViewImpl>(
 ) {
     let Some(inner) = this.inner_ref() else { return };
     V::window_did_resize(inner);
+}
+
+extern "C-unwind" fn cursor_update<V: ViewImpl>(
+    this: &View<V>, _sel: Sel, event: Option<&NSEvent>,
+) {
+    if let Some(inner) = this.inner_ref() {
+        if V::cursor_update(inner, event) {
+            return;
+        };
+    }
+
+    // SAFETY: Our superclass is NSView
+    let _: () = unsafe { msg_send![super(this, NSView::class()), cursorUpdate: event] };
 }

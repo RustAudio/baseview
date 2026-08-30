@@ -185,6 +185,7 @@ pub trait ViewImpl: Sized {
 
     fn mouse_entered(this: ViewRef<Self>);
     fn mouse_exited(this: ViewRef<Self>);
+    fn cursor_update(this: ViewRef<Self>, event: Option<&NSEvent>) -> bool;
 
     fn key_down(this: ViewRef<Self>, event: &NSEvent);
     fn key_up(this: ViewRef<Self>, event: &NSEvent);

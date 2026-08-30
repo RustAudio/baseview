@@ -4,6 +4,7 @@ use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
 use crate::dpi::{LogicalPosition, LogicalSize, Size};
 use crate::host::Host;
+use crate::platform::macos::cursor::CursorManager;
 use crate::platform::*;
 use crate::tracing::warn;
 use crate::utils::SizingStrategy;
@@ -19,10 +20,10 @@ use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
 use objc2::{msg_send, AllocAnyThread, ClassType, MainThreadMarker};
 use objc2_app_kit::{
-    NSApplication, NSCursor, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType,
-    NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow,
+    NSApplication, NSDragOperation, NSDraggingInfo, NSEvent, NSFilenamesPboardType, NSTrackingArea,
+    NSTrackingAreaOptions, NSView, NSWindow,
 };
-use objc2_foundation::{NSArray, NSNotification, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{NSArray, NSNotification, NSPoint, NSPointInRect, NSRect, NSSize, NSString};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -73,6 +74,7 @@ pub(crate) struct BaseviewView {
     pub(crate) lifetime_tied_to_app: Cell<Option<Weak<NSApplication>>>,
 
     host: Host,
+    pub(crate) cursor_manager: CursorManager,
 
     #[cfg(feature = "opengl")]
     pub(crate) gl_context: std::cell::OnceCell<super::gl::GlContext>,
@@ -103,6 +105,7 @@ impl BaseviewView {
             parenting: ViewParentingType::Uninitialized.into(),
             host: init.host,
             lifetime_tied_to_app: None.into(),
+            cursor_manager: CursorManager::new(),
 
             #[cfg(feature = "opengl")]
             gl_context: std::cell::OnceCell::new(),
@@ -274,9 +277,6 @@ impl BaseviewView {
 impl Drop for BaseviewView {
     fn drop(&mut self) {
         self.state.closed.set(true);
-        if self.state.cursor_hidden.get() {
-            NSCursor::unhide();
-        }
     }
 }
 
@@ -416,9 +416,7 @@ impl ViewImpl for BaseviewView {
         }
 
         unsafe {
-            let superclass = msg_send![this.view, superclass];
-
-            let () = msg_send![super(this.view, superclass), viewWillMoveToWindow: new_window];
+            let () = msg_send![super(this.view, NSView::class()), viewWillMoveToWindow: new_window];
         }
     }
 
@@ -446,6 +444,9 @@ impl ViewImpl for BaseviewView {
                 modifiers: make_modifiers(event.modifierFlags()),
             }),
         );
+
+        // SAFETY: Our superclass is NSView
+        let _: () = unsafe { msg_send![super(this.view, NSView::class()), mouseMoved: event] };
     }
 
     fn scroll_wheel(this: ViewRef<Self>, event: &NSEvent) {
@@ -620,11 +621,24 @@ impl ViewImpl for BaseviewView {
     }
 
     fn mouse_entered(this: ViewRef<Self>) {
+        this.cursor_manager.set_is_inside(true);
         Self::trigger_event(this, Event::Mouse(MouseEvent::CursorEntered));
     }
 
     fn mouse_exited(this: ViewRef<Self>) {
+        this.cursor_manager.set_is_inside(false);
         Self::trigger_event(this, Event::Mouse(MouseEvent::CursorLeft));
+    }
+
+    fn cursor_update(this: ViewRef<Self>, event: Option<&NSEvent>) -> bool {
+        let Some(event) = event else { return false };
+        let point = this.view.convertPoint_fromView(event.locationInWindow(), None);
+        if NSPointInRect(point, this.view.frame()) {
+            this.cursor_manager.update_to_current_cursor();
+            true
+        } else {
+            false
+        }
     }
 
     fn key_down(this: ViewRef<Self>, event: &NSEvent) {
@@ -678,7 +692,8 @@ fn new_tracking_area(this: &NSView) -> Retained<NSTrackingArea> {
     let options = NSTrackingAreaOptions::MouseEnteredAndExited
         | NSTrackingAreaOptions::MouseMoved
         | NSTrackingAreaOptions::CursorUpdate
-        | NSTrackingAreaOptions::ActiveInActiveApp
+        //| NSTrackingAreaOptions::ActiveInActiveApp
+        | NSTrackingAreaOptions::ActiveInKeyWindow
         | NSTrackingAreaOptions::InVisibleRect
         | NSTrackingAreaOptions::EnabledDuringMouseDrag;
 
@@ -686,7 +701,7 @@ fn new_tracking_area(this: &NSView) -> Retained<NSTrackingArea> {
     unsafe {
         NSTrackingArea::initWithRect_options_owner_userInfo(
             NSTrackingArea::alloc(),
-            this.bounds(),
+            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(0.0, 0.0)),
             options,
             Some(this),
             None,
