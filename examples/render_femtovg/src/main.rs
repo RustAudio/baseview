@@ -116,6 +116,7 @@ impl WindowHandler for FemtovgExample {
 }
 
 fn main() -> Result<(), baseview::Error> {
+    unsafe { baseview::assume_standalone_in_process() };
     tracing_subscriber::fmt::init();
 
     let window_open_options = WindowSettings::new()

@@ -124,6 +124,7 @@ impl WindowHandler for ChildWindowHandler {
 }
 
 fn main() -> Result<(), baseview::Error> {
+    unsafe { baseview::assume_standalone_in_process() };
     let window_open_options = WindowSettings::new().with_size(LogicalSize::new(512.0, 512.0));
 
     Window::create(window_open_options, ParentWindowHandler::new)?.run_until_closed()?;

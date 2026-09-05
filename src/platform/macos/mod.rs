@@ -103,3 +103,8 @@ impl PartialEq for ParentWindowHandle {
 }
 
 impl Eq for ParentWindowHandle {}
+
+#[inline]
+pub fn assume_standalone_in_process() {
+    // No-op on macOS
+}
