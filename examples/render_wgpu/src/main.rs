@@ -211,6 +211,9 @@ impl WindowHandler for WgpuExample {
 
 fn main() -> Result<(), baseview::Error> {
     env_logger::builder().filter_level(LevelFilter::Debug).init();
+
+    unsafe { baseview::assume_standalone_in_process() };
+
     let window_open_options = WindowSettings::new()
         .with_title("WGPU on Baseview")
         .with_size(LogicalSize::new(512, 512))

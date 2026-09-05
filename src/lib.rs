@@ -30,3 +30,8 @@ pub(crate) use tracing::*;
 
 mod utils;
 pub(crate) mod wrappers;
+
+#[inline]
+pub unsafe fn assume_standalone_in_process() {
+    platform::assume_standalone_in_process()
+}
