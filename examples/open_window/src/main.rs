@@ -140,6 +140,8 @@ impl WindowHandler for OpenWindowExample {
 }
 
 fn main() -> Result<(), baseview::Error> {
+    unsafe { baseview::assume_standalone_in_process() };
+
     let window_open_options = WindowSettings::new().with_size(LogicalSize::new(512.0, 512.0));
 
     let (mut tx, rx) = RingBuffer::new(128);
