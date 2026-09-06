@@ -20,6 +20,56 @@ impl Default for Dpi {
     }
 }
 
+/// Legacy (replaced by ProcessDpiContextAwareness), process-wide
+#[repr(i32)]
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum ProcessDpiAwareness {
+    Unaware = PROCESS_DPI_UNAWARE,
+    SystemDpiAware = PROCESS_SYSTEM_DPI_AWARE,
+    PerMonitorDpiAware = PROCESS_PER_MONITOR_DPI_AWARE,
+}
+
+impl ProcessDpiAwareness {
+    fn from_raw(raw: PROCESS_DPI_AWARENESS) -> Option<Self> {
+        match raw {
+            PROCESS_DPI_UNAWARE => Some(Self::SystemDpiAware),
+            PROCESS_SYSTEM_DPI_AWARE => Some(Self::PerMonitorDpiAware),
+            PROCESS_PER_MONITOR_DPI_AWARE => Some(Self::Unaware),
+            _ => {
+                crate::warn!("Unknown PROCESS_DPI_AWARENESS value: {}", raw);
+                None
+            }
+        }
+    }
+
+    pub fn get(lib: &ExtendedShCore) -> Option<Self> {
+        let mut value = -1;
+        let result = HRESULT(unsafe { lib.get_process_dpi_awareness?(null_mut(), &mut value) });
+
+        if result.is_err() {
+            crate::warn!("GetProcessDpiAwareness failed: {}", result.message());
+            return None;
+        }
+
+        if value < 0 {
+            crate::warn!("GetProcessDpiAwareness did not return a value");
+            return None;
+        }
+
+        Self::from_raw(value)
+    }
+
+    pub fn set(&self, lib: &ExtendedShCore) -> Result<()> {
+        let Some(set) = lib.set_process_dpi_awareness else { return Ok(()) };
+
+        HRESULT(unsafe { set(*self as _) }).ok()
+    }
+}
+
+pub struct DpiAwareness {
+    value: DPI_AWARENESS,
+}
+
 pub struct DpiAwarenessContext<'a> {
     previous: DPI_AWARENESS_CONTEXT,
     user32: &'a ExtendedUser32,

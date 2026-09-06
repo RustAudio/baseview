@@ -2,9 +2,7 @@ use crate::wrappers::win32::{Module, RawLibrary};
 use std::ffi::CStr;
 use windows_sys::core::BOOL;
 use windows_sys::Win32::Foundation::{HANDLE, HWND, RECT};
-use windows_sys::Win32::UI::HiDpi::{
-    DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
-};
+use windows_sys::Win32::UI::HiDpi::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::{WINDOW_EX_STYLE, WINDOW_STYLE};
 
 type AdjustWindowRectExForDpi =
@@ -17,6 +15,7 @@ type GetDpiAwarenessContextForProcess = unsafe extern "system" fn(HANDLE) -> DPI
 type GetDpiForSystem = unsafe extern "system" fn() -> u32;
 type GetDpiForWindow = unsafe extern "system" fn(HWND) -> u32;
 type GetDpiFromDpiAwarenessContext = unsafe extern "system" fn(DPI_AWARENESS_CONTEXT) -> u32;
+type GetProcessDpiAwarenessContext = unsafe extern "system" fn(HANDLE) -> u32;
 type GetSystemDpiForProcess = unsafe extern "system" fn(HANDLE) -> u32;
 type GetWindowDpiAwarenessContext = unsafe extern "system" fn(HWND) -> DPI_AWARENESS_CONTEXT;
 type GetWindowDpiHostingBehavior = unsafe extern "system" fn(HWND) -> DPI_HOSTING_BEHAVIOR;
@@ -24,7 +23,6 @@ type IsValidDpiAwarenessContext = unsafe extern "system" fn(DPI_AWARENESS_CONTEX
 type SetProcessDpiAwarenessContext = unsafe extern "system" fn(DPI_AWARENESS_CONTEXT) -> BOOL;
 type SetThreadDpiAwarenessContext =
     unsafe extern "system" fn(DPI_AWARENESS_CONTEXT) -> DPI_AWARENESS_CONTEXT;
-type SetProcessDpiAwarenessContext = unsafe extern "system" fn(DPI_AWARENESS_CONTEXT) -> BOOL;
 
 // Checks the above typedefs match the function definitions from windows_sys
 const _: () = {

@@ -7,7 +7,7 @@ mod window_state;
 
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
-use crate::wrappers::win32::ExtendedUser32;
+use crate::wrappers::win32::{ExtendedUser32, LibraryModule};
 pub use error::{PlatformError, Result};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle,
@@ -99,7 +99,7 @@ impl Display for ParentWindowHandleError {
 
 #[inline]
 pub fn assume_standalone_in_process() {
-    let user32 = match ExtendedUser32::load() {
+    let user32 = match unsafe { LibraryModule::<ExtendedUser32>::load() } {
         Ok(user32) => user32,
         Err(e) => {
             crate::warn!("Failed to load user32.dll: {}", e);
