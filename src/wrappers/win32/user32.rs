@@ -1,5 +1,5 @@
-use crate::wrappers::win32::LibraryModule;
-use std::ffi::c_void;
+use crate::wrappers::win32::{LibraryModule, Module, RawLibrary};
+use std::ffi::{c_void, CStr};
 use std::mem::transmute;
 use windows_core::{s, Error};
 use windows_sys::core::BOOL;
@@ -31,56 +31,33 @@ type AdjustWindowRectExForDpi = unsafe extern "system" fn(
     dpi: u32,
 ) -> BOOL;
 
-impl ExtendedUser32 {
-    pub fn load() -> Result<Self, Error> {
-        let library = unsafe { LibraryModule::load(s!("user32.dll"))? };
+type IsValidDpiAwarenessContext = unsafe extern "system" fn(value: DPI_AWARENESS_CONTEXT) -> BOOL;
 
-        unsafe {
-            Ok(Self {
-                set_thread_dpi_awareness_context: library
-                    .get_proc_address(s!("SetThreadDpiAwarenessContext"))
-                    .map(|p| transmute::<*const c_void, SetThreadDpiAwarenessContext>(p)),
-                adjust_window_rect_ex_for_dpi: library
-                    .get_proc_address(s!("AdjustWindowRectExForDpi"))
-                    .map(|p| transmute::<*const c_void, AdjustWindowRectExForDpi>(p)),
-                get_dpi_for_window: library
-                    .get_proc_address(s!("GetDpiForWindow"))
-                    .map(|p| transmute::<*const c_void, GetDpiForWindow>(p)),
-                set_process_dpi_awareness_context: library
-                    .get_proc_address(s!("SetProcessDpiAwarenessContext"))
-                    .map(|p| transmute::<*const c_void, SetProcessDpiAwarenessContext>(p)),
-                _library: library,
-            })
-        }
-    }
+// Checks the above typedefs match the function definitions from windows_sys
+const _: () = {
+    let _: GetDpiForWindow = GetDpiForWindow;
+    let _: AdjustWindowRectExForDpi = AdjustWindowRectExForDpi;
+    let _: SetThreadDpiAwarenessContext = SetThreadDpiAwarenessContext;
+    let _: IsValidDpiAwarenessContext = IsValidDpiAwarenessContext;
+};
 
-    pub fn set_process_dpi_awareness_context(&self) -> Result<(), Error> {
-        let Some(func) = self.set_process_dpi_awareness_context else { return Ok(()) };
-
-        let result = unsafe { func(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
-
-        if result == 0 {
-            return Err(Error::from_thread());
-        }
-
-        Ok(())
-    }
+#[derive(Copy, Clone)]
+pub struct ExtendedUser32 {
+    pub set_thread_dpi_awareness_context: Option<SetThreadDpiAwarenessContext>,
+    pub adjust_window_rect_ex_for_dpi: Option<AdjustWindowRectExForDpi>,
+    pub get_dpi_for_window: Option<GetDpiForWindow>,
 }
 
-impl Clone for ExtendedUser32 {
-    fn clone(&self) -> Self {
-        let library = unsafe { LibraryModule::load(s!("user32.dll")) };
+impl Module for ExtendedUser32 {
+    const MODULE_NAME: &'static CStr = c"user32.dll";
 
-        // PANIC: This should not be able to happen, since we already loaded it once and it's still loaded in Clone
-        let Ok(library) = library else { unreachable!() };
-
-        Self {
-            _library: library,
-
-            set_thread_dpi_awareness_context: self.set_thread_dpi_awareness_context,
-            adjust_window_rect_ex_for_dpi: self.adjust_window_rect_ex_for_dpi,
-            get_dpi_for_window: self.get_dpi_for_window,
-            set_process_dpi_awareness_context: self.set_process_dpi_awareness_context,
+    fn load(library: &RawLibrary) -> Self {
+        unsafe {
+            Self {
+                set_thread_dpi_awareness_context: library.get(c"SetThreadDpiAwarenessContext"),
+                adjust_window_rect_ex_for_dpi: library.get(c"AdjustWindowRectExForDpi"),
+                get_dpi_for_window: library.get(c"GetDpiForWindow"),
+            }
         }
     }
 }

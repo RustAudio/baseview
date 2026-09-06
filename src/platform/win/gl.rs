@@ -10,19 +10,19 @@ use crate::wrappers::win32::window::{
     with_dummy_window, HWnd, OwnDeviceContext, PixelFormat, PixelFormatAttribs, WglContext,
     WglExtra,
 };
-use crate::wrappers::win32::LibraryModule;
+use crate::wrappers::win32::{ExtendedUser32, LibraryModule, RawLibrary};
 
 pub type GlContext = Rc<GlContextInner>;
 
 pub struct GlContextInner {
     hdc: OwnDeviceContext,
     wgl_ctx: WglContext,
-    gl_library: LibraryModule,
+    gl_library: RawLibrary,
 }
 
 impl GlContextInner {
     pub fn create(window: HWnd, config: GlConfig) -> Result<Self, windows_core::Error> {
-        let gl_library = unsafe { LibraryModule::load(s!("opengl32.dll"))? };
+        let gl_library = unsafe { RawLibrary::load(c"opengl32.dll")? };
 
         // Create temporary window and context to load function pointers
         let extra = with_dummy_window(|hwnd_tmp| {
@@ -69,8 +69,7 @@ impl GlContextInner {
             return addr as *const c_void;
         }
 
-        let symbol_ptr = PCSTR::from_raw(symbol_ptr);
-        if let Some(addr) = unsafe { self.gl_library.get_proc_address(symbol_ptr) } {
+        if let Some(addr) = unsafe { self.gl_library.get(symbol) } {
             return addr;
         }
 

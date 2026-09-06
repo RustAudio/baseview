@@ -22,8 +22,8 @@ use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
-    ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessContext, ExtendedUser32, Rect,
-    WindowStyle,
+    ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessContext, ExtendedUser32,
+    LibraryModule, Rect, WindowStyle,
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 
@@ -695,7 +695,7 @@ unsafe fn wnd_proc_inner(
 
 impl WindowHandle {
     pub fn create_window(init: WindowInitializer) -> Result<WindowHandle> {
-        let extended_user_32 = ExtendedUser32::load()?;
+        let extended_user_32 = unsafe { LibraryModule::load()? };
 
         let shared_state = WindowSharedState::new(extended_user_32, &init.settings);
 

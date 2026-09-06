@@ -5,7 +5,7 @@ use crate::utils::SizingStrategy;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
-use crate::wrappers::win32::{Dpi, ExtendedUser32};
+use crate::wrappers::win32::{Dpi, ExtendedUser32, LibraryModule};
 use crate::WindowSettings;
 use crate::{MouseCursor, WindowSize};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
@@ -23,7 +23,7 @@ pub(crate) struct WindowState {
     pub mouse_was_outside_window: Cell<bool>,
     pub cursor_icon: Cell<MouseCursor>,
 
-    pub user32: ExtendedUser32,
+    pub user32: LibraryModule<ExtendedUser32>,
     pub shared: Rc<WindowSharedState>,
 
     #[cfg(feature = "opengl")]
@@ -31,7 +31,9 @@ pub(crate) struct WindowState {
 }
 
 impl WindowState {
-    pub fn new(hwnd: HWnd, user32: ExtendedUser32, shared: Rc<WindowSharedState>) -> Self {
+    pub fn new(
+        hwnd: HWnd, user32: LibraryModule<ExtendedUser32>, shared: Rc<WindowSharedState>,
+    ) -> Self {
         Self {
             hwnd,
             keyboard_state: RefCell::new(KeyboardState::new()),
@@ -131,12 +133,12 @@ pub struct WindowSharedState {
     pub resize_host_originated: Cell<bool>,
     pub destroy_host_originated: Cell<bool>,
 
-    pub user32: ExtendedUser32,
+    pub user32: LibraryModule<ExtendedUser32>,
     pub sizing_strategy: SizingStrategy,
 }
 
 impl WindowSharedState {
-    pub fn new(user32: ExtendedUser32, settings: &WindowSettings) -> Rc<Self> {
+    pub fn new(user32: LibraryModule<ExtendedUser32>, settings: &WindowSettings) -> Rc<Self> {
         Self {
             parented: (settings.parent.is_some() || settings.wait_for_parent).into(),
             is_alive: true.into(),
