@@ -43,7 +43,7 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
                 inner.initialize(window)
             };
 
-            handle_error_as_fatal(result, window, inner_ptr)
+            (handle_error_as_fatal(result, window, inner_ptr) == 0) as _
         }
         WM_CREATE => {
             let create = unsafe { &*(l_param as *const CREATESTRUCTW) };

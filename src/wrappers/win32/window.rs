@@ -87,11 +87,11 @@ pub fn create_window<W: WindowImpl>(
             parent.map(|p| p.as_raw()).unwrap_or(null_mut()),
             null_mut(),
             instance.as_raw(),
-            Rc::into_raw(data).cast(),
+            Rc::into_raw(Rc::clone(&data)).cast(),
         )
     };
 
-    let Some(hwnd) = NonNull::new(hwnd) else { return Err(Error::from_thread()) };
+    let Some(hwnd) = NonNull::new(hwnd) else { return Err(dbg!(Error::from_thread())) };
     // SAFETY: This Hwnd is valid since it came from CreateWindowExW
     let hwnd = unsafe { HWnd::from_raw(hwnd) };
 
