@@ -1,7 +1,6 @@
 use std::ffi::{c_void, CStr};
 use std::num::NonZeroI32;
 use std::rc::Rc;
-use windows_core::{s, PCSTR};
 use windows_sys::Win32::Graphics::OpenGL::wglGetProcAddress;
 
 use crate::gl::*;
@@ -10,7 +9,7 @@ use crate::wrappers::win32::window::{
     with_dummy_window, HWnd, OwnDeviceContext, PixelFormat, PixelFormatAttribs, WglContext,
     WglExtra,
 };
-use crate::wrappers::win32::{ExtendedUser32, LibraryModule, RawLibrary};
+use crate::wrappers::win32::{RawLibrary};
 
 pub type GlContext = Rc<GlContextInner>;
 

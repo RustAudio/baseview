@@ -21,7 +21,7 @@ mod tracing_impl {
     pub struct SpanGuard;
     impl Span {
         pub fn entered(&self) -> SpanGuard {
-            SpanGuard;
+            SpanGuard
         }
     }
 
@@ -29,7 +29,7 @@ mod tracing_impl {
         ($($f:tt)*) => {
             {
                 let _ = ($($f)*);
-                Span
+                crate::Span
             }
         };
     }

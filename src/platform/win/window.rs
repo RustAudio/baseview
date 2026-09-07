@@ -16,14 +16,13 @@ use super::drop_target::DropTarget;
 use super::*;
 use crate::handler::WindowHandlerBuilder;
 use crate::host::Host;
-use crate::platform::win::dpi::DpiScalingStrategy;
 use crate::platform::win::window_state::{WindowSharedState, WindowState};
 use crate::platform::PlatformError;
 use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
-    ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, ExtendedUser32,
+    ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard,
     LibraryModule, Rect, WindowStyle,
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};

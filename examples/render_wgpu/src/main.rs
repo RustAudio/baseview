@@ -6,6 +6,7 @@ use baseview::{
 
 use log::LevelFilter;
 use std::cell::RefCell;
+use tracing::Level;
 
 struct WgpuExample {
     window_context: WindowContext,
@@ -210,7 +211,9 @@ impl WindowHandler for WgpuExample {
 }
 
 fn main() -> Result<(), baseview::Error> {
-    env_logger::builder().filter_level(LevelFilter::Debug).init();
+    tracing_subscriber::fmt::fmt()
+        .with_max_level(Level::DEBUG)
+        .init();
 
     unsafe { baseview::assume_standalone_in_process() };
 
