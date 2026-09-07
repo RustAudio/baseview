@@ -17,6 +17,7 @@ impl DpiScalingStrategy {
     pub fn get(
         user32: Option<&ExtendedUser32>, parent: Option<HWnd>, settings: &WindowSettings,
     ) -> Self {
+        let _span = crate::debug_span!("DpiScalingStrategy");
         let shcore = LibraryModule::<ExtendedShCore>::lazy();
 
         // If we have an OpenGL context, then we must follow the process' DPI awareness setting.
@@ -31,15 +32,18 @@ impl DpiScalingStrategy {
         //      https://forums.developer.nvidia.com/t/high-dpi-scaling-bug-with-nvidia-drivers-and-opengl-on-windows-10/79615
         #[cfg(feature = "opengl")]
         if settings.gl_config.is_some() {
+            crate::debug!("OpenGL context requested: bypassing DPI awareness checking, using process DPI awareness instead.");
             return Self::get_from_process(user32, &shcore);
         }
 
         let Some(user32_lib) = user32 else {
+            crate::debug!("user32.dll is unavailable: falling back to legacy Windows 8 APIs for DPI awareness detection.");
             return Self::get_from_process_legacy(&shcore);
         };
 
         if let Some(parent) = parent {
             let Some(parent_dpi_ctx) = parent.get_dpi_awareness_context(user32_lib) else {
+                crate::debug!("Could not get DPI Awareness Context from parent, falling back to process DPI Awareness.");
                 return Self::get_from_process(user32, &shcore);
             };
 
@@ -79,10 +83,15 @@ impl DpiScalingStrategy {
         use DpiAwarenessContextType::*;
 
         let dpi_awareness_type = parent_dpi_awareness_context.get_type(user32);
+        crate::debug!(
+            "Parent DPI hosting behavior is mixed, parent DPI Awareness Context type is {:?}.",
+            dpi_awareness_type
+        );
 
         // These are documented to not be compatible with per-monitor awareness types, so we'll fall back to System-aware
         // See: https://learn.microsoft.com/en-us/windows/win32/api/windef/ne-windef-dpi_hosting_behavior#remarks
         if matches!(dpi_awareness_type, Some(Unaware | UnawareGDIScaled | SystemDpiAware)) {
+            crate::debug!("Parent has DPI Awareness Context with Per-Monitor DPI awareness, falling back to System DPI Awareness.");
             return Self {
                 assume_96_dpi: false,
                 thread_dpi_awareness_context: Some(SystemDpiAware.into()),
@@ -99,6 +108,8 @@ impl DpiScalingStrategy {
 
         let dpi_awareness_type = dpi_awareness_context.get_type(user32);
 
+        crate::debug!("Using DPI Awareness Context of type {:?}.", dpi_awareness_type);
+
         // If type is unknown, assume it's better than System-Aware, and we can at least fetch the actual DPI.
         let assume_96_dpi = matches!(dpi_awareness_type, Some(Unaware | UnawareGDIScaled));
 
@@ -111,6 +122,8 @@ impl DpiScalingStrategy {
         let Some(shcore) = LazyCell::deref(shcore) else { return Self::completely_unaware() };
 
         let awareness = ProcessDpiAwareness::get(shcore);
+
+        crate::debug!("Using legacy Process DPI Awareness: {:?}", awareness);
 
         let assume_96_dpi = matches!(awareness, None | Some(Unaware));
 
@@ -125,6 +138,7 @@ impl DpiScalingStrategy {
         user32: &ExtendedUser32, shcore: &LazyLibraryModule<ExtendedShCore>,
     ) -> Self {
         let Some(best_supported) = DpiAwarenessContextType::best_supported(user32) else {
+            crate::debug!("No DPI Awareness Context types are available. Falling back to legacy Windows 8 APIs.");
             return Self::get_from_process_legacy(shcore);
         };
 

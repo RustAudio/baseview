@@ -39,7 +39,7 @@ impl Default for Dpi {
 
 /// Win8 Legacy (replaced by DpiAwarenessContext in Win10), process-wide
 #[repr(i32)]
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum ProcessDpiAwareness {
     Unaware = PROCESS_DPI_UNAWARE,
     SystemDpiAware = PROCESS_SYSTEM_DPI_AWARE,
@@ -84,7 +84,7 @@ impl ProcessDpiAwareness {
 }
 
 /// Windows 10, version 1607
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum DpiAwarenessContextType {
     Unaware,
     UnawareGDIScaled,
