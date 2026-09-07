@@ -321,7 +321,7 @@ impl WindowImpl for BaseviewWindow {
 
         self._keyboard_hook.set(Some(hook::init_keyboard_hook(window.as_raw())));
 
-        if !window_state.shared.dpi_scaling_strategy.get().assume_96_dpi() {
+        if !window_state.shared.dpi_scaling_strategy.get().assume_96_dpi {
             // Now we can get the actual dpi of the window.
             let dpi = window.get_dpi(&self.window_state.user32)?;
 
@@ -716,7 +716,7 @@ unsafe fn wnd_proc_inner(
 
 impl WindowHandle {
     pub fn create_window(init: WindowInitializer) -> Result<WindowHandle> {
-        let extended_user_32 = unsafe { LibraryModule::load()? };
+        let extended_user_32 = LibraryModule::load()?;
 
         let shared_state = WindowSharedState::new(extended_user_32, &init.settings);
 

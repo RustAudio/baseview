@@ -290,23 +290,20 @@ impl HWnd {
 
     pub fn get_dpi_awareness_context(
         &self, user32: &ExtendedUser32,
-    ) -> Result<Option<DpiAwarenessContext>> {
-        let Some(get_window_dpi_awareness_context) = user32.get_window_dpi_awareness_context else {
-            return Ok(None);
-        };
-
-        let result = unsafe { get_window_dpi_awareness_context(self.as_raw()) };
+    ) -> Option<DpiAwarenessContext> {
+        let result = unsafe { user32.get_window_dpi_awareness_context?(self.as_raw()) };
 
         let Some(raw) = NonNull::new(result) else {
-            return Err(Error::from_thread());
+            crate::warn!("Failed to get DpiAwarenessContext from window: {}", Error::from_thread());
+            return None;
         };
 
         let ctx = DpiAwarenessContext::from_raw(raw);
 
         if ctx.is_valid(user32) == Some(false) {
-            return Ok(None);
+            return None;
         }
 
-        Ok(Some(ctx))
+        Some(ctx)
     }
 }

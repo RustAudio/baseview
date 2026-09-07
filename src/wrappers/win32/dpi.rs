@@ -1,6 +1,7 @@
 use super::*;
 use crate::platform::DpiScalingStrategy;
 use crate::wrappers::win32::user32::ExtendedUser32;
+use crate::wrappers::win32::DpiAwarenessContextType::*;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 use windows_core::{Error, Result};
@@ -21,6 +22,7 @@ impl Dpi {
     pub fn get_system(user32: &ExtendedUser32) -> Option<Self> {
         if let Some(get_dpi_for_system) = user32.get_dpi_for_system {
             Some(Self(unsafe { get_dpi_for_system() }))
+            // This is unlikely to be present if the above isn't, but it's worth a try
         } else if let Some(get_system_dpi_for_process) = user32.get_system_dpi_for_process {
             Some(Self(unsafe { get_system_dpi_for_process(null_mut()) }))
         } else {
@@ -85,6 +87,7 @@ impl ProcessDpiAwareness {
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum DpiAwarenessContextType {
     Unaware,
+    UnawareGDIScaled,
     SystemDpiAware,
     PerMonitorDpiAware,
     /// Windows 10, version 1703
@@ -92,13 +95,13 @@ pub enum DpiAwarenessContextType {
 }
 
 impl DpiAwarenessContextType {
+    // Sorted by order of goodness
+    const ALL: [Self; 5] =
+        [PerMonitorDpiAwareV2, PerMonitorDpiAware, SystemDpiAware, Unaware, UnawareGDIScaled];
+
     /// Windows 10, version 1607
     pub fn best_supported(user32: &ExtendedUser32) -> Option<Self> {
-        use DpiAwarenessContextType::*;
-
-        let ordered = [PerMonitorDpiAwareV2, PerMonitorDpiAware, SystemDpiAware, Unaware];
-
-        for awareness_type in ordered {
+        for awareness_type in Self::ALL {
             if DpiAwarenessContext::from(awareness_type).is_valid(user32)? {
                 return Some(awareness_type);
             }
@@ -146,6 +149,12 @@ impl DpiAwarenessContext {
         Some(Ok(()))
     }
 
+    pub fn get_from_process(user32: &ExtendedUser32) -> Option<Self> {
+        let context = unsafe { user32.get_dpi_awareness_context_for_process?(null_mut()) };
+
+        NonNull::new(context).map(Self::from_raw)
+    }
+
     /// Windows 10, version 1803
     pub fn dpi(&self, user32: &ExtendedUser32) -> Option<Dpi> {
         todo!()
@@ -164,17 +173,32 @@ impl DpiAwarenessContext {
             } == TRUE,
         )
     }
+
+    /// Returns None if type is unknown
+    ///
+    /// Windows 10, version 1607
+    pub(crate) fn get_type(&self, user32: &ExtendedUser32) -> Option<DpiAwarenessContextType> {
+        for dpi_type in DpiAwarenessContextType::ALL {
+            let context = DpiAwarenessContext::from(dpi_type);
+            if context.is_valid(user32)? && self.equals(context, &user32)? {
+                return Some(dpi_type);
+            }
+        }
+
+        None
+    }
 }
 
 impl From<DpiAwarenessContextType> for DpiAwarenessContext {
     fn from(value: DpiAwarenessContextType) -> Self {
+        use DpiAwarenessContextType::*;
+
         let inner = match value {
-            DpiAwarenessContextType::Unaware => DPI_AWARENESS_CONTEXT_UNAWARE,
-            DpiAwarenessContextType::SystemDpiAware => DPI_AWARENESS_CONTEXT_SYSTEM_AWARE,
-            DpiAwarenessContextType::PerMonitorDpiAware => DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE,
-            DpiAwarenessContextType::PerMonitorDpiAwareV2 => {
-                DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
-            }
+            Unaware => DPI_AWARENESS_CONTEXT_UNAWARE,
+            UnawareGDIScaled => DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED,
+            SystemDpiAware => DPI_AWARENESS_CONTEXT_SYSTEM_AWARE,
+            PerMonitorDpiAware => DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE,
+            PerMonitorDpiAwareV2 => DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
         };
 
         let Some(inner) = NonNull::new(inner) else { unreachable!() };
@@ -193,11 +217,11 @@ pub struct DpiAwarenessGuard<'a> {
 
 impl<'a> DpiAwarenessGuard<'a> {
     pub fn new(user32: &'a ExtendedUser32, strategy: DpiScalingStrategy) -> Result<Self> {
-        let Some(new_context) = strategy.thread_dpi_awareness_context_type() else {
+        let Some(new_context) = strategy.thread_dpi_awareness_context else {
             return Ok(Self { inner: None });
         };
 
-        match DpiAwarenessContext::from(new_context).set_thread(user32) {
+        match new_context.set_thread(user32) {
             None => Ok(Self { inner: None }),
             Some(Err(e)) => Err(e),
             Some(Ok(previous)) => Ok(Self { inner: Some((previous, user32)) }),

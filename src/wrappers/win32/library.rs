@@ -1,3 +1,4 @@
+use std::cell::LazyCell;
 use std::ffi::{c_void, CStr};
 use std::ops::Deref;
 use std::ptr::NonNull;
@@ -18,10 +19,27 @@ pub struct LibraryModule<M> {
     module: M,
 }
 
+pub type LazyLibraryModule<M> = LazyCell<Option<LibraryModule<M>>>;
+
 impl<M: Module> LibraryModule<M> {
     pub fn load() -> Result<Self, Error> {
         let library = unsafe { RawLibrary::load(M::MODULE_NAME)? };
         Ok(Self { module: M::load(&library), _library: library })
+    }
+
+    pub fn lazy() -> LazyLibraryModule<M> {
+        LazyCell::new(|| match Self::load() {
+            Ok(module) => Some(module),
+            Err(err) => {
+                crate::warn!(
+                    "Error loading module '{}': {}",
+                    M::MODULE_NAME.to_string_lossy(),
+                    err
+                );
+
+                None
+            }
+        })
     }
 }
 
