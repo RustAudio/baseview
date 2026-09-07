@@ -1,11 +1,12 @@
 use crate::dpi::{PhysicalSize, Size};
+use crate::platform::win::dpi::DpiScalingStrategy;
 use crate::platform::win::keyboard::KeyboardState;
 use crate::platform::PlatformHandle;
 use crate::utils::SizingStrategy;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
-use crate::wrappers::win32::{Dpi, ExtendedUser32, LibraryModule};
+use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule};
 use crate::WindowSettings;
 use crate::{MouseCursor, WindowSize};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
@@ -88,7 +89,9 @@ impl WindowState {
         let dpi = self.shared.current_dpi.get();
         let new_size = size.to_physical(self.shared.scale_factor());
 
-        self.hwnd.resize_and_activate(new_size, dpi, &self.user32)?;
+        let ctx = DpiAwarenessGuard::new(&self.user32)?;
+
+        self.hwnd.resize_and_activate(new_size, dpi, &ctx)?;
         Ok(())
     }
 
@@ -132,6 +135,7 @@ pub struct WindowSharedState {
     pub fallback_scale_factor: Cell<Option<f64>>,
     pub resize_host_originated: Cell<bool>,
     pub destroy_host_originated: Cell<bool>,
+    pub dpi_scaling_strategy: Cell<DpiScalingStrategy>,
 
     pub user32: LibraryModule<ExtendedUser32>,
     pub sizing_strategy: SizingStrategy,
@@ -149,8 +153,19 @@ impl WindowSharedState {
             destroy_host_originated: false.into(),
             sizing_strategy: SizingStrategy::from_settings(settings),
             user32,
+            dpi_scaling_strategy: DpiScalingStrategy::default().into(),
         }
         .into()
+    }
+
+    pub fn init_parent(&self, parent: Option<HWnd>) {
+        let strategy = DpiScalingStrategy::get(&self.user32, parent);
+
+        if strategy.assume_96_dpi() {
+            self.current_dpi.set(Some(Dpi::default()));
+        }
+
+        self.dpi_scaling_strategy.set(strategy);
     }
 
     pub fn size(&self) -> WindowSize {

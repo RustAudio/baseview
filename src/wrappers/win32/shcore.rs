@@ -21,6 +21,12 @@ pub struct ExtendedShCore {
     pub set_process_dpi_awareness: Option<SetProcessDpiAwareness>,
 }
 
+impl ExtendedShCore {
+    pub fn can_handle_process_dpi_awareness(&self) -> bool {
+        self.get_process_dpi_awareness.is_some() && self.set_process_dpi_awareness.is_some()
+    }
+}
+
 impl Module for ExtendedShCore {
     const MODULE_NAME: &'static CStr = c"api-ms-win-shcore-scaling-l1-1-1.dll";
 

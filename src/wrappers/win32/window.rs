@@ -21,7 +21,7 @@ use std::rc::Rc;
 use window_class::RegisteredClass;
 use windows_core::{Error, Result, HSTRING};
 
-use crate::wrappers::win32::dpi::DpiAwarenessContext;
+use crate::wrappers::win32::dpi::DpiAwarenessGuard;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::style::WindowStyle;
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
@@ -63,7 +63,7 @@ pub trait WindowImpl: 'static {
 /// [`WindowImpl::after_create`] instead.
 pub fn create_window<W: WindowImpl>(
     title: &HSTRING, style: WindowStyle, nc_size: PhysicalSize<u32>, parent: Option<HWnd>,
-    _dpi_ctx: &DpiAwarenessContext, initializer: impl FnOnce(HWnd) -> W + 'static,
+    _dpi_ctx: &DpiAwarenessGuard, initializer: impl FnOnce(HWnd) -> W + 'static,
 ) -> Result<HWnd> {
     let instance = HInstance::get_from_dll();
     let window_class = RegisteredClass::register_new(instance, Some(wnd_proc::<W>))?;

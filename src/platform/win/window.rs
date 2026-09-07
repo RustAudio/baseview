@@ -16,13 +16,14 @@ use super::drop_target::DropTarget;
 use super::*;
 use crate::handler::WindowHandlerBuilder;
 use crate::host::Host;
+use crate::platform::win::dpi::DpiScalingStrategy;
 use crate::platform::win::window_state::{WindowSharedState, WindowState};
 use crate::platform::PlatformError;
 use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
-    ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessContext, ExtendedUser32,
+    ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, ExtendedUser32,
     LibraryModule, Rect, WindowStyle,
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
@@ -85,7 +86,8 @@ impl WindowHandle {
         };
 
         let _guard = self.state.originate_host_resize();
-        hwnd.resize_and_activate(new_size, self.state.current_dpi.get(), &self.state.user32)?;
+        let dpi_ctx = DpiAwarenessGuard::new(&self.state.user32)?;
+        hwnd.resize_and_activate(new_size, self.state.current_dpi.get(), &dpi_ctx)?;
 
         if self.state.current_size.get() == new_size {
             Ok(())
@@ -118,8 +120,9 @@ impl WindowHandle {
         }
 
         let _guard = self.state.originate_host_resize();
+        let dpi_ctx = DpiAwarenessGuard::new(&self.state.user32)?;
 
-        hwnd.resize_and_activate(new_size, None, &self.state.user32)?;
+        hwnd.resize_and_activate(new_size, None, &dpi_ctx)?;
 
         if self.state.current_size.get() == new_size {
             Ok(())
@@ -216,9 +219,12 @@ pub struct BaseviewWindow {
 
 impl BaseviewWindow {
     pub fn create(shared_state: Rc<WindowSharedState>, init: WindowInitializer) -> Result<HWnd> {
-        let dpi_ctx = DpiAwarenessContext::new(&shared_state.user32)?;
-
         let style = WindowStyle::from_settings(&init.settings);
+        let parent = init.settings.parent.map(|p| p.inner.handle);
+
+        shared_state.init_parent(parent);
+
+        let dpi_ctx = DpiAwarenessGuard::new(&shared_state.user32)?;
 
         let window_size = shared_state.current_size.get();
 
@@ -249,7 +255,6 @@ impl BaseviewWindow {
             }
         };
 
-        let parent = init.settings.parent.map(|p| p.inner.handle);
         let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, None)?;
         let title = HSTRING::from(init.settings.title);
         let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
@@ -309,28 +314,30 @@ impl Drop for BaseviewWindow {
 
 impl WindowImpl for BaseviewWindow {
     fn after_create(&self, window: HWnd) -> core::result::Result<(), PlatformError> {
-        let hwnd = window.as_raw();
         let window_state = &self.window_state;
 
-        self._keyboard_hook.set(Some(hook::init_keyboard_hook(hwnd)));
+        self._keyboard_hook.set(Some(hook::init_keyboard_hook(window.as_raw())));
 
-        // Now we can get the actual dpi of the window.
-        let dpi = window.get_dpi(&self.window_state.user32)?;
+        if !window_state.shared.dpi_scaling_strategy.get().assume_96_dpi() {
+            // Now we can get the actual dpi of the window.
+            let dpi = window.get_dpi(&self.window_state.user32)?;
 
-        if let Some(dpi) = dpi {
-            if Some(dpi) != window_state.shared.current_dpi.get() {
-                window_state.shared.current_dpi.set(Some(dpi));
+            if let Some(dpi) = dpi {
+                if Some(dpi) != window_state.shared.current_dpi.get() {
+                    window_state.shared.current_dpi.set(Some(dpi));
 
-                // We cannot create a window in "logical" pixels, and we can't DPI-scale to physical pixels because we
-                // have no way to know where the window will end up.
-                // So, at window creation, we assume a DPI=96, and if it ends up wrong, we resize the window
-                // to the actual logical size the user desired.
-                let new_size = self.initial_size.to_physical(dpi.scale_factor());
+                    // We cannot create a window in "logical" pixels, and we can't DPI-scale to physical pixels because we
+                    // have no way to know where the window will end up.
+                    // So, at window creation, we assume a DPI=96, and if it ends up wrong, we resize the window
+                    // to the actual logical size the user desired.
+                    let new_size = self.initial_size.to_physical(dpi.scale_factor());
 
-                // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
-                // doesn't also emit Resized.
-                window_state.shared.current_size.set(new_size);
-                window.resize_and_activate(new_size, Some(dpi), &window_state.user32)?;
+                    // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
+                    // doesn't also emit Resized.
+                    window_state.shared.current_size.set(new_size);
+                    let guard = DpiAwarenessGuard::new(&window_state.shared.user32)?;
+                    window.resize_and_activate(new_size, Some(dpi), &guard)?;
+                }
             }
         }
 
@@ -587,7 +594,7 @@ unsafe fn wnd_proc_inner(
             let suggested_nc_rect = Rect((lparam as *const RECT).read());
             let dpi = Dpi((wparam & 0xFFFF) as u16 as u32);
 
-            let dpi_ctx = DpiAwarenessContext::new(&window_state.user32).unwrap();
+            let dpi_ctx = DpiAwarenessGuard::new(&window_state.user32).unwrap();
             let style = window.get_style().unwrap();
             let suggested_rect =
                 dpi_ctx.nc_area_to_client_area(suggested_nc_rect, style, Some(dpi)).unwrap();
@@ -661,7 +668,7 @@ unsafe fn wnd_proc_inner(
 
             let info = lparam as *mut MINMAXINFO;
 
-            let ctx = DpiAwarenessContext::new(&window_state.user32).unwrap();
+            let ctx = DpiAwarenessGuard::new(&window_state.user32).unwrap();
             let style = window.get_style().unwrap();
             let dpi = window_state.shared.current_dpi.get();
 

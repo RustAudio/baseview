@@ -7,7 +7,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{WINDOW_EX_STYLE, WINDOW_STYLE}
 
 type AdjustWindowRectExForDpi =
     unsafe extern "system" fn(*mut RECT, WINDOW_STYLE, BOOL, WINDOW_EX_STYLE, u32) -> BOOL;
-type AreDpiAwarenessContextsEqual =
+pub type AreDpiAwarenessContextsEqual =
     unsafe extern "system" fn(DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT) -> BOOL;
 type EnableNonClientDpiScaling = unsafe extern "system" fn(HWND) -> BOOL;
 type GetAwarenessFromDpiAwarenessContext = unsafe extern "system" fn(DPI_AWARENESS_CONTEXT) -> BOOL;

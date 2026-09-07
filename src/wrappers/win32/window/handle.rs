@@ -1,8 +1,8 @@
 ﻿use crate::dpi::{PhysicalPosition, PhysicalSize};
-use crate::wrappers::win32::dpi::{Dpi, DpiAwarenessContext};
+use crate::wrappers::win32::dpi::{Dpi, DpiAwarenessGuard};
 use crate::wrappers::win32::style::WindowStyle;
 use crate::wrappers::win32::user32::ExtendedUser32;
-use crate::wrappers::win32::{LibraryModule, Rect};
+use crate::wrappers::win32::Rect;
 use std::ffi::c_void;
 use std::num::NonZeroUsize;
 use std::ptr::{null_mut, NonNull};
@@ -151,10 +151,8 @@ impl HWnd {
     }
 
     pub fn resize_and_activate(
-        &self, client_size: PhysicalSize<u32>, window_dpi: Option<Dpi>,
-        user32: &LibraryModule<ExtendedUser32>,
+        &self, client_size: PhysicalSize<u32>, window_dpi: Option<Dpi>, dpi_ctx: &DpiAwarenessGuard,
     ) -> Result<()> {
-        let dpi_ctx = DpiAwarenessContext::new(user32)?;
         let style = self.get_style()?;
 
         let rect = Rect::from(client_size);

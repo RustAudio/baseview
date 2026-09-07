@@ -1,3 +1,4 @@
+mod dpi;
 mod drop_target;
 mod error;
 mod hook;
@@ -97,7 +98,6 @@ impl Display for ParentWindowHandleError {
     }
 }
 
-#[inline]
 pub fn assume_standalone_in_process() {
     let user32 = match unsafe { LibraryModule::<ExtendedUser32>::load() } {
         Ok(user32) => user32,
