@@ -1,9 +1,10 @@
 use super::*;
+use crate::platform::DpiScalingStrategy;
 use crate::wrappers::win32::user32::ExtendedUser32;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 use windows_core::{Error, Result};
-use windows_sys::Win32::Foundation::{RECT, TRUE};
+use windows_sys::Win32::Foundation::{FALSE, RECT, TRUE};
 use windows_sys::Win32::UI::HiDpi::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::{AdjustWindowRectEx, USER_DEFAULT_SCREEN_DPI};
 
@@ -16,6 +17,7 @@ impl Dpi {
     }
 
     /// Windows 10, version 1607
+    #[allow(clippy::manual_map, reason = "This is more readable")]
     pub fn get_system(user32: &ExtendedUser32) -> Option<Self> {
         if let Some(get_dpi_for_system) = user32.get_dpi_for_system {
             Some(Self(unsafe { get_dpi_for_system() }))
@@ -79,12 +81,31 @@ impl ProcessDpiAwareness {
     }
 }
 
+/// Windows 10, version 1607
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum DpiAwarenessContextType {
     Unaware,
     SystemDpiAware,
     PerMonitorDpiAware,
+    /// Windows 10, version 1703
     PerMonitorDpiAwareV2,
+}
+
+impl DpiAwarenessContextType {
+    /// Windows 10, version 1607
+    pub fn best_supported(user32: &ExtendedUser32) -> Option<Self> {
+        use DpiAwarenessContextType::*;
+
+        let ordered = [PerMonitorDpiAwareV2, PerMonitorDpiAware, SystemDpiAware, Unaware];
+
+        for awareness_type in ordered {
+            if DpiAwarenessContext::from(awareness_type).is_valid(user32)? {
+                return Some(awareness_type);
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -93,6 +114,10 @@ pub struct DpiAwarenessContext {
 }
 
 impl DpiAwarenessContext {
+    pub fn from_raw(raw: NonNull<c_void>) -> Self {
+        Self { inner: raw }
+    }
+
     /// Windows 10, version 1607
     pub fn is_valid(&self, user32: &ExtendedUser32) -> Option<bool> {
         Some(unsafe { user32.is_valid_dpi_awareness_context?(self.inner.as_ptr()) } == TRUE)
@@ -107,6 +132,18 @@ impl DpiAwarenessContext {
         let Some(inner) = NonNull::new(previous) else { return Some(Err(Error::from_thread())) };
 
         Some(Ok(Self { inner }))
+    }
+
+    pub fn set_process(&self, user32: &ExtendedUser32) -> Option<Result<()>> {
+        let result = unsafe {
+            user32.set_process_dpi_awareness_context?(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+        };
+
+        if result == FALSE {
+            return Some(Err(Error::from_thread()));
+        }
+
+        Some(Ok(()))
     }
 
     /// Windows 10, version 1803
@@ -155,17 +192,16 @@ pub struct DpiAwarenessGuard<'a> {
 }
 
 impl<'a> DpiAwarenessGuard<'a> {
-    pub fn new(user32: &'a ExtendedUser32) -> Result<Self> {
-        let Some(set_thread_dpi_awareness_context) = user32.set_thread_dpi_awareness_context else {
+    pub fn new(user32: &'a ExtendedUser32, strategy: DpiScalingStrategy) -> Result<Self> {
+        let Some(new_context) = strategy.thread_dpi_awareness_context_type() else {
             return Ok(Self { inner: None });
         };
 
-        let previous =
-            unsafe { set_thread_dpi_awareness_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
-
-        let Some(previous) = NonNull::new(previous) else { return Err(Error::from_thread()) };
-
-        Ok(DpiAwarenessGuard { inner: Some((DpiAwarenessContext { inner: previous }, user32)) })
+        match DpiAwarenessContext::from(new_context).set_thread(user32) {
+            None => Ok(Self { inner: None }),
+            Some(Err(e)) => Err(e),
+            Some(Ok(previous)) => Ok(Self { inner: Some((previous, user32)) }),
+        }
     }
 
     pub fn client_area_to_nc_area(

@@ -2,15 +2,16 @@
 use crate::wrappers::win32::dpi::{Dpi, DpiAwarenessGuard};
 use crate::wrappers::win32::style::WindowStyle;
 use crate::wrappers::win32::user32::ExtendedUser32;
-use crate::wrappers::win32::Rect;
+use crate::wrappers::win32::{DpiAwarenessContext, Rect};
 use std::ffi::c_void;
 use std::num::NonZeroUsize;
 use std::ptr::{null_mut, NonNull};
 use windows::Win32::System::Ole::IDropTarget;
 use windows_core::{Error, Interface, InterfaceRef, Result, HRESULT};
-use windows_sys::Win32::Foundation::{SetLastError, HWND, POINT, S_OK};
+use windows_sys::Win32::Foundation::{SetLastError, HWND, POINT, S_OK, TRUE};
 use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
 use windows_sys::Win32::System::Ole::{RegisterDragDrop, RevokeDragDrop};
+use windows_sys::Win32::UI::HiDpi::DPI_HOSTING_BEHAVIOR_MIXED;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
 };
@@ -275,5 +276,37 @@ impl HWnd {
     #[cfg(feature = "opengl")]
     pub fn get_own_dc(&self) -> Result<super::OwnDeviceContext> {
         super::OwnDeviceContext::from_window(*self)
+    }
+
+    pub fn supports_mixed_dpi_hosting_behavior(&self, user32: &ExtendedUser32) -> bool {
+        let Some(get_window_dpi_hosting_behavior) = user32.get_window_dpi_hosting_behavior else {
+            return false;
+        };
+
+        let result = unsafe { get_window_dpi_hosting_behavior(self.as_raw()) };
+
+        result == DPI_HOSTING_BEHAVIOR_MIXED
+    }
+
+    pub fn get_dpi_awareness_context(
+        &self, user32: &ExtendedUser32,
+    ) -> Result<Option<DpiAwarenessContext>> {
+        let Some(get_window_dpi_awareness_context) = user32.get_window_dpi_awareness_context else {
+            return Ok(None);
+        };
+
+        let result = unsafe { get_window_dpi_awareness_context(self.as_raw()) };
+
+        let Some(raw) = NonNull::new(result) else {
+            return Err(Error::from_thread());
+        };
+
+        let ctx = DpiAwarenessContext::from_raw(raw);
+
+        if ctx.is_valid(user32) == Some(false) {
+            return Ok(None);
+        }
+
+        Ok(Some(ctx))
     }
 }

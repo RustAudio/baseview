@@ -86,7 +86,8 @@ impl WindowHandle {
         };
 
         let _guard = self.state.originate_host_resize();
-        let dpi_ctx = DpiAwarenessGuard::new(&self.state.user32)?;
+        let dpi_ctx =
+            DpiAwarenessGuard::new(&self.state.user32, self.state.dpi_scaling_strategy.get())?;
         hwnd.resize_and_activate(new_size, self.state.current_dpi.get(), &dpi_ctx)?;
 
         if self.state.current_size.get() == new_size {
@@ -120,7 +121,8 @@ impl WindowHandle {
         }
 
         let _guard = self.state.originate_host_resize();
-        let dpi_ctx = DpiAwarenessGuard::new(&self.state.user32)?;
+        let dpi_ctx =
+            DpiAwarenessGuard::new(&self.state.user32, self.state.dpi_scaling_strategy.get())?;
 
         hwnd.resize_and_activate(new_size, None, &dpi_ctx)?;
 
@@ -219,12 +221,13 @@ pub struct BaseviewWindow {
 
 impl BaseviewWindow {
     pub fn create(shared_state: Rc<WindowSharedState>, init: WindowInitializer) -> Result<HWnd> {
+        shared_state.init(&init);
+
         let style = WindowStyle::from_settings(&init.settings);
         let parent = init.settings.parent.map(|p| p.inner.handle);
 
-        shared_state.init_parent(parent);
-
-        let dpi_ctx = DpiAwarenessGuard::new(&shared_state.user32)?;
+        let dpi_ctx =
+            DpiAwarenessGuard::new(&shared_state.user32, shared_state.dpi_scaling_strategy.get())?;
 
         let window_size = shared_state.current_size.get();
 
@@ -335,7 +338,10 @@ impl WindowImpl for BaseviewWindow {
                     // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
                     // doesn't also emit Resized.
                     window_state.shared.current_size.set(new_size);
-                    let guard = DpiAwarenessGuard::new(&window_state.shared.user32)?;
+                    let guard = DpiAwarenessGuard::new(
+                        &window_state.shared.user32,
+                        self.shared_state.dpi_scaling_strategy.get(),
+                    )?;
                     window.resize_and_activate(new_size, Some(dpi), &guard)?;
                 }
             }
@@ -594,7 +600,11 @@ unsafe fn wnd_proc_inner(
             let suggested_nc_rect = Rect((lparam as *const RECT).read());
             let dpi = Dpi((wparam & 0xFFFF) as u16 as u32);
 
-            let dpi_ctx = DpiAwarenessGuard::new(&window_state.user32).unwrap();
+            let dpi_ctx = DpiAwarenessGuard::new(
+                &window_state.user32,
+                window_state.shared.dpi_scaling_strategy.get(),
+            )
+            .unwrap();
             let style = window.get_style().unwrap();
             let suggested_rect =
                 dpi_ctx.nc_area_to_client_area(suggested_nc_rect, style, Some(dpi)).unwrap();
@@ -668,7 +678,11 @@ unsafe fn wnd_proc_inner(
 
             let info = lparam as *mut MINMAXINFO;
 
-            let ctx = DpiAwarenessGuard::new(&window_state.user32).unwrap();
+            let ctx = DpiAwarenessGuard::new(
+                &window_state.user32,
+                window_state.shared.dpi_scaling_strategy.get(),
+            )
+            .unwrap();
             let style = window.get_style().unwrap();
             let dpi = window_state.shared.current_dpi.get();
 

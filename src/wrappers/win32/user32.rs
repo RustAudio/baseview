@@ -60,7 +60,7 @@ pub struct ExtendedUser32 {
     pub set_thread_dpi_awareness_context: Option<SetThreadDpiAwarenessContext>,
 }
 
-impl Module for ExtendedUser32 {
+unsafe impl Module for ExtendedUser32 {
     const MODULE_NAME: &'static CStr = c"user32.dll";
 
     fn load(library: &RawLibrary) -> Self {

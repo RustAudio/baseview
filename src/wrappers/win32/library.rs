@@ -5,7 +5,10 @@ use windows_core::Error;
 use windows_sys::Win32::Foundation::FreeLibrary;
 use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 
-pub trait Module: Clone + Sized {
+/// # Safety
+///
+/// Implementations must ensure that the module with name `MODULE_NAME` is safe to load.
+pub unsafe trait Module: Clone + Sized {
     const MODULE_NAME: &'static CStr;
     fn load(library: &RawLibrary) -> Self;
 }
@@ -16,8 +19,8 @@ pub struct LibraryModule<M> {
 }
 
 impl<M: Module> LibraryModule<M> {
-    pub unsafe fn load() -> Result<Self, Error> {
-        let library = RawLibrary::load(M::MODULE_NAME)?;
+    pub fn load() -> Result<Self, Error> {
+        let library = unsafe { RawLibrary::load(M::MODULE_NAME)? };
         Ok(Self { module: M::load(&library), _library: library })
     }
 }

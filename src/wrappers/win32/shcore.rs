@@ -27,7 +27,7 @@ impl ExtendedShCore {
     }
 }
 
-impl Module for ExtendedShCore {
+unsafe impl Module for ExtendedShCore {
     const MODULE_NAME: &'static CStr = c"api-ms-win-shcore-scaling-l1-1-1.dll";
 
     fn load(library: &RawLibrary) -> Self {
