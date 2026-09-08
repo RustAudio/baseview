@@ -1,6 +1,6 @@
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{
-    DpiAwarenessContext, DpiAwarenessContextType, ExtendedShCore, ExtendedUser32,
+    Dpi, DpiAwarenessContext, DpiAwarenessContextType, ExtendedShCore, ExtendedUser32,
     LazyLibraryModule, LibraryModule, ProcessDpiAwareness,
 };
 use crate::WindowSettings;
@@ -143,6 +143,24 @@ impl DpiScalingStrategy {
         };
 
         Self::get_from_specific_dpi_awareness_context(best_supported.into(), user32)
+    }
+}
+
+impl DpiScalingStrategy {
+    pub fn get_dpi_for_window(&self, own_window: HWnd, user32: &ExtendedUser32) -> Option<Dpi> {
+        if self.assume_96_dpi {
+            return Some(Dpi::default());
+        }
+
+        if let Some(dpi) = own_window.get_dpi(user32) {
+            return Some(dpi);
+        }
+
+        if let Some(dpi) = own_window.get_dpi_awareness_context(user32).and_then(|d| d.dpi(user32))
+        {
+            return Some(dpi);
+        }
+        todo!()
     }
 }
 

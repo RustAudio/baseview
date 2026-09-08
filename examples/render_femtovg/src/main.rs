@@ -122,6 +122,7 @@ fn main() -> Result<(), baseview::Error> {
         .init();
 
     unsafe { baseview::assume_standalone_in_process() };
+    tracing_subscriber::fmt::fmt().with_max_level(Level::DEBUG).init();
 
     let window_open_options = WindowSettings::new()
         .with_title("Femtovg on Baseview")

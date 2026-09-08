@@ -3,6 +3,7 @@ use crate::platform::DpiScalingStrategy;
 use crate::wrappers::win32::user32::ExtendedUser32;
 use crate::wrappers::win32::DpiAwarenessContextType::*;
 use std::ffi::c_void;
+use std::num::NonZeroU32;
 use std::ptr::NonNull;
 use windows_core::{Error, Result};
 use windows_sys::Win32::Foundation::{FALSE, RECT, TRUE};
@@ -10,30 +11,35 @@ use windows_sys::Win32::UI::HiDpi::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::{AdjustWindowRectEx, USER_DEFAULT_SCREEN_DPI};
 
 #[derive(Copy, Clone, Eq, PartialEq)]
-pub struct Dpi(pub u32);
+pub struct Dpi(pub NonZeroU32);
 
 impl Dpi {
     pub fn scale_factor(&self) -> f64 {
-        self.0 as f64 / USER_DEFAULT_SCREEN_DPI as f64
+        self.0.get() as f64 / USER_DEFAULT_SCREEN_DPI as f64
     }
 
     /// Windows 10, version 1607
     #[allow(clippy::manual_map, reason = "This is more readable")]
     pub fn get_system(user32: &ExtendedUser32) -> Option<Self> {
         if let Some(get_dpi_for_system) = user32.get_dpi_for_system {
-            Some(Self(unsafe { get_dpi_for_system() }))
+            Some(Self(NonZeroU32::new(unsafe { get_dpi_for_system() })?))
             // This is unlikely to be present if the above isn't, but it's worth a try
         } else if let Some(get_system_dpi_for_process) = user32.get_system_dpi_for_process {
-            Some(Self(unsafe { get_system_dpi_for_process(null_mut()) }))
+            Some(Self(NonZeroU32::new(unsafe { get_system_dpi_for_process(null_mut()) })?))
         } else {
             None
         }
     }
+
+    pub const USER_DEFAULT: Self = Self(match NonZeroU32::new(USER_DEFAULT_SCREEN_DPI) {
+        None => unreachable!(),
+        Some(dpi) => dpi,
+    });
 }
 
 impl Default for Dpi {
     fn default() -> Self {
-        Self(USER_DEFAULT_SCREEN_DPI)
+        Self::USER_DEFAULT
     }
 }
 
@@ -157,7 +163,9 @@ impl DpiAwarenessContext {
 
     /// Windows 10, version 1803
     pub fn dpi(&self, user32: &ExtendedUser32) -> Option<Dpi> {
-        todo!()
+        let result = unsafe { user32.get_dpi_from_dpi_awareness_context?(self.inner.as_ptr()) };
+
+        Some(Dpi(NonZeroU32::new(result)?))
     }
 
     /// Windows 10, version 1607
@@ -207,10 +215,6 @@ impl From<DpiAwarenessContextType> for DpiAwarenessContext {
     }
 }
 
-pub struct DpiAwareness {
-    value: DPI_AWARENESS,
-}
-
 pub struct DpiAwarenessGuard<'a> {
     inner: Option<(DpiAwarenessContext, &'a ExtendedUser32)>,
 }
@@ -226,6 +230,10 @@ impl<'a> DpiAwarenessGuard<'a> {
             Some(Err(e)) => Err(e),
             Some(Ok(previous)) => Ok(Self { inner: Some((previous, user32)) }),
         }
+    }
+
+    pub fn context(&self) -> Option<DpiAwarenessContext> {
+        self.inner.map(|i| i.0)
     }
 
     pub fn client_area_to_nc_area(
@@ -245,7 +253,13 @@ impl<'a> DpiAwarenessGuard<'a> {
             // adjust_window_rect_ex_for_dpi takes the current DPI awareness context in consideration.
             // Therefore, this method taking &self enforces that the DPI aware context is correct.
             unsafe {
-                adjust_window_rect_ex_for_dpi(&mut rect.0, style.style, 0, style.style_ex, dpi.0)
+                adjust_window_rect_ex_for_dpi(
+                    &mut rect.0,
+                    style.style,
+                    0,
+                    style.style_ex,
+                    dpi.0.get(),
+                )
             }
         } else {
             unsafe { AdjustWindowRectEx(&mut rect.0, style.style, 0, style.style_ex) }

@@ -7,7 +7,7 @@ use windows_sys::Win32::{
 use crate::dpi::{PhysicalPosition, PhysicalSize, Size};
 use crate::{warn, EventStatus, HandlerError, WindowHandler};
 use std::cell::{Cell, OnceCell};
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU32, NonZeroUsize};
 use windows_sys::Win32::Foundation::POINT;
 
 pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
@@ -22,8 +22,8 @@ use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
-    ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard,
-    LibraryModule, Rect, WindowStyle,
+    ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, LibraryModule, Rect,
+    WindowStyle,
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 
@@ -320,29 +320,33 @@ impl WindowImpl for BaseviewWindow {
 
         self._keyboard_hook.set(Some(hook::init_keyboard_hook(window.as_raw())));
 
-        if !window_state.shared.dpi_scaling_strategy.get().assume_96_dpi {
-            // Now we can get the actual dpi of the window.
-            let dpi = window.get_dpi(&self.window_state.user32)?;
+        // Now we can get the actual dpi of the window.
+        let dpi = window_state
+            .shared
+            .dpi_scaling_strategy
+            .get()
+            .get_dpi_for_window(window, &self.shared_state.user32);
 
-            if let Some(dpi) = dpi {
-                if Some(dpi) != window_state.shared.current_dpi.get() {
-                    window_state.shared.current_dpi.set(Some(dpi));
+        let dpi = window.get_dpi(&self.window_state.user32);
 
-                    // We cannot create a window in "logical" pixels, and we can't DPI-scale to physical pixels because we
-                    // have no way to know where the window will end up.
-                    // So, at window creation, we assume a DPI=96, and if it ends up wrong, we resize the window
-                    // to the actual logical size the user desired.
-                    let new_size = self.initial_size.to_physical(dpi.scale_factor());
+        if let Some(dpi) = dpi {
+            if Some(dpi) != window_state.shared.current_dpi.get() {
+                window_state.shared.current_dpi.set(Some(dpi));
 
-                    // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
-                    // doesn't also emit Resized.
-                    window_state.shared.current_size.set(new_size);
-                    let guard = DpiAwarenessGuard::new(
-                        &window_state.shared.user32,
-                        self.shared_state.dpi_scaling_strategy.get(),
-                    )?;
-                    window.resize_and_activate(new_size, Some(dpi), &guard)?;
-                }
+                // We cannot create a window in "logical" pixels, and we can't DPI-scale to physical pixels because we
+                // have no way to know where the window will end up.
+                // So, at window creation, we assume a DPI=96, and if it ends up wrong, we resize the window
+                // to the actual logical size the user desired.
+                let new_size = self.initial_size.to_physical(dpi.scale_factor());
+
+                // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
+                // doesn't also emit Resized.
+                window_state.shared.current_size.set(new_size);
+                let guard = DpiAwarenessGuard::new(
+                    &window_state.shared.user32,
+                    self.shared_state.dpi_scaling_strategy.get(),
+                )?;
+                window.resize_and_activate(new_size, Some(dpi), &guard)?;
             }
         }
 
@@ -597,7 +601,10 @@ unsafe fn wnd_proc_inner(
         }
         WM_DPICHANGED => {
             let suggested_nc_rect = Rect((lparam as *const RECT).read());
-            let dpi = Dpi((wparam & 0xFFFF) as u16 as u32);
+            let Some(dpi) = NonZeroU32::new((wparam & 0xFFFF) as u16 as u32) else {
+                return Some(-1);
+            };
+            let dpi = Dpi(dpi);
 
             let dpi_ctx = DpiAwarenessGuard::new(
                 &window_state.user32,
@@ -613,7 +620,7 @@ unsafe fn wnd_proc_inner(
             let changed = window_state.shared.current_size.get() != new_size
                 || window_state.shared.current_dpi.get() != Some(dpi);
 
-            window_state.shared.current_dpi.replace(Some(dpi));
+            window_state.shared.current_dpi.set(Some(dpi));
             let previous_size = window_state.shared.current_size.replace(new_size);
 
             // Windows makes us resize the window manually. This however will not send a WM_SIZE event,
