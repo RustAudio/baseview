@@ -3,7 +3,6 @@ use crate::wrappers::win32::{
     Dpi, DpiAwarenessContext, DpiAwarenessContextType, DpiAwarenessGuard, ExtendedShCore,
     ExtendedUser32, LazyLibraryModule, LibraryModule, ProcessDpiAwareness,
 };
-use crate::WindowSettings;
 use std::cell::LazyCell;
 use std::ops::Deref;
 
@@ -16,7 +15,7 @@ pub(crate) struct DpiScalingStrategy {
 impl DpiScalingStrategy {
     pub fn get(
         user32: Option<&ExtendedUser32>, parent: Option<HWnd>,
-        #[cfg(feature = "opengl")] settings: &WindowSettings,
+        #[cfg(feature = "opengl")] settings: &crate::WindowSettings,
     ) -> Self {
         let _span = crate::debug_span!("DpiScalingStrategy");
         let shcore = LibraryModule::<ExtendedShCore>::lazy();
