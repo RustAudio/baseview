@@ -28,6 +28,10 @@ use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW;
 
 pub trait WindowImpl: 'static {
+    fn non_client_create(
+        &self, window: HWnd,
+    ) -> core::result::Result<(), crate::platform::PlatformError>;
+
     /// Called during the processing of the WM_CREATE message, but after this type was properly
     /// initialized.
     ///

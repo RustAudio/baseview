@@ -315,6 +315,14 @@ impl Drop for BaseviewWindow {
 }
 
 impl WindowImpl for BaseviewWindow {
+    fn non_client_create(&self, window: HWnd) -> std::result::Result<(), PlatformError> {
+        if self.shared_state.dpi_scaling_strategy.get().assume_96_dpi {
+            window.enable_non_client_dpi_scaling(&self.shared_state.user32);
+        }
+
+        Ok(())
+    }
+
     fn after_create(&self, window: HWnd) -> core::result::Result<(), PlatformError> {
         let window_state = &self.window_state;
 
@@ -326,8 +334,6 @@ impl WindowImpl for BaseviewWindow {
             .dpi_scaling_strategy
             .get()
             .get_dpi_for_window(window, &self.shared_state.user32);
-
-        let dpi = window.get_dpi(&self.window_state.user32);
 
         if let Some(dpi) = dpi {
             if Some(dpi) != window_state.shared.current_dpi.get() {

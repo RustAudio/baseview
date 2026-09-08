@@ -1,7 +1,7 @@
 use crate::wrappers::win32::{Module, RawLibrary};
 use std::ffi::CStr;
-use windows_sys::core::{BOOL, HRESULT};
-use windows_sys::Win32::Foundation::{HANDLE, HWND, RECT};
+use windows_sys::core::HRESULT;
+use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::Graphics::Gdi::HMONITOR;
 use windows_sys::Win32::UI::HiDpi::*;
 

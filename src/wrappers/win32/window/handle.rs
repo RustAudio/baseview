@@ -8,7 +8,7 @@ use std::num::{NonZeroU32, NonZeroUsize};
 use std::ptr::{null_mut, NonNull};
 use windows::Win32::System::Ole::IDropTarget;
 use windows_core::{Error, Interface, InterfaceRef, Result, HRESULT};
-use windows_sys::Win32::Foundation::{SetLastError, HWND, POINT, S_OK};
+use windows_sys::Win32::Foundation::{SetLastError, FALSE, HWND, POINT, S_OK};
 use windows_sys::Win32::Graphics::Gdi::{
     MonitorFromWindow, ScreenToClient, MONITOR_DEFAULTTOPRIMARY,
 };
@@ -326,5 +326,17 @@ impl HWnd {
         }
 
         Some(ctx)
+    }
+
+    pub fn enable_non_client_dpi_scaling(&self, user32: &ExtendedUser32) {
+        let Some(enable) = user32.enable_non_client_dpi_scaling else { return };
+        let result = unsafe { enable(self.as_raw()) };
+
+        if result == FALSE {
+            crate::warn!(
+                "Could not enable non-client DPI scaling for window: {}",
+                Error::from_thread()
+            );
+        }
     }
 }

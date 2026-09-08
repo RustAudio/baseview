@@ -48,6 +48,16 @@ impl<W: WindowImpl> WindowData<W> {
         }
 
         if let Some(inner) = self.inner_impl.get() {
+            inner.non_client_create(window)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn on_create(
+        &self, window: HWnd,
+    ) -> core::result::Result<(), crate::platform::PlatformError> {
+        if let Some(inner) = self.inner_impl.get() {
             inner.after_create(window)?;
         }
 

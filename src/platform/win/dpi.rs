@@ -1,7 +1,7 @@
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{
-    Dpi, DpiAwarenessContext, DpiAwarenessContextType, ExtendedShCore, ExtendedUser32,
-    LazyLibraryModule, LibraryModule, ProcessDpiAwareness,
+    Dpi, DpiAwarenessContext, DpiAwarenessContextType, DpiAwarenessGuard, ExtendedShCore,
+    ExtendedUser32, LazyLibraryModule, LibraryModule, ProcessDpiAwareness,
 };
 use crate::WindowSettings;
 use std::cell::LazyCell;
@@ -152,15 +152,27 @@ impl DpiScalingStrategy {
             return Some(Dpi::default());
         }
 
-        if let Some(dpi) = own_window.get_dpi(user32) {
-            return Some(dpi);
-        }
+        DpiAwarenessGuard::with_guard_optional(user32, *self, || {
+            if let Some(dpi) = own_window.get_dpi(user32) {
+                return Some(dpi);
+            }
 
-        if let Some(dpi) = own_window.get_dpi_awareness_context(user32).and_then(|d| d.dpi(user32))
-        {
-            return Some(dpi);
-        }
-        todo!()
+            if let Some(dpi) =
+                own_window.get_dpi_awareness_context(user32).and_then(|d| d.dpi(user32))
+            {
+                return Some(dpi);
+            }
+
+            let shcore = LibraryModule::<ExtendedShCore>::lazy();
+
+            if let Some(dpi) =
+                shcore.as_ref().and_then(|shcore| own_window.get_dpi_from_monitor(shcore))
+            {
+                return Some(dpi);
+            }
+
+            Dpi::get_system(user32)
+        })
     }
 }
 

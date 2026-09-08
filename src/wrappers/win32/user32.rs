@@ -10,12 +10,10 @@ type AdjustWindowRectExForDpi =
 pub type AreDpiAwarenessContextsEqual =
     unsafe extern "system" fn(DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT) -> BOOL;
 type EnableNonClientDpiScaling = unsafe extern "system" fn(HWND) -> BOOL;
-type GetAwarenessFromDpiAwarenessContext = unsafe extern "system" fn(DPI_AWARENESS_CONTEXT) -> BOOL;
 type GetDpiAwarenessContextForProcess = unsafe extern "system" fn(HANDLE) -> DPI_AWARENESS_CONTEXT;
 type GetDpiForSystem = unsafe extern "system" fn() -> u32;
 type GetDpiForWindow = unsafe extern "system" fn(HWND) -> u32;
 type GetDpiFromDpiAwarenessContext = unsafe extern "system" fn(DPI_AWARENESS_CONTEXT) -> u32;
-type GetProcessDpiAwarenessContext = unsafe extern "system" fn(HANDLE) -> u32;
 type GetSystemDpiForProcess = unsafe extern "system" fn(HANDLE) -> u32;
 type GetWindowDpiAwarenessContext = unsafe extern "system" fn(HWND) -> DPI_AWARENESS_CONTEXT;
 type GetWindowDpiHostingBehavior = unsafe extern "system" fn(HWND) -> DPI_HOSTING_BEHAVIOR;
@@ -29,7 +27,6 @@ const _: () = {
     let _: AdjustWindowRectExForDpi = AdjustWindowRectExForDpi;
     let _: AreDpiAwarenessContextsEqual = AreDpiAwarenessContextsEqual;
     let _: EnableNonClientDpiScaling = EnableNonClientDpiScaling;
-    let _: GetAwarenessFromDpiAwarenessContext = GetAwarenessFromDpiAwarenessContext;
     let _: GetDpiAwarenessContextForProcess = GetDpiAwarenessContextForProcess;
     let _: GetDpiForSystem = GetDpiForSystem;
     let _: GetDpiForWindow = GetDpiForWindow;
@@ -47,7 +44,6 @@ pub struct ExtendedUser32 {
     pub adjust_window_rect_ex_for_dpi: Option<AdjustWindowRectExForDpi>,
     pub are_dpi_awareness_contexts_equal: Option<AreDpiAwarenessContextsEqual>,
     pub enable_non_client_dpi_scaling: Option<EnableNonClientDpiScaling>,
-    pub get_awareness_from_dpi_awareness_context: Option<GetAwarenessFromDpiAwarenessContext>,
     pub get_dpi_awareness_context_for_process: Option<GetDpiAwarenessContextForProcess>,
     pub get_dpi_for_system: Option<GetDpiForSystem>,
     pub get_dpi_for_window: Option<GetDpiForWindow>,
@@ -69,8 +65,6 @@ unsafe impl Module for ExtendedUser32 {
                 adjust_window_rect_ex_for_dpi: library.get(c"AdjustWindowRectExForDpi"),
                 are_dpi_awareness_contexts_equal: library.get(c"AreDpiAwarenessContextsEqual"),
                 enable_non_client_dpi_scaling: library.get(c"EnableNonClientDpiScaling"),
-                get_awareness_from_dpi_awareness_context: library
-                    .get(c"GetAwarenessFromDpiAwarenessContext"),
                 get_dpi_awareness_context_for_process: library
                     .get(c"GetDpiAwarenessContextForProcess"),
                 get_dpi_for_window: library.get(c"GetDpiForWindow"),
