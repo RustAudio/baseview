@@ -4,7 +4,6 @@ use baseview::{
     WindowSize,
 };
 
-use log::LevelFilter;
 use std::cell::RefCell;
 use tracing::Level;
 
