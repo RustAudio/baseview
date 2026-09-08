@@ -9,7 +9,7 @@ use crate::wrappers::win32::window::{
     with_dummy_window, HWnd, OwnDeviceContext, PixelFormat, PixelFormatAttribs, WglContext,
     WglExtra,
 };
-use crate::wrappers::win32::{RawLibrary};
+use crate::wrappers::win32::RawLibrary;
 
 pub type GlContext = Rc<GlContextInner>;
 

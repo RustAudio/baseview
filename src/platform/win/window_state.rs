@@ -161,7 +161,12 @@ impl WindowSharedState {
 
     pub fn init(&self, init: &WindowInitializer) {
         let parent = init.settings.parent.as_ref().map(|p| p.inner.handle);
-        let strategy = DpiScalingStrategy::get(Some(&self.user32), parent, &init.settings);
+        let strategy = DpiScalingStrategy::get(
+            Some(&self.user32),
+            parent,
+            #[cfg(feature = "opengl")]
+            &init.settings,
+        );
 
         if strategy.assume_96_dpi {
             self.current_dpi.set(Some(Dpi::default()));

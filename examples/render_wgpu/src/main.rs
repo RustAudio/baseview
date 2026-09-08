@@ -211,9 +211,7 @@ impl WindowHandler for WgpuExample {
 }
 
 fn main() -> Result<(), baseview::Error> {
-    tracing_subscriber::fmt::fmt()
-        .with_max_level(Level::DEBUG)
-        .init();
+    tracing_subscriber::fmt::fmt().with_max_level(Level::DEBUG).init();
 
     unsafe { baseview::assume_standalone_in_process() };
 

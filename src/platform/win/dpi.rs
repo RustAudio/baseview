@@ -15,7 +15,8 @@ pub(crate) struct DpiScalingStrategy {
 
 impl DpiScalingStrategy {
     pub fn get(
-        user32: Option<&ExtendedUser32>, parent: Option<HWnd>, settings: &WindowSettings,
+        user32: Option<&ExtendedUser32>, parent: Option<HWnd>,
+        #[cfg(feature = "opengl")] settings: &WindowSettings,
     ) -> Self {
         let _span = crate::debug_span!("DpiScalingStrategy");
         let shcore = LibraryModule::<ExtendedShCore>::lazy();
