@@ -30,7 +30,7 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 
     fn create(&mut self, _configuration: GuiConfiguration) -> Result<(), PluginError> {
-        tracing_subscriber::fmt::fmt().with_max_level(Level::DEBUG).init();
+        tracing_subscriber::fmt::fmt().with_max_level(Level::DEBUG).with_ansi(false).init();
 
         let options = WindowSettings::new()
             .wait_for_parent()
