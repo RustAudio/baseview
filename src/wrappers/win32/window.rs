@@ -91,7 +91,7 @@ pub fn create_window<W: WindowImpl>(
         )
     };
 
-    let Some(hwnd) = NonNull::new(hwnd) else { return Err(dbg!(Error::from_thread())) };
+    let Some(hwnd) = NonNull::new(hwnd) else { return Err(Error::from_thread()) };
     // SAFETY: This Hwnd is valid since it came from CreateWindowExW
     let hwnd = unsafe { HWnd::from_raw(hwnd) };
 
