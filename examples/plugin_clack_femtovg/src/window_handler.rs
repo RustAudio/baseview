@@ -1,0 +1,115 @@
+use baseview::dpi::PhysicalPosition;
+use baseview::gl::GlContext;
+use baseview::{
+    Event, EventStatus, HandlerError, MouseEvent, WindowContext, WindowHandler, WindowSize,
+};
+use femtovg::renderer::OpenGl;
+use femtovg::{Canvas, Color};
+use std::cell::{Cell, RefCell};
+
+pub struct FemtovgExample {
+    window_context: WindowContext,
+    gl_context: GlContext,
+    canvas: RefCell<Canvas<OpenGl>>,
+    current_mouse_position: Cell<PhysicalPosition<f64>>,
+    damaged: Cell<bool>,
+}
+
+impl WindowHandler for FemtovgExample {
+    fn on_frame(&self) -> Result<(), HandlerError> {
+        if !self.damaged.get() {
+            return Ok(());
+        }
+
+        let context = &self.gl_context;
+        unsafe { context.make_current()? };
+
+        let mut canvas = self.canvas.borrow_mut();
+
+        let screen_height = canvas.height();
+        let screen_width = canvas.width();
+
+        // Clear
+        canvas.clear_rect(0, 0, screen_width, screen_height, Color::rgb(0xAA, 0xAA, 0xAA));
+
+        // Make big blue rectangle
+        canvas.clear_rect(
+            (screen_width as f32 * 0.1).floor() as u32,
+            (screen_height as f32 * 0.1).floor() as u32,
+            (screen_width as f32 * 0.8).floor() as u32,
+            (screen_height as f32 * 0.8).floor() as u32,
+            Color::rgbf(0., 0.3, 0.9),
+        );
+
+        let mouse_position = self.current_mouse_position.get().cast::<i32>();
+
+        // Make smol orange rectangle
+        canvas.clear_rect(
+            (mouse_position.x - 15).clamp(0, screen_width as i32 - 30) as u32,
+            (mouse_position.y - 15).clamp(0, screen_height as i32 - 30) as u32,
+            30,
+            30,
+            Color::rgbf(0.9, 0.3, 0.),
+        );
+
+        // Tell renderer to execute all drawing commands
+        canvas.flush();
+        context.swap_buffers()?;
+        unsafe { context.make_not_current()? };
+        self.damaged.set(false);
+
+        Ok(())
+    }
+
+    fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError> {
+        let size = new_size.physical;
+        self.canvas.borrow_mut().set_size(size.width, size.height, new_size.scale_factor as f32);
+        self.damaged.set(true);
+
+        Ok(())
+    }
+
+    fn on_event(&self, event: Event) -> EventStatus {
+        match event {
+            Event::Mouse(
+                MouseEvent::CursorMoved { position, .. }
+                | MouseEvent::DragEntered { position, .. }
+                | MouseEvent::DragMoved { position, .. }
+                | MouseEvent::DragDropped { position, .. },
+            ) => {
+                self.current_mouse_position.set(position);
+                if position.y > 400. && !self.window_context.has_focus() {
+                    let _ = self.window_context.focus();
+                }
+                self.damaged.set(true);
+            }
+            _ => {}
+        };
+
+        EventStatus::Captured
+    }
+}
+
+impl FemtovgExample {
+    pub fn new(window_context: WindowContext) -> Result<Self, HandlerError> {
+        let Some(gl_context) = window_context.gl_context() else { unreachable!() };
+        unsafe { gl_context.make_current()? };
+
+        let renderer =
+            unsafe { OpenGl::new_from_function_cstr(|s| gl_context.get_proc_address(s)) }?;
+
+        let mut canvas = Canvas::new(renderer)?;
+        let size = window_context.size();
+
+        canvas.set_size(size.physical.width, size.physical.height, size.scale_factor as f32);
+
+        unsafe { gl_context.make_not_current()? };
+        Ok(Self {
+            gl_context,
+            window_context,
+            canvas: canvas.into(),
+            damaged: true.into(),
+            current_mouse_position: Cell::new(PhysicalPosition::default()),
+        })
+    }
+}
