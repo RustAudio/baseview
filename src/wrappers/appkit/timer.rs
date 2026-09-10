@@ -1,7 +1,7 @@
 use block2::RcBlock;
 use objc2::rc::Weak;
 use objc2_core_foundation::{
-    kCFAllocatorDefault, kCFRunLoopDefaultMode, CFRetained, CFRunLoop, CFRunLoopTimer,
+    kCFAllocatorDefault, kCFRunLoopCommonModes, CFRetained, CFRunLoop, CFRunLoopTimer,
     CFTimeInterval,
 };
 
@@ -20,7 +20,7 @@ impl TimerHandle {
         let timer =
             unsafe { CFRunLoopTimer::with_handler(allocator, 0.0, interval, 0, 0, Some(&block)) }?;
 
-        let loop_mode = unsafe { kCFRunLoopDefaultMode };
+        let loop_mode = unsafe { kCFRunLoopCommonModes };
         run_loop.add_timer(Some(&timer), loop_mode);
 
         Some(Self { run_loop: Weak::from_retained(&run_loop.into()), timer })
@@ -33,7 +33,7 @@ impl Drop for TimerHandle {
             return;
         };
 
-        let loop_mode = unsafe { kCFRunLoopDefaultMode };
+        let loop_mode = unsafe { kCFRunLoopCommonModes };
 
         run_loop.remove_timer(Some(&self.timer), loop_mode);
     }
