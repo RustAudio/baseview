@@ -70,20 +70,18 @@ impl WindowHandler for FemtovgExample {
     }
 
     fn on_event(&self, event: Event) -> EventStatus {
-        match event {
-            Event::Mouse(
-                MouseEvent::CursorMoved { position, .. }
-                | MouseEvent::DragEntered { position, .. }
-                | MouseEvent::DragMoved { position, .. }
-                | MouseEvent::DragDropped { position, .. },
-            ) => {
-                self.current_mouse_position.set(position);
-                if position.y > 400. && !self.window_context.has_focus() {
-                    let _ = self.window_context.focus();
-                }
-                self.damaged.set(true);
+        if let Event::Mouse(
+            MouseEvent::CursorMoved { position, .. }
+            | MouseEvent::DragEntered { position, .. }
+            | MouseEvent::DragMoved { position, .. }
+            | MouseEvent::DragDropped { position, .. },
+        ) = event
+        {
+            self.current_mouse_position.set(position);
+            if position.y > 400. && !self.window_context.has_focus() {
+                let _ = self.window_context.focus();
             }
-            _ => {}
+            self.damaged.set(true);
         };
 
         EventStatus::Captured
