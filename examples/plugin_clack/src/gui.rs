@@ -9,7 +9,6 @@ use clack_extensions::gui::{
 };
 use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::{HostMainThreadHandle, HostSharedHandle};
-use tracing::Level;
 
 pub struct ExamplePluginGui {
     pub handle: Window,
@@ -29,9 +28,6 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 
     fn create(&mut self, _configuration: GuiConfiguration) -> Result<(), PluginError> {
-        let _ =
-            tracing_subscriber::fmt::fmt().with_max_level(Level::DEBUG).with_ansi(false).try_init();
-
         let options =
             WindowSettings::new().wait_for_parent().with_size(PhysicalSize::new(400, 200));
 

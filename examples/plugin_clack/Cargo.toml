@@ -11,6 +11,3 @@ clack-plugin = "0.1.1"
 clack-extensions = { version = "0.1.1", features = ["gui", "state", "clack-plugin", "raw-window-handle_06"] }
 baseview = { path = "../..", features = ["tracing"] }
 softbuffer = "0.4.8"
-
-tracing-subscriber = { workspace = true }
-tracing = "0.1.44"
