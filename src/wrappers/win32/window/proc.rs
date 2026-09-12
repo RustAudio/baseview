@@ -1,4 +1,5 @@
 use super::*;
+use crate::platform::PlatformError;
 use std::ptr::NonNull;
 use std::rc::Rc;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -15,7 +16,7 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
     let window = unsafe { HWnd::from_raw(window) };
 
     match message_code {
-        WM_CREATE => {
+        WM_NCCREATE => {
             let create = unsafe { &*(l_param as *const CREATESTRUCTW) };
             let inner_ptr = create.lpCreateParams as *mut WindowData<W>;
 
@@ -42,24 +43,18 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
                 inner.initialize(window)
             };
 
-            match result {
-                // If successful, all good.
-                // Ownership of the inner state has been passed to the window via the userdata ptr.
-                Ok(()) => 0,
+            (handle_error_as_fatal(result, window, inner_ptr) == 0) as _
+        }
+        WM_CREATE => {
+            let create = unsafe { &*(l_param as *const CREATESTRUCTW) };
+            let inner_ptr = NonNull::new(create.lpCreateParams as *mut WindowData<W>);
 
-                // If initializer failed, abort.
-                Err(e) => {
-                    // First, revoke ownership from the window, we don't want it to be used by any subsequent messages.
-                    let _ = window.set_userdata_ptr(core::ptr::null::<W>());
+            let Some(inner_ptr) = window.get_userdata_ptr::<WindowData<W>>().or(inner_ptr) else {
+                return handle_default();
+            };
 
-                    // Try to recover and free the received pointer data. But if this also fails, better to leak
-                    // it than risk crashing
-                    drop(Rc::from_raw(inner_ptr.as_ptr()));
-
-                    crate::error!("Window initializer failed while trying to create window: {}", e);
-                    -1
-                }
-            }
+            let result = WindowData::handle(inner_ptr, |inner| inner.on_create(window));
+            handle_error_as_fatal(result, window, inner_ptr)
         }
         WM_DESTROY => {
             let Some(state_ptr) = window.get_userdata_ptr::<WindowData<W>>() else {
@@ -90,6 +85,30 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
                         .unwrap_or_else(handle_default)
                 })
             }
+        }
+    }
+}
+
+unsafe fn handle_error_as_fatal<W>(
+    result: core::result::Result<(), PlatformError>, window: HWnd,
+    inner_ptr: NonNull<WindowData<W>>,
+) -> LRESULT {
+    match result {
+        // If successful, all good.
+        // Ownership of the inner state has been passed to the window via the userdata ptr.
+        Ok(()) => 0,
+
+        // If initializer failed, abort.
+        Err(e) => {
+            // First, revoke ownership from the window, we don't want it to be used by any subsequent messages.
+            let _ = window.set_userdata_ptr(core::ptr::null::<W>());
+
+            // Try to recover and free the received pointer data. But if this also fails, better to leak
+            // it than risk crashing
+            drop(Rc::from_raw(inner_ptr.as_ptr()));
+
+            crate::error!("Window initializer failed while trying to create window: {}", e);
+            -1
         }
     }
 }

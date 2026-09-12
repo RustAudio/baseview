@@ -21,13 +21,17 @@ use std::rc::Rc;
 use window_class::RegisteredClass;
 use windows_core::{Error, Result, HSTRING};
 
-use crate::wrappers::win32::dpi::DpiAwarenessContext;
+use crate::wrappers::win32::dpi::DpiAwarenessGuard;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::style::WindowStyle;
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW;
 
 pub trait WindowImpl: 'static {
+    fn non_client_create(
+        &self, window: HWnd,
+    ) -> core::result::Result<(), crate::platform::PlatformError>;
+
     /// Called during the processing of the WM_CREATE message, but after this type was properly
     /// initialized.
     ///
@@ -63,7 +67,7 @@ pub trait WindowImpl: 'static {
 /// [`WindowImpl::after_create`] instead.
 pub fn create_window<W: WindowImpl>(
     title: &HSTRING, style: WindowStyle, nc_size: PhysicalSize<u32>, parent: Option<HWnd>,
-    _dpi_ctx: &DpiAwarenessContext, initializer: impl FnOnce(HWnd) -> W + 'static,
+    _dpi_ctx: &DpiAwarenessGuard, initializer: impl FnOnce(HWnd) -> W + 'static,
 ) -> Result<HWnd> {
     let instance = HInstance::get_from_dll();
     let window_class = RegisteredClass::register_new(instance, Some(wnd_proc::<W>))?;
@@ -83,7 +87,7 @@ pub fn create_window<W: WindowImpl>(
             parent.map(|p| p.as_raw()).unwrap_or(null_mut()),
             null_mut(),
             instance.as_raw(),
-            Rc::into_raw(data).cast(),
+            Rc::into_raw(Rc::clone(&data)).cast(),
         )
     };
 

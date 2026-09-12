@@ -1,6 +1,7 @@
-use crate::window_handler::OpenWindowExample;
+use crate::window_handler::FemtovgExample;
 use crate::ExamplePluginMainThread;
 use baseview::dpi::*;
+use baseview::gl::GlConfig;
 use baseview::host::{Host, HostCallbacks, HostMainThreadCaller};
 use baseview::{HandlerError, Window, WindowSettings, WindowSize};
 use clack_extensions::gui::{
@@ -32,8 +33,10 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
         let _ =
             tracing_subscriber::fmt::fmt().with_max_level(Level::DEBUG).with_ansi(false).try_init();
 
-        let options =
-            WindowSettings::new().wait_for_parent().with_size(PhysicalSize::new(400, 200));
+        let options = WindowSettings::new()
+            .wait_for_parent()
+            .with_size(PhysicalSize::new(400, 200))
+            .with_gl_config(GlConfig::default());
 
         let mut host = Host::new().with_main_thread(unsafe {
             MainThreadHandler { host: self.host.shared().with_arbitrary_lifetime() }
@@ -45,7 +48,7 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
             });
         }
 
-        let window = Window::create_with_host(options, OpenWindowExample::new, host)?;
+        let window = Window::create_with_host(options, FemtovgExample::new, host)?;
 
         self.gui = Some(ExamplePluginGui { handle: window });
         Ok(())

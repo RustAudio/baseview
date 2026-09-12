@@ -1,5 +1,5 @@
 [package]
-name = "plugin_clack"
+name = "plugin_clack_femtovg"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,8 +9,9 @@ crate-type = ["cdylib"]
 [dependencies]
 clack-plugin = "0.1.1"
 clack-extensions = { version = "0.1.1", features = ["gui", "state", "clack-plugin", "raw-window-handle_06"] }
-baseview = { path = "../..", features = ["tracing"] }
-softbuffer = "0.4.8"
+baseview = { path = "../..", features = ["opengl", "tracing"] }
+femtovg = "0.26"
+raw-window-handle = { version = "0.6.2", features = ["std"] }
 
 tracing-subscriber = { workspace = true }
 tracing = "0.1.44"

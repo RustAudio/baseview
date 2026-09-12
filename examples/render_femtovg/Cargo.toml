@@ -8,3 +8,4 @@ publish = false
 baseview = { path = "../..", features = ["opengl", "tracing"] }
 femtovg = "0.26"
 tracing-subscriber = { workspace = true }
+tracing = "0.1.44"

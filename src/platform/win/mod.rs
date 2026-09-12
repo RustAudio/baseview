@@ -1,3 +1,4 @@
+mod dpi;
 mod drop_target;
 mod error;
 mod hook;
@@ -7,7 +8,7 @@ mod window_state;
 
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
-use crate::wrappers::win32::ExtendedUser32;
+pub(crate) use dpi::DpiScalingStrategy;
 pub use error::{PlatformError, Result};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle,
@@ -97,17 +98,6 @@ impl Display for ParentWindowHandleError {
     }
 }
 
-#[inline]
 pub fn assume_standalone_in_process() {
-    let user32 = match ExtendedUser32::load() {
-        Ok(user32) => user32,
-        Err(e) => {
-            crate::warn!("Failed to load user32.dll: {}", e);
-            return;
-        }
-    };
-
-    if let Err(e) = user32.set_process_dpi_awareness_context() {
-        crate::warn!("Failed to set process dpi_awareness_context: {}", e);
-    }
+    dpi::set_process_dpi_awareness();
 }

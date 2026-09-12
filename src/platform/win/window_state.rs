@@ -1,11 +1,13 @@
 use crate::dpi::{PhysicalSize, Size};
+use crate::platform::win::dpi::DpiScalingStrategy;
 use crate::platform::win::keyboard::KeyboardState;
 use crate::platform::PlatformHandle;
 use crate::utils::SizingStrategy;
+use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
-use crate::wrappers::win32::{Dpi, ExtendedUser32};
+use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule};
 use crate::WindowSettings;
 use crate::{MouseCursor, WindowSize};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
@@ -23,7 +25,7 @@ pub(crate) struct WindowState {
     pub mouse_was_outside_window: Cell<bool>,
     pub cursor_icon: Cell<MouseCursor>,
 
-    pub user32: ExtendedUser32,
+    pub user32: LibraryModule<ExtendedUser32>,
     pub shared: Rc<WindowSharedState>,
 
     #[cfg(feature = "opengl")]
@@ -31,7 +33,9 @@ pub(crate) struct WindowState {
 }
 
 impl WindowState {
-    pub fn new(hwnd: HWnd, user32: ExtendedUser32, shared: Rc<WindowSharedState>) -> Self {
+    pub fn new(
+        hwnd: HWnd, user32: LibraryModule<ExtendedUser32>, shared: Rc<WindowSharedState>,
+    ) -> Self {
         Self {
             hwnd,
             keyboard_state: RefCell::new(KeyboardState::new()),
@@ -86,7 +90,9 @@ impl WindowState {
         let dpi = self.shared.current_dpi.get();
         let new_size = size.to_physical(self.shared.scale_factor());
 
-        self.hwnd.resize_and_activate(new_size, dpi, &self.user32)?;
+        let ctx = DpiAwarenessGuard::new(&self.user32, self.shared.dpi_scaling_strategy.get())?;
+
+        self.hwnd.resize_and_activate(new_size, dpi, &ctx)?;
         Ok(())
     }
 
@@ -130,13 +136,14 @@ pub struct WindowSharedState {
     pub fallback_scale_factor: Cell<Option<f64>>,
     pub resize_host_originated: Cell<bool>,
     pub destroy_host_originated: Cell<bool>,
+    pub dpi_scaling_strategy: Cell<DpiScalingStrategy>,
 
-    pub user32: ExtendedUser32,
+    pub user32: LibraryModule<ExtendedUser32>,
     pub sizing_strategy: SizingStrategy,
 }
 
 impl WindowSharedState {
-    pub fn new(user32: ExtendedUser32, settings: &WindowSettings) -> Rc<Self> {
+    pub fn new(user32: LibraryModule<ExtendedUser32>, settings: &WindowSettings) -> Rc<Self> {
         Self {
             parented: (settings.parent.is_some() || settings.wait_for_parent).into(),
             is_alive: true.into(),
@@ -147,8 +154,25 @@ impl WindowSharedState {
             destroy_host_originated: false.into(),
             sizing_strategy: SizingStrategy::from_settings(settings),
             user32,
+            dpi_scaling_strategy: DpiScalingStrategy::default().into(),
         }
         .into()
+    }
+
+    pub fn init(&self, init: &WindowInitializer) {
+        let parent = init.settings.parent.as_ref().map(|p| p.inner.handle);
+        let strategy = DpiScalingStrategy::get(
+            Some(&self.user32),
+            parent,
+            #[cfg(feature = "opengl")]
+            &init.settings,
+        );
+
+        if strategy.assume_96_dpi {
+            self.current_dpi.set(Some(Dpi::default()));
+        }
+
+        self.dpi_scaling_strategy.set(strategy);
     }
 
     pub fn size(&self) -> WindowSize {

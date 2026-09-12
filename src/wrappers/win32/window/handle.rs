@@ -1,16 +1,19 @@
 ﻿use crate::dpi::{PhysicalPosition, PhysicalSize};
-use crate::wrappers::win32::dpi::{Dpi, DpiAwarenessContext};
+use crate::wrappers::win32::dpi::{Dpi, DpiAwarenessGuard};
 use crate::wrappers::win32::style::WindowStyle;
 use crate::wrappers::win32::user32::ExtendedUser32;
-use crate::wrappers::win32::Rect;
+use crate::wrappers::win32::{DpiAwarenessContext, ExtendedShCore, Rect};
 use std::ffi::c_void;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU32, NonZeroUsize};
 use std::ptr::{null_mut, NonNull};
 use windows::Win32::System::Ole::IDropTarget;
 use windows_core::{Error, Interface, InterfaceRef, Result, HRESULT};
-use windows_sys::Win32::Foundation::{SetLastError, HWND, POINT, S_OK};
-use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
+use windows_sys::Win32::Foundation::{SetLastError, FALSE, HWND, POINT, S_OK};
+use windows_sys::Win32::Graphics::Gdi::{
+    MonitorFromWindow, ScreenToClient, MONITOR_DEFAULTTOPRIMARY,
+};
 use windows_sys::Win32::System::Ole::{RegisterDragDrop, RevokeDragDrop};
+use windows_sys::Win32::UI::HiDpi::{DPI_HOSTING_BEHAVIOR_MIXED, MDT_DEFAULT};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
 };
@@ -98,16 +101,35 @@ impl HWnd {
         Ok(())
     }
 
-    pub fn get_dpi(&self, extended_user32: &ExtendedUser32) -> Result<Option<Dpi>> {
-        let Some(get_dpi_for_window) = extended_user32.get_dpi_for_window else {
-            return Ok(None);
-        };
-
+    pub fn get_dpi(&self, extended_user32: &ExtendedUser32) -> Option<Dpi> {
         // SAFETY: This type guarantees the HWND is safe to use.
-        match unsafe { get_dpi_for_window(self.as_raw()) } {
-            0 => Err(Error::from_thread()),
-            dpi => Ok(Some(Dpi(dpi))),
+        match NonZeroU32::new(unsafe { extended_user32.get_dpi_for_window?(self.as_raw()) }) {
+            None => {
+                crate::warn!("Could not get DPI for window: {}", Error::from_thread());
+                None
+            }
+            Some(dpi) => Some(Dpi(dpi)),
         }
+    }
+
+    pub fn get_dpi_from_monitor(&self, shcore: &ExtendedShCore) -> Option<Dpi> {
+        let get_dpi_for_monitor = shcore.get_dpi_for_monitor?;
+
+        let monitor = unsafe { MonitorFromWindow(self.as_raw(), MONITOR_DEFAULTTOPRIMARY) };
+        if monitor.is_null() {
+            return None;
+        }
+
+        let mut x = 0;
+        let mut _y = 0;
+
+        let result = HRESULT(unsafe { get_dpi_for_monitor(monitor, MDT_DEFAULT, &mut x, &mut _y) });
+        if result.is_err() {
+            crate::warn!("GetDpiForMonitor failed: {}", result.message());
+            return None;
+        }
+
+        Some(Dpi(NonZeroU32::new(x)?))
     }
 
     pub fn register_drag_drop(&self, drop_target: InterfaceRef<IDropTarget>) -> Result<()> {
@@ -151,9 +173,8 @@ impl HWnd {
     }
 
     pub fn resize_and_activate(
-        &self, client_size: PhysicalSize<u32>, window_dpi: Option<Dpi>, user32: &ExtendedUser32,
+        &self, client_size: PhysicalSize<u32>, window_dpi: Option<Dpi>, dpi_ctx: &DpiAwarenessGuard,
     ) -> Result<()> {
-        let dpi_ctx = DpiAwarenessContext::new(user32)?;
         let style = self.get_style()?;
 
         let rect = Rect::from(client_size);
@@ -276,5 +297,46 @@ impl HWnd {
     #[cfg(feature = "opengl")]
     pub fn get_own_dc(&self) -> Result<super::OwnDeviceContext> {
         super::OwnDeviceContext::from_window(*self)
+    }
+
+    pub fn supports_mixed_dpi_hosting_behavior(&self, user32: &ExtendedUser32) -> bool {
+        let Some(get_window_dpi_hosting_behavior) = user32.get_window_dpi_hosting_behavior else {
+            return false;
+        };
+
+        let result = unsafe { get_window_dpi_hosting_behavior(self.as_raw()) };
+
+        result == DPI_HOSTING_BEHAVIOR_MIXED
+    }
+
+    pub fn get_dpi_awareness_context(
+        &self, user32: &ExtendedUser32,
+    ) -> Option<DpiAwarenessContext> {
+        let result = unsafe { user32.get_window_dpi_awareness_context?(self.as_raw()) };
+
+        let Some(raw) = NonNull::new(result) else {
+            crate::warn!("Failed to get DpiAwarenessContext from window: {}", Error::from_thread());
+            return None;
+        };
+
+        let ctx = DpiAwarenessContext::from_raw(raw);
+
+        if ctx.is_valid(user32) == Some(false) {
+            return None;
+        }
+
+        Some(ctx)
+    }
+
+    pub fn enable_non_client_dpi_scaling(&self, user32: &ExtendedUser32) {
+        let Some(enable) = user32.enable_non_client_dpi_scaling else { return };
+        let result = unsafe { enable(self.as_raw()) };
+
+        if result == FALSE {
+            crate::warn!(
+                "Could not enable non-client DPI scaling for window: {}",
+                Error::from_thread()
+            );
+        }
     }
 }
