@@ -19,7 +19,7 @@ pub(crate) struct WindowVisualConfig {
 impl WindowVisualConfig {
     #[cfg(feature = "opengl")]
     pub fn find_best_visual_config_for_gl(
-        connection: &X11Connection, gl_config: Option<crate::gl::GlConfig>,
+        connection: &std::rc::Rc<X11Connection>, gl_config: Option<crate::gl::GlConfig>,
     ) -> Result<Self> {
         let Some(gl_config) = gl_config else { return Self::find_best_visual_config(connection) };
 
