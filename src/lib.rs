@@ -46,6 +46,12 @@ pub(crate) mod wrappers;
 /// * `baseview` is being used in conjunction with other platform windowing libraries (e.g. `winit`,
 ///   SDL, etc.);
 /// * The current process may host other plugins that need to interact with the platform's GUI capabilities.
+///
+/// # Platform-specific considerations
+///
+/// This function is currently a no-op on macOS and X11.
+/// On Windows, this sets the process' DPI awareness setting to the latest option supported by the
+/// currently running system (up to `PerMonitorAwareV2`).
 #[inline]
 pub unsafe fn assume_standalone_in_process() {
     platform::assume_standalone_in_process()
