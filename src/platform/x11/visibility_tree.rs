@@ -131,7 +131,7 @@ impl AncestorVisibilityState {
                 }
 
                 if own_window_viewable.get() {
-                    return false;
+                    return true;
                 }
 
                 own_window_viewable.set(true);
