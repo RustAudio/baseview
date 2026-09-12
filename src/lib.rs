@@ -31,6 +31,21 @@ pub(crate) use tracing::*;
 mod utils;
 pub(crate) mod wrappers;
 
+/// Assumes the current baseview library is the only one running in this process.
+///
+/// This allows baseview to change some platform-specific settings for greater compatibility.
+/// Which settings are actually changed is documented below for information, but is not to be
+/// considered stable. They are considered an implementation detail.
+///
+/// # Safety
+///
+/// This function must *not* be called in the following cases:
+///
+/// * The current binary is a plugin that can be loaded into an external host;
+/// * Multiple `baseview` versions are present in the final binary;
+/// * `baseview` is being used in conjunction with other platform windowing libraries (e.g. `winit`,
+///   SDL, etc.);
+/// * The current process may host other plugins that need to interact with the platform's GUI capabilities.
 #[inline]
 pub unsafe fn assume_standalone_in_process() {
     platform::assume_standalone_in_process()
