@@ -94,7 +94,7 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 
     fn adjust_size(&self, size: GuiSize) -> Option<GuiSize> {
-        let Some(gui) = self.borrow_window() else { return None };
+        let gui = self.borrow_window()?;
 
         let size = gui.adjust_size(NativeSize::new(size.width, size.height));
 
