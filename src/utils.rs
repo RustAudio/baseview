@@ -78,12 +78,10 @@ impl SizingStrategy {
             return window_size;
         }
 
-        let adjusted = match size.into() {
+        match size {
             Size::Physical(size) => self.adjust_size_physical(size, window_size.scale_factor),
             Size::Logical(size) => self.adjust_size_logical(size, window_size.scale_factor),
-        };
-
-        adjusted
+        }
     }
 }
 

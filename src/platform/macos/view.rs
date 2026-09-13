@@ -316,7 +316,7 @@ impl ViewImpl for BaseviewView {
         let size = window.contentRectForFrameRect(window.frame()).size;
         let size = LogicalSize::new(size.width, size.height);
 
-        BaseviewView::resize(this, size.into(), true, true);
+        BaseviewView::resize(this, size, true, true);
     }
 
     fn view_did_change_backing_properties(this: ViewRef<Self>, notify_host: bool) {
