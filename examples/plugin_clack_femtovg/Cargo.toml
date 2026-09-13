@@ -7,8 +7,8 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-clack-plugin = "0.1.1"
-clack-extensions = { version = "0.1.1", features = ["gui", "state", "clack-plugin", "raw-window-handle_06"] }
+clack-plugin = "0.2.0"
+clack-extensions = { version = "0.2.0", features = ["gui", "state", "clack-plugin", "raw-window-handle_06"] }
 baseview = { path = "../..", features = ["opengl", "tracing"] }
 femtovg = "0.26"
 raw-window-handle = { version = "0.6.2", features = ["std"] }

@@ -5,7 +5,7 @@ pub struct ExamplePluginAudioProcessor;
 
 impl<'a> PluginAudioProcessor<'a, (), ExamplePluginMainThread<'a>> for ExamplePluginAudioProcessor {
     fn activate(
-        _host: HostAudioProcessorHandle<'a>, _main_thread: &mut ExamplePluginMainThread,
+        _host: HostAudioProcessorHandle<'a>, _main_thread: &ExamplePluginMainThread,
         _shared: &'a (), _audio_config: PluginAudioConfiguration,
     ) -> Result<Self, PluginError> {
         Ok(Self)

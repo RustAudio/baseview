@@ -4,6 +4,7 @@ use clack_extensions::gui::{HostGui, PluginGui};
 use clack_extensions::state::{PluginState, PluginStateImpl};
 use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
+use std::cell::{Ref, RefCell};
 
 mod audio;
 mod gui;
@@ -39,7 +40,7 @@ impl DefaultPluginFactory for ExamplePlugin {
     fn new_main_thread<'a>(
         host: HostMainThreadHandle<'a>, _shared: &'a Self::Shared<'a>,
     ) -> Result<Self::MainThread<'a>, PluginError> {
-        Ok(Self::MainThread { gui: None, host_gui: host.get_extension(), host })
+        Ok(Self::MainThread { gui: None.into(), host_gui: host.get_extension(), host })
     }
 }
 
@@ -50,23 +51,30 @@ pub struct ExamplePluginMainThread<'a> {
     // The host GUI extension handle
     host_gui: Option<HostGui>,
     /// The plugin's GUI state and context
-    gui: Option<ExamplePluginGui>,
+    gui: RefCell<Option<ExamplePluginGui>>,
+}
+
+impl<'a> ExamplePluginMainThread<'a> {
+    fn borrow_window(&self) -> Option<Ref<'_, baseview::Window>> {
+        let gui = self.gui.borrow();
+        gui.is_some().then(|| Ref::map(gui, |g| &g.as_ref().unwrap().handle))
+    }
 }
 
 impl<'a> PluginMainThread<'a, ()> for ExamplePluginMainThread<'a> {
-    fn on_main_thread(&mut self) {
-        if let Some(gui) = self.gui.as_mut() {
+    fn on_main_thread(&self) {
+        if let Some(gui) = self.gui.borrow().as_ref() {
             gui.handle.host_main_thread_callback();
         }
     }
 }
 
 impl PluginStateImpl for ExamplePluginMainThread<'_> {
-    fn save(&mut self, _output: &mut OutputStream) -> Result<(), PluginError> {
+    fn save(&self, _output: &mut OutputStream) -> Result<(), PluginError> {
         Ok(())
     }
 
-    fn load(&mut self, _input: &mut InputStream) -> Result<(), PluginError> {
+    fn load(&self, _input: &mut InputStream) -> Result<(), PluginError> {
         Ok(())
     }
 }
