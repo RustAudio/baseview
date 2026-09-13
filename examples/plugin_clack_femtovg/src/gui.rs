@@ -16,19 +16,19 @@ pub struct ExamplePluginGui {
 }
 
 impl PluginGuiImpl for ExamplePluginMainThread<'_> {
-    fn is_api_supported(&mut self, configuration: GuiConfiguration) -> bool {
+    fn is_api_supported(&self, configuration: GuiConfiguration) -> bool {
         !configuration.is_floating
             && Some(configuration.api_type) == GuiApiType::default_for_current_platform()
     }
 
-    fn get_preferred_api(&mut self) -> Option<GuiConfiguration<'_>> {
+    fn get_preferred_api(&self) -> Option<GuiConfiguration<'_>> {
         Some(GuiConfiguration {
             api_type: GuiApiType::default_for_current_platform()?,
             is_floating: false,
         })
     }
 
-    fn create(&mut self, _configuration: GuiConfiguration) -> Result<(), PluginError> {
+    fn create(&self, _configuration: GuiConfiguration) -> Result<(), PluginError> {
         let options = WindowSettings::new()
             .wait_for_parent()
             .with_size(PhysicalSize::new(400, 200))
@@ -46,43 +46,43 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
 
         let window = Window::create_with_host(options, FemtovgExample::new, host)?;
 
-        self.gui = Some(ExamplePluginGui { handle: window });
+        self.gui.replace(Some(ExamplePluginGui { handle: window }));
         Ok(())
     }
 
-    fn destroy(&mut self) {
+    fn destroy(&self) {
         let Some(gui) = self.gui.take() else { return };
 
         gui.handle.close()
     }
 
-    fn set_scale(&mut self, scale: f64) -> Result<(), PluginError> {
-        let Some(gui) = &self.gui else {
+    fn set_scale(&self, scale: f64) -> Result<(), PluginError> {
+        let Some(gui) = self.borrow_window() else {
             return Err(PluginError::Message("set_scale called without a GUI active"));
         };
-        gui.handle.suggest_fallback_scale_factor(scale)?;
+        gui.suggest_fallback_scale_factor(scale)?;
 
         Ok(())
     }
 
-    fn get_size(&mut self) -> Option<GuiSize> {
-        let Some(gui) = &self.gui else {
+    fn get_size(&self) -> Option<GuiSize> {
+        let Some(gui) = self.borrow_window() else {
             eprintln!("get_size called without a GUI active");
             return None;
         };
 
-        let size = gui.handle.size().to_native_size();
+        let size = gui.size().to_native_size();
 
         Some(GuiSize { width: size.width, height: size.height })
     }
 
-    fn can_resize(&mut self) -> bool {
-        let Some(gui) = &self.gui else { return false };
+    fn can_resize(&self) -> bool {
+        let Some(gui) = self.borrow_window() else { return false };
 
-        gui.handle.is_resizable()
+        gui.is_resizable()
     }
 
-    fn get_resize_hints(&mut self) -> Option<GuiResizeHints> {
+    fn get_resize_hints(&self) -> Option<GuiResizeHints> {
         let can_resize = self.can_resize();
 
         Some(GuiResizeHints {
@@ -93,71 +93,60 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
         })
     }
 
-    fn adjust_size(&mut self, mut size: GuiSize) -> Option<GuiSize> {
-        let Some(gui) = &self.gui else { return None };
-        let scale_factor = gui.handle.size().scale_factor;
+    fn adjust_size(&self, size: GuiSize) -> Option<GuiSize> {
+        let gui = self.borrow_window()?;
 
-        if let Some(max_size) = gui.handle.max_size() {
-            let max_size = NativeSize::from_size(max_size, scale_factor);
-            size.width = size.width.min(max_size.width);
-            size.height = size.height.min(max_size.height);
-        }
+        let size = gui.adjust_size(NativeSize::new(size.width, size.height));
 
-        if let Some(min_size) = gui.handle.min_size() {
-            let min_size = NativeSize::from_size(min_size, scale_factor);
-            size.width = size.width.max(min_size.width);
-            size.height = size.height.max(min_size.height);
-        }
-
-        Some(size)
+        Some(GuiSize { width: size.width, height: size.height })
     }
 
-    fn set_size(&mut self, size: GuiSize) -> Result<(), PluginError> {
-        let Some(gui) = &self.gui else {
+    fn set_size(&self, size: GuiSize) -> Result<(), PluginError> {
+        let Some(gui) = self.borrow_window() else {
             return Err(PluginError::Message("set_size called without a GUI active"));
         };
 
-        gui.handle.resize(NativeSize { width: size.width, height: size.height })?;
+        gui.resize(NativeSize { width: size.width, height: size.height })?;
 
         Ok(())
     }
 
-    fn set_parent(&mut self, window: ClapWindow) -> Result<(), PluginError> {
-        let Some(gui) = &self.gui else {
+    fn set_parent(&self, window: ClapWindow) -> Result<(), PluginError> {
+        let Some(gui) = self.borrow_window() else {
             return Err(PluginError::Message("set_parent called without a GUI active"));
         };
 
         // SAFETY: The CLAP spec ensures the parent window handle is valid for at least this call
         let parent = unsafe { window.borrow_handle_unchecked()? };
 
-        gui.handle.set_parent(&parent)?;
-        gui.handle.show()?;
+        gui.set_parent(&parent)?;
+        gui.show()?;
 
         Ok(())
     }
 
-    fn set_transient(&mut self, _window: ClapWindow) -> Result<(), PluginError> {
+    fn set_transient(&self, _window: ClapWindow) -> Result<(), PluginError> {
         unimplemented!() // Not supported yet
     }
 
-    fn suggest_title(&mut self, _title: &str) {
+    fn suggest_title(&self, _title: &str) {
         // Not supported yet
     }
 
-    fn show(&mut self) -> Result<(), PluginError> {
-        let Some(gui) = &self.gui else {
+    fn show(&self) -> Result<(), PluginError> {
+        let Some(gui) = self.borrow_window() else {
             return Err(PluginError::Message("show called without a GUI active"));
         };
-        gui.handle.show()?;
+        gui.show()?;
 
         Ok(())
     }
 
-    fn hide(&mut self) -> Result<(), PluginError> {
-        let Some(gui) = &self.gui else {
+    fn hide(&self) -> Result<(), PluginError> {
+        let Some(gui) = self.borrow_window() else {
             return Err(PluginError::Message("hide called without a GUI active"));
         };
-        gui.handle.show()?;
+        gui.show()?;
 
         Ok(())
     }
