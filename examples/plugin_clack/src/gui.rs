@@ -28,8 +28,11 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 
     fn create(&mut self, _configuration: GuiConfiguration) -> Result<(), PluginError> {
-        let options =
-            WindowSettings::new().wait_for_parent().with_size(PhysicalSize::new(400, 200));
+        let options = WindowSettings::new()
+            .wait_for_parent()
+            .with_size(PhysicalSize::new(400, 200))
+            .with_min_size(LogicalSize::new(200.0, 100.0))
+            .with_max_size(LogicalSize::new(600.0, 400.0));
 
         let mut host = Host::new().with_main_thread(unsafe {
             MainThreadHandler { host: self.host.shared().with_arbitrary_lifetime() }

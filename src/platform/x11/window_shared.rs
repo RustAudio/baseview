@@ -213,12 +213,16 @@ impl WindowInner {
     }
 
     pub fn resize(&self, size: Size) -> Result<()> {
-        let new_physical_size = size.to_physical(self.scaling_factor.get());
-        self.xcb_window.resize(new_physical_size)?.check()?;
+        let new_size = self.sizing_strategy.adjust_size(size, self.size()).physical;
+
+        if new_size == self.window_size.get().cast() {
+            return Ok(());
+        }
+
+        self.xcb_window.resize(new_size)?.check()?;
 
         if !self.sizing_strategy.is_resizable() {
-            let size_hints =
-                get_size_hints(&self.sizing_strategy, new_physical_size, self.scale_factor());
+            let size_hints = get_size_hints(&self.sizing_strategy, new_size, self.scale_factor());
             self.xcb_window.set_size_hints(size_hints)?.check()?;
         }
 

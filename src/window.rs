@@ -220,53 +220,10 @@ impl Window {
         Ok(())
     }
 
-    fn adjust_size_physical(&self, mut size: PhysicalSize<u32>) -> WindowSize {
-        let scale_factor = self.size().scale_factor;
-
-        if let Some(max_size) = self.max_size() {
-            let max_size = max_size.to_physical::<u32>(scale_factor);
-            size.width = max_size.width.min(size.width);
-            size.height = max_size.height.min(size.height);
-        }
-
-        if let Some(min_size) = self.min_size() {
-            let min_size = min_size.to_physical::<u32>(scale_factor);
-            size.width = min_size.width.max(size.width);
-            size.height = min_size.height.max(size.height);
-        }
-
-        WindowSize::from_physical(size, scale_factor)
-    }
-
-    fn adjust_size_logical(&self, mut size: LogicalSize<f64>) -> WindowSize {
-        let scale_factor = self.size().scale_factor;
-
-        if let Some(max_size) = self.max_size() {
-            let max_size = max_size.to_logical::<f64>(scale_factor);
-            size.width = max_size.width.min(size.width);
-            size.height = max_size.height.min(size.height);
-        }
-
-        if let Some(min_size) = self.min_size() {
-            let min_size = min_size.to_logical::<f64>(scale_factor);
-            size.width = min_size.width.max(size.width);
-            size.height = min_size.height.max(size.height);
-        }
-
-        WindowSize::from_logical(size, scale_factor)
-    }
-
+    /// Adjusts the given size to the window's size constraints.
+    #[inline]
     pub fn adjust_size<S: From<WindowSize> + Into<Size>>(&self, size: S) -> S {
-        if !self.is_resizable() {
-            return self.size().into();
-        }
-
-        let adjusted = match size.into() {
-            Size::Physical(size) => self.adjust_size_physical(size),
-            Size::Logical(size) => self.adjust_size_logical(size),
-        };
-
-        adjusted.into()
+        self.inner.sizing_strategy().adjust_size(size.into(), self.size()).into()
     }
 }
 
