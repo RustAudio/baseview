@@ -10,11 +10,21 @@ pub struct NativeSize<P> {
     pub height: P,
 }
 
+#[cfg(target_os = "macos")]
+const NATIVE_IS_LOGICAL: bool = true;
+#[cfg(not(target_os = "macos"))]
+const NATIVE_IS_LOGICAL: bool = false;
+
 impl<P> NativeSize<P> {
     #[inline]
     pub const fn new(width: P, height: P) -> Self {
         NativeSize { width, height }
     }
+
+    /// This is `true` if the platform's native size is represented in logical pixels, and `false` otherwise.
+    ///
+    /// This is `true` on macOS, and `false` on Windows and Linux.
+    pub const IS_LOGICAL: bool = NATIVE_IS_LOGICAL;
 }
 
 impl<P: Pixel> NativeSize<P> {
