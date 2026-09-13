@@ -219,6 +219,12 @@ impl Window {
         self.inner.hide()?;
         Ok(())
     }
+
+    /// Adjusts the given size to the window's size constraints.
+    #[inline]
+    pub fn adjust_size<S: From<WindowSize> + Into<Size>>(&self, size: S) -> S {
+        self.inner.sizing_strategy().adjust_size(size.into(), self.size()).into()
+    }
 }
 
 pub(crate) struct WindowInitializer {
@@ -280,5 +286,12 @@ impl<P: Pixel> From<WindowSize> for LogicalSize<P> {
     #[inline]
     fn from(size: WindowSize) -> Self {
         size.logical.cast()
+    }
+}
+
+impl From<WindowSize> for Size {
+    #[inline]
+    fn from(value: WindowSize) -> Self {
+        value.to_native_size::<f64>().into()
     }
 }

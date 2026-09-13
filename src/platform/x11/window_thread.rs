@@ -179,6 +179,10 @@ impl WindowThreadHandle {
         result.map_err(|e| RequestFailed::Response(e).into())
     }
 
+    pub fn sizing_strategy(&self) -> SizingStrategy {
+        self.shared.sizing_strategy.get().copied().unwrap_or_default()
+    }
+
     pub fn run_until_closed(&self) -> Result<()> {
         if !self.shared.stopped.load(Ordering::Relaxed) {
             self.request(WindowThreadRequest::Show)?;

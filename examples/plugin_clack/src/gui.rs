@@ -28,8 +28,11 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 
     fn create(&mut self, _configuration: GuiConfiguration) -> Result<(), PluginError> {
-        let options =
-            WindowSettings::new().wait_for_parent().with_size(PhysicalSize::new(400, 200));
+        let options = WindowSettings::new()
+            .wait_for_parent()
+            .with_size(PhysicalSize::new(400, 200))
+            .with_min_size(LogicalSize::new(200.0, 100.0))
+            .with_max_size(LogicalSize::new(600.0, 400.0));
 
         let mut host = Host::new().with_main_thread(unsafe {
             MainThreadHandler { host: self.host.shared().with_arbitrary_lifetime() }
@@ -90,23 +93,12 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
         })
     }
 
-    fn adjust_size(&mut self, mut size: GuiSize) -> Option<GuiSize> {
+    fn adjust_size(&mut self, size: GuiSize) -> Option<GuiSize> {
         let Some(gui) = &self.gui else { return None };
-        let scale_factor = gui.handle.size().scale_factor;
 
-        if let Some(max_size) = gui.handle.max_size() {
-            let max_size = NativeSize::from_size(max_size, scale_factor);
-            size.width = size.width.min(max_size.width);
-            size.height = size.height.min(max_size.height);
-        }
+        let size = gui.handle.adjust_size(NativeSize::new(size.width, size.height));
 
-        if let Some(min_size) = gui.handle.min_size() {
-            let min_size = NativeSize::from_size(min_size, scale_factor);
-            size.width = size.width.max(min_size.width);
-            size.height = size.height.max(min_size.height);
-        }
-
-        Some(size)
+        Some(GuiSize { width: size.width, height: size.height })
     }
 
     fn set_size(&mut self, size: GuiSize) -> Result<(), PluginError> {
