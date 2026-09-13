@@ -126,7 +126,7 @@ impl WindowHandle {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
-        BaseviewView::resize(view, size, false, false);
+        BaseviewView::resize(view, size.to_logical(self.state.scale_factor.get()), false, false);
 
         Ok(())
     }
@@ -159,6 +159,10 @@ impl WindowHandle {
 
         BaseviewView::hide(view);
         Ok(())
+    }
+
+    pub fn sizing_strategy(&self) -> SizingStrategy {
+        self.state.sizing_strategy
     }
 }
 

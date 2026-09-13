@@ -2,6 +2,7 @@ use crate::dpi::Size;
 use crate::platform::macos::view::BaseviewView;
 use crate::platform::Result;
 use crate::platform::{PlatformHandle, WindowSharedState};
+use crate::utils::SizingStrategy;
 use crate::wrappers::appkit::{View, ViewRef};
 use crate::*;
 use dispatch2::MainThreadBound;
@@ -60,11 +61,14 @@ impl WindowContext {
     }
 
     pub fn resize(&self, size: Size) -> Result<()> {
-        let Some(view) = self.view.load() else { return Ok(()) };
-        let Some(view) = view.inner_ref() else { return Ok(()) };
-        if view.inner.state.closed.get() {
+        if self.state.closed.get() {
             return Ok(());
         }
+
+        let Some(view) = self.view.load() else { return Ok(()) };
+        let Some(view) = view.inner_ref() else { return Ok(()) };
+
+        let size = self.state.sizing_strategy.adjust_size(size, self.size()).logical;
 
         BaseviewView::resize(view, size, true, false);
 

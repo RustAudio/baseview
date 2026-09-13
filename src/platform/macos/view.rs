@@ -215,8 +215,13 @@ impl BaseviewView {
         this.parenting.replace(parenting);
     }
 
-    pub fn resize(this: ViewRef<Self>, size: Size, notify_host: bool, from_window: bool) {
-        let size = size.to_logical::<f64>(this.view.backing_scale_factor());
+    pub fn resize(
+        this: ViewRef<Self>, size: LogicalSize<f64>, notify_host: bool, from_window: bool,
+    ) {
+        if size == this.inner.state.size.get() {
+            return;
+        }
+
         // NOTE: macOS gives you a personal rave if you pass in fractional pixels here. Even
         // though the size is in fractional pixels.
         let size = NSSize::new(size.width.round(), size.height.round());
@@ -337,7 +342,7 @@ impl ViewImpl for BaseviewView {
                 warn!("Window Handler failed to resize: {}", e);
                 this.state.size.set(previous);
 
-                Self::resize(this, previous.into(), false, false);
+                Self::resize(this, previous, false, false);
                 return;
             }
 
@@ -345,7 +350,7 @@ impl ViewImpl for BaseviewView {
                 if let Err(e) = this.host.request_resize(new_size) {
                     warn!("Host failed to resize parent view: {}", e);
 
-                    Self::resize(this, previous.into(), false, false);
+                    Self::resize(this, previous, false, false);
                 }
             }
         }
