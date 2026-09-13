@@ -18,6 +18,7 @@ use crate::handler::WindowHandlerBuilder;
 use crate::host::Host;
 use crate::platform::win::window_state::{WindowSharedState, WindowState};
 use crate::platform::PlatformError;
+use crate::utils::SizingStrategy;
 use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
@@ -75,7 +76,12 @@ impl WindowHandle {
     }
 
     pub fn resize(&self, new_size: Size) -> Result<()> {
-        let new_size = new_size.to_physical(self.state.scale_factor());
+        let new_size = self.state.sizing_strategy.adjust_size(new_size, self.size()).physical;
+
+        if new_size == self.state.current_size.get() {
+            return Ok(());
+        }
+
         let hwnd = match self.hwnd.get() {
             Some(hwnd) => hwnd,
             None => {
@@ -94,6 +100,10 @@ impl WindowHandle {
         } else {
             Err(PlatformError::ResizeFailed)
         }
+    }
+
+    pub fn sizing_strategy(&self) -> SizingStrategy {
+        self.state.sizing_strategy
     }
 
     pub fn suggest_scale_factor(&self, scale_factor: f64) -> Result<()> {
