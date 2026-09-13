@@ -2,7 +2,7 @@
 
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
-use crate::dpi::{LogicalPosition, LogicalSize, Size};
+use crate::dpi::{LogicalPosition, LogicalSize};
 use crate::host::Host;
 use crate::platform::macos::cursor::CursorManager;
 use crate::platform::*;

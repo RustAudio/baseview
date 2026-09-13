@@ -2,7 +2,6 @@ use crate::dpi::Size;
 use crate::platform::macos::view::BaseviewView;
 use crate::platform::Result;
 use crate::platform::{PlatformHandle, WindowSharedState};
-use crate::utils::SizingStrategy;
 use crate::wrappers::appkit::{View, ViewRef};
 use crate::*;
 use dispatch2::MainThreadBound;
