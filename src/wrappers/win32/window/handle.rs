@@ -10,7 +10,7 @@ use windows::Win32::System::Ole::IDropTarget;
 use windows_core::{Error, Interface, InterfaceRef, Result, HRESULT};
 use windows_sys::Win32::Foundation::{SetLastError, FALSE, HWND, POINT, S_OK};
 use windows_sys::Win32::Graphics::Gdi::{
-    MonitorFromWindow, ScreenToClient, MONITOR_DEFAULTTOPRIMARY,
+    GetUpdateRect, InvalidateRect, MonitorFromWindow, ScreenToClient, MONITOR_DEFAULTTOPRIMARY,
 };
 use windows_sys::Win32::System::Ole::{RegisterDragDrop, RevokeDragDrop};
 use windows_sys::Win32::UI::HiDpi::{DPI_HOSTING_BEHAVIOR_MIXED, MDT_DEFAULT};
@@ -292,6 +292,27 @@ impl HWnd {
         }
 
         Ok(PhysicalPosition::new(pt.x, pt.y))
+    }
+
+    pub fn get_update_rect(&self) -> Option<Rect> {
+        let mut rect = Rect::EMPTY;
+
+        let result = unsafe { GetUpdateRect(self.as_raw(), &mut rect.0, FALSE) };
+
+        if result == 0 || rect.is_empty() {
+            return None;
+        }
+
+        Some(rect)
+    }
+
+    pub fn invalidate_window(&self) -> Result<()> {
+        let result = unsafe { InvalidateRect(self.as_raw(), null_mut(), FALSE) };
+        if result == 0 {
+            return Err(Error::from_thread());
+        }
+
+        Ok(())
     }
 
     #[cfg(feature = "opengl")]
