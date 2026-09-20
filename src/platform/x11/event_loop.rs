@@ -20,7 +20,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
-use x11rb::errors::ConnectionError;
+use x11rb::protocol::present::CompleteKind;
 use x11rb::protocol::Event as XEvent;
 
 pub struct MainThreadCaller {
@@ -53,9 +53,12 @@ pub(crate) struct EventLoop {
 
     new_size: Option<PhysicalSize<u16>>,
     new_parent_size: Option<PhysicalSize<u16>>,
-    exposed: bool,
+    draw_now: bool,
+    last_requested_serial: Option<u32>,
+    last_received_present: Option<(u32, u64)>,
 
     loop_signal: LoopSignal,
+    loop_handle: LoopHandle<'static, Self>,
 
     drag_n_drop: DragNDropState,
     xkb_state: Option<XkbcommonState>,
@@ -75,8 +78,6 @@ impl EventLoop {
     ) -> Result<Self, PlatformError> {
         let loop_handle = inner.handle();
 
-        Self::setup_fallback_frame_timer(&loop_handle)?;
-
         loop_handle
             .insert_source(
                 Generic::new_with_error(
@@ -94,10 +95,13 @@ impl EventLoop {
 
         Ok(Self {
             loop_signal: inner.get_signal(),
+            loop_handle,
             handler,
             new_size: None,
             new_parent_size: None,
-            exposed: false,
+            draw_now: false,
+            last_requested_serial: None,
+            last_received_present: None,
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
             run_error: None,
@@ -109,7 +113,7 @@ impl EventLoop {
     }
 
     #[inline]
-    fn drain_xcb_events(&mut self) -> Result<bool, ConnectionError> {
+    fn drain_xcb_events(&mut self) -> Result<bool, FatalError> {
         let mut event_received = false;
         while let Some(event) = self.window.connection.conn.poll_for_event()? {
             event_received = true;
@@ -119,13 +123,11 @@ impl EventLoop {
         Ok(event_received)
     }
 
-    fn setup_fallback_frame_timer(
-        loop_handle: &LoopHandle<'_, Self>,
-    ) -> Result<(), calloop::Error> {
+    fn setup_fallback_frame_timer(&self) -> Result<(), calloop::Error> {
         const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 
         fn handle_frame(evloop: &mut EventLoop, previous_deadline: Instant) -> TimeoutAction {
-            evloop.exposed = true;
+            evloop.draw_now = true;
 
             // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
             // the expected frame time, this will throttle down to prevent multiple frames from
@@ -144,7 +146,7 @@ impl EventLoop {
             TimeoutAction::ToInstant(next_deadline)
         }
 
-        loop_handle
+        self.loop_handle
             .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| handle_frame(e, i))
             .map_err(|e| e.error)?;
 
@@ -152,10 +154,10 @@ impl EventLoop {
     }
 
     fn handle_redraw(&mut self) {
-        if !self.exposed {
+        if !self.draw_now {
             return;
         }
-        self.exposed = false;
+        self.draw_now = false;
 
         if !self.window.visibility_state.own_window_is_viewable() {
             return;
@@ -166,8 +168,49 @@ impl EventLoop {
             return;
         }
 
+        self.window.present_notify_requested.set(true);
+
         // Any socket error will be handled in the next poll
         let _ = self.window.connection.conn.flush();
+    }
+
+    fn handle_present_notify(&mut self) -> Result<(), FatalError> {
+        if !self.window.present_notify_requested.get() {
+            return Ok(());
+        }
+
+        if !self.window.xcb_window.present_supported() {
+            self.window.present_notify_requested.set(false);
+            return Ok(());
+        }
+
+        let (next_serial, target_msc) =
+            match (self.last_requested_serial, self.last_received_present) {
+                // First request, always send
+                (None, None) => (0, 0),
+                (Some(sent_serial), Some((received_serial, last_msc)))
+                    if sent_serial == received_serial =>
+                {
+                    (sent_serial.wrapping_add(1), last_msc.wrapping_add(1))
+                }
+                // We sent our first request but have not gotten a response yet.
+                // Or, we sent a request, but the last response we've gotten isn't that one.
+                // Do not send.
+                _ => {
+                    self.window.present_notify_requested.set(false);
+                    return Ok(());
+                }
+            };
+
+        if self.window.xcb_window.present_notify(target_msc, next_serial)?.check_is_ok() {
+            self.last_requested_serial = Some(next_serial);
+        } else {
+            self.last_requested_serial = None;
+            self.setup_fallback_frame_timer()?;
+        }
+        self.window.present_notify_requested.set(false);
+
+        Ok(())
     }
 
     fn handle_coalesced_resize_events(&mut self) -> Result<(), FatalError> {
@@ -216,7 +259,7 @@ impl EventLoop {
         }
 
         // Immediately schedule a redraw, do not wait for an "expose" event
-        self.exposed = true;
+        self.window.present_notify_requested.set(true);
 
         Ok(())
     }
@@ -318,6 +361,7 @@ impl EventLoop {
         loop {
             self.handle_coalesced_resize_events()?;
             self.handle_redraw();
+            self.handle_present_notify()?;
 
             if !self.drain_xcb_events()? {
                 break;
@@ -351,7 +395,7 @@ impl EventLoop {
         Ok(())
     }
 
-    fn handle_xcb_event(&mut self, event: XEvent) -> Result<(), ConnectionError> {
+    fn handle_xcb_event(&mut self, event: XEvent) -> Result<(), FatalError> {
         // For all the keyboard and mouse events, you can fetch
         // `x`, `y`, `detail`, and `state`.
         // - `x` and `y` are the position inside the window where the cursor currently is
@@ -427,7 +471,9 @@ impl EventLoop {
                 }
             }
 
-            XEvent::Expose(e) if e.window == self.window.raw_id() => self.exposed = true,
+            XEvent::Expose(e) if e.window == self.window.raw_id() => {
+                self.window.present_notify_requested.set(true)
+            }
 
             ////
             // mouse
@@ -521,7 +567,13 @@ impl EventLoop {
                     let became_viewable = self.window.visibility_state.window_mapped(window_id);
 
                     if became_viewable {
-                        self.exposed = true;
+                        if self.window.xcb_window.present_supported()
+                            && self.window.xcb_window.present_select_input()?
+                        {
+                            self.window.present_notify_requested.set(true);
+                        } else {
+                            self.setup_fallback_frame_timer()?;
+                        }
                     }
                 }
             }
@@ -552,6 +604,39 @@ impl EventLoop {
                         .visibility_state
                         .window_destroyed(window_id, &self.window.connection)
                 }
+            }
+
+            XEvent::PresentCompleteNotify(e) => {
+                if e.kind != CompleteKind::NOTIFY_MSC {
+                    return Ok(());
+                }
+
+                if e.window != self.window.raw_id() {
+                    return Ok(());
+                }
+
+                let Some(last_requested_serial) = self.last_requested_serial else {
+                    return Ok(());
+                };
+
+                if last_requested_serial != e.serial {
+                    return Ok(());
+                }
+
+                if let Some((last_received_serial, last_received_msc)) = self.last_received_present
+                {
+                    if last_received_serial == e.serial {
+                        return Ok(());
+                    }
+
+                    if e.msc <= last_received_msc {
+                        self.last_received_present = Some((e.serial, e.msc));
+                        return Ok(());
+                    }
+                }
+
+                self.last_received_present = Some((e.serial, e.msc));
+                self.draw_now = true;
             }
 
             _ => {}

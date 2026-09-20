@@ -59,6 +59,7 @@ pub(crate) struct WindowInner {
 
     pub(crate) is_focused: Cell<bool>,
     pub(crate) is_mapped: Cell<bool>,
+    pub(crate) present_notify_requested: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
 
     pub(crate) visibility_state: AncestorVisibilityState,
@@ -149,6 +150,7 @@ impl WindowInner {
 
             is_focused: false.into(),
             is_mapped: false.into(),
+            present_notify_requested: false.into(),
             main_thread_shared: shared,
 
             visibility_state,
