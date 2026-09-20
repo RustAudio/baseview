@@ -78,8 +78,6 @@ impl EventLoop {
     ) -> Result<Self, PlatformError> {
         let loop_handle = inner.handle();
 
-        // Self::setup_fallback_frame_timer(&loop_handle)?;
-
         loop_handle
             .insert_source(
                 Generic::new_with_error(
@@ -125,9 +123,7 @@ impl EventLoop {
         Ok(event_received)
     }
 
-    fn setup_fallback_frame_timer(
-        loop_handle: &LoopHandle<'_, Self>,
-    ) -> Result<(), calloop::Error> {
+    fn setup_fallback_frame_timer(&self) -> Result<(), calloop::Error> {
         const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 
         fn handle_frame(evloop: &mut EventLoop, previous_deadline: Instant) -> TimeoutAction {
@@ -150,7 +146,7 @@ impl EventLoop {
             TimeoutAction::ToInstant(next_deadline)
         }
 
-        loop_handle
+        self.loop_handle
             .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| handle_frame(e, i))
             .map_err(|e| e.error)?;
 
@@ -183,6 +179,11 @@ impl EventLoop {
             return Ok(());
         }
 
+        if !self.window.xcb_window.present_supported() {
+            self.window.present_notify_requested.set(false);
+            return Ok(());
+        }
+
         let (next_serial, target_msc) =
             match (self.last_requested_serial, self.last_received_present) {
                 // First request, always send
@@ -190,8 +191,7 @@ impl EventLoop {
                 (Some(sent_serial), Some((received_serial, last_msc)))
                     if sent_serial == received_serial =>
                 {
-                    // TODO: why does 2 work but not 1 for next MSC??
-                    (sent_serial.wrapping_add(1), last_msc.wrapping_add(2))
+                    (sent_serial.wrapping_add(1), last_msc.wrapping_add(1))
                 }
                 // We sent our first request but have not gotten a response yet.
                 // Or, we sent a request, but the last response we've gotten isn't that one.
@@ -206,7 +206,7 @@ impl EventLoop {
             self.last_requested_serial = Some(next_serial);
         } else {
             self.last_requested_serial = None;
-            Self::setup_fallback_frame_timer(&self.loop_handle)?;
+            self.setup_fallback_frame_timer()?;
         }
         self.window.present_notify_requested.set(false);
 
@@ -567,10 +567,12 @@ impl EventLoop {
                     let became_viewable = self.window.visibility_state.window_mapped(window_id);
 
                     if became_viewable {
-                        if self.window.xcb_window.present_select_input()? {
+                        if self.window.xcb_window.present_supported()
+                            && self.window.xcb_window.present_select_input()?
+                        {
                             self.window.present_notify_requested.set(true);
                         } else {
-                            Self::setup_fallback_frame_timer(&self.loop_handle)?;
+                            self.setup_fallback_frame_timer()?;
                         }
                     }
                 }
