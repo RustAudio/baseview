@@ -302,7 +302,7 @@ impl BaseviewWindow {
     pub(crate) fn handle_on_frame(&self) {
         let Some(handler) = self.handler.get() else { return };
 
-        if let Err(e) = handler.on_frame() {
+        if let Err(e) = handler.draw() {
             warn!("Error while rendering frame: {}", e);
             self.window_state.request_close();
         }

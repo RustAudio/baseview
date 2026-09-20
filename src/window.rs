@@ -225,6 +225,12 @@ impl Window {
     pub fn adjust_size<S: From<WindowSize> + Into<Size>>(&self, size: S) -> S {
         self.inner.sizing_strategy().adjust_size(size.into(), self.size()).into()
     }
+
+    #[inline]
+    pub fn request_poll(&self) -> Result<(), Error> {
+        self.inner.request_poll()?;
+        Ok(())
+    }
 }
 
 pub(crate) struct WindowInitializer {

@@ -127,6 +127,7 @@ impl EventLoop {
         const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 
         fn handle_frame(evloop: &mut EventLoop, previous_deadline: Instant) -> TimeoutAction {
+            dbg!("frame");
             evloop.draw_now = true;
 
             // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
@@ -163,12 +164,10 @@ impl EventLoop {
             return;
         }
 
-        if let Err(e) = self.handler.on_frame() {
+        if let Err(e) = self.handler.draw() {
             self.trigger_fatal_error(e.into());
             return;
         }
-
-        self.window.present_notify_requested.set(true);
 
         // Any socket error will be handled in the next poll
         let _ = self.window.connection.conn.flush();
@@ -472,6 +471,7 @@ impl EventLoop {
             }
 
             XEvent::Expose(e) if e.window == self.window.raw_id() => {
+                dbg!(e);
                 self.window.present_notify_requested.set(true)
             }
 
@@ -634,6 +634,8 @@ impl EventLoop {
                         return Ok(());
                     }
                 }
+
+                dbg!((e.serial, e.msc));
 
                 self.last_received_present = Some((e.serial, e.msc));
                 self.draw_now = true;

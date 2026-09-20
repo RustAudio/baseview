@@ -43,7 +43,7 @@ impl CursorsExample {
 }
 
 impl WindowHandler for CursorsExample {
-    fn on_frame(&self) -> Result<(), HandlerError> {
+    fn draw(&self) -> Result<(), HandlerError> {
         if !self.damaged.get() {
             return Ok(());
         }

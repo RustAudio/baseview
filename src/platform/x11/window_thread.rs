@@ -239,6 +239,10 @@ impl WindowThreadHandle {
         self.request(WindowThreadRequest::SetParent(new_parent))
     }
 
+    pub fn request_poll(&self) -> Result<()> {
+        todo!()
+    }
+
     fn handle_main_thread_message(&self, msg: HostCallback) {
         let Some(host_callbacks) = self.host_callbacks.as_ref() else { return };
         let mut host_callbacks = host_callbacks.borrow_mut();
