@@ -9,8 +9,8 @@ use crate::platform::x11::error::FatalError;
 use crate::platform::x11::window_thread::{
     HostCallback, WindowThreadRequest, WindowThreadResponseMessage,
 };
+use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
-use crate::{warn, RedrawStrategy};
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use calloop::generic::Generic;
 use calloop::timer::{TimeoutAction, Timer};
@@ -171,9 +171,7 @@ impl EventLoop {
             return;
         }
 
-        if self.window.redraw_strategy == RedrawStrategy::Continuous {
-            self.window.present_notify_requested.set(true);
-        }
+        self.window.present_notify_requested.set(true);
 
         // Any socket error will be handled in the next poll
         let _ = self.window.connection.conn.flush();
