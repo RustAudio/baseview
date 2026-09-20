@@ -14,6 +14,7 @@ use x11rb::x11_utils::{TryParse, X11Error};
 #[derive(Debug)]
 pub enum FatalError {
     Connection(ConnectionError),
+    Calloop(calloop::Error),
     SendMainThread,
 }
 
@@ -21,6 +22,7 @@ impl Display for FatalError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             FatalError::Connection(e) => e.fmt(f),
+            FatalError::Calloop(e) => e.fmt(f),
             FatalError::SendMainThread => {
                 f.write_str("Failed to send callback from X11 thread to main thread")
             }
@@ -33,6 +35,11 @@ impl std::error::Error for FatalError {}
 impl From<ConnectionError> for FatalError {
     fn from(err: ConnectionError) -> FatalError {
         FatalError::Connection(err)
+    }
+}
+impl From<calloop::Error> for FatalError {
+    fn from(value: calloop::Error) -> Self {
+        Self::Calloop(value)
     }
 }
 
@@ -163,6 +170,7 @@ impl From<FatalError> for PlatformError {
     fn from(value: FatalError) -> Self {
         match value {
             FatalError::Connection(e) => Self::Connection(e),
+            FatalError::Calloop(e) => Self::Calloop(e),
             FatalError::SendMainThread => Self::SendMainThread,
         }
     }
@@ -223,12 +231,23 @@ impl From<super::gl::CreationFailedError> for PlatformError {
 
 pub trait CookieExt {
     fn check_warn(self);
+    #[must_use]
+    fn check_is_ok(self) -> bool;
 }
 
 impl<T: RequestConnection> CookieExt for VoidCookie<'_, T> {
     fn check_warn(self) {
         if let Err(e) = self.check() {
             warn!("{}", e);
+        }
+    }
+
+    fn check_is_ok(self) -> bool {
+        if let Err(e) = self.check() {
+            warn!("{}", e);
+            true
+        } else {
+            false
         }
     }
 }

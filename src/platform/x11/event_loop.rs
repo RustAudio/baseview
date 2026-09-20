@@ -20,7 +20,6 @@ use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
-use x11rb::errors::ConnectionError;
 use x11rb::protocol::present::CompleteKind;
 use x11rb::protocol::Event as XEvent;
 
@@ -59,6 +58,7 @@ pub(crate) struct EventLoop {
     last_received_present: Option<(u32, u64)>,
 
     loop_signal: LoopSignal,
+    loop_handle: LoopHandle<'static, Self>,
 
     drag_n_drop: DragNDropState,
     xkb_state: Option<XkbcommonState>,
@@ -97,6 +97,7 @@ impl EventLoop {
 
         Ok(Self {
             loop_signal: inner.get_signal(),
+            loop_handle,
             handler,
             new_size: None,
             new_parent_size: None,
@@ -114,7 +115,7 @@ impl EventLoop {
     }
 
     #[inline]
-    fn drain_xcb_events(&mut self) -> Result<bool, ConnectionError> {
+    fn drain_xcb_events(&mut self) -> Result<bool, FatalError> {
         let mut event_received = false;
         while let Some(event) = self.window.connection.conn.poll_for_event()? {
             event_received = true;
@@ -177,7 +178,7 @@ impl EventLoop {
         let _ = self.window.connection.conn.flush();
     }
 
-    fn handle_present_notify(&mut self) -> Result<(), ConnectionError> {
+    fn handle_present_notify(&mut self) -> Result<(), FatalError> {
         if !self.window.present_notify_requested.get() {
             return Ok(());
         }
@@ -201,8 +202,12 @@ impl EventLoop {
                 }
             };
 
-        self.window.xcb_window.present_notify(target_msc, next_serial)?.check_warn(); // TODO: handle error
-        self.last_requested_serial = Some(next_serial);
+        if self.window.xcb_window.present_notify(target_msc, next_serial)?.check_is_ok() {
+            self.last_requested_serial = Some(next_serial);
+        } else {
+            self.last_requested_serial = None;
+            Self::setup_fallback_frame_timer(&self.loop_handle)?;
+        }
         self.window.present_notify_requested.set(false);
 
         Ok(())
@@ -390,7 +395,7 @@ impl EventLoop {
         Ok(())
     }
 
-    fn handle_xcb_event(&mut self, event: XEvent) -> Result<(), ConnectionError> {
+    fn handle_xcb_event(&mut self, event: XEvent) -> Result<(), FatalError> {
         // For all the keyboard and mouse events, you can fetch
         // `x`, `y`, `detail`, and `state`.
         // - `x` and `y` are the position inside the window where the cursor currently is
@@ -562,8 +567,11 @@ impl EventLoop {
                     let became_viewable = self.window.visibility_state.window_mapped(window_id);
 
                     if became_viewable {
-                        self.window.xcb_window.present_select_input()?.unwrap().check_warn(); // TODO: unwrap: fallback to timer
-                        self.window.present_notify_requested.set(true);
+                        if self.window.xcb_window.present_select_input()? {
+                            self.window.present_notify_requested.set(true);
+                        } else {
+                            Self::setup_fallback_frame_timer(&self.loop_handle)?;
+                        }
                     }
                 }
             }

@@ -75,18 +75,20 @@ impl XcbWindow {
         Ok(Self { window_id, connection, present_notify_event_id })
     }
 
-    pub fn present_select_input(
-        &self,
-    ) -> Result<Option<VoidCookie<'_, XCBConnection>>, ConnectionError> {
+    pub fn present_select_input(&self) -> Result<bool, ConnectionError> {
         let Some(event_id) = self.present_notify_event_id else {
-            return Ok(None);
+            return Ok(false);
         };
 
-        Ok(Some(self.connection.conn.present_select_input(
-            event_id.get(),
-            self.window_id.get(),
-            present::EventMask::COMPLETE_NOTIFY,
-        )?))
+        Ok(self
+            .connection
+            .conn
+            .present_select_input(
+                event_id.get(),
+                self.window_id.get(),
+                present::EventMask::COMPLETE_NOTIFY,
+            )?
+            .check_is_ok())
     }
 
     pub fn map_window(&self) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
