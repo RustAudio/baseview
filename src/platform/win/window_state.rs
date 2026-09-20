@@ -9,7 +9,6 @@ use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule};
 use crate::{MouseCursor, WindowSize};
-use crate::{RedrawStrategy, WindowSettings};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, Ref, RefCell};
 use std::num::NonZeroIsize;
@@ -73,10 +72,6 @@ impl WindowState {
                 0,
             );
         }
-    }
-
-    pub fn request_redraw(&self) {
-        let _ = self.hwnd.invalidate_window();
     }
 
     pub fn has_focus(&self) -> bool {
@@ -144,7 +139,6 @@ pub struct WindowSharedState {
 
     pub user32: LibraryModule<ExtendedUser32>,
     pub sizing_strategy: SizingStrategy,
-    pub redraw_strategy: RedrawStrategy,
 }
 
 impl WindowSharedState {
@@ -160,7 +154,6 @@ impl WindowSharedState {
             sizing_strategy: SizingStrategy::from_settings(settings),
             user32,
             dpi_scaling_strategy: DpiScalingStrategy::default().into(),
-            redraw_strategy: settings.redraw_strategy,
         }
         .into()
     }
