@@ -7,7 +7,7 @@ use windows_sys::Win32::{
 use crate::dpi::{PhysicalPosition, PhysicalSize, Size};
 use crate::{warn, EventStatus, HandlerError, RedrawStrategy, WindowHandler};
 use std::cell::{Cell, OnceCell};
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 use windows_sys::Win32::Foundation::POINT;
 
 pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
@@ -35,6 +35,11 @@ fn hi_word(wparam: WPARAM) -> u16 {
 fn lo_word(lparam: LPARAM) -> u16 {
     (lparam & 0xffff) as u16
 }
+
+const WIN_FRAME_TIMER: NonZeroUsize = match NonZeroUsize::new(4242) {
+    Some(x) => x,
+    None => unreachable!(),
+};
 
 pub struct WindowHandle {
     init: Cell<Option<WindowInitializer>>,
@@ -266,6 +271,13 @@ impl BaseviewWindow {
         let title = HSTRING::from(init.settings.title);
         let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
 
+        // FIXME: this SetTimer call could be in after_create, but for some reason it changes the ordering
+        // for a parent+child window situation, which results in the parent drawing over the child.
+        // This timer should be replaced by proper window redrawing/damage/vsync handling, but this
+        // would be a breaking change, so we'll do that later.
+        // TODO: create a new timer instead of hard-coding a specific ID
+        window.set_timer(WIN_FRAME_TIMER, 15)?;
+
         Ok(window)
     }
 
@@ -287,11 +299,11 @@ impl BaseviewWindow {
         self.host.request_resize(new_size)
     }
 
-    pub(crate) fn handle_draw(&self) {
+    pub(crate) fn handle_on_frame(&self) {
         let Some(handler) = self.handler.get() else { return };
 
         if let Err(e) = handler.on_frame() {
-            warn!("Error while drawing window: {}", e);
+            warn!("Error while rendering frame: {}", e);
             self.window_state.request_close();
         }
     }
@@ -518,22 +530,12 @@ unsafe fn wnd_proc_inner(
 
             None
         }
-        WM_PAINT => {
-            let window_invalidated = window.get_update_rect().is_some();
-
-            if window_invalidated {
-                window_bv.handle_draw();
+        WM_TIMER => {
+            if wparam == WIN_FRAME_TIMER.get() {
+                window_bv.handle_on_frame()
             }
 
-            if window_state.shared.redraw_strategy == RedrawStrategy::Continuous {
-                let _ = window.invalidate_window();
-            }
-
-            if window_invalidated {
-                Some(0)
-            } else {
-                None
-            }
+            Some(0)
         }
         WM_CLOSE => {
             window_bv.handle_event(Event::Window(WindowEvent::WillClose));

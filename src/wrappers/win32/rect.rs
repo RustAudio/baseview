@@ -13,11 +13,6 @@ impl Rect {
             height: self.0.top.abs_diff(self.0.bottom),
         }
     }
-
-    pub fn is_empty(&self) -> bool {
-        let size = self.size();
-        size.width == 0 && size.height == 0
-    }
 }
 
 impl From<PhysicalSize<u32>> for Rect {
