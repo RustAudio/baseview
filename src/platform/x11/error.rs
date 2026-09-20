@@ -258,9 +258,9 @@ impl<T: RequestConnection> CookieExt for VoidCookie<'_, T> {
     fn check_is_ok(self) -> bool {
         if let Err(e) = self.check() {
             warn!("{}", e);
-            true
-        } else {
             false
+        } else {
+            true
         }
     }
 }

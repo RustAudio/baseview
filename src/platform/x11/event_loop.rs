@@ -191,7 +191,7 @@ impl EventLoop {
                 (Some(sent_serial), Some((received_serial, last_msc)))
                     if sent_serial == received_serial =>
                 {
-                    (sent_serial.wrapping_add(1), last_msc.wrapping_add(1))
+                    (sent_serial.wrapping_add(1), last_msc.wrapping_add(2))
                 }
                 // We sent our first request but have not gotten a response yet.
                 // Or, we sent a request, but the last response we've gotten isn't that one.
