@@ -105,7 +105,7 @@ impl WindowHandler for FramePacingTest {
         let _ = canvas.fill_text(
             5.0,
             screen_height as f32 - 20.0,
-            format!("Speed: {} pixels/sec", bar_speed),
+            format!("Speed: {} pixels/frame", bar_speed),
             &text_paint,
         );
 
