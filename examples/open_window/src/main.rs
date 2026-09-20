@@ -125,10 +125,8 @@ impl WindowHandler for OpenWindowExample {
                 self.is_cursor_inside.set(false);
                 self.window_context.request_redraw();
             }
-            _ => {}
+            event => log_event(&event),
         }
-
-        log_event(&event);
 
         EventStatus::Captured
     }
