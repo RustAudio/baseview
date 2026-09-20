@@ -14,13 +14,11 @@ struct FemtovgExample {
     gl_context: GlContext,
     canvas: RefCell<Canvas<OpenGl>>,
     current_mouse_position: Cell<PhysicalPosition<f64>>,
-    damaged: Cell<bool>,
 }
 
 impl FemtovgExample {
     fn new(window_context: WindowContext) -> Result<Self, HandlerError> {
         let Some(gl_context) = window_context.gl_context() else { unreachable!() };
-        unsafe { gl_context.make_current()? };
 
         let renderer =
             unsafe { OpenGl::new_from_function_cstr(|s| gl_context.get_proc_address(s)) }?;
@@ -35,7 +33,6 @@ impl FemtovgExample {
             gl_context,
             window_context,
             canvas: canvas.into(),
-            damaged: true.into(),
             current_mouse_position: Cell::new(PhysicalPosition::default()),
         })
     }
@@ -43,10 +40,6 @@ impl FemtovgExample {
 
 impl WindowHandler for FemtovgExample {
     fn draw(&self) -> Result<(), HandlerError> {
-        if !self.damaged.get() {
-            return Ok(());
-        }
-
         let context = &self.gl_context;
         unsafe { context.make_current()? };
 
@@ -82,7 +75,6 @@ impl WindowHandler for FemtovgExample {
         canvas.flush();
         context.swap_buffers()?;
         unsafe { context.make_not_current()? };
-        self.damaged.set(false);
 
         Ok(())
     }
@@ -90,7 +82,6 @@ impl WindowHandler for FemtovgExample {
     fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError> {
         let size = new_size.physical;
         self.canvas.borrow_mut().set_size(size.width, size.height, new_size.scale_factor as f32);
-        self.damaged.set(true);
 
         Ok(())
     }
@@ -107,7 +98,7 @@ impl WindowHandler for FemtovgExample {
                 if position.y > 400. && !self.window_context.has_focus() {
                     let _ = self.window_context.focus();
                 }
-                self.damaged.set(true);
+                self.window_context.request_redraw();
             }
             event => log_event(&event),
         };

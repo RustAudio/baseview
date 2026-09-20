@@ -471,7 +471,6 @@ impl EventLoop {
             }
 
             XEvent::Expose(e) if e.window == self.window.raw_id() => {
-                dbg!(e);
                 self.window.present_notify_requested.set(true)
             }
 
@@ -634,8 +633,6 @@ impl EventLoop {
                         return Ok(());
                     }
                 }
-
-                dbg!((e.serial, e.msc));
 
                 self.last_received_present = Some((e.serial, e.msc));
                 self.draw_now = true;

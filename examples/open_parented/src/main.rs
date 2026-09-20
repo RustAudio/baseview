@@ -8,8 +8,6 @@ use std::num::NonZeroU32;
 
 struct ParentWindowHandler {
     surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
-    damaged: Cell<bool>,
-
     child_window: Window,
 }
 
@@ -26,7 +24,7 @@ impl ParentWindowHandler {
         let child_window = Window::create(window_open_options, ChildWindowHandler::new)?;
         child_window.show()?;
 
-        Ok(Self { surface: surface.into(), damaged: true.into(), child_window })
+        Ok(Self { surface: surface.into(), child_window })
     }
 }
 
@@ -34,10 +32,7 @@ impl WindowHandler for ParentWindowHandler {
     fn draw(&self) -> Result<(), HandlerError> {
         let mut surface = self.surface.borrow_mut();
         let mut buf = surface.buffer_mut()?;
-        if self.damaged.get() {
-            buf.fill(0xFFAA0000);
-            self.damaged.set(false);
-        }
+        buf.fill(0xFFAA0000);
         buf.present()?;
 
         Ok(())
@@ -50,7 +45,6 @@ impl WindowHandler for ParentWindowHandler {
             (NonZeroU32::new(new_size.physical.width), NonZeroU32::new(new_size.physical.height))
         {
             self.surface.borrow_mut().resize(width, height)?;
-            self.damaged.set(true);
         }
 
         self.child_window.suggest_fallback_scale_factor(new_size.scale_factor)?;
@@ -71,7 +65,6 @@ impl WindowHandler for ParentWindowHandler {
 
 struct ChildWindowHandler {
     surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
-    damaged: Cell<bool>,
 }
 
 impl ChildWindowHandler {
@@ -81,7 +74,7 @@ impl ChildWindowHandler {
         let size = window.size().physical;
         surface.resize(size.width.try_into()?, size.height.try_into()?)?;
 
-        Ok(Self { surface: surface.into(), damaged: true.into() })
+        Ok(Self { surface: surface.into() })
     }
 }
 
@@ -89,10 +82,7 @@ impl WindowHandler for ChildWindowHandler {
     fn draw(&self) -> Result<(), HandlerError> {
         let mut surface = self.surface.borrow_mut();
         let mut buf = surface.buffer_mut()?;
-        if self.damaged.get() {
-            buf.fill(0xFFAAAAAA);
-            self.damaged.set(false);
-        }
+        buf.fill(0xFFAAAAAA);
         buf.present()?;
 
         Ok(())
@@ -105,7 +95,6 @@ impl WindowHandler for ChildWindowHandler {
             (NonZeroU32::new(new_size.physical.width), NonZeroU32::new(new_size.physical.height))
         {
             self.surface.borrow_mut().resize(width, height)?;
-            self.damaged.set(true);
         }
 
         Ok(())

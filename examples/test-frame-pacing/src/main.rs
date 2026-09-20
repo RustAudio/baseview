@@ -18,6 +18,7 @@ const BAR_COUNT: u32 = 5;
 const BAR_SPEED_INCREMENTS: u32 = 3;
 
 struct FramePacingTest {
+    window_context: WindowContext,
     gl_context: GlContext,
     canvas: RefCell<Canvas<OpenGl>>,
     perf_graph: PerfGraph,
@@ -46,6 +47,7 @@ impl FramePacingTest {
 
         unsafe { gl_context.make_not_current()? };
         Ok(Self {
+            window_context,
             gl_context,
             canvas: canvas.into(),
             perf_graph: PerfGraph::new(),
@@ -117,6 +119,9 @@ impl WindowHandler for FramePacingTest {
         canvas.flush();
         self.gl_context.swap_buffers()?;
         unsafe { self.gl_context.make_not_current()? };
+
+        // Continuously schedule new frames
+        self.window_context.request_redraw();
 
         Ok(())
     }
