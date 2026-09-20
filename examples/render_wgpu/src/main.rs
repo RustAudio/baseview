@@ -131,7 +131,7 @@ impl WgpuExample {
 }
 
 impl WindowHandler for WgpuExample {
-    fn draw(&self) -> Result<(), HandlerError> {
+    fn on_frame(&self) -> Result<(), HandlerError> {
         let mut surface = self.surface.borrow_mut();
 
         let surface_texture = match surface.get_current_texture() {

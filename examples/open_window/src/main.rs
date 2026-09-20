@@ -39,7 +39,7 @@ impl WindowHandler for OpenWindowExample {
         Ok(())
     }
 
-    fn draw(&self) -> Result<(), HandlerError> {
+    fn on_frame(&self) -> Result<(), HandlerError> {
         let mut surface = self.surface.borrow_mut();
         let mut pixels = surface.buffer_mut()?;
         let size = self.window_context.size();

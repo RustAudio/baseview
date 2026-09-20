@@ -40,7 +40,7 @@ impl FemtovgExample {
 }
 
 impl WindowHandler for FemtovgExample {
-    fn draw(&self) -> Result<(), HandlerError> {
+    fn on_frame(&self) -> Result<(), HandlerError> {
         let context = &self.gl_context;
         unsafe { context.make_current()? };
 

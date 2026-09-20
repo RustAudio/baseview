@@ -290,7 +290,7 @@ impl BaseviewWindow {
     pub(crate) fn handle_draw(&self) {
         let Some(handler) = self.handler.get() else { return };
 
-        if let Err(e) = handler.draw() {
+        if let Err(e) = handler.on_frame() {
             warn!("Error while drawing window: {}", e);
             self.window_state.request_close();
         }

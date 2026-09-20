@@ -166,7 +166,7 @@ impl EventLoop {
             return;
         }
 
-        if let Err(e) = self.handler.draw() {
+        if let Err(e) = self.handler.on_frame() {
             self.trigger_fatal_error(e.into());
             return;
         }

@@ -6,7 +6,7 @@ pub trait WindowHandler: 'static {
     ///
     /// If this returns an error, the window will be considered unable to render its contents, and
     /// will be subsequently closed.
-    fn draw(&self) -> core::result::Result<(), HandlerError>;
+    fn on_frame(&self) -> core::result::Result<(), HandlerError>;
 
     /// Informs the handler that the window has been resized.
     ///
