@@ -18,7 +18,6 @@ const BAR_COUNT: u32 = 5;
 const BAR_SPEED_INCREMENTS: u32 = 3;
 
 struct FramePacingTest {
-    window_context: WindowContext,
     gl_context: GlContext,
     canvas: RefCell<Canvas<OpenGl>>,
     perf_graph: PerfGraph,
@@ -48,7 +47,6 @@ impl FramePacingTest {
         unsafe { gl_context.make_not_current()? };
         Ok(Self {
             gl_context,
-            window_context,
             canvas: canvas.into(),
             perf_graph: PerfGraph::new(),
             previous_frame_time: Instant::now().into(),
@@ -86,7 +84,6 @@ impl WindowHandler for FramePacingTest {
                 self.bar_pos.get() + i * spacing,
                 screen_width,
                 screen_height,
-                BAR_WIDTH,
             );
         }
 
@@ -162,7 +159,6 @@ fn main() -> Result<(), baseview::Error> {
 
 fn draw_bar_may_split(
     canvas: &mut Canvas<impl Renderer>, mut pos: u32, screen_width: u32, screen_height: u32,
-    bar_width: u32,
 ) {
     pos %= screen_width;
     canvas.clear_rect(pos, 0, BAR_WIDTH, screen_height, Color::white());
