@@ -20,6 +20,7 @@ impl WindowWaker {
     }
 
     pub fn request_poll(&self) {
+        self.shared.request_poll();
         self.loop_signal.wakeup();
     }
 }
