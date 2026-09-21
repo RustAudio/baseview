@@ -2,17 +2,20 @@ use crate::dpi::{PhysicalSize, Size};
 use crate::platform::x11::event_loop::EventLoop;
 use crate::platform::x11::visibility_tree::AncestorVisibilityState;
 use crate::platform::x11::visual_info::WindowVisualConfig;
+use crate::platform::x11::waker::WindowWaker;
 use crate::platform::x11::window_thread::WindowThreadShared;
 use crate::platform::x11::xcb_connection::get_size_hints;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::*;
 use crate::utils::SizingStrategy;
 use crate::{warn, MouseCursor, WindowHandler, WindowSettings, WindowSize};
-use calloop::LoopSignal;
+use calloop::timer::{TimeoutAction, Timer};
+use calloop::{LoopHandle, LoopSignal};
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, InputFocus, Visualid};
 use x11rb::CURRENT_TIME;
@@ -61,6 +64,7 @@ pub(crate) struct WindowInner {
     pub(crate) is_mapped: Cell<bool>,
     pub(crate) present_notify_requested: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
+    loop_handle: LoopHandle<'static, super::event_loop::EventLoop>,
 
     pub(crate) visibility_state: AncestorVisibilityState,
 
@@ -143,6 +147,7 @@ impl WindowInner {
             sizing_strategy,
             mouse_cursor: MouseCursor::default().into(),
             loop_signal: ev_loop.get_signal(),
+            loop_handle: ev_loop.handle(),
 
             is_focused: false.into(),
             is_mapped: false.into(),
@@ -199,6 +204,30 @@ impl WindowInner {
 
     pub fn request_redraw(&self) {
         self.present_notify_requested.set(true)
+    }
+
+    pub fn request_redraw_after(&self, duration: Duration) {
+        if duration.is_zero() || duration.as_millis() < 1 {
+            self.request_redraw();
+            return;
+        }
+
+        let result = self.loop_handle.insert_source(Timer::from_duration(duration), |_, _, e| {
+            e.request_redraw();
+            TimeoutAction::Drop
+        });
+
+        if let Err(e) = result {
+            warn!("{}", e);
+            self.request_redraw();
+        }
+    }
+
+    pub fn waker(&self) -> WindowWaker {
+        WindowWaker {
+            loop_signal: self.loop_signal.clone(),
+            shared: Arc::clone(&self.main_thread_shared),
+        }
     }
 
     pub fn has_focus(&self) -> bool {
