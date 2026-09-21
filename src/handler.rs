@@ -12,8 +12,7 @@ pub trait WindowHandler: 'static {
     ///
     /// In order to reduce resource usage, this method is not called systematically at every frame
     /// interval.
-    ///
-    /// This method is automatically scheduled to be called in several situations:
+    /// However, this method is automatically scheduled to be called in several situations:
     ///
     /// * When the window is first opened and shown to the user;
     /// * When the window is shown after being previously hidden;
