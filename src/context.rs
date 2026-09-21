@@ -41,12 +41,13 @@ impl WindowContext {
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
-        self.inner.request_redraw_after(duration)
+        //self.inner.request_redraw_after(duration)
     }
 
     #[must_use]
     pub fn waker(&self) -> WindowWaker {
-        WindowWaker { inner: self.inner.waker() }
+        //WindowWaker { inner: self.inner.waker() }
+        todo!()
     }
 
     /// Returns `true` if this window currently has keyboard focus, `false` otherwise.

@@ -2,7 +2,7 @@
 
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
-use crate::dpi::{LogicalPosition, LogicalSize};
+use crate::dpi::{LogicalPosition, LogicalSize, Size};
 use crate::host::Host;
 use crate::platform::macos::cursor::CursorManager;
 use crate::platform::*;
@@ -142,9 +142,7 @@ impl BaseviewView {
             let timer_view = Weak::new(view.view);
             view.frame_timer.set(TimerHandle::new(0.015, move || {
                 if let Some(view) = timer_view.load() {
-                    if let Some(view) = view.inner_ref() {
-                        Self::trigger_frame(view);
-                    }
+                    view.setNeedsDisplay(true);
                 }
             }));
 
@@ -182,6 +180,10 @@ impl BaseviewView {
                 window.orderOut(None)
             }
         }
+    }
+
+    pub fn poll(this: ViewRef<Self>) {
+        this.window_handler.use_handler(|h| h.poll());
     }
 
     pub fn close(this: ViewRef<Self>, from_host: bool) {
@@ -254,8 +256,8 @@ impl BaseviewView {
     }
 
     fn trigger_frame(this: ViewRef<Self>) {
-        if let Some(Err(e)) = this.window_handler.use_handler(|h| h.on_frame()) {
-            warn!("Error while rendering frame: {}", e);
+        if let Some(Err(e)) = this.window_handler.use_handler(|h| h.draw()) {
+            warn!("Error while drawing: {}", e);
             Self::close(this, false);
         }
     }
@@ -316,7 +318,7 @@ impl ViewImpl for BaseviewView {
         let size = window.contentRectForFrameRect(window.frame()).size;
         let size = LogicalSize::new(size.width, size.height);
 
-        BaseviewView::resize(this, size, true, true);
+        BaseviewView::resize(this, size.into(), true, true);
     }
 
     fn view_did_change_backing_properties(this: ViewRef<Self>, notify_host: bool) {
@@ -342,7 +344,7 @@ impl ViewImpl for BaseviewView {
                 warn!("Window Handler failed to resize: {}", e);
                 this.state.size.set(previous);
 
-                Self::resize(this, previous, false, false);
+                Self::resize(this, previous.into(), false, false);
                 return;
             }
 
@@ -350,10 +352,14 @@ impl ViewImpl for BaseviewView {
                 if let Err(e) = this.host.request_resize(new_size) {
                     warn!("Host failed to resize parent view: {}", e);
 
-                    Self::resize(this, previous, false, false);
+                    Self::resize(this, previous.into(), false, false);
                 }
             }
         }
+    }
+
+    fn draw_rect(this: ViewRef<Self>, _rect: NSRect) {
+        Self::trigger_frame(this);
     }
 
     /// `hitTest:` override that collapses hits on baseview's internal
