@@ -139,15 +139,7 @@ fn main() -> Result<(), baseview::Error> {
 
     let (mut tx, rx) = RingBuffer::new(128);
 
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(5));
-
-        if tx.push(Message::Hello).is_err() {
-            println!("Failed sending message");
-        }
-    });
-
-    Window::create(window_open_options, |window| {
+    let window = Window::create(window_open_options, |window| {
         let ctx = softbuffer::Context::new(window.clone())?;
         let mut surface = softbuffer::Surface::new(&ctx, window.clone())?;
         let size = window.size().physical;
@@ -160,8 +152,20 @@ fn main() -> Result<(), baseview::Error> {
             mouse_pos: PhysicalPosition::new(0., 0.).into(),
             is_cursor_inside: false.into(),
         })
-    })?
-    .run_until_closed()?;
+    })?;
+
+    let waker = window.waker();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(5));
+
+        if tx.push(Message::Hello).is_err() {
+            println!("Failed sending message");
+        } else {
+            waker.request_poll();
+        }
+    });
+
+    window.run_until_closed()?;
 
     Ok(())
 }

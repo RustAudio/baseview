@@ -63,6 +63,7 @@ pub(crate) struct WindowInner {
 
     pub(crate) is_focused: Cell<bool>,
     pub(crate) present_notify_requested: Cell<bool>,
+    pub(crate) poll_requested: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
     loop_handle: LoopHandle<'static, EventLoop>,
 
@@ -144,6 +145,7 @@ impl WindowInner {
 
             is_focused: false.into(),
             present_notify_requested: false.into(),
+            poll_requested: false.into(),
             main_thread_shared: shared,
 
             #[cfg(feature = "opengl")]
