@@ -10,8 +10,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
-use crate::platform::ParentWindowHandle;
 use crate::platform::Result;
+use crate::platform::{ParentWindowHandle, WindowWaker};
 use crate::utils::SizingStrategy;
 use crate::wrappers::appkit::{create_window, View};
 use crate::*;
@@ -173,6 +173,18 @@ impl WindowHandle {
 
     pub fn sizing_strategy(&self) -> SizingStrategy {
         self.state.sizing_strategy
+    }
+
+    pub fn request_poll(&self) -> Result<()> {
+        let Some(view) = self.view.load() else { return Ok(()) };
+        let Some(view) = view.inner_ref() else { return Ok(()) };
+
+        BaseviewView::poll(view);
+        Ok(())
+    }
+
+    pub fn waker(&self) -> WindowWaker {
+        WindowWaker::new(Weak::clone(&self.view))
     }
 }
 
