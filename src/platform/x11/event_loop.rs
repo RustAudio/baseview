@@ -154,6 +154,10 @@ impl EventLoop {
     }
 
     fn handle_redraw(&mut self) {
+        self.handler.poll();
+        self.window.poll_requested.set(false);
+
+        // Consume all requests from above poll
         if let Some(redraw_after) = self.window.main_thread_shared.take_redraw_request() {
             self.window.request_redraw_after(redraw_after)
         }
@@ -161,6 +165,9 @@ impl EventLoop {
         if !self.draw_now {
             return;
         }
+
+        self.window.present_notify_requested.set(false);
+
         self.draw_now = false;
 
         if let Err(e) = self.handler.draw() {
@@ -358,6 +365,11 @@ impl EventLoop {
             self.handle_coalesced_resize_events()?;
             self.handle_redraw();
             self.handle_present_notify()?;
+
+            if self.window.poll_requested.get() {
+                self.handler.poll();
+                self.window.poll_requested.set(true);
+            }
 
             if !self.drain_xcb_events()? {
                 break;
