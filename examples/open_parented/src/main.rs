@@ -3,7 +3,7 @@ use baseview::{
     Event, EventStatus, HandlerError, Window, WindowContext, WindowHandler, WindowSettings,
     WindowSize,
 };
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::num::NonZeroU32;
 
 struct ParentWindowHandler {

@@ -1,6 +1,5 @@
 use crate::dpi::{PhysicalSize, Size};
 use crate::platform::x11::event_loop::EventLoop;
-use crate::platform::x11::visibility_tree::AncestorVisibilityState;
 use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::x11::waker::WindowWaker;
 use crate::platform::x11::window_thread::WindowThreadShared;
@@ -13,6 +12,7 @@ use calloop::timer::{TimeoutAction, Timer};
 use calloop::{LoopHandle, LoopSignal};
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::cell::Cell;
+use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -51,6 +51,7 @@ pub(crate) struct WindowInner {
     gl_context: Option<super::gl::GlContext>,
 
     pub(crate) xcb_window: XcbWindow,
+    pub(crate) parent_id: Cell<Option<NonZeroU32>>,
     pub(crate) connection: Rc<X11Connection>,
 
     pub(crate) scaling_factor: ScalingFactor,
@@ -61,12 +62,9 @@ pub(crate) struct WindowInner {
     pub(crate) visual_id: Visualid,
 
     pub(crate) is_focused: Cell<bool>,
-    pub(crate) is_mapped: Cell<bool>,
     pub(crate) present_notify_requested: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
-    loop_handle: LoopHandle<'static, super::event_loop::EventLoop>,
-
-    pub(crate) visibility_state: AncestorVisibilityState,
+    loop_handle: LoopHandle<'static, EventLoop>,
 
     pub(crate) main_thread_shared: Arc<WindowThreadShared>,
 }
@@ -100,20 +98,14 @@ impl WindowInner {
         let visual_info = WindowVisualConfig::find_best_visual_config(&connection)?;
 
         let will_have_parent = options.parent.is_some() || options.wait_for_parent;
+        let parent_id = options.parent.map(|p| p.inner.window_id);
 
-        let xcb_window = XcbWindow::new(
-            Rc::clone(&connection),
-            physical_size,
-            &visual_info,
-            options.parent.map(|p| p.inner.window_id),
-        )?;
+        let xcb_window =
+            XcbWindow::new(Rc::clone(&connection), physical_size, &visual_info, parent_id)?;
 
         if will_have_parent {
             connection.register_tree_structure_events()?.check()?;
         }
-
-        let visibility_state =
-            AncestorVisibilityState::discover(&connection, xcb_window.id(), will_have_parent)?;
 
         let cookies = [
             xcb_window.set_title(&options.title)?,
@@ -138,6 +130,7 @@ impl WindowInner {
         Ok(Rc::new(Self {
             connection,
             xcb_window,
+            parent_id: parent_id.into(),
             visual_id: visual_info.visual_id,
             window_size: physical_size.into(),
             scaling_factor: ScalingFactor {
@@ -150,11 +143,8 @@ impl WindowInner {
             loop_handle: ev_loop.handle(),
 
             is_focused: false.into(),
-            is_mapped: false.into(),
             present_notify_requested: false.into(),
             main_thread_shared: shared,
-
-            visibility_state,
 
             #[cfg(feature = "opengl")]
             gl_context,
