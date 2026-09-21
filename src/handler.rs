@@ -15,7 +15,7 @@ pub trait WindowHandler: 'static {
     /// However, this method is automatically scheduled to be called in several situations:
     ///
     /// * When the window is first opened and shown to the user;
-    /// * When the window is shown after being previously hidden;
+    /// * When the window is shown after being previously hidden (if the platform did not keep the window's content in memory);
     /// * When the window is resized;
     /// * When the platform explicitly requests a window redraw (such as redrawing what was previously obscured by another window).
     ///
@@ -23,7 +23,7 @@ pub trait WindowHandler: 'static {
     /// parts of the window need to be redrawn.
     ///
     /// This method can also be scheduled to be called from a call to [`WindowContext::request_redraw`],
-    /// as a result of [polling] or any kind of event.
+    /// as a result of [polling] or any kind of event. In this case, no [`damage`] call will occur.
     ///
     /// If this method itself calls [`WindowContext::request_redraw`], then a redraw will be
     /// scheduled for the next frame interval.
@@ -45,15 +45,33 @@ pub trait WindowHandler: 'static {
     /// [polling]: WindowHandler::poll
     fn draw(&self) -> core::result::Result<(), HandlerError>;
 
-    /// Notifies the handler that a given [`area`] of the window has been damaged and needs to be redrawn.
+    /// Notifies the handler that a given [`area`] of the window has been damaged by the platform
+    /// and needs to be redrawn.
     ///
     /// This is useful for renderers that support partial rendering, in order to not have to redraw
     /// every single pixel on every frame.
+    ///
+    /// For instance, this will occur on non-compositing window managers (such as on X11), when
+    /// another window that initially obscured this one gets moved away.
+    ///
+    /// Additionally, this method will also be automatically called in the following situations:
+    /// * When the window is first opened and shown to the user;
+    /// * When the window is shown after being previously hidden (if the platform did not keep the window's content in memory);
+    /// * When the window is resized;
+    ///
+    /// Note that `baseview` only tracks and notifies about "external" (i.e. platform-originating) damage.
+    /// This method will *not* be called for "internal" damage, e.g. if moving the mouse over a button should redraw it.
+    /// Implementations should track this kind of damage internally (most GUI frameworks already do).
+    ///
+    /// Also note that depending on the platform, this method may be called multiple times with
+    /// different damage areas during a single frame interval.
+    /// Implementations should coalesce all the damaged areas received until the next [`draw`] call.
     ///
     /// Implementing this method is optional, as it's only useful if the handler supports partial rendering.
     /// The default implementation of this method does nothing.
     ///
     /// [`area`]: DamageArea
+    /// [`draw`]: WindowHandler::draw
     fn damage(&self, area: DamageArea) {
         let _ = area;
     }
