@@ -163,10 +163,6 @@ impl EventLoop {
         }
         self.draw_now = false;
 
-        if !self.window.visibility_state.own_window_is_viewable() {
-            return;
-        }
-
         if let Err(e) = self.handler.draw() {
             self.trigger_fatal_error(e.into());
             return;
@@ -333,12 +329,10 @@ impl EventLoop {
             }
             WindowThreadRequest::Show => {
                 self.window.xcb_window.map_window()?.check()?;
-                self.window.visibility_state.window_mapped(self.window.xcb_window.id());
                 Ok(())
             }
             WindowThreadRequest::Hide => {
                 self.window.xcb_window.unmap_window()?.check()?;
-                self.window.visibility_state.window_unmapped(self.window.xcb_window.id());
                 Ok(())
             }
         }
@@ -465,15 +459,15 @@ impl EventLoop {
             }
 
             XEvent::ConfigureNotify(event) => {
-                // These are coalesced and then handled asynchronously at the end of the event loop
-                if event.window == self.window.raw_id() {
-                    self.new_size = Some(PhysicalSize::new(event.width, event.height));
-                } else if Some(event.window)
-                    == self.window.visibility_state.parent_id().map(|i| i.get())
-                {
-                    // Also resize the window if the parent is resized
-                    // This works around some hosts that might not call set_size() right away (or at all...)
-                    self.new_parent_size = Some(PhysicalSize::new(event.width, event.height));
+                if let Some(window_id) = NonZero::new(event.window) {
+                    // These are coalesced and then handled asynchronously at the end of the event loop
+                    if window_id == self.window.xcb_window.id() {
+                        self.new_size = Some(PhysicalSize::new(event.width, event.height));
+                    } else if Some(window_id) == self.window.parent_id.get() {
+                        // Also resize the window if the parent is resized
+                        // This works around some hosts that might not call set_size() right away (or at all...)
+                        self.new_parent_size = Some(PhysicalSize::new(event.width, event.height));
+                    }
                 }
             }
 
@@ -567,12 +561,6 @@ impl EventLoop {
             XEvent::MapNotify(e) => {
                 if let Some(window_id) = NonZero::new(e.window) {
                     if window_id == self.window.xcb_window.id() {
-                        self.window.is_mapped.set(true);
-                    }
-
-                    let became_viewable = self.window.visibility_state.window_mapped(window_id);
-
-                    if became_viewable {
                         if self.window.xcb_window.present_supported()
                             && self.window.xcb_window.present_select_input()?
                         {
@@ -584,31 +572,11 @@ impl EventLoop {
                 }
             }
 
-            XEvent::UnmapNotify(e) => {
-                if let Some(window_id) = NonZero::new(e.window) {
-                    if window_id == self.window.xcb_window.id() {
-                        self.window.is_mapped.set(false)
-                    }
-
-                    self.window.visibility_state.window_unmapped(window_id);
-                }
-            }
-
             XEvent::ReparentNotify(e) => {
                 if let Some(window_id) = NonZero::new(e.window) {
-                    self.window.visibility_state.window_reparented(
-                        window_id,
-                        NonZero::new(e.parent),
-                        &self.window.connection,
-                    )
-                }
-            }
-
-            XEvent::DestroyNotify(e) => {
-                if let Some(window_id) = NonZero::new(e.window) {
-                    self.window
-                        .visibility_state
-                        .window_destroyed(window_id, &self.window.connection)
+                    if window_id == self.window.xcb_window.id() {
+                        self.window.parent_id.set(NonZero::new(e.parent));
+                    }
                 }
             }
 
