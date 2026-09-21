@@ -229,14 +229,15 @@ impl Window {
 
     #[inline]
     pub fn request_poll(&self) -> Result<(), Error> {
-        self.inner.request_poll()?;
+        //self.inner.request_poll()?;
         Ok(())
     }
 
     #[inline]
     #[must_use]
     pub fn waker(&self) -> WindowWaker {
-        WindowWaker { inner: self.inner.waker() }
+        todo!()
+        //WindowWaker { inner: self.inner.waker() }
     }
 }
 

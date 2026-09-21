@@ -36,6 +36,12 @@ impl WindowContext {
         });
     }
 
+    pub fn request_redraw(&self) {
+        let Some(view) = self.view.load() else { return };
+
+        view.setNeedsDisplay(true);
+    }
+
     pub fn has_focus(&self) -> bool {
         let Some(view) = self.view.load() else { return false };
         let Some(window) = view.window() else {
