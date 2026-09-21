@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub(crate) struct WindowThreadShared {
     stopped: AtomicBool,
@@ -27,8 +27,35 @@ pub(crate) struct WindowThreadShared {
     poll_requested: AtomicBool,
     sizing_strategy: OnceLock<SizingStrategy>,
 
-    // TODO: use instant here instead of duration
-    redraw_requested_after: Mutex<Option<Duration>>,
+    redraw_requested_after: Mutex<Option<RedrawRequested>>,
+}
+
+pub enum RedrawRequested {
+    Now,
+    Later(Instant),
+}
+
+impl RedrawRequested {
+    pub fn from_duration(duration: Duration) -> Self {
+        if duration.is_zero() {
+            RedrawRequested::Now
+        } else {
+            if let Some(dur) = Instant::now().checked_add(duration) {
+                RedrawRequested::Later(dur)
+            } else {
+                RedrawRequested::Now
+            }
+        }
+    }
+
+    pub fn to_duration(&self) -> Duration {
+        match self {
+            RedrawRequested::Now => Duration::ZERO,
+            RedrawRequested::Later(instant) => {
+                instant.checked_duration_since(Instant::now()).unwrap_or(Duration::ZERO)
+            }
+        }
+    }
 }
 
 impl WindowThreadShared {
@@ -84,12 +111,12 @@ impl WindowThreadShared {
     pub fn request_redraw_after(&self, duration: Duration) {
         // Ignore a poisoned mutex, we just fully override this value anyway.
         let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
-        *guard = Some(duration);
+        *guard = Some(RedrawRequested::from_duration(duration));
     }
 
     pub fn take_redraw_request(&self) -> Option<Duration> {
         let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
-        guard.take()
+        guard.take().map(|w| w.to_duration())
     }
 
     pub fn request_poll(&self) {
@@ -266,7 +293,10 @@ impl WindowThreadHandle {
     }
 
     pub fn request_poll(&self) -> Result<()> {
-        todo!()
+        self.shared.request_poll();
+        self.loop_signal.wakeup();
+
+        Ok(())
     }
 
     pub fn waker(&self) -> WindowWaker {
