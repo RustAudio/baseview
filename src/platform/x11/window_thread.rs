@@ -24,6 +24,7 @@ pub(crate) struct WindowThreadShared {
     size: AtomicU32,
     final_error: Mutex<Option<String>>,
     stopped_requested_from_host: AtomicBool,
+    poll_requested: AtomicBool,
     sizing_strategy: OnceLock<SizingStrategy>,
 
     // TODO: use instant here instead of duration
@@ -40,6 +41,7 @@ impl WindowThreadShared {
             stopped_requested_from_host: false.into(),
             sizing_strategy: OnceLock::new(),
             redraw_requested_after: None.into(),
+            poll_requested: false.into(),
         }
     }
 
@@ -88,6 +90,14 @@ impl WindowThreadShared {
     pub fn take_redraw_request(&self) -> Option<Duration> {
         let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
         guard.take()
+    }
+
+    pub fn request_poll(&self) {
+        self.poll_requested.store(true, Ordering::Relaxed);
+    }
+
+    pub fn take_poll_request(&self) -> bool {
+        self.poll_requested.swap(false, Ordering::Relaxed)
     }
 }
 

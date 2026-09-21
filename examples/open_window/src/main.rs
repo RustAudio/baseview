@@ -104,6 +104,7 @@ impl WindowHandler for OpenWindowExample {
     }
 
     fn poll(&self) {
+        eprintln!("Poll!");
         while let Ok(message) = self.rx.borrow_mut().pop() {
             println!("Message: {:?}", message);
         }
