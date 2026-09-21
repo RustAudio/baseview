@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 pub(crate) struct WindowThreadShared {
     stopped: AtomicBool,
@@ -24,6 +25,9 @@ pub(crate) struct WindowThreadShared {
     final_error: Mutex<Option<String>>,
     stopped_requested_from_host: AtomicBool,
     sizing_strategy: OnceLock<SizingStrategy>,
+
+    // TODO: use instant here instead of duration
+    redraw_requested_after: Mutex<Option<Duration>>,
 }
 
 impl WindowThreadShared {
@@ -35,6 +39,7 @@ impl WindowThreadShared {
             scaling_factor: 0.into(),
             stopped_requested_from_host: false.into(),
             sizing_strategy: OnceLock::new(),
+            redraw_requested_after: None.into(),
         }
     }
 
@@ -72,6 +77,17 @@ impl WindowThreadShared {
 
     pub fn is_stop_host_requested(&self) -> bool {
         self.stopped_requested_from_host.load(Ordering::Relaxed)
+    }
+
+    pub fn request_redraw_after(&self, duration: Duration) {
+        // Ignore a poisoned mutex, we just fully override this value anyway.
+        let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
+        *guard = Some(duration);
+    }
+
+    pub fn take_redraw_request(&self) -> Option<Duration> {
+        let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
+        guard.take()
     }
 }
 
@@ -241,6 +257,10 @@ impl WindowThreadHandle {
 
     pub fn request_poll(&self) -> Result<()> {
         todo!()
+    }
+
+    pub fn waker(&self) -> WindowWaker {
+        WindowWaker { loop_signal: self.loop_signal.clone(), shared: Arc::clone(&self.shared) }
     }
 
     fn handle_main_thread_message(&self, msg: HostCallback) {

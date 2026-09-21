@@ -9,6 +9,7 @@ mod keyboard;
 mod mouse_cursor;
 mod settings;
 mod tracing;
+mod waker;
 mod window;
 
 pub(crate) mod platform;
@@ -20,7 +21,7 @@ pub use clipboard::*;
 pub use context::{PlatformHandle, WindowContext};
 pub use error::*;
 pub use event::*;
-pub use handler::WindowHandler;
+pub use handler::{DamageArea, WindowHandler};
 pub use mouse_cursor::MouseCursor;
 pub use settings::*;
 pub use window::*;

@@ -127,7 +127,6 @@ impl EventLoop {
         const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 
         fn handle_frame(evloop: &mut EventLoop, previous_deadline: Instant) -> TimeoutAction {
-            dbg!("frame");
             evloop.draw_now = true;
 
             // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
@@ -155,6 +154,10 @@ impl EventLoop {
     }
 
     fn handle_redraw(&mut self) {
+        if let Some(redraw_after) = self.window.main_thread_shared.take_redraw_request() {
+            self.window.request_redraw_after(redraw_after)
+        }
+
         if !self.draw_now {
             return;
         }
@@ -392,6 +395,10 @@ impl EventLoop {
         };
 
         Ok(())
+    }
+
+    pub fn request_redraw(&self) {
+        self.window.request_redraw();
     }
 
     fn handle_xcb_event(&mut self, event: XEvent) -> Result<(), FatalError> {
