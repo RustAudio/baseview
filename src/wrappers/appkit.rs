@@ -1,8 +1,10 @@
+mod main_thread;
 mod notification_center;
 mod timer;
 mod view;
 mod window;
 
+pub use main_thread::*;
 pub use notification_center::*;
 use objc2::rc::Retained;
 use objc2_app_kit::NSView;
