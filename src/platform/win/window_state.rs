@@ -8,7 +8,9 @@ use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::{HWnd, BV_WINDOW_MUST_CLOSE};
-use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule, TimerList};
+use crate::wrappers::win32::{
+    Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule, TimerList, TimerSlot,
+};
 use crate::WindowSettings;
 use crate::{MouseCursor, WindowSize};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
@@ -17,6 +19,8 @@ use std::num::NonZeroIsize;
 use std::rc::Rc;
 use std::time::Duration;
 use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
+
+const REDRAW_TIMER_DELAY_MSEC: u32 = 15;
 
 /// All data associated with the window.
 pub(crate) struct WindowState {
@@ -29,6 +33,8 @@ pub(crate) struct WindowState {
 
     pub user32: LibraryModule<ExtendedUser32>,
     pub shared: Rc<WindowSharedState>,
+    pub(crate) redraw_timer: TimerSlot,
+    pub redraw_requested: Cell<bool>,
 
     #[cfg(feature = "opengl")]
     pub gl_context: std::cell::OnceCell<super::gl::GlContext>,
@@ -44,8 +50,10 @@ impl WindowState {
             mouse_button_counter: Cell::new(0),
             mouse_was_outside_window: true.into(),
             cursor_icon: Cell::new(MouseCursor::Default),
+            redraw_timer: TimerSlot::empty(hwnd),
             user32,
             shared,
+            redraw_requested: Cell::new(false),
 
             #[cfg(feature = "opengl")]
             gl_context: std::cell::OnceCell::new(),
@@ -124,7 +132,15 @@ impl WindowState {
         PlatformHandle { hwnd }
     }
 
-    pub fn request_redraw(&self) {}
+    pub fn request_redraw(&self) {
+        self.redraw_requested.set(true);
+
+        if !self.redraw_timer.is_running() {
+            if let Err(e) = self.redraw_timer.restart(REDRAW_TIMER_DELAY_MSEC) {
+                crate::warn!("Could not schedule redraw: {}", e)
+            }
+        }
+    }
 
     pub fn request_redraw_after(&self, duration: Duration) {
         if let Err(e) = self.shared.delayed_redraw_timers.add_new_timer(self.hwnd, duration) {

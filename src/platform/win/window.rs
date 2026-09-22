@@ -1,4 +1,4 @@
-use windows_core::{ComObject, Error, HSTRING};
+use windows_core::{ComObject, HSTRING};
 use windows_sys::Win32::{
     Foundation::{LPARAM, LRESULT, RECT, WPARAM},
     UI::{Controls::WM_MOUSELEAVE, WindowsAndMessaging::*},
@@ -7,7 +7,7 @@ use windows_sys::Win32::{
 use crate::dpi::{PhysicalPosition, PhysicalSize, Size};
 use crate::{warn, EventStatus, HandlerError, WindowHandler};
 use std::cell::{Cell, OnceCell};
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::num::NonZeroU32;
 use windows_sys::Win32::Foundation::POINT;
 
 use super::drop_target::DropTarget;
@@ -22,7 +22,7 @@ use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, LibraryModule, Rect,
-    TimerId, TimerSlot, WindowStyle,
+    TimerId, WindowStyle,
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 
@@ -33,11 +33,6 @@ fn hi_word(wparam: WPARAM) -> u16 {
 fn lo_word(lparam: LPARAM) -> u16 {
     (lparam & 0xffff) as u16
 }
-
-const WIN_FRAME_TIMER: NonZeroUsize = match NonZeroUsize::new(4242) {
-    Some(x) => x,
-    None => unreachable!(),
-};
 
 pub struct WindowHandle {
     init: Cell<Option<WindowInitializer>>,
@@ -229,7 +224,6 @@ pub struct BaseviewWindow {
     handler_builder: Cell<Option<WindowHandlerBuilder>>,
     handler: OnceCell<Box<dyn WindowHandler>>,
     host: Host,
-    redraw_timer: TimerSlot,
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
     _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
@@ -270,7 +264,6 @@ impl BaseviewWindow {
                     handler: OnceCell::new(),
                     shared_state,
                     host: init.host,
-                    redraw_timer: TimerSlot::empty(hwnd),
 
                     _drop_target: None.into(),
                     _keyboard_hook: None.into(),
@@ -309,10 +302,17 @@ impl BaseviewWindow {
     pub(crate) fn handle_on_frame(&self) {
         let Some(handler) = self.handler.get() else { return };
 
+        handler.poll();
         if let Err(e) = handler.draw() {
             warn!("Error while rendering frame: {}", e);
             self.window_state.request_close();
         }
+    }
+
+    pub(crate) fn handle_poll(&self) {
+        let Some(handler) = self.handler.get() else { return };
+
+        handler.poll();
     }
 
     pub(crate) fn handle_event(&self, event: Event) -> EventStatus {
@@ -330,8 +330,6 @@ impl Drop for BaseviewWindow {
         self.notify_destroyed_to_host();
     }
 }
-
-const REDRAW_TIMER_DELAY_MSEC: u32 = 15;
 
 impl WindowImpl for BaseviewWindow {
     fn non_client_create(&self, window: HWnd) -> std::result::Result<(), PlatformError> {
@@ -399,8 +397,6 @@ impl WindowImpl for BaseviewWindow {
             handler_builder.build(context)?
         };
         let Ok(()) = self.handler.set(handler) else { unreachable!() };
-
-        self.redraw_timer.restart(REDRAW_TIMER_DELAY_MSEC)?;
 
         Ok(())
     }
@@ -542,13 +538,14 @@ unsafe fn wnd_proc_inner(
             None
         }
         WM_TIMER => {
-            let Some(timer_id) = TimerId::from_wparam(wparam) else {
-                return None;
-            };
+            let timer_id = TimerId::from_wparam(wparam)?;
 
-            if window_bv.redraw_timer.matches_id(timer_id) {
+            if window_state.redraw_timer.matches_id(timer_id) {
+                window_state.redraw_requested.set(false);
                 window_bv.handle_on_frame();
-                // check if redraw requested, if not then kill the timer
+                if !window_state.redraw_requested.get() {
+                    window_state.redraw_timer.kill();
+                }
                 Some(0)
             } else {
                 match window_state.shared.delayed_redraw_timers.remove_if_exists(window, timer_id) {
@@ -558,10 +555,7 @@ unsafe fn wnd_proc_inner(
                         None
                     }
                     Ok(true) => {
-                        // If the timer is already running, do nothing, we'll get a new frame anyway
-                        if !window_bv.redraw_timer.is_running() {
-                            window_bv.handle_on_frame();
-                        }
+                        window_state.request_redraw();
                         Some(0)
                     }
                 }
@@ -764,12 +758,12 @@ unsafe fn wnd_proc_inner(
         }
 
         BV_REQUEST_REDRAW => {
-            todo!();
+            window_state.request_redraw();
             Some(0)
         }
 
         BV_REQUEST_POLL => {
-            todo!();
+            window_bv.handle_poll();
             Some(0)
         }
         _ => None,
