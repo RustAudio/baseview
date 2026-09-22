@@ -305,7 +305,6 @@ impl BaseviewWindow {
         handler.poll();
 
         self.window_state.redraw_requested.set(false);
-        eprintln!("DRAW");
         if let Err(e) = handler.draw() {
             warn!("Error while rendering frame: {}", e);
             self.window_state.request_close();
@@ -414,6 +413,7 @@ impl WindowImpl for BaseviewWindow {
 
     fn before_destroy(&self, window: HWnd) {
         let _ = window.revoke_drag_drop();
+        // No need to destroy timers: they are all destroyed when the window is invalidated.
     }
 }
 
@@ -551,8 +551,7 @@ unsafe fn wnd_proc_inner(
             Some(0)
         }
         WM_TIMER => {
-            let timer_id = TimerId::from_wparam(wparam)?;
-            dbg!(timer_id);
+            let timer_id = TimerId::from_raw(wparam)?;
 
             if window_state.redraw_timer.matches_id(timer_id)
                 && window_state.redraw_timer.is_running()

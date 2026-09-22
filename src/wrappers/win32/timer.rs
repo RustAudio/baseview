@@ -9,7 +9,7 @@ use windows_sys::Win32::Foundation::WPARAM;
 pub struct TimerId(NonZeroUsize);
 
 impl TimerId {
-    pub fn from_wparam(wparam: WPARAM) -> Option<Self> {
+    pub fn from_raw(wparam: WPARAM) -> Option<Self> {
         Some(Self(NonZeroUsize::new(wparam)?))
     }
 
@@ -33,13 +33,24 @@ impl TimerSlot {
         self.id.get().is_some()
     }
 
-    pub fn restart(&self, timeout_msec: u32) {
-        self.kill();
+    pub fn start_if_not_running(&self, timeout_msec: u32) {
+        if !self.is_running() {
+            self.start(timeout_msec);
+        }
+    }
 
-        eprintln!("timer start");
-        match self.hwnd.set_timer(timeout_msec) {
-            Ok(timer_id) => self.id.set(Some(dbg!(timer_id))),
+    fn start(&self, timeout_msec: u32) {
+        match self.hwnd.create_timer(timeout_msec) {
+            Ok(timer_id) => self.id.set(Some(timer_id)),
             Err(e) => crate::warn!("Failed to start timer: {}", e),
+        }
+    }
+
+    pub fn set_running(&self, running: bool, timeout_msec: u32) {
+        match (running, self.is_running()) {
+            (true, true) | (false, false) => (), // Nothing to do
+            (false, true) => self.kill(),
+            (true, false) => self.start(timeout_msec),
         }
     }
 
@@ -59,12 +70,6 @@ impl TimerSlot {
     }
 }
 
-impl Drop for TimerSlot {
-    fn drop(&mut self) {
-        self.kill()
-    }
-}
-
 pub struct TimerList {
     timers: RefCell<Vec<TimerId>>,
 }
@@ -76,7 +81,7 @@ impl TimerList {
 
     pub fn add_new_timer(&self, window: HWnd, timeout: Duration) -> Result<(), Error> {
         let timeout_msec = timeout.as_millis().try_into().unwrap_or(u32::MAX);
-        let new_timer_id = window.set_timer(timeout_msec)?;
+        let new_timer_id = window.create_timer(timeout_msec)?;
         self.timers.borrow_mut().push(new_timer_id);
         Ok(())
     }
@@ -96,15 +101,5 @@ impl TimerList {
         let Some(index) = timers.iter().position(|&t| t == id) else { return false };
         timers.swap_remove(index);
         true
-    }
-
-    pub fn destroy_all(&self, window: HWnd) {
-        let timers = self.timers.take();
-
-        for timer_id in timers {
-            if let Err(e) = window.kill_timer(timer_id) {
-                crate::warn!("Could not remove timer: {e}")
-            }
-        }
     }
 }

@@ -19,6 +19,7 @@ struct FemtovgExample {
 impl FemtovgExample {
     fn new(window_context: WindowContext) -> Result<Self, HandlerError> {
         let Some(gl_context) = window_context.gl_context() else { unreachable!() };
+        unsafe { gl_context.make_current()? };
 
         let renderer =
             unsafe { OpenGl::new_from_function_cstr(|s| gl_context.get_proc_address(s)) }?;
