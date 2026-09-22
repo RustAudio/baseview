@@ -139,6 +139,7 @@ impl WindowState {
 }
 
 pub struct WindowSharedState {
+    pub hwnd: Cell<Option<HWnd>>,
     pub parented: Cell<bool>,
     pub is_alive: Cell<bool>,
     pub current_size: Cell<PhysicalSize<u32>>,
@@ -169,6 +170,7 @@ impl WindowSharedState {
             dpi_scaling_strategy: DpiScalingStrategy::default().into(),
             delayed_redraw_timers: TimerList::new(),
             window_waker_source: WindowWakerSource::new(),
+            hwnd: None.into(),
         }
         .into()
     }
@@ -190,6 +192,7 @@ impl WindowSharedState {
     }
 
     pub fn set_hwnd(&self, hwnd: HWnd) {
+        self.hwnd.set(Some(hwnd));
         self.window_waker_source.set(hwnd)
     }
 
@@ -213,6 +216,14 @@ impl WindowSharedState {
     pub fn originate_host_destroy(&self) -> impl Drop + use<'_> {
         self.destroy_host_originated.set(true);
         Guard(&self.destroy_host_originated)
+    }
+}
+
+impl Drop for WindowSharedState {
+    fn drop(&mut self) {
+        if let Some(hwnd) = self.hwnd.get() {
+            self.delayed_redraw_timers.destroy_all(hwnd)
+        }
     }
 }
 
