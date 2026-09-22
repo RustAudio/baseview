@@ -11,7 +11,8 @@ use windows::Win32::System::Ole::IDropTarget;
 use windows_core::{Error, Interface, InterfaceRef, Result, HRESULT};
 use windows_sys::Win32::Foundation::{SetLastError, FALSE, HWND, LPARAM, POINT, S_OK, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    MonitorFromWindow, ScreenToClient, MONITOR_DEFAULTTOPRIMARY,
+    GetUpdateRect, InvalidateRect, MonitorFromWindow, ScreenToClient, ValidateRect,
+    MONITOR_DEFAULTTOPRIMARY,
 };
 use windows_sys::Win32::System::Ole::{RegisterDragDrop, RevokeDragDrop};
 use windows_sys::Win32::UI::HiDpi::{DPI_HOSTING_BEHAVIOR_MIXED, MDT_DEFAULT};
@@ -230,7 +231,7 @@ impl HWnd {
     pub fn kill_timer(&self, timer_id: TimerId) -> Result<()> {
         let result = unsafe { KillTimer(self.as_raw(), timer_id.as_raw()) };
 
-        if result == 0 {
+        if result == FALSE {
             return Err(Error::from_thread());
         }
 
@@ -305,6 +306,26 @@ impl HWnd {
         Ok(PhysicalPosition::new(pt.x, pt.y))
     }
 
+    pub fn get_update_rect(&self) -> Option<Rect> {
+        let mut rect = Rect::EMPTY;
+
+        let result = unsafe { GetUpdateRect(self.as_raw(), &mut rect.0, FALSE) };
+
+        if result == 0 || rect.is_empty() {
+            return None;
+        }
+
+        Some(rect)
+    }
+
+    pub fn validate_rect(&self, rect: Rect) {
+        let _ = unsafe { ValidateRect(self.as_raw(), &rect.0) };
+    }
+
+    pub fn invalidate_window(&self) {
+        let _ = unsafe { InvalidateRect(self.as_raw(), null_mut(), FALSE) };
+    }
+
     #[cfg(feature = "opengl")]
     pub fn get_own_dc(&self) -> Result<super::OwnDeviceContext> {
         super::OwnDeviceContext::from_window(*self)
@@ -362,20 +383,6 @@ unsafe impl Sync for SyncHwnd {}
 impl From<HWnd> for SyncHwnd {
     fn from(hwnd: HWnd) -> Self {
         SyncHwnd(hwnd)
-    }
-}
-
-impl SyncHwnd {
-    /// # Safety
-    ///
-    /// The message, wparam and lparam values must be valid
-    pub unsafe fn post_message(&self, message: u32, wparam: WPARAM, lparam: LPARAM) {
-        let result = unsafe { PostMessageW(self.0.as_raw(), message, wparam, lparam) };
-
-        if result == 0 {
-            let error = Error::from_thread();
-            crate::warn!("Failed to post message to window: {}", error)
-        }
     }
 }
 

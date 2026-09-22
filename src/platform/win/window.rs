@@ -299,14 +299,19 @@ impl BaseviewWindow {
         self.host.request_resize(new_size)
     }
 
-    pub(crate) fn handle_on_frame(&self) {
+    pub(crate) fn handle_draw(&self) {
         let Some(handler) = self.handler.get() else { return };
 
         handler.poll();
+
+        self.window_state.redraw_requested.set(false);
+        eprintln!("DRAW");
         if let Err(e) = handler.draw() {
             warn!("Error while rendering frame: {}", e);
             self.window_state.request_close();
         }
+
+        self.window_state.setup_redraw_request_for_next_frame();
     }
 
     pub(crate) fn handle_poll(&self) {
@@ -537,15 +542,22 @@ unsafe fn wnd_proc_inner(
 
             None
         }
+        WM_PAINT => {
+            if let Some(rect) = window.get_update_rect() {
+                window_bv.handle_draw();
+                window.validate_rect(rect);
+            }
+
+            Some(0)
+        }
         WM_TIMER => {
             let timer_id = TimerId::from_wparam(wparam)?;
+            dbg!(timer_id);
 
-            if window_state.redraw_timer.matches_id(timer_id) {
-                window_state.redraw_requested.set(false);
-                window_bv.handle_on_frame();
-                if !window_state.redraw_requested.get() {
-                    window_state.redraw_timer.kill();
-                }
+            if window_state.redraw_timer.matches_id(timer_id)
+                && window_state.redraw_timer.is_running()
+            {
+                window.invalidate_window();
                 Some(0)
             } else {
                 match window_state.shared.delayed_redraw_timers.remove_if_exists(window, timer_id) {
@@ -636,6 +648,8 @@ unsafe fn wnd_proc_inner(
 
                 return Some(-1);
             }
+
+            window.invalidate_window();
 
             None
         }
