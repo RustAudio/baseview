@@ -2,13 +2,14 @@
 use crate::wrappers::win32::dpi::{Dpi, DpiAwarenessGuard};
 use crate::wrappers::win32::style::WindowStyle;
 use crate::wrappers::win32::user32::ExtendedUser32;
-use crate::wrappers::win32::{DpiAwarenessContext, ExtendedShCore, Rect};
+use crate::wrappers::win32::{DpiAwarenessContext, ExtendedShCore, Rect, TimerId};
 use std::ffi::c_void;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::ptr::{null_mut, NonNull};
+use std::time::Duration;
 use windows::Win32::System::Ole::IDropTarget;
 use windows_core::{Error, Interface, InterfaceRef, Result, HRESULT};
-use windows_sys::Win32::Foundation::{SetLastError, FALSE, HWND, POINT, S_OK};
+use windows_sys::Win32::Foundation::{SetLastError, FALSE, HWND, LPARAM, POINT, S_OK, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     MonitorFromWindow, ScreenToClient, MONITOR_DEFAULTTOPRIMARY,
 };
@@ -18,10 +19,14 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DestroyWindow, GetWindowLongPtrW, GetWindowLongW, SetParent, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_LONG_PTR_INDEX,
+    DestroyWindow, GetWindowLongPtrW, GetWindowLongW, KillTimer, PostMessageW, SetParent, SetTimer,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_LONG_PTR_INDEX, WM_USER,
 };
+
+pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
+pub(crate) const BV_REQUEST_REDRAW: u32 = WM_USER + 2;
+pub(crate) const BV_REQUEST_POLL: u32 = WM_USER + 3;
 
 /// A simple wrapper around a HWND.
 ///
@@ -216,8 +221,14 @@ impl HWnd {
         Ok(())
     }
 
-    pub fn set_timer(&self, timer_id: NonZeroUsize, elapse: u32) -> Result<()> {
-        let result = unsafe { SetTimer(self.as_raw(), timer_id.get(), elapse, None) };
+    pub fn set_timer(&self, elapse: u32) -> Result<TimerId> {
+        let result = unsafe { SetTimer(self.as_raw(), 0, elapse, None) };
+
+        TimerId::from_wparam(result).ok_or_else(Error::from_thread)
+    }
+
+    pub fn kill_timer(&self, timer_id: TimerId) -> Result<()> {
+        let result = unsafe { KillTimer(self.as_raw(), timer_id.as_raw()) };
 
         if result == 0 {
             return Err(Error::from_thread());
@@ -338,5 +349,75 @@ impl HWnd {
                 Error::from_thread()
             );
         }
+    }
+}
+
+pub struct SyncHwnd(HWnd);
+
+// SAFETY: we only implement thread-safe operations on this handle
+unsafe impl Send for SyncHwnd {}
+// SAFETY: same as above
+unsafe impl Sync for SyncHwnd {}
+
+impl From<HWnd> for SyncHwnd {
+    fn from(hwnd: HWnd) -> Self {
+        SyncHwnd(hwnd)
+    }
+}
+
+impl SyncHwnd {
+    /// # Safety
+    ///
+    /// The message, wparam and lparam values must be valid
+    pub unsafe fn post_message(&self, message: u32, wparam: WPARAM, lparam: LPARAM) {
+        let result = unsafe { PostMessageW(self.0.as_raw(), message, wparam, lparam) };
+
+        if result == 0 {
+            let error = Error::from_thread();
+            crate::warn!("Failed to post message to window: {}", error)
+        }
+    }
+}
+
+pub trait PostMessageExt {
+    /// # Safety
+    ///
+    /// The message, wparam and lparam values must be valid
+    unsafe fn post_message(&self, message: u32, wparam: WPARAM, lparam: LPARAM);
+
+    #[inline]
+    fn post_must_close(&self) {
+        unsafe { self.post_message(BV_WINDOW_MUST_CLOSE, 0, 0) }
+    }
+
+    #[inline]
+    fn post_request_redraw(&self, duration: Duration) {
+        let duration_msec = duration.as_millis();
+        let duration_msec: usize = duration_msec.try_into().unwrap_or(usize::MAX);
+
+        unsafe { self.post_message(BV_REQUEST_REDRAW, duration_msec, 0) }
+    }
+
+    #[inline]
+    fn post_request_poll(&self) {
+        unsafe { self.post_message(BV_REQUEST_POLL, 0, 0) }
+    }
+}
+
+impl PostMessageExt for HWnd {
+    unsafe fn post_message(&self, message: u32, wparam: WPARAM, lparam: LPARAM) {
+        let result = unsafe { PostMessageW(self.as_raw(), message, wparam, lparam) };
+
+        if result == 0 {
+            let error = Error::from_thread();
+            crate::warn!("Failed to post message to window: {}", error)
+        }
+    }
+}
+
+impl PostMessageExt for SyncHwnd {
+    #[inline]
+    unsafe fn post_message(&self, message: u32, wparam: WPARAM, lparam: LPARAM) {
+        self.0.post_message(message, wparam, lparam)
     }
 }
