@@ -4,7 +4,7 @@ use crate::wrappers::win32::style::WindowStyle;
 use crate::wrappers::win32::user32::ExtendedUser32;
 use crate::wrappers::win32::{DpiAwarenessContext, ExtendedShCore, Rect, TimerId};
 use std::ffi::c_void;
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::num::NonZeroU32;
 use std::ptr::{null_mut, NonNull};
 use std::time::Duration;
 use windows::Win32::System::Ole::IDropTarget;
@@ -222,10 +222,22 @@ impl HWnd {
         Ok(())
     }
 
-    pub fn set_timer(&self, elapse: u32) -> Result<TimerId> {
+    pub fn create_timer(&self, elapse: u32) -> Result<TimerId> {
         let result = unsafe { SetTimer(self.as_raw(), 0, elapse, None) };
+        let timer_id = TimerId::from_raw(result).ok_or_else(Error::from_thread)?;
 
-        TimerId::from_wparam(result).ok_or_else(Error::from_thread)
+        self.reset_timer(timer_id, elapse)?;
+
+        Ok(timer_id)
+    }
+
+    pub fn reset_timer(&self, timer_id: TimerId, elapse: u32) -> Result<()> {
+        let result = unsafe { SetTimer(self.as_raw(), timer_id.as_raw(), elapse, None) };
+
+        if result == 0 {
+            return Err(Error::from_thread());
+        }
+        Ok(())
     }
 
     pub fn kill_timer(&self, timer_id: TimerId) -> Result<()> {
@@ -389,7 +401,7 @@ impl From<HWnd> for SyncHwnd {
 pub trait PostMessageExt {
     /// # Safety
     ///
-    /// The message, wparam and lparam values must be valid
+    /// The message, wparam and lparam values must be valid.
     unsafe fn post_message(&self, message: u32, wparam: WPARAM, lparam: LPARAM);
 
     #[inline]

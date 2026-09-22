@@ -7,7 +7,7 @@ use crate::utils::SizingStrategy;
 use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
-use crate::wrappers::win32::window::{HWnd, BV_WINDOW_MUST_CLOSE};
+use crate::wrappers::win32::window::{HWnd, PostMessageExt};
 use crate::wrappers::win32::{
     Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule, TimerList, TimerSlot,
 };
@@ -18,7 +18,6 @@ use std::cell::{Cell, Ref, RefCell};
 use std::num::NonZeroIsize;
 use std::rc::Rc;
 use std::time::Duration;
-use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 const REDRAW_TIMER_DELAY_MSEC: u32 = 15;
 
@@ -75,9 +74,7 @@ impl WindowState {
     }
 
     pub fn request_close(&self) {
-        unsafe {
-            PostMessageW(self.hwnd.as_raw(), BV_WINDOW_MUST_CLOSE, 0, 0);
-        }
+        self.hwnd.post_must_close();
     }
 
     pub fn has_focus(&self) -> bool {
@@ -135,18 +132,13 @@ impl WindowState {
     pub fn request_redraw(&self) {
         self.redraw_requested.set(true);
 
-        if !self.redraw_timer.is_running() {
-            self.redraw_timer.restart(REDRAW_TIMER_DELAY_MSEC)
-        }
+        self.redraw_timer.start_if_not_running(REDRAW_TIMER_DELAY_MSEC);
     }
 
     pub fn setup_redraw_request_for_next_frame(&self) {
-        dbg!(self.redraw_requested.get(), self.redraw_timer.is_running());
-        match (self.redraw_requested.take(), self.redraw_timer.is_running()) {
-            (true, true) | (false, false) => (), // Nothing to do
-            (false, true) => self.redraw_timer.kill(),
-            (true, false) => self.redraw_timer.restart(REDRAW_TIMER_DELAY_MSEC),
-        }
+        let should_redraw_next_frame = self.redraw_requested.take();
+
+        self.redraw_timer.set_running(should_redraw_next_frame, REDRAW_TIMER_DELAY_MSEC);
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
@@ -239,14 +231,6 @@ impl WindowSharedState {
     pub fn originate_host_destroy(&self) -> impl Drop + use<'_> {
         self.destroy_host_originated.set(true);
         Guard(&self.destroy_host_originated)
-    }
-}
-
-impl Drop for WindowSharedState {
-    fn drop(&mut self) {
-        if let Some(hwnd) = self.hwnd.get() {
-            self.delayed_redraw_timers.destroy_all(hwnd)
-        }
     }
 }
 
