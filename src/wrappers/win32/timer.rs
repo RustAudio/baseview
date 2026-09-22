@@ -5,7 +5,7 @@ use std::time::Duration;
 use windows_core::Error;
 use windows_sys::Win32::Foundation::WPARAM;
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct TimerId(NonZeroUsize);
 
 impl TimerId {
@@ -33,23 +33,21 @@ impl TimerSlot {
         self.id.get().is_some()
     }
 
-    pub fn restart(&self, timeout_msec: u32) -> Result<(), Error> {
-        if let Some(timer_id) = self.id.take() {
-            self.hwnd.kill_timer(timer_id)?;
+    pub fn restart(&self, timeout_msec: u32) {
+        self.kill();
+
+        eprintln!("timer start");
+        match self.hwnd.set_timer(timeout_msec) {
+            Ok(timer_id) => self.id.set(Some(dbg!(timer_id))),
+            Err(e) => crate::warn!("Failed to start timer: {}", e),
         }
-
-        let timer_id = self.hwnd.set_timer(timeout_msec)?;
-        self.id.set(Some(timer_id));
-
-        Ok(())
     }
 
     pub fn kill(&self) {
-        if let Some(timer_id) = self.id.get() {
+        if let Some(timer_id) = self.id.take() {
             if let Err(e) = self.hwnd.kill_timer(timer_id) {
                 crate::warn!("Failed to kill timer: {}", e);
             }
-            self.id.set(None);
         }
     }
 

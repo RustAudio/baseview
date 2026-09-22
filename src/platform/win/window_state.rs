@@ -136,9 +136,16 @@ impl WindowState {
         self.redraw_requested.set(true);
 
         if !self.redraw_timer.is_running() {
-            if let Err(e) = self.redraw_timer.restart(REDRAW_TIMER_DELAY_MSEC) {
-                crate::warn!("Could not schedule redraw: {}", e)
-            }
+            self.redraw_timer.restart(REDRAW_TIMER_DELAY_MSEC)
+        }
+    }
+
+    pub fn setup_redraw_request_for_next_frame(&self) {
+        dbg!(self.redraw_requested.get(), self.redraw_timer.is_running());
+        match (self.redraw_requested.take(), self.redraw_timer.is_running()) {
+            (true, true) | (false, false) => (), // Nothing to do
+            (false, true) => self.redraw_timer.kill(),
+            (true, false) => self.redraw_timer.restart(REDRAW_TIMER_DELAY_MSEC),
         }
     }
 
