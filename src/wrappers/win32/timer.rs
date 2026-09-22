@@ -1,6 +1,7 @@
 use crate::wrappers::win32::window::HWnd;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::num::NonZeroUsize;
+use std::time::Duration;
 use windows_core::Error;
 use windows_sys::Win32::Foundation::WPARAM;
 
@@ -11,35 +12,44 @@ impl TimerId {
     pub fn from_wparam(wparam: WPARAM) -> Option<Self> {
         Some(Self(NonZeroUsize::new(wparam)?))
     }
+
+    pub fn as_raw(&self) -> usize {
+        self.0.get()
+    }
 }
 
 #[derive(PartialEq, Eq)]
-pub struct Timer {
-    id: TimerId,
+pub struct TimerSlot {
+    id: Cell<Option<TimerId>>,
     hwnd: HWnd,
 }
 
-impl Timer {
-    pub fn new(window: HWnd, timeout_msec: u32) -> Result<Self, Error> {
+impl TimerSlot {
+    pub fn empty(hwnd: HWnd) -> Self {
+        Self { hwnd, id: None.into() }
+    }
+
+    pub fn is_running(&self) -> bool {
         todo!()
     }
 
-    pub fn reset(&self, timeout_msec: u32) -> Result<(), Error> {
+    pub fn restart(&self, timeout_msec: u32) -> Result<(), Error> {
         todo!()
     }
 
-    pub fn id(&self) -> TimerId {
-        self.id
+    pub fn kill(&self) {
+        todo!()
+    }
+
+    pub fn matches_id(&self, other: TimerId) -> bool {
+        match self.id.get() {
+            None => false,
+            Some(id) => id == other,
+        }
     }
 }
 
-impl PartialEq<TimerId> for Timer {
-    fn eq(&self, other: &TimerId) -> bool {
-        self.id == *other
-    }
-}
-
-impl Drop for Timer {
+impl Drop for TimerSlot {
     fn drop(&mut self) {
         todo!()
     }
@@ -54,7 +64,7 @@ impl TimerList {
         Self { timers: Vec::new().into() }
     }
 
-    pub fn add_new_timer(&self, window: HWnd, timeout_msec: u32) -> Result<(), Error> {
+    pub fn add_new_timer(&self, window: HWnd, timeout: Duration) -> Result<(), Error> {
         todo!()
     }
 

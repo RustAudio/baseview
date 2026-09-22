@@ -1,4 +1,4 @@
-use windows_core::{ComObject, HSTRING};
+use windows_core::{ComObject, Error, HSTRING};
 use windows_sys::Win32::{
     Foundation::{LPARAM, LRESULT, RECT, WPARAM},
     UI::{Controls::WM_MOUSELEAVE, WindowsAndMessaging::*},
@@ -9,8 +9,6 @@ use crate::{warn, EventStatus, HandlerError, WindowHandler};
 use std::cell::{Cell, OnceCell};
 use std::num::{NonZeroU32, NonZeroUsize};
 use windows_sys::Win32::Foundation::POINT;
-
-pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
 use super::drop_target::DropTarget;
 use super::*;
@@ -24,7 +22,7 @@ use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, LibraryModule, Rect,
-    Timer, TimerId, WindowStyle,
+    TimerId, TimerSlot, WindowStyle,
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 
@@ -194,6 +192,18 @@ impl WindowHandle {
 
         Ok(())
     }
+
+    pub fn waker(&self) -> WindowWaker {
+        self.state.window_waker_source.waker()
+    }
+
+    pub fn request_poll(&self) -> Result<()> {
+        if let Some(hwnd) = self.hwnd.get() {
+            hwnd.post_request_poll();
+        }
+
+        Ok(())
+    }
 }
 
 impl Drop for WindowHandle {
@@ -219,7 +229,7 @@ pub struct BaseviewWindow {
     handler_builder: Cell<Option<WindowHandlerBuilder>>,
     handler: OnceCell<Box<dyn WindowHandler>>,
     host: Host,
-    redraw_timer: OnceCell<Timer>,
+    redraw_timer: TimerSlot,
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
     _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
@@ -245,6 +255,8 @@ impl BaseviewWindow {
             let shared_state = Rc::clone(&shared_state);
 
             move |hwnd: HWnd| {
+                shared_state.set_hwnd(hwnd);
+
                 let window_state = Rc::new(WindowState::new(
                     hwnd,
                     shared_state.user32.clone(),
@@ -258,7 +270,7 @@ impl BaseviewWindow {
                     handler: OnceCell::new(),
                     shared_state,
                     host: init.host,
-                    redraw_timer: OnceCell::new(),
+                    redraw_timer: TimerSlot::empty(hwnd),
 
                     _drop_target: None.into(),
                     _keyboard_hook: None.into(),
@@ -388,9 +400,7 @@ impl WindowImpl for BaseviewWindow {
         };
         let Ok(()) = self.handler.set(handler) else { unreachable!() };
 
-        let Ok(()) = self.redraw_timer.set(Timer::new(window, REDRAW_TIMER_DELAY_MSEC)?) else {
-            unreachable!()
-        };
+        self.redraw_timer.restart(REDRAW_TIMER_DELAY_MSEC)?;
 
         Ok(())
     }
@@ -536,20 +546,25 @@ unsafe fn wnd_proc_inner(
                 return None;
             };
 
-            if Some(timer_id) == window_bv.redraw_timer.get().map(|t| t.id()) {
+            if window_bv.redraw_timer.matches_id(timer_id) {
                 window_bv.handle_on_frame();
                 // check if redraw requested, if not then kill the timer
                 Some(0)
             } else {
-                let Ok(true) =
-                    window_state.shared.delayed_redraw_timers.remove_if_exists(window, timer_id)
-                else {
-                    return None;
-                };
-                // Schedule new frame, reset
-
-                window_bv.redraw_timer.get()
-                Some(0)
+                match window_state.shared.delayed_redraw_timers.remove_if_exists(window, timer_id) {
+                    Ok(false) => None,
+                    Err(e) => {
+                        warn!("Could not remove timer: {}", e);
+                        None
+                    }
+                    Ok(true) => {
+                        // If the timer is already running, do nothing, we'll get a new frame anyway
+                        if !window_bv.redraw_timer.is_running() {
+                            window_bv.handle_on_frame();
+                        }
+                        Some(0)
+                    }
+                }
             }
         }
         WM_CLOSE => {
@@ -745,6 +760,16 @@ unsafe fn wnd_proc_inner(
         //        state
         BV_WINDOW_MUST_CLOSE => {
             let _ = window.destroy();
+            Some(0)
+        }
+
+        BV_REQUEST_REDRAW => {
+            todo!();
+            Some(0)
+        }
+
+        BV_REQUEST_POLL => {
+            todo!();
             Some(0)
         }
         _ => None,

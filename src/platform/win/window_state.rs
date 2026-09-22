@@ -1,12 +1,13 @@
 use crate::dpi::{PhysicalSize, Size};
 use crate::platform::win::dpi::DpiScalingStrategy;
 use crate::platform::win::keyboard::KeyboardState;
-use crate::platform::PlatformHandle;
+use crate::platform::win::waker::WindowWakerSource;
+use crate::platform::{PlatformHandle, WindowWaker};
 use crate::utils::SizingStrategy;
 use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
-use crate::wrappers::win32::window::HWnd;
+use crate::wrappers::win32::window::{HWnd, BV_WINDOW_MUST_CLOSE};
 use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule, TimerList};
 use crate::WindowSettings;
 use crate::{MouseCursor, WindowSize};
@@ -14,6 +15,7 @@ use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, Ref, RefCell};
 use std::num::NonZeroIsize;
 use std::rc::Rc;
+use std::time::Duration;
 use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 /// All data associated with the window.
@@ -66,12 +68,7 @@ impl WindowState {
 
     pub fn request_close(&self) {
         unsafe {
-            PostMessageW(
-                self.hwnd.as_raw(),
-                crate::platform::win::window::BV_WINDOW_MUST_CLOSE,
-                0,
-                0,
-            );
+            PostMessageW(self.hwnd.as_raw(), BV_WINDOW_MUST_CLOSE, 0, 0);
         }
     }
 
@@ -126,6 +123,19 @@ impl WindowState {
         let Some(hwnd) = NonZeroIsize::new(self.hwnd.as_raw() as _) else { unreachable!() };
         PlatformHandle { hwnd }
     }
+
+    pub fn request_redraw(&self) {}
+
+    pub fn request_redraw_after(&self, duration: Duration) {
+        if let Err(e) = self.shared.delayed_redraw_timers.add_new_timer(self.hwnd, duration) {
+            crate::warn!("Request Redraw failed: Could not add timer: {}", e)
+        }
+    }
+
+    #[inline]
+    pub fn waker(&self) -> WindowWaker {
+        self.shared.window_waker_source.waker()
+    }
 }
 
 pub struct WindowSharedState {
@@ -141,6 +151,7 @@ pub struct WindowSharedState {
     pub user32: LibraryModule<ExtendedUser32>,
     pub sizing_strategy: SizingStrategy,
     pub delayed_redraw_timers: TimerList,
+    pub window_waker_source: WindowWakerSource,
 }
 
 impl WindowSharedState {
@@ -157,6 +168,7 @@ impl WindowSharedState {
             user32,
             dpi_scaling_strategy: DpiScalingStrategy::default().into(),
             delayed_redraw_timers: TimerList::new(),
+            window_waker_source: WindowWakerSource::new(),
         }
         .into()
     }
@@ -175,6 +187,10 @@ impl WindowSharedState {
         }
 
         self.dpi_scaling_strategy.set(strategy);
+    }
+
+    pub fn set_hwnd(&self, hwnd: HWnd) {
+        self.window_waker_source.set(hwnd)
     }
 
     pub fn size(&self) -> WindowSize {

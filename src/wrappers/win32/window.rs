@@ -14,7 +14,7 @@ pub use wgl::*;
 
 use crate::dpi::PhysicalSize;
 pub use data::WindowData;
-pub use handle::HWnd;
+pub use handle::*;
 pub use proc::wnd_proc;
 use std::ptr::{null_mut, NonNull};
 use std::rc::Rc;
