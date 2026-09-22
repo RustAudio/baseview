@@ -24,7 +24,7 @@ use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, LibraryModule, Rect,
-    WindowStyle,
+    Timer, TimerId, WindowStyle,
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 
@@ -219,6 +219,7 @@ pub struct BaseviewWindow {
     handler_builder: Cell<Option<WindowHandlerBuilder>>,
     handler: OnceCell<Box<dyn WindowHandler>>,
     host: Host,
+    redraw_timer: OnceCell<Timer>,
 
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
     _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
@@ -257,6 +258,7 @@ impl BaseviewWindow {
                     handler: OnceCell::new(),
                     shared_state,
                     host: init.host,
+                    redraw_timer: OnceCell::new(),
 
                     _drop_target: None.into(),
                     _keyboard_hook: None.into(),
@@ -270,13 +272,6 @@ impl BaseviewWindow {
         let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, None)?;
         let title = HSTRING::from(init.settings.title);
         let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
-
-        // FIXME: this SetTimer call could be in after_create, but for some reason it changes the ordering
-        // for a parent+child window situation, which results in the parent drawing over the child.
-        // This timer should be replaced by proper window redrawing/damage/vsync handling, but this
-        // would be a breaking change, so we'll do that later.
-        // TODO: create a new timer instead of hard-coding a specific ID
-        window.set_timer(WIN_FRAME_TIMER, 15)?;
 
         Ok(window)
     }
@@ -323,6 +318,8 @@ impl Drop for BaseviewWindow {
         self.notify_destroyed_to_host();
     }
 }
+
+const REDRAW_TIMER_DELAY_MSEC: u32 = 15;
 
 impl WindowImpl for BaseviewWindow {
     fn non_client_create(&self, window: HWnd) -> std::result::Result<(), PlatformError> {
@@ -390,6 +387,10 @@ impl WindowImpl for BaseviewWindow {
             handler_builder.build(context)?
         };
         let Ok(()) = self.handler.set(handler) else { unreachable!() };
+
+        let Ok(()) = self.redraw_timer.set(Timer::new(window, REDRAW_TIMER_DELAY_MSEC)?) else {
+            unreachable!()
+        };
 
         Ok(())
     }
@@ -531,11 +532,25 @@ unsafe fn wnd_proc_inner(
             None
         }
         WM_TIMER => {
-            if wparam == WIN_FRAME_TIMER.get() {
-                window_bv.handle_on_frame()
-            }
+            let Some(timer_id) = TimerId::from_wparam(wparam) else {
+                return None;
+            };
 
-            Some(0)
+            if Some(timer_id) == window_bv.redraw_timer.get().map(|t| t.id()) {
+                window_bv.handle_on_frame();
+                // check if redraw requested, if not then kill the timer
+                Some(0)
+            } else {
+                let Ok(true) =
+                    window_state.shared.delayed_redraw_timers.remove_if_exists(window, timer_id)
+                else {
+                    return None;
+                };
+                // Schedule new frame, reset
+
+                window_bv.redraw_timer.get()
+                Some(0)
+            }
         }
         WM_CLOSE => {
             window_bv.handle_event(Event::Window(WindowEvent::WillClose));

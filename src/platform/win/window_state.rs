@@ -7,7 +7,7 @@ use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
-use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule};
+use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule, TimerList};
 use crate::WindowSettings;
 use crate::{MouseCursor, WindowSize};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
@@ -140,6 +140,7 @@ pub struct WindowSharedState {
 
     pub user32: LibraryModule<ExtendedUser32>,
     pub sizing_strategy: SizingStrategy,
+    pub delayed_redraw_timers: TimerList,
 }
 
 impl WindowSharedState {
@@ -155,6 +156,7 @@ impl WindowSharedState {
             sizing_strategy: SizingStrategy::from_settings(settings),
             user32,
             dpi_scaling_strategy: DpiScalingStrategy::default().into(),
+            delayed_redraw_timers: TimerList::new(),
         }
         .into()
     }
