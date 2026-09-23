@@ -38,9 +38,10 @@ impl WindowContext {
     }
 
     pub fn request_redraw(&self) {
+        self.state.redraw_requested.set(true);
         let Some(view) = self.view.load() else { return };
-
-        view.setNeedsDisplay(true);
+        let Some(view) = view.inner() else { return };
+        view.set_next_frame_needed(true);
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {

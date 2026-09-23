@@ -12,8 +12,8 @@ use crate::window::WindowInitializer;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
-    DropData, DropEffect, Event, EventStatus, MouseButton, MouseEvent, ScrollDelta, WindowEvent,
-    WindowHandler, WindowSize,
+    DropData, DropEffect, Event, EventStatus, HandlerError, MouseButton, MouseEvent, ScrollDelta,
+    WindowEvent, WindowHandler, WindowSize,
 };
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
@@ -73,6 +73,7 @@ pub(crate) struct BaseviewView {
     parenting: RefCell<ViewParentingType>,
     pub(crate) lifetime_tied_to_app: Cell<Option<Weak<NSApplication>>>,
     display_link: OnceCell<Retained<CADisplayLink>>,
+    display_link_started: Cell<bool>,
 
     host: Host,
     pub(crate) cursor_manager: CursorManager,
@@ -101,6 +102,7 @@ impl BaseviewView {
 
             keyboard_state: KeyboardState::new(),
             display_link: OnceCell::new(),
+            display_link_started: false.into(),
             window_handler: WindowHandlerContainer::new(),
             notification_center_observer: None.into(),
             parenting: ViewParentingType::Uninitialized.into(),
@@ -109,7 +111,7 @@ impl BaseviewView {
             cursor_manager: CursorManager::new(),
 
             #[cfg(feature = "opengl")]
-            gl_context: std::cell::OnceCell::new(),
+            gl_context: OnceCell::new(),
         };
 
         let view = View::new(view_rect, inner, |view| {
@@ -140,9 +142,9 @@ impl BaseviewView {
             let ns_filenames_pboard_type = unsafe { NSFilenamesPboardType };
             view.view.registerForDraggedTypes(&NSArray::from_slice(&[ns_filenames_pboard_type]));
 
-            let Ok(()) = view.display_link.set(view.view.setup_display_link()) else {
-                unreachable!()
-            };
+            let display_link = view.view.setup_display_link();
+            display_link.setPaused(true);
+            let Ok(()) = view.display_link.set(display_link) else { unreachable!() };
 
             let notifier_view = Weak::new(view.view);
             let observer = NotificationCenterObserver::register_window_key_change(move |n| {
@@ -184,11 +186,27 @@ impl BaseviewView {
         this.window_handler.use_handler(|h| h.poll());
     }
 
+    pub fn set_next_frame_needed(&self, needed: bool) {
+        if self.display_link_started.get() == needed {
+            return;
+        };
+
+        let Some(display_link) = self.display_link.get() else { return };
+
+        display_link.setPaused(!needed);
+        self.display_link_started.set(needed);
+    }
+
     pub fn close(this: ViewRef<Self>, from_host: bool) {
         this.state.closed.set(true);
         this.view.removeFromSuperview();
         this.notification_center_observer.take();
         this.window_handler.destroy();
+
+        if let Some(link) = this.display_link.get() {
+            link.setPaused(true);
+            link.invalidate();
+        }
 
         let parenting = this.parenting.replace(ViewParentingType::Uninitialized);
         parenting.teardown();
@@ -253,9 +271,20 @@ impl BaseviewView {
     }
 
     fn trigger_frame(this: ViewRef<Self>) {
-        if let Some(Err(e)) = this.window_handler.use_handler(|h| h.draw()) {
+        let result = this.window_handler.use_handler(|h| {
+            this.state.redraw_requested.set(false);
+            h.draw()?;
+
+            Ok::<(), HandlerError>(())
+        });
+
+        let Some(result) = result else { return };
+
+        if let Err(e) = result {
             warn!("Error while drawing: {}", e);
             Self::close(this, false);
+        } else {
+            this.set_next_frame_needed(this.state.redraw_requested.take())
         }
     }
 
@@ -356,7 +385,7 @@ impl ViewImpl for BaseviewView {
     }
 
     fn draw_rect(this: ViewRef<Self>, _rect: NSRect) {
-        Self::trigger_frame(this);
+        this.set_next_frame_needed(true);
     }
 
     fn display_link_fired(this: ViewRef<Self>, _sender: &CADisplayLink) {
