@@ -20,7 +20,8 @@ impl WindowWaker {
     pub fn request_redraw_after(&self, duration: Duration) {
         self.view.use_on_main_thread_after(duration, |view| {
             let Some(view) = view.load() else { return };
-            view.setNeedsDisplay(true);
+            let Some(view) = view.inner() else { return };
+            view.set_next_frame_needed(true);
         })
     }
 

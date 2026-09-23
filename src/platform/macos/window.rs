@@ -211,6 +211,7 @@ pub(crate) struct WindowSharedState {
     pub size: Cell<LogicalSize<f64>>,
     pub scale_factor: Cell<f64>,
     pub sizing_strategy: SizingStrategy,
+    pub redraw_requested: Cell<bool>,
 }
 
 impl WindowSharedState {
@@ -220,6 +221,7 @@ impl WindowSharedState {
             size: size.into(),
             scale_factor: scale_factor.into(),
             sizing_strategy,
+            redraw_requested: Cell::new(false),
         }
     }
 }
