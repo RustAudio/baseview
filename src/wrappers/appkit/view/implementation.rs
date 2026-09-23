@@ -96,6 +96,10 @@ pub unsafe fn create_view_class<V: ViewImpl>() -> &'static AnyClass {
         );
 
         class.add_method(sel!(drawRect:), draw_rect::<V> as extern "C-unwind" fn(_, _, _) -> _);
+        class.add_method(
+            sel!(displayLinkFired:),
+            display_link_fired::<V> as extern "C-unwind" fn(_, _, _) -> _,
+        );
 
         class.add_method(
             sel!(draggingEntered:),
@@ -202,6 +206,15 @@ extern "C-unwind" fn draw_rect<V: ViewImpl>(this: &View<V>, _: Sel, dirty_rect: 
         return;
     };
     V::draw_rect(inner, dirty_rect);
+}
+
+extern "C-unwind" fn display_link_fired<V: ViewImpl>(
+    this: &View<V>, _sel: Sel, sender: &CADisplayLink,
+) {
+    let Some(inner) = this.inner_ref() else {
+        return;
+    };
+    V::display_link_fired(inner, sender);
 }
 
 extern "C-unwind" fn hit_test<V: ViewImpl>(

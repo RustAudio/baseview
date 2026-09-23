@@ -26,6 +26,7 @@ struct FramePacingTest {
 
     bar_pos: Cell<u32>,
     bar_speed: Cell<u32>,
+    first: Cell<bool>,
 }
 
 impl FramePacingTest {
@@ -54,12 +55,17 @@ impl FramePacingTest {
             previous_frame_time: Instant::now().into(),
             bar_pos: 0.into(),
             bar_speed: 6.into(),
+            first: Cell::new(false),
         })
     }
 }
 
 impl WindowHandler for FramePacingTest {
     fn draw(&self) -> Result<(), HandlerError> {
+        if !self.first.replace(true) {
+            //self.window_context.request_redraw();
+            //return Ok(());
+        }
         let now = Instant::now();
         let dt = (now - self.previous_frame_time.get()).as_secs_f32();
         self.previous_frame_time.set(now);

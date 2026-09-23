@@ -24,7 +24,8 @@ use objc2_app_kit::{
     NSTrackingAreaOptions, NSView, NSWindow,
 };
 use objc2_foundation::{NSArray, NSNotification, NSPoint, NSPointInRect, NSRect, NSSize, NSString};
-use std::cell::{Cell, RefCell};
+use objc2_quartz_core::CADisplayLink;
+use std::cell::{Cell, OnceCell, RefCell};
 use std::rc::Rc;
 
 pub enum ViewParentingType {
@@ -65,19 +66,19 @@ pub(crate) struct BaseviewView {
     pub(crate) mtm: MainThreadMarker,
     window_handler: WindowHandlerContainer,
 
-    frame_timer: Cell<Option<TimerHandle>>,
     notification_center_observer: Cell<Option<NotificationCenterObserver>>,
 
     keyboard_state: KeyboardState,
 
     parenting: RefCell<ViewParentingType>,
     pub(crate) lifetime_tied_to_app: Cell<Option<Weak<NSApplication>>>,
+    display_link: OnceCell<Retained<CADisplayLink>>,
 
     host: Host,
     pub(crate) cursor_manager: CursorManager,
 
     #[cfg(feature = "opengl")]
-    pub(crate) gl_context: std::cell::OnceCell<super::gl::GlContext>,
+    pub(crate) gl_context: OnceCell<super::gl::GlContext>,
 }
 
 impl BaseviewView {
@@ -99,7 +100,7 @@ impl BaseviewView {
             state: Rc::clone(&state),
 
             keyboard_state: KeyboardState::new(),
-            frame_timer: None.into(),
+            display_link: OnceCell::new(),
             window_handler: WindowHandlerContainer::new(),
             notification_center_observer: None.into(),
             parenting: ViewParentingType::Uninitialized.into(),
@@ -139,12 +140,9 @@ impl BaseviewView {
             let ns_filenames_pboard_type = unsafe { NSFilenamesPboardType };
             view.view.registerForDraggedTypes(&NSArray::from_slice(&[ns_filenames_pboard_type]));
 
-            let timer_view = Weak::new(view.view);
-            view.frame_timer.set(TimerHandle::new(0.015, move || {
-                if let Some(view) = timer_view.load() {
-                    view.setNeedsDisplay(true);
-                }
-            }));
+            let Ok(()) = view.display_link.set(view.view.setup_display_link()) else {
+                unreachable!()
+            };
 
             let notifier_view = Weak::new(view.view);
             let observer = NotificationCenterObserver::register_window_key_change(move |n| {
@@ -190,7 +188,6 @@ impl BaseviewView {
         this.state.closed.set(true);
         this.view.removeFromSuperview();
         this.notification_center_observer.take();
-        this.frame_timer.take();
         this.window_handler.destroy();
 
         let parenting = this.parenting.replace(ViewParentingType::Uninitialized);
@@ -359,6 +356,10 @@ impl ViewImpl for BaseviewView {
     }
 
     fn draw_rect(this: ViewRef<Self>, _rect: NSRect) {
+        Self::trigger_frame(this);
+    }
+
+    fn display_link_fired(this: ViewRef<Self>, _sender: &CADisplayLink) {
         Self::trigger_frame(this);
     }
 
