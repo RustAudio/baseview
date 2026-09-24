@@ -24,6 +24,7 @@ pub use event::*;
 pub use handler::{DamageArea, WindowHandler};
 pub use mouse_cursor::MouseCursor;
 pub use settings::*;
+pub use waker::WindowWaker;
 pub use window::*;
 
 #[allow(unused, reason = "Some platforms may not use all exports from this mod")]
