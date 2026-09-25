@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 pub(crate) struct WindowThreadShared {
     stopped: AtomicBool,
@@ -23,7 +24,38 @@ pub(crate) struct WindowThreadShared {
     size: AtomicU32,
     final_error: Mutex<Option<String>>,
     stopped_requested_from_host: AtomicBool,
+    poll_requested: AtomicBool,
     sizing_strategy: OnceLock<SizingStrategy>,
+
+    redraw_requested_after: Mutex<Option<RedrawRequested>>,
+}
+
+pub enum RedrawRequested {
+    Now,
+    Later(Instant),
+}
+
+impl RedrawRequested {
+    pub fn from_duration(duration: Duration) -> Self {
+        if duration.is_zero() {
+            RedrawRequested::Now
+        } else {
+            if let Some(dur) = Instant::now().checked_add(duration) {
+                RedrawRequested::Later(dur)
+            } else {
+                RedrawRequested::Now
+            }
+        }
+    }
+
+    pub fn to_duration(&self) -> Duration {
+        match self {
+            RedrawRequested::Now => Duration::ZERO,
+            RedrawRequested::Later(instant) => {
+                instant.checked_duration_since(Instant::now()).unwrap_or(Duration::ZERO)
+            }
+        }
+    }
 }
 
 impl WindowThreadShared {
@@ -35,6 +67,8 @@ impl WindowThreadShared {
             scaling_factor: 0.into(),
             stopped_requested_from_host: false.into(),
             sizing_strategy: OnceLock::new(),
+            redraw_requested_after: None.into(),
+            poll_requested: false.into(),
         }
     }
 
@@ -72,6 +106,25 @@ impl WindowThreadShared {
 
     pub fn is_stop_host_requested(&self) -> bool {
         self.stopped_requested_from_host.load(Ordering::Relaxed)
+    }
+
+    pub fn request_redraw_after(&self, duration: Duration) {
+        // Ignore a poisoned mutex, we just fully override this value anyway.
+        let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
+        *guard = Some(RedrawRequested::from_duration(duration));
+    }
+
+    pub fn take_redraw_request(&self) -> Option<Duration> {
+        let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
+        guard.take().map(|w| w.to_duration())
+    }
+
+    pub fn request_poll(&self) {
+        self.poll_requested.store(true, Ordering::Relaxed);
+    }
+
+    pub fn take_poll_request(&self) -> bool {
+        self.poll_requested.swap(false, Ordering::Relaxed)
     }
 }
 
@@ -237,6 +290,17 @@ impl WindowThreadHandle {
 
     pub fn set_parent(&self, new_parent: ParentWindowHandle) -> Result<()> {
         self.request(WindowThreadRequest::SetParent(new_parent))
+    }
+
+    pub fn request_poll(&self) -> Result<()> {
+        self.shared.request_poll();
+        self.loop_signal.wakeup();
+
+        Ok(())
+    }
+
+    pub fn waker(&self) -> WindowWaker {
+        WindowWaker { loop_signal: self.loop_signal.clone(), shared: Arc::clone(&self.shared) }
     }
 
     fn handle_main_thread_message(&self, msg: HostCallback) {

@@ -77,6 +77,7 @@ objc2-core-foundation = { version = "0.3.2", default-features = false, features 
 block2 = "0.6.2"
 dispatch2 = "0.3.1"
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSEnumerator", "block2", "NSOperation"] }
+objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["CADisplayLink"] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSApplication",
     "NSCursor",
@@ -90,11 +91,12 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSTrackingArea",
     "NSView",
     "NSWindow",
+    "objc2-quartz-core",
     "objc2-core-foundation"
 ] }
 
 [workspace]
-members = ["examples/cursors","examples/open_parented", "examples/open_window", "examples/plugin_clack", "examples/render_femtovg", "examples/render_wgpu", "examples/plugin_clack_femtovg", "examples/test-frame-pacing"]
+members = ["examples/cursors", "examples/open_parented", "examples/open_window", "examples/plugin_clack", "examples/render_femtovg", "examples/render_wgpu", "examples/plugin_clack_femtovg", "examples/test-frame-pacing", "examples/external-wakeup"]
 
 [lints.clippy]
 missing-safety-doc = "allow"

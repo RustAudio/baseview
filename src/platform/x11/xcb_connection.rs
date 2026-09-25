@@ -4,7 +4,6 @@ use crate::wrappers::xlib::XlibXcbConnection;
 use crate::MouseCursor;
 use std::cell::RefCell;
 use std::collections::hash_map::{Entry, HashMap};
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use x11rb::connection::RequestConnection;
 use x11rb::cookie::VoidCookie;
@@ -123,15 +122,6 @@ impl X11Connection {
 
         self.conn.change_window_attributes(
             root,
-            &ChangeWindowAttributesAux::new().event_mask(EventMask::SUBSTRUCTURE_NOTIFY),
-        )
-    }
-
-    pub fn register_tree_structure_events_for_window(
-        &self, window_id: NonZeroU32,
-    ) -> core::result::Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
-        self.conn.change_window_attributes(
-            window_id.get(),
             &ChangeWindowAttributesAux::new().event_mask(EventMask::SUBSTRUCTURE_NOTIFY),
         )
     }

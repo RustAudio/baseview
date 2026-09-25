@@ -2,6 +2,7 @@ use crate::dpi::*;
 use crate::handler::WindowHandlerBuilder;
 use crate::host::Host;
 use crate::platform;
+use crate::waker::WindowWaker;
 use crate::*;
 use std::marker::PhantomData;
 
@@ -224,6 +225,18 @@ impl Window {
     #[inline]
     pub fn adjust_size<S: From<WindowSize> + Into<Size>>(&self, size: S) -> S {
         self.inner.sizing_strategy().adjust_size(size.into(), self.size()).into()
+    }
+
+    #[inline]
+    pub fn request_poll(&self) -> Result<(), Error> {
+        self.inner.request_poll()?;
+        Ok(())
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn waker(&self) -> WindowWaker {
+        WindowWaker { inner: self.inner.waker() }
     }
 }
 

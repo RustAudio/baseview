@@ -10,8 +10,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
-use crate::platform::ParentWindowHandle;
 use crate::platform::Result;
+use crate::platform::{ParentWindowHandle, WindowWaker};
 use crate::utils::SizingStrategy;
 use crate::wrappers::appkit::{create_window, View};
 use crate::*;
@@ -174,6 +174,18 @@ impl WindowHandle {
     pub fn sizing_strategy(&self) -> SizingStrategy {
         self.state.sizing_strategy
     }
+
+    pub fn request_poll(&self) -> Result<()> {
+        let Some(view) = self.view.load() else { return Ok(()) };
+        let Some(view) = view.inner_ref() else { return Ok(()) };
+
+        BaseviewView::poll(view);
+        Ok(())
+    }
+
+    pub fn waker(&self) -> WindowWaker {
+        WindowWaker::new(Weak::clone(&self.view))
+    }
 }
 
 fn create_window_with_options(
@@ -199,6 +211,7 @@ pub(crate) struct WindowSharedState {
     pub size: Cell<LogicalSize<f64>>,
     pub scale_factor: Cell<f64>,
     pub sizing_strategy: SizingStrategy,
+    pub redraw_requested: Cell<bool>,
 }
 
 impl WindowSharedState {
@@ -208,6 +221,7 @@ impl WindowSharedState {
             size: size.into(),
             scale_factor: scale_factor.into(),
             sizing_strategy,
+            redraw_requested: Cell::new(false),
         }
     }
 }

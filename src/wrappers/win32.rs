@@ -5,6 +5,7 @@ mod library;
 mod rect;
 mod shcore;
 mod style;
+mod timer;
 mod user32;
 pub mod uuid;
 pub mod window;
@@ -14,6 +15,7 @@ pub use library::*;
 pub use rect::Rect;
 pub use shcore::*;
 pub use style::*;
+pub use timer::*;
 pub use user32::*;
 
 use std::ptr::null_mut;

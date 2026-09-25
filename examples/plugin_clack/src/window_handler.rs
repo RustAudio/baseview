@@ -12,7 +12,6 @@ pub struct OpenWindowExample {
     surface: RefCell<softbuffer::Surface<WindowContext, WindowContext>>,
     mouse_pos: Cell<PhysicalPosition<f64>>,
     is_cursor_inside: Cell<bool>,
-    damaged: Cell<bool>,
 }
 
 impl WindowHandler for OpenWindowExample {
@@ -23,17 +22,12 @@ impl WindowHandler for OpenWindowExample {
             (NonZeroU32::new(new_size.physical.width), NonZeroU32::new(new_size.physical.height))
         {
             self.surface.borrow_mut().resize(width, height)?;
-            self.damaged.set(true);
         }
 
         Ok(())
     }
 
-    fn on_frame(&self) -> Result<(), HandlerError> {
-        if !self.damaged.get() {
-            return Ok(());
-        }
-
+    fn draw(&self) -> Result<(), HandlerError> {
         let mut surface = self.surface.borrow_mut();
         let mut pixels = surface.buffer_mut()?;
         let size = self.window_context.size();
@@ -93,7 +87,6 @@ impl WindowHandler for OpenWindowExample {
         }
 
         pixels.present()?;
-        self.damaged.set(false);
 
         Ok(())
     }
@@ -102,15 +95,15 @@ impl WindowHandler for OpenWindowExample {
         match event {
             Event::Mouse(MouseEvent::CursorMoved { position, .. }) => {
                 self.mouse_pos.set(position);
-                self.damaged.set(true);
+                self.window_context.request_redraw();
             }
             Event::Mouse(MouseEvent::CursorEntered) => {
                 self.is_cursor_inside.set(true);
-                self.damaged.set(true);
+                self.window_context.request_redraw();
             }
             Event::Mouse(MouseEvent::CursorLeft) => {
                 self.is_cursor_inside.set(false);
-                self.damaged.set(true);
+                self.window_context.request_redraw();
             }
             Event::Mouse(MouseEvent::ButtonPressed { button: MouseButton::Left, .. }) => {
                 let mut size = self.window_context.size().physical;
@@ -141,7 +134,6 @@ impl OpenWindowExample {
             surface: surface.into(),
             mouse_pos: PhysicalPosition::new(0., 0.).into(),
             is_cursor_inside: false.into(),
-            damaged: true.into(),
         })
     }
 }
