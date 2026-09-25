@@ -50,7 +50,7 @@ impl WindowHandle {
         })
     }
 
-    pub fn create_window_parented(
+    fn create_window_parented(
         init: WindowInitializer, parent_view: Retained<NSView>, mtm: MainThreadMarker,
     ) -> Result<Self> {
         let parenting =
@@ -85,14 +85,16 @@ impl WindowHandle {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
-        BaseviewView::show(view);
+        autoreleasepool(|_| {
+            BaseviewView::show(view);
 
-        let app = NSApplication::sharedApplication(self.mtm);
-        app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+            let app = NSApplication::sharedApplication(self.mtm);
+            app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
 
-        view.lifetime_tied_to_app.set(Some(Weak::from_retained(&app)));
-        app.run();
-        view.lifetime_tied_to_app.set(None);
+            view.lifetime_tied_to_app.set(Some(Weak::from_retained(&app)));
+            app.run();
+            view.lifetime_tied_to_app.set(None);
+        });
 
         Ok(())
     }
@@ -126,7 +128,9 @@ impl WindowHandle {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
-        BaseviewView::resize(view, size.to_logical(self.state.scale_factor.get()), false, false);
+        autoreleasepool(|_| {
+            BaseviewView::resize(view, size.to_logical(self.state.scale_factor.get()), false, false)
+        });
 
         Ok(())
     }
@@ -140,7 +144,9 @@ impl WindowHandle {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
-        BaseviewView::set_parent(view, new_parent.view.into_inner(view.mtm));
+        autoreleasepool(|_| {
+            BaseviewView::set_parent(view, new_parent.view.into_inner(view.mtm));
+        });
 
         Ok(())
     }
@@ -149,7 +155,9 @@ impl WindowHandle {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
-        BaseviewView::show(view);
+        autoreleasepool(|_| {
+            BaseviewView::show(view);
+        });
         Ok(())
     }
 
@@ -157,7 +165,9 @@ impl WindowHandle {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
-        BaseviewView::hide(view);
+        autoreleasepool(|_| {
+            BaseviewView::hide(view);
+        });
         Ok(())
     }
 

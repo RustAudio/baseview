@@ -3,7 +3,7 @@
 use crate::gl::{GlConfig, Profile};
 use crate::platform::*;
 use crate::warn;
-use objc2::rc::Retained;
+use objc2::rc::{autoreleasepool, Retained};
 use objc2::AllocAnyThread;
 use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
@@ -137,12 +137,16 @@ impl GlContext {
     }
 
     pub unsafe fn make_current(&self) -> Result<()> {
-        self.context.makeCurrentContext();
+        autoreleasepool(|_| {
+            self.context.makeCurrentContext();
+        });
         Ok(())
     }
 
     pub unsafe fn make_not_current(&self) -> Result<()> {
-        NSOpenGLContext::clearCurrentContext();
+        autoreleasepool(|_| {
+            NSOpenGLContext::clearCurrentContext();
+        });
         Ok(())
     }
 
@@ -166,18 +170,22 @@ impl GlContext {
             return core::ptr::null();
         };
 
-        self.gl_bundle.function_pointer_for_name(Some(&symbol_name))
+        autoreleasepool(|_| self.gl_bundle.function_pointer_for_name(Some(&symbol_name)))
     }
 
     pub fn swap_buffers(&self) -> Result<()> {
-        self.context.flushBuffer();
-        self.view.setNeedsDisplay(true);
+        autoreleasepool(|_| {
+            self.context.flushBuffer();
+            self.view.setNeedsDisplay(true);
+        });
         Ok(())
     }
 
     /// On macOS the `NSOpenGLView` needs to be resized separtely from our main view.
     pub(crate) fn resize(&self, size: NSSize) {
-        self.view.setFrameSize(size);
-        self.view.setNeedsDisplay(true);
+        autoreleasepool(|_| {
+            self.view.setFrameSize(size);
+            self.view.setNeedsDisplay(true);
+        });
     }
 }

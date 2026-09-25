@@ -5,7 +5,7 @@ use crate::platform::{PlatformHandle, WindowSharedState};
 use crate::wrappers::appkit::{View, ViewRef};
 use crate::*;
 use dispatch2::MainThreadBound;
-use objc2::rc::Weak;
+use objc2::rc::{autoreleasepool, Weak};
 use objc2::runtime::NSObjectProtocol;
 use objc2::{MainThreadMarker, Message};
 use raw_window_handle::DisplayHandle;
@@ -30,7 +30,10 @@ impl WindowContext {
     pub fn request_close(&self) {
         let Some(view) = self.view.load() else { return };
         let Some(view) = view.inner_ref() else { return };
-        BaseviewView::close(view, false);
+
+        autoreleasepool(|_| {
+            BaseviewView::close(view, false);
+        });
     }
 
     pub fn has_focus(&self) -> bool {
@@ -52,9 +55,12 @@ impl WindowContext {
 
     pub fn focus(&self) -> Result<()> {
         let Some(view) = self.view.load() else { return Ok(()) };
-        if let Some(window) = view.window() {
-            window.makeFirstResponder(Some(&view));
-        }
+
+        autoreleasepool(|_| {
+            if let Some(window) = view.window() {
+                window.makeFirstResponder(Some(&view));
+            }
+        });
 
         Ok(())
     }
@@ -69,7 +75,9 @@ impl WindowContext {
 
         let size = self.state.sizing_strategy.adjust_size(size, self.size()).logical;
 
-        BaseviewView::resize(view, size, true, false);
+        autoreleasepool(|_| {
+            BaseviewView::resize(view, size, true, false);
+        });
 
         Ok(())
     }
@@ -78,7 +86,9 @@ impl WindowContext {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
-        view.inner.cursor_manager.set_cursor(cursor);
+        autoreleasepool(|_| {
+            view.inner.cursor_manager.set_cursor(cursor);
+        });
 
         Ok(())
     }
@@ -93,7 +103,9 @@ impl WindowContext {
 
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
-        Some(crate::gl::GlContext::new(self.view.load()?.inner()?.gl_context.get()?.clone()))
+        autoreleasepool(|_| {
+            Some(crate::gl::GlContext::new(self.view.load()?.inner()?.gl_context.get()?.clone()))
+        })
     }
 
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
