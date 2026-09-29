@@ -134,8 +134,8 @@ impl GlContextInner {
     pub fn get_fb_config_and_visual(
         connection: &Rc<X11Connection>, config: GlConfig,
     ) -> Result<(FbConfig, WindowConfig)> {
-        EglGlContext::get_fb_config_and_visual(connection, &config)
-            .or_else(|_| GlxGlContext::get_fb_config_and_visual(connection, &config))
+        EglGlContext::get_fb_config_and_visual(connection, config.clone())
+            .or_else(|_| GlxGlContext::get_fb_config_and_visual(connection, config))
     }
 
     pub unsafe fn make_current(&self) -> Result<()> {

@@ -37,14 +37,14 @@ impl GlxGlContext {
     }
 
     pub fn get_fb_config_and_visual(
-        connection: &X11Connection, config: &GlConfig,
+        connection: &X11Connection, config: GlConfig,
     ) -> Result<(FbConfig, WindowConfig)> {
         let glx = Glx::open()?;
 
         let xlib_connection = connection.conn.xlib_connection();
 
         XErrorHandler::handle(xlib_connection, |error_handler| {
-            let fb_config = glx.choose_best_fb_config(xlib_connection, config, error_handler)?;
+            let fb_config = glx.choose_best_fb_config(xlib_connection, &config, error_handler)?;
 
             // Now that we have a matching framebuffer config, we need to know which visual matches
             // this config so the window is compatible with the OpenGL context we're about to create
@@ -54,7 +54,7 @@ impl GlxGlContext {
             Ok((
                 FbConfig {
                     fb_config: FbConfigInner::Glx { config: fb_config, glx },
-                    gl_config: *config,
+                    gl_config: config,
                 },
                 WindowConfig { depth: visual.depth as u8, visual: visual.visualid as u32 },
             ))

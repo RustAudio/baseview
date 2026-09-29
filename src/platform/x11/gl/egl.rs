@@ -27,20 +27,19 @@ impl EglGlContext {
 
 impl EglGlContext {
     pub fn get_fb_config_and_visual(
-        connection: &Rc<X11Connection>, gl_config: &GlConfig,
+        connection: &Rc<X11Connection>, gl_config: GlConfig,
     ) -> Result<(FbConfig, WindowConfig), PlatformError> {
         let egl = Egl::open()?;
         let display = egl.create_display(connection)?;
 
-        let config = display.choose_config(gl_config)?.ok_or(CreationFailedError::EglNoDisplay)?;
+        let config = display.choose_config(&gl_config)?.ok_or(CreationFailedError::EglNoDisplay)?;
         let visual = config.get_visual_id(&display)?;
 
         let depth = Self::find_visual_depth_for_id(connection, visual)
             .ok_or(CreationFailedError::EglUnknownVisualId(visual))?;
 
         let window_config = WindowConfig { depth, visual };
-        let fb_config =
-            FbConfig { gl_config: *gl_config, fb_config: FbConfigInner::Egl { display, config } };
+        let fb_config = FbConfig { gl_config, fb_config: FbConfigInner::Egl { display, config } };
 
         Ok((fb_config, window_config))
     }
