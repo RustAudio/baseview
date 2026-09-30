@@ -14,6 +14,22 @@ impl Rect {
             height: self.0.top.abs_diff(self.0.bottom),
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        let size = self.size();
+        size.width == 0 && size.height == 0
+    }
+}
+
+impl Debug for Rect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Rect")
+            .field("left", &self.0.left)
+            .field("top", &self.0.top)
+            .field("right", &self.0.right)
+            .field("bottom", &self.0.bottom)
+            .finish()
+    }
 }
 
 impl From<PhysicalSize<u32>> for Rect {

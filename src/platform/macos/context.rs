@@ -1,7 +1,7 @@
 use crate::dpi::Size;
 use crate::platform::macos::view::BaseviewView;
-use crate::platform::Result;
 use crate::platform::{PlatformHandle, WindowSharedState};
+use crate::platform::{Result, WindowWaker};
 use crate::wrappers::appkit::{View, ViewRef};
 use crate::*;
 use dispatch2::MainThreadBound;
@@ -10,6 +10,7 @@ use objc2::runtime::NSObjectProtocol;
 use objc2::{MainThreadMarker, Message};
 use raw_window_handle::DisplayHandle;
 use std::rc::Rc;
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct WindowContext {
@@ -34,6 +35,21 @@ impl WindowContext {
         autoreleasepool(|_| {
             BaseviewView::close(view, false);
         });
+    }
+
+    pub fn request_redraw(&self) {
+        self.state.redraw_requested.set(true);
+        let Some(view) = self.view.load() else { return };
+        let Some(view) = view.inner() else { return };
+        view.set_next_frame_needed(true);
+    }
+
+    pub fn request_redraw_after(&self, duration: Duration) {
+        self.waker().request_redraw_after(duration);
+    }
+
+    pub fn waker(&self) -> WindowWaker {
+        WindowWaker::new(Weak::clone(&self.view))
     }
 
     pub fn has_focus(&self) -> bool {

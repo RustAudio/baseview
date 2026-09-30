@@ -6,13 +6,12 @@ use baseview::{
 };
 use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 
 struct CursorsExample {
     window_context: WindowContext,
     gl_context: GlContext,
     canvas: RefCell<Canvas<OpenGl>>,
-    damaged: Cell<bool>,
 }
 
 impl CursorsExample {
@@ -29,7 +28,7 @@ impl CursorsExample {
         canvas.set_size(size.physical.width, size.physical.height, size.scale_factor as f32);
 
         unsafe { gl_context.make_not_current()? };
-        Ok(Self { gl_context, window_context, canvas: canvas.into(), damaged: true.into() })
+        Ok(Self { gl_context, window_context, canvas: canvas.into() })
     }
 
     fn in_blue_area(&self, position: PhysicalPosition<f64>) -> bool {
@@ -43,11 +42,7 @@ impl CursorsExample {
 }
 
 impl WindowHandler for CursorsExample {
-    fn on_frame(&self) -> Result<(), HandlerError> {
-        if !self.damaged.get() {
-            return Ok(());
-        }
-
+    fn draw(&self) -> Result<(), HandlerError> {
         let context = &self.gl_context;
         unsafe { context.make_current()? };
 
@@ -72,7 +67,6 @@ impl WindowHandler for CursorsExample {
         canvas.flush();
         context.swap_buffers()?;
         unsafe { context.make_not_current()? };
-        self.damaged.set(false);
 
         Ok(())
     }
@@ -80,7 +74,6 @@ impl WindowHandler for CursorsExample {
     fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError> {
         let size = new_size.physical;
         self.canvas.borrow_mut().set_size(size.width, size.height, new_size.scale_factor as f32);
-        self.damaged.set(true);
 
         Ok(())
     }

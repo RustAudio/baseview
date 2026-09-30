@@ -176,7 +176,6 @@ impl GlContext {
     pub fn swap_buffers(&self) -> Result<()> {
         autoreleasepool(|_| {
             self.context.flushBuffer();
-            self.view.setNeedsDisplay(true);
         });
         Ok(())
     }
@@ -185,7 +184,6 @@ impl GlContext {
     pub(crate) fn resize(&self, size: NSSize) {
         autoreleasepool(|_| {
             self.view.setFrameSize(size);
-            self.view.setNeedsDisplay(true);
         });
     }
 }

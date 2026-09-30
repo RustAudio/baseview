@@ -20,7 +20,7 @@ mod keyboard;
 mod visual_info;
 mod xcb_window;
 
-mod visibility_tree;
+mod waker;
 mod window_shared;
 mod window_thread;
 
@@ -31,6 +31,7 @@ use crate::platform::x11::window_shared::WindowInner;
 use crate::wrappers::xlib::XlibXcbConnection;
 
 pub type WindowContext = Rc<WindowInner>;
+pub use waker::WindowWaker;
 
 #[cfg(feature = "opengl")]
 pub mod gl;
