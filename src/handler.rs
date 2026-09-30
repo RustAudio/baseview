@@ -1,23 +1,44 @@
 use super::*;
 use crate::dpi::{PhysicalPosition, PhysicalSize};
 use crate::platform::Result;
+use std::fmt::{Debug, Formatter};
 
 #[non_exhaustive]
 #[derive(Debug, Copy, Clone)]
 pub enum DamageArea {
     FullWindow,
-    Rect { position: PhysicalPosition<u32>, size: PhysicalSize<u32> },
+    Rect(DamageRect),
 }
 
-impl DamageArea {
-    pub(crate) fn from_rect_and_window_size(
-        position: PhysicalPosition<u32>, size: PhysicalSize<u32>, window_size: PhysicalSize<u32>,
-    ) -> Self {
-        if position.x == 0 && position.y == 0 && size == window_size {
-            Self::FullWindow
-        } else {
-            Self::Rect { position, size }
-        }
+#[derive(Copy, Clone, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct DamageRect {
+    inner: platform::DamageRect,
+}
+
+impl DamageRect {
+    #[inline]
+    pub fn position(&self) -> PhysicalPosition<u32> {
+        self.inner.position()
+    }
+
+    #[inline]
+    pub fn size(&self) -> PhysicalSize<u32> {
+        self.inner.size()
+    }
+}
+
+impl From<platform::DamageRect> for DamageRect {
+    #[inline]
+    fn from(value: platform::DamageRect) -> Self {
+        DamageRect { inner: value }
+    }
+}
+
+impl Debug for DamageRect {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
     }
 }
 

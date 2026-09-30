@@ -21,7 +21,7 @@ pub use clipboard::*;
 pub use context::{PlatformHandle, WindowContext};
 pub use error::*;
 pub use event::*;
-pub use handler::{DamageArea, WindowHandler};
+pub use handler::{DamageArea, DamageRect, WindowHandler};
 pub use mouse_cursor::MouseCursor;
 pub use settings::*;
 pub use waker::WindowWaker;

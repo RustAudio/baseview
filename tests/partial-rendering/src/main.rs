@@ -1,7 +1,7 @@
 use baseview::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use baseview::gl::{GlConfig, GlContext};
 use baseview::{
-    DamageArea, Event, EventStatus, HandlerError, Window, WindowContext, WindowHandler,
+    DamageArea, DamageRect, Event, EventStatus, HandlerError, Window, WindowContext, WindowHandler,
     WindowSettings, WindowSize,
 };
 use color::{Hsl, OpaqueColor};
@@ -48,9 +48,15 @@ impl WindowHandler for FemtovgExample {
         if self.damage_handler.is_full_screen_clear() {
             canvas.clear_rect(0, 0, screen_width, screen_height, color_of_the_day);
         } else {
-            while let Some((pos, size)) = self.damage_handler.next_damage() {
-                dbg!((pos, size));
-                canvas.clear_rect(pos.x, pos.y, size.width, size.height, color_of_the_day);
+            while let Some(rect) = self.damage_handler.next_damage() {
+                dbg!(rect);
+                canvas.clear_rect(
+                    rect.position().x,
+                    rect.position().y,
+                    rect.size().width,
+                    rect.size().height,
+                    color_of_the_day,
+                );
             }
         }
 
@@ -68,9 +74,7 @@ impl WindowHandler for FemtovgExample {
         eprintln!("Damaged: {area:?}");
         match area {
             DamageArea::FullWindow => self.damage_handler.set_full_screen_clear(),
-            DamageArea::Rect { position, size } => {
-                self.damage_handler.add_damaged_rect(position, size)
-            }
+            DamageArea::Rect(rect) => self.damage_handler.add_damaged_rect(rect),
             _ => {}
         }
     }
@@ -95,7 +99,7 @@ fn main() -> Result<(), baseview::Error> {
         .with_size(LogicalSize::new(512, 512))
         .with_gl_config(GlConfig { alpha_bits: 8, ..GlConfig::default() });
 
-    let window = Window::create(window_open_options, |ctx| FemtovgExample::new(ctx))?;
+    let window = Window::create(window_open_options, FemtovgExample::new)?;
 
     window.run_until_closed()?;
     Ok(())
@@ -111,7 +115,7 @@ fn new_random_color() -> Color {
 
 struct DamageHandler {
     full_screen: Cell<bool>,
-    damaged_rects: RefCell<Vec<(PhysicalPosition<u32>, PhysicalSize<u32>)>>,
+    damaged_rects: RefCell<Vec<DamageRect>>,
 }
 
 impl DamageHandler {
@@ -132,11 +136,11 @@ impl DamageHandler {
         self.damaged_rects.borrow_mut().clear();
     }
 
-    fn next_damage(&self) -> Option<(PhysicalPosition<u32>, PhysicalSize<u32>)> {
+    fn next_damage(&self) -> Option<DamageRect> {
         self.damaged_rects.borrow_mut().pop()
     }
 
-    fn add_damaged_rect(&self, position: PhysicalPosition<u32>, size: PhysicalSize<u32>) {
-        self.damaged_rects.borrow_mut().push((position, size));
+    fn add_damaged_rect(&self, rect: DamageRect) {
+        self.damaged_rects.borrow_mut().push(rect);
     }
 }

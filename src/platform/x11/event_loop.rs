@@ -489,11 +489,14 @@ impl EventLoop {
 
                 let current_window_size = self.new_size.unwrap_or_else(|| self.window.get_size());
 
-                self.handler.damage(DamageArea::from_rect_and_window_size(
-                    PhysicalPosition::new(e.x, e.y).cast(),
-                    PhysicalSize::new(e.width, e.height).cast(),
-                    current_window_size.cast(),
-                ));
+                let damage_rect = DamageRect::new(&e);
+                let area = if damage_rect.fully_covers(current_window_size) {
+                    DamageArea::FullWindow
+                } else {
+                    DamageArea::Rect(damage_rect.into())
+                };
+
+                self.handler.damage(area);
             }
 
             ////
