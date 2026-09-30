@@ -1,4 +1,4 @@
-use baseview::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
+use baseview::dpi::LogicalSize;
 use baseview::gl::{GlConfig, GlContext};
 use baseview::{
     DamageArea, DamageRect, Event, EventStatus, HandlerError, Window, WindowContext, WindowHandler,

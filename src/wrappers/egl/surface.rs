@@ -35,7 +35,7 @@ impl EglSurface {
 impl Drop for EglSurface {
     fn drop(&mut self) {
         if let Err(e) = unsafe { self.display.egl().destroy_surface(self) } {
-            crate::warn!("Failed to destroy EGL surface: {e}");
+            crate::warn!("Failed to destroy EGL surface: {}", e);
         }
     }
 }

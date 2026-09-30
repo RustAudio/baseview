@@ -15,7 +15,6 @@ use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHand
 use calloop::generic::Generic;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction};
-use dpi::PhysicalInsets;
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;

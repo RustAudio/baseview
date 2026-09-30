@@ -1,6 +1,6 @@
 mod xcb_connection;
 
-use dpi::{PhysicalPosition, PhysicalSize, Size};
+use dpi::{PhysicalPosition, PhysicalSize};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasWindowHandle, RawWindowHandle, XcbWindowHandle,
 };
