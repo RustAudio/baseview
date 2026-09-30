@@ -225,7 +225,7 @@ pub struct BaseviewWindow {
     _drop_target: Cell<Option<ComObject<DropTarget>>>,
 
     #[cfg(feature = "opengl")]
-    pub gl_config: Option<crate::gl::GlConfig>,
+    gl_config: Option<crate::gl::GlConfig>,
 }
 
 impl BaseviewWindow {
@@ -373,7 +373,7 @@ impl WindowImpl for BaseviewWindow {
         window.register_drag_drop(drop_target.as_interface())?;
 
         #[cfg(feature = "opengl")]
-        if let Some(gl_config) = self.gl_config {
+        if let Some(gl_config) = self.gl_config.clone() {
             let gl_context = gl::GlContextInner::create(window, gl_config)?;
 
             let Ok(()) = self.window_state.gl_context.set(Rc::new(gl_context)) else {
