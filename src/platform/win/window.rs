@@ -7,10 +7,8 @@ use windows_sys::Win32::{
 use crate::dpi::{PhysicalPosition, PhysicalSize, Size};
 use crate::{warn, EventStatus, HandlerError, WindowHandler};
 use std::cell::{Cell, OnceCell};
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::num::NonZeroU32;
 use windows_sys::Win32::Foundation::POINT;
-
-pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
 
 use super::drop_target::DropTarget;
 use super::*;
@@ -24,7 +22,7 @@ use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, LibraryModule, Rect,
-    WindowStyle,
+    TimerId, WindowStyle,
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 
@@ -35,11 +33,6 @@ fn hi_word(wparam: WPARAM) -> u16 {
 fn lo_word(lparam: LPARAM) -> u16 {
     (lparam & 0xffff) as u16
 }
-
-const WIN_FRAME_TIMER: NonZeroUsize = match NonZeroUsize::new(4242) {
-    Some(x) => x,
-    None => unreachable!(),
-};
 
 pub struct WindowHandle {
     init: Cell<Option<WindowInitializer>>,
@@ -194,6 +187,18 @@ impl WindowHandle {
 
         Ok(())
     }
+
+    pub fn waker(&self) -> WindowWaker {
+        self.state.window_waker_source.waker()
+    }
+
+    pub fn request_poll(&self) -> Result<()> {
+        if let Some(hwnd) = self.hwnd.get() {
+            hwnd.post_request_poll();
+        }
+
+        Ok(())
+    }
 }
 
 impl Drop for WindowHandle {
@@ -244,6 +249,8 @@ impl BaseviewWindow {
             let shared_state = Rc::clone(&shared_state);
 
             move |hwnd: HWnd| {
+                shared_state.set_hwnd(hwnd);
+
                 let window_state = Rc::new(WindowState::new(
                     hwnd,
                     shared_state.user32.clone(),
@@ -271,13 +278,6 @@ impl BaseviewWindow {
         let title = HSTRING::from(init.settings.title);
         let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
 
-        // FIXME: this SetTimer call could be in after_create, but for some reason it changes the ordering
-        // for a parent+child window situation, which results in the parent drawing over the child.
-        // This timer should be replaced by proper window redrawing/damage/vsync handling, but this
-        // would be a breaking change, so we'll do that later.
-        // TODO: create a new timer instead of hard-coding a specific ID
-        window.set_timer(WIN_FRAME_TIMER, 15)?;
-
         Ok(window)
     }
 
@@ -299,13 +299,24 @@ impl BaseviewWindow {
         self.host.request_resize(new_size)
     }
 
-    pub(crate) fn handle_on_frame(&self) {
+    pub(crate) fn handle_draw(&self) {
         let Some(handler) = self.handler.get() else { return };
 
-        if let Err(e) = handler.on_frame() {
+        handler.poll();
+
+        self.window_state.redraw_requested.set(false);
+        if let Err(e) = handler.draw() {
             warn!("Error while rendering frame: {}", e);
             self.window_state.request_close();
         }
+
+        self.window_state.setup_redraw_request_for_next_frame();
+    }
+
+    pub(crate) fn handle_poll(&self) {
+        let Some(handler) = self.handler.get() else { return };
+
+        handler.poll();
     }
 
     pub(crate) fn handle_event(&self, event: Event) -> EventStatus {
@@ -402,6 +413,7 @@ impl WindowImpl for BaseviewWindow {
 
     fn before_destroy(&self, window: HWnd) {
         let _ = window.revoke_drag_drop();
+        // No need to destroy timers: they are all destroyed when the window is invalidated.
     }
 }
 
@@ -530,12 +542,35 @@ unsafe fn wnd_proc_inner(
 
             None
         }
-        WM_TIMER => {
-            if wparam == WIN_FRAME_TIMER.get() {
-                window_bv.handle_on_frame()
+        WM_PAINT => {
+            if let Some(rect) = window.get_update_rect() {
+                window_bv.handle_draw();
+                window.validate_rect(rect);
             }
 
             Some(0)
+        }
+        WM_TIMER => {
+            let timer_id = TimerId::from_raw(wparam)?;
+
+            if window_state.redraw_timer.matches_id(timer_id)
+                && window_state.redraw_timer.is_running()
+            {
+                window.invalidate_window();
+                Some(0)
+            } else {
+                match window_state.shared.delayed_redraw_timers.remove_if_exists(window, timer_id) {
+                    Ok(false) => None,
+                    Err(e) => {
+                        warn!("Could not remove timer: {}", e);
+                        None
+                    }
+                    Ok(true) => {
+                        window_state.request_redraw();
+                        Some(0)
+                    }
+                }
+            }
         }
         WM_CLOSE => {
             window_bv.handle_event(Event::Window(WindowEvent::WillClose));
@@ -612,6 +647,8 @@ unsafe fn wnd_proc_inner(
 
                 return Some(-1);
             }
+
+            window.invalidate_window();
 
             None
         }
@@ -730,6 +767,16 @@ unsafe fn wnd_proc_inner(
         //        state
         BV_WINDOW_MUST_CLOSE => {
             let _ = window.destroy();
+            Some(0)
+        }
+
+        BV_REQUEST_REDRAW => {
+            window_state.request_redraw();
+            Some(0)
+        }
+
+        BV_REQUEST_POLL => {
+            window_bv.handle_poll();
             Some(0)
         }
         _ => None,

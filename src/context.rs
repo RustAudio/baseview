@@ -1,10 +1,12 @@
 use super::*;
 use crate::dpi::Size;
+use crate::waker::WindowWaker;
 use crate::{platform, MouseCursor, WindowSize};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
 use std::fmt::Debug;
+use std::time::Duration;
 
 /// A handle to the window given to a [`WindowHandler`](crate::WindowHandler), which it can then
 /// use to perform various operations on the window itself.
@@ -32,6 +34,19 @@ impl WindowContext {
     /// methods are completed, and soon enough to be perceived as instantaneous by the user.
     pub fn request_close(&self) {
         self.inner.request_close();
+    }
+
+    pub fn request_redraw(&self) {
+        self.inner.request_redraw()
+    }
+
+    pub fn request_redraw_after(&self, duration: Duration) {
+        self.inner.request_redraw_after(duration)
+    }
+
+    #[must_use]
+    pub fn waker(&self) -> WindowWaker {
+        WindowWaker { inner: self.inner.waker() }
     }
 
     /// Returns `true` if this window currently has keyboard focus, `false` otherwise.

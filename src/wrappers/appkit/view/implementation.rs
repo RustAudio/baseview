@@ -5,6 +5,7 @@ use objc2::ffi::objc_disposeClassPair;
 use objc2::runtime::ClassBuilder;
 use objc2::{msg_send, sel, ClassType};
 use objc2_app_kit::{NSEvent, NSView};
+use objc2_foundation::NSRect;
 use std::ffi::c_void;
 
 /// # Safety
@@ -92,6 +93,12 @@ pub unsafe fn create_view_class<V: ViewImpl>() -> &'static AnyClass {
         class.add_method(
             sel!(viewDidChangeBackingProperties),
             view_did_change_backing_properties::<V> as extern "C-unwind" fn(_, _) -> _,
+        );
+
+        class.add_method(sel!(drawRect:), draw_rect::<V> as extern "C-unwind" fn(_, _, _) -> _);
+        class.add_method(
+            sel!(displayLinkFired:),
+            display_link_fired::<V> as extern "C-unwind" fn(_, _, _) -> _,
         );
 
         class.add_method(
@@ -192,6 +199,22 @@ extern "C-unwind" fn window_should_close<V: ViewImpl>(
 extern "C-unwind" fn view_did_change_backing_properties<V: ViewImpl>(this: &View<V>, _: Sel) {
     let Some(inner) = this.inner_ref() else { return };
     V::view_did_change_backing_properties(inner, true);
+}
+
+extern "C-unwind" fn draw_rect<V: ViewImpl>(this: &View<V>, _: Sel, dirty_rect: NSRect) {
+    let Some(inner) = this.inner_ref() else {
+        return;
+    };
+    V::draw_rect(inner, dirty_rect);
+}
+
+extern "C-unwind" fn display_link_fired<V: ViewImpl>(
+    this: &View<V>, _sel: Sel, sender: &CADisplayLink,
+) {
+    let Some(inner) = this.inner_ref() else {
+        return;
+    };
+    V::display_link_fired(inner, sender);
 }
 
 extern "C-unwind" fn hit_test<V: ViewImpl>(

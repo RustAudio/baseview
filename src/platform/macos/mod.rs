@@ -3,6 +3,7 @@ mod cursor;
 mod error;
 mod keyboard;
 mod view;
+mod waker;
 mod window;
 
 use crate::platform::macos::view::BaseviewView;
@@ -17,7 +18,9 @@ use objc2_app_kit::NSView;
 use raw_window_handle::{DisplayHandle, HasWindowHandle};
 use std::fmt;
 use std::fmt::Formatter;
+pub use waker::WindowWaker;
 pub use window::*;
+
 pub(crate) type Result<T> = std::result::Result<T, PlatformError>;
 
 #[cfg(feature = "opengl")]

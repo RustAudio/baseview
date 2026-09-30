@@ -3,6 +3,7 @@ mod drop_target;
 mod error;
 mod hook;
 mod keyboard;
+mod waker;
 mod window;
 mod window_state;
 
@@ -17,6 +18,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::num::NonZeroIsize;
 use std::ptr::NonNull;
 use std::rc::Rc;
+pub use waker::WindowWaker;
 pub use window::*;
 
 #[cfg(feature = "opengl")]
