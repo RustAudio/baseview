@@ -9,12 +9,13 @@ use crate::platform::x11::error::FatalError;
 use crate::platform::x11::window_thread::{
     HostCallback, WindowThreadRequest, WindowThreadResponseMessage,
 };
-use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
+use crate::{warn, DamageArea};
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use calloop::generic::Generic;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction};
+use dpi::PhysicalInsets;
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
@@ -482,7 +483,17 @@ impl EventLoop {
             }
 
             XEvent::Expose(e) if e.window == self.window.raw_id() => {
-                self.window.present_notify_requested.set(true)
+                if e.count == 0 {
+                    self.window.present_notify_requested.set(true);
+                }
+
+                let current_window_size = self.new_size.unwrap_or_else(|| self.window.get_size());
+
+                self.handler.damage(DamageArea::from_rect_and_window_size(
+                    PhysicalPosition::new(e.x, e.y).cast(),
+                    PhysicalSize::new(e.width, e.height).cast(),
+                    current_window_size.cast(),
+                ));
             }
 
             ////

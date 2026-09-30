@@ -96,7 +96,18 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
 ] }
 
 [workspace]
-members = ["examples/cursors", "examples/open_parented", "examples/open_window", "examples/plugin_clack", "examples/render_femtovg", "examples/render_wgpu", "examples/plugin_clack_femtovg", "examples/test-frame-pacing", "examples/external-wakeup"]
+members = [
+    "examples/cursors",
+    "examples/open_parented",
+    "examples/open_window",
+    "examples/plugin_clack",
+    "examples/render_femtovg",
+    "examples/render_wgpu",
+    "examples/plugin_clack_femtovg",
+    "examples/test-frame-pacing",
+    "examples/external-wakeup",
+    "tests/partial-rendering"
+]
 
 [lints.clippy]
 missing-safety-doc = "allow"

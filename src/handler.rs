@@ -1,10 +1,24 @@
 use super::*;
+use crate::dpi::{PhysicalPosition, PhysicalSize};
 use crate::platform::Result;
 
 #[non_exhaustive]
+#[derive(Debug, Copy, Clone)]
 pub enum DamageArea {
     FullWindow,
-    // Later: single rect, perhaps list of rects
+    Rect { position: PhysicalPosition<u32>, size: PhysicalSize<u32> },
+}
+
+impl DamageArea {
+    pub(crate) fn from_rect_and_window_size(
+        position: PhysicalPosition<u32>, size: PhysicalSize<u32>, window_size: PhysicalSize<u32>,
+    ) -> Self {
+        if position.x == 0 && position.y == 0 && size == window_size {
+            Self::FullWindow
+        } else {
+            Self::Rect { position, size }
+        }
+    }
 }
 
 pub trait WindowHandler: 'static {
