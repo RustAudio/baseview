@@ -75,6 +75,9 @@ impl WindowHandler for FemtovgExample {
         match area {
             DamageArea::FullWindow => self.damage_handler.set_full_screen_clear(),
             DamageArea::Rect(rect) => self.damage_handler.add_damaged_rect(rect),
+            DamageArea::Rects(rects) => {
+                rects.iter().for_each(|r| self.damage_handler.add_damaged_rect(*r))
+            }
             _ => {}
         }
     }

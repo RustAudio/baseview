@@ -26,7 +26,7 @@ use objc2_app_kit::{
 use objc2_foundation::{NSArray, NSNotification, NSPoint, NSPointInRect, NSRect, NSSize, NSString};
 use objc2_quartz_core::CADisplayLink;
 use std::cell::{Cell, OnceCell, RefCell};
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 use std::rc::Rc;
 
 pub enum ViewParentingType {
