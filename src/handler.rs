@@ -5,12 +5,13 @@ use std::fmt::{Debug, Formatter};
 
 #[non_exhaustive]
 #[derive(Debug, Copy, Clone)]
-pub enum DamageArea {
+pub enum DamageArea<'a> {
     FullWindow,
     Rect(DamageRect),
+    Rects(&'a [DamageRect]),
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(transparent)]
 pub struct DamageRect {
     inner: platform::DamageRect,

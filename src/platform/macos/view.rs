@@ -12,8 +12,8 @@ use crate::window::WindowInitializer;
 use crate::wrappers::appkit::*;
 use crate::MouseEvent::{ButtonPressed, ButtonReleased};
 use crate::{
-    DropData, DropEffect, Event, EventStatus, HandlerError, MouseButton, MouseEvent, ScrollDelta,
-    WindowEvent, WindowHandler, WindowSize,
+    DamageArea, DropData, DropEffect, Event, EventStatus, HandlerError, MouseButton, MouseEvent,
+    ScrollDelta, WindowEvent, WindowHandler, WindowSize,
 };
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
@@ -26,6 +26,7 @@ use objc2_app_kit::{
 use objc2_foundation::{NSArray, NSNotification, NSPoint, NSPointInRect, NSRect, NSSize, NSString};
 use objc2_quartz_core::CADisplayLink;
 use std::cell::{Cell, OnceCell, RefCell};
+use std::ptr::{null, null_mut};
 use std::rc::Rc;
 
 pub enum ViewParentingType {
@@ -385,6 +386,32 @@ impl ViewImpl for BaseviewView {
     }
 
     fn draw_rect(this: ViewRef<Self>, _rect: NSRect) {
+        this.window_handler.use_handler(|h| {
+            let mut rects_ptr = null();
+            let mut rects_count = 0;
+            unsafe { this.view.getRectsBeingDrawn_count(&mut rects_ptr, &mut rects_count) };
+
+            let rects_count: usize = rects_count.try_into().unwrap_or(0);
+            let rects;
+
+            let damage_area = if rects_count == 0 {
+                DamageArea::FullWindow
+            } else {
+                let scale_factor = this.view.backing_scale_factor();
+
+                let rects_raw = unsafe { core::slice::from_raw_parts(rects_ptr, rects_count) };
+
+                rects = rects_raw
+                    .iter()
+                    .map(|r| DamageRect::from_rect(*r, scale_factor).into())
+                    .collect::<Vec<_>>();
+
+                DamageArea::Rects(&rects)
+            };
+
+            h.damage(damage_area);
+        });
+
         this.set_next_frame_needed(true);
     }
 
