@@ -1,47 +1,5 @@
 use super::*;
-use crate::dpi::{PhysicalPosition, PhysicalSize};
-use crate::platform::Result;
-use std::fmt::{Debug, Formatter};
-
-#[non_exhaustive]
-#[derive(Debug, Copy, Clone)]
-pub enum DamageArea<'a> {
-    FullWindow,
-    Rect(DamageRect),
-    Rects(&'a [DamageRect]),
-}
-
-#[derive(Copy, Clone, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct DamageRect {
-    inner: platform::DamageRect,
-}
-
-impl DamageRect {
-    #[inline]
-    pub fn position(&self) -> PhysicalPosition<u32> {
-        self.inner.position()
-    }
-
-    #[inline]
-    pub fn size(&self) -> PhysicalSize<u32> {
-        self.inner.size()
-    }
-}
-
-impl From<platform::DamageRect> for DamageRect {
-    #[inline]
-    fn from(value: platform::DamageRect) -> Self {
-        DamageRect { inner: value }
-    }
-}
-
-impl Debug for DamageRect {
-    #[inline]
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.inner.fmt(f)
-    }
-}
+use crate::platform::PlatformError;
 
 pub trait WindowHandler: 'static {
     /// Requests the handler to draw a new frame immediately.
@@ -79,7 +37,7 @@ pub trait WindowHandler: 'static {
     /// [`draw`]: WindowHandler::draw
     /// [`damage`]: WindowHandler::damage
     /// [polling]: WindowHandler::poll
-    fn draw(&self) -> core::result::Result<(), HandlerError>;
+    fn draw(&self) -> Result<(), HandlerError>;
 
     /// Notifies the handler that a given [`area`] of the window has been damaged by the platform
     /// and needs to be redrawn.
@@ -147,11 +105,11 @@ pub trait WindowHandler: 'static {
     ///
     /// It will also attempt to resize the underlying platform window and parent window back to the
     /// previous size, but this is only a best-effort attempt since those operations can also fail.
-    fn resized(&self, new_size: WindowSize) -> core::result::Result<(), HandlerError>;
+    fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError>;
     fn on_event(&self, event: Event) -> EventStatus;
 }
 
-type DynBuilderResult = core::result::Result<Box<dyn WindowHandler>, HandlerError>;
+type DynBuilderResult = Result<Box<dyn WindowHandler>, HandlerError>;
 
 pub struct WindowHandlerBuilder {
     inner: Box<dyn FnOnce(WindowContext) -> DynBuilderResult + Send + 'static>,
@@ -159,15 +117,15 @@ pub struct WindowHandlerBuilder {
 
 impl WindowHandlerBuilder {
     pub fn new<H: WindowHandler>(
-        f: impl FnOnce(WindowContext) -> core::result::Result<H, HandlerError> + Send + 'static,
+        f: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
     ) -> WindowHandlerBuilder {
         Self { inner: Box::new(|c| Ok(Box::new(f(c)?))) }
     }
 
-    pub fn build(self, ctx: WindowContext) -> Result<Box<dyn WindowHandler>> {
+    pub fn build(self, ctx: WindowContext) -> Result<Box<dyn WindowHandler>, PlatformError> {
         match (self.inner)(ctx) {
             Ok(handle) => Ok(handle),
-            Err(e) => Err(platform::PlatformError::Handler(e)),
+            Err(e) => Err(PlatformError::Handler(e)),
         }
     }
 }
