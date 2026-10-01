@@ -9,8 +9,8 @@ use crate::platform::x11::error::FatalError;
 use crate::platform::x11::window_thread::{
     HostCallback, WindowThreadRequest, WindowThreadResponseMessage,
 };
-use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
+use crate::{warn, DamageArea};
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use calloop::generic::Generic;
 use calloop::timer::{TimeoutAction, Timer};
@@ -482,7 +482,20 @@ impl EventLoop {
             }
 
             XEvent::Expose(e) if e.window == self.window.raw_id() => {
-                self.window.present_notify_requested.set(true)
+                if e.count == 0 {
+                    self.window.present_notify_requested.set(true);
+                }
+
+                let current_window_size = self.new_size.unwrap_or_else(|| self.window.get_size());
+
+                let damage_rect = DamageRect::new(&e);
+                let area = if damage_rect.fully_covers(current_window_size) {
+                    DamageArea::FullWindow
+                } else {
+                    DamageArea::Rect(damage_rect.into())
+                };
+
+                self.handler.damage(area);
             }
 
             ////

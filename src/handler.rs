@@ -1,11 +1,5 @@
 use super::*;
-use crate::platform::Result;
-
-#[non_exhaustive]
-pub enum DamageArea {
-    FullWindow,
-    // Later: single rect, perhaps list of rects
-}
+use crate::platform::PlatformError;
 
 pub trait WindowHandler: 'static {
     /// Requests the handler to draw a new frame immediately.
@@ -43,7 +37,7 @@ pub trait WindowHandler: 'static {
     /// [`draw`]: WindowHandler::draw
     /// [`damage`]: WindowHandler::damage
     /// [polling]: WindowHandler::poll
-    fn draw(&self) -> core::result::Result<(), HandlerError>;
+    fn draw(&self) -> Result<(), HandlerError>;
 
     /// Notifies the handler that a given [`area`] of the window has been damaged by the platform
     /// and needs to be redrawn.
@@ -111,11 +105,11 @@ pub trait WindowHandler: 'static {
     ///
     /// It will also attempt to resize the underlying platform window and parent window back to the
     /// previous size, but this is only a best-effort attempt since those operations can also fail.
-    fn resized(&self, new_size: WindowSize) -> core::result::Result<(), HandlerError>;
+    fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError>;
     fn on_event(&self, event: Event) -> EventStatus;
 }
 
-type DynBuilderResult = core::result::Result<Box<dyn WindowHandler>, HandlerError>;
+type DynBuilderResult = Result<Box<dyn WindowHandler>, HandlerError>;
 
 pub struct WindowHandlerBuilder {
     inner: Box<dyn FnOnce(WindowContext) -> DynBuilderResult + Send + 'static>,
@@ -123,15 +117,15 @@ pub struct WindowHandlerBuilder {
 
 impl WindowHandlerBuilder {
     pub fn new<H: WindowHandler>(
-        f: impl FnOnce(WindowContext) -> core::result::Result<H, HandlerError> + Send + 'static,
+        f: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
     ) -> WindowHandlerBuilder {
         Self { inner: Box::new(|c| Ok(Box::new(f(c)?))) }
     }
 
-    pub fn build(self, ctx: WindowContext) -> Result<Box<dyn WindowHandler>> {
+    pub fn build(self, ctx: WindowContext) -> Result<Box<dyn WindowHandler>, PlatformError> {
         match (self.inner)(ctx) {
             Ok(handle) => Ok(handle),
-            Err(e) => Err(platform::PlatformError::Handler(e)),
+            Err(e) => Err(PlatformError::Handler(e)),
         }
     }
 }

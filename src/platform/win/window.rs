@@ -5,7 +5,7 @@ use windows_sys::Win32::{
 };
 
 use crate::dpi::{PhysicalPosition, PhysicalSize, Size};
-use crate::{warn, EventStatus, HandlerError, WindowHandler};
+use crate::{warn, DamageArea, EventStatus, HandlerError, WindowHandler};
 use std::cell::{Cell, OnceCell};
 use std::num::NonZeroU32;
 use windows_sys::Win32::Foundation::POINT;
@@ -299,6 +299,11 @@ impl BaseviewWindow {
         self.host.request_resize(new_size)
     }
 
+    pub(crate) fn notify_damage(&self, damage: DamageArea) {
+        let Some(handler) = self.handler.get() else { return };
+        handler.damage(damage);
+    }
+
     pub(crate) fn handle_draw(&self) {
         let Some(handler) = self.handler.get() else { return };
 
@@ -544,6 +549,7 @@ unsafe fn wnd_proc_inner(
         }
         WM_PAINT => {
             if let Some(rect) = window.get_update_rect() {
+                window_bv.notify_damage(DamageArea::Rect(rect.into()));
                 window_bv.handle_draw();
                 window.validate_rect(rect);
             }
