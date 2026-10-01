@@ -49,7 +49,6 @@ impl WindowHandler for FemtovgExample {
             canvas.clear_rect(0, 0, screen_width, screen_height, color_of_the_day);
         } else {
             while let Some(rect) = self.damage_handler.next_damage() {
-                dbg!(rect);
                 canvas.clear_rect(
                     rect.position().x,
                     rect.position().y,
