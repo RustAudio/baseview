@@ -1,5 +1,6 @@
 mod clipboard;
 mod context;
+mod damage;
 pub mod dpi;
 mod error;
 mod event;
@@ -19,9 +20,10 @@ pub mod gl;
 
 pub use clipboard::*;
 pub use context::{PlatformHandle, WindowContext};
+pub use damage::{DamageArea, DamageRect};
 pub use error::*;
 pub use event::*;
-pub use handler::{DamageArea, WindowHandler};
+pub use handler::WindowHandler;
 pub use mouse_cursor::MouseCursor;
 pub use settings::*;
 pub use waker::WindowWaker;

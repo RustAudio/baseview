@@ -29,7 +29,7 @@ impl EglContext {
 impl Drop for EglContext {
     fn drop(&mut self) {
         if let Err(e) = unsafe { self.display.egl().destroy_context(self) } {
-            crate::warn!("Failed to destroy EGL context: {e}");
+            crate::warn!("Failed to destroy EGL context: {}", e);
         }
     }
 }

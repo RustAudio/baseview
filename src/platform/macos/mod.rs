@@ -1,5 +1,6 @@
 mod context;
 mod cursor;
+mod damage;
 mod error;
 mod keyboard;
 mod view;
@@ -9,6 +10,7 @@ mod window;
 use crate::platform::macos::view::BaseviewView;
 use crate::wrappers::appkit::{extract_raw_window_handle, ParentWindowHandleError, View};
 pub use context::WindowContext;
+pub use damage::DamageRect;
 use dispatch2::MainThreadBound;
 pub use error::PlatformError;
 use objc2::__framework_prelude::Retained;
