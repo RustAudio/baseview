@@ -11,7 +11,7 @@ pub enum DamageArea<'a> {
     Rects(&'a [DamageRect]),
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct DamageRect {
     inner: platform::DamageRect,

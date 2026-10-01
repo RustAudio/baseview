@@ -9,6 +9,7 @@ mod window_state;
 
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
+use crate::wrappers::win32::Rect;
 pub(crate) use dpi::DpiScalingStrategy;
 pub use error::{PlatformError, Result};
 use raw_window_handle::{
@@ -25,6 +26,7 @@ pub use window::*;
 pub mod gl;
 
 pub type WindowContext = Rc<window_state::WindowState>;
+pub type DamageRect = Rect;
 
 #[derive(Clone)]
 pub struct PlatformHandle {
