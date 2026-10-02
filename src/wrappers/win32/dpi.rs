@@ -3,6 +3,7 @@ use crate::platform::DpiScalingStrategy;
 use crate::wrappers::win32::user32::ExtendedUser32;
 use crate::wrappers::win32::DpiAwarenessContextType::*;
 use std::ffi::c_void;
+use std::fmt::Debug;
 use std::num::NonZeroU32;
 use std::ptr::NonNull;
 use windows_core::{Error, Result};
@@ -65,6 +66,13 @@ impl Dpi {
 impl Default for Dpi {
     fn default() -> Self {
         Self::USER_DEFAULT
+    }
+}
+
+impl Debug for Dpi {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.get().fmt(f)
     }
 }
 
