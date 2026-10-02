@@ -184,7 +184,11 @@ impl HWnd {
         let style = self.get_style()?;
 
         let rect = Rect::from(client_size);
+        crate::debug!("Resize_and_activate rect: {rect:?} (dpi: {window_dpi:?}");
         let rect = dpi_ctx.client_area_to_nc_area(rect, style, window_dpi)?;
+
+        crate::debug!("Resize_and_activate rect after adjust: {rect:?}");
+        crate::debug!("CTX: {dpi_ctx:?}");
 
         self.resize_nc_and_activate(rect.size())
     }

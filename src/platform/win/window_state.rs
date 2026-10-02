@@ -175,7 +175,7 @@ impl WindowSharedState {
         Self {
             parented: (settings.parent.is_some() || settings.wait_for_parent).into(),
             is_alive: true.into(),
-            current_dpi: None.into(),
+            current_dpi: Some(Dpi::default()).into(),
             current_size: settings.size.to_physical(1.0).into(),
             fallback_scale_factor: settings.fallback_scale_factor.into(),
             resize_host_originated: false.into(),
@@ -216,6 +216,10 @@ impl WindowSharedState {
     }
 
     pub fn scale_factor(&self) -> f64 {
+        if self.dpi_scaling_strategy.get().assume_96_dpi {
+            return 1.0;
+        }
+
         if let Some(dpi) = self.current_dpi.get() {
             dpi.scale_factor()
         } else {

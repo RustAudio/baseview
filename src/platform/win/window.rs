@@ -69,7 +69,9 @@ impl WindowHandle {
     }
 
     pub fn resize(&self, new_size: Size) -> Result<()> {
+        crate::debug!("Resizing to {:?}", new_size);
         let new_size = self.state.sizing_strategy.adjust_size(new_size, self.size()).physical;
+        crate::debug!("Size adjusted to {:?}", new_size);
 
         if new_size == self.state.current_size.get() {
             return Ok(());
@@ -86,12 +88,15 @@ impl WindowHandle {
         let _guard = self.state.originate_host_resize();
         let dpi_ctx =
             DpiAwarenessGuard::new(&self.state.user32, self.state.dpi_scaling_strategy.get())?;
+        crate::debug!("DPI: {:?}", hwnd.get_dpi(&self.state.user32));
         hwnd.resize_and_activate(new_size, self.state.current_dpi.get(), &dpi_ctx)?;
 
         if self.state.current_size.get() == new_size {
             Ok(())
         } else {
-            Err(PlatformError::ResizeFailed)
+            Err(PlatformError::UnexpectedResizeResult {
+                new_actual_size: self.state.current_size.get(),
+            })
         }
     }
 
@@ -100,6 +105,9 @@ impl WindowHandle {
     }
 
     pub fn suggest_scale_factor(&self, new_host_scale_factor: f64) -> Result<()> {
+        let new_dpi = Dpi::from_scale_factor(new_host_scale_factor)
+            .ok_or(PlatformError::InvalidScaleFactor)?;
+
         let current_scale_factor = self.state.scale_factor();
         self.state.fallback_scale_factor.set(Some(new_host_scale_factor));
 
@@ -108,6 +116,8 @@ impl WindowHandle {
         if !dpi_scaling_strategy.should_use_host_suggested_scale_factor {
             return Ok(());
         }
+
+        self.state.current_dpi.set(Some(new_dpi));
 
         let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
 
@@ -127,12 +137,14 @@ impl WindowHandle {
         let _guard = self.state.originate_host_resize();
         let dpi_ctx = DpiAwarenessGuard::new(&self.state.user32, dpi_scaling_strategy)?;
 
-        hwnd.resize_and_activate(new_size, None, &dpi_ctx)?;
+        hwnd.resize_and_activate(new_size, Some(new_dpi), &dpi_ctx)?;
 
         if self.state.current_size.get() == new_size {
             Ok(())
         } else {
-            Err(PlatformError::ResizeFailed)
+            Err(PlatformError::UnexpectedResizeResult {
+                new_actual_size: self.state.current_size.get(),
+            })
         }
     }
 
@@ -619,6 +631,8 @@ unsafe fn wnd_proc_inner(
 
             let new_size = PhysicalSize { width, height };
             let current_size = window_state.shared.current_size.get();
+
+            crate::debug!("WM_SIZE: new {new_size:?}, old {current_size:?}");
 
             // Only send the event if anything changed
             if current_size == new_size {

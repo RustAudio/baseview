@@ -3,7 +3,7 @@ use crate::platform::DpiScalingStrategy;
 use crate::wrappers::win32::user32::ExtendedUser32;
 use crate::wrappers::win32::DpiAwarenessContextType::*;
 use std::ffi::c_void;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 use std::num::NonZeroU32;
 use std::ptr::NonNull;
 use windows_core::{Error, Result};
@@ -18,6 +18,10 @@ pub struct Dpi(pub NonZeroU32);
 impl Dpi {
     pub fn scale_factor(&self) -> f64 {
         self.0.get() as f64 / USER_DEFAULT_SCREEN_DPI as f64
+    }
+
+    pub fn from_scale_factor(scale_factor: f64) -> Option<Dpi> {
+        Some(Dpi(NonZeroU32::new((scale_factor * USER_DEFAULT_SCREEN_DPI as f64) as u32)?))
     }
 
     /// Windows 10, version 1607.
@@ -330,6 +334,14 @@ impl<'a> DpiAwarenessGuard<'a> {
             bottom: rect.0.bottom.saturating_sub(result.0.bottom),
             right: rect.0.right.saturating_sub(result.0.right),
         }))
+    }
+}
+
+impl Debug for DpiAwarenessGuard<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DpiAwarenessGuard")
+            .field("context_type", &self.inner.map(|(c, u)| c.get_type(u)))
+            .finish()
     }
 }
 
