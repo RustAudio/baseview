@@ -99,11 +99,13 @@ impl WindowHandle {
         self.state.sizing_strategy
     }
 
-    pub fn suggest_scale_factor(&self, scale_factor: f64) -> Result<()> {
+    pub fn suggest_scale_factor(&self, new_host_scale_factor: f64) -> Result<()> {
         let current_scale_factor = self.state.scale_factor();
-        self.state.fallback_scale_factor.set(Some(scale_factor));
+        self.state.fallback_scale_factor.set(Some(new_host_scale_factor));
 
-        if self.state.current_dpi.get().is_some() {
+        let dpi_scaling_strategy = self.state.dpi_scaling_strategy.get();
+
+        if !dpi_scaling_strategy.should_use_host_suggested_scale_factor {
             return Ok(());
         }
 
@@ -115,7 +117,7 @@ impl WindowHandle {
             .current_size
             .get()
             .to_logical::<f64>(current_scale_factor)
-            .to_physical(self.state.scale_factor());
+            .to_physical(new_host_scale_factor);
 
         // This call doesn't meaningfully change the scaling factor, ignore the result
         if current_size == new_size {
@@ -123,8 +125,7 @@ impl WindowHandle {
         }
 
         let _guard = self.state.originate_host_resize();
-        let dpi_ctx =
-            DpiAwarenessGuard::new(&self.state.user32, self.state.dpi_scaling_strategy.get())?;
+        let dpi_ctx = DpiAwarenessGuard::new(&self.state.user32, dpi_scaling_strategy)?;
 
         hwnd.resize_and_activate(new_size, None, &dpi_ctx)?;
 
