@@ -48,6 +48,11 @@ impl DpiScalingStrategy {
                 return Self::get_from_process(user32, &shcore);
             };
 
+            crate::debug!(
+                "Parent DPI Awareness Context detected: {:?}",
+                parent_dpi_ctx.get_type(user32_lib)
+            );
+
             if parent.supports_mixed_dpi_hosting_behavior(user32_lib) {
                 Self::get_best_matching_with_dpi_parent_awareness_context(
                     parent_dpi_ctx,
