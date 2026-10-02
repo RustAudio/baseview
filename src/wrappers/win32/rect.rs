@@ -1,4 +1,5 @@
 use crate::dpi::PhysicalSize;
+use std::fmt::Debug;
 use windows_sys::Win32::Foundation::RECT;
 
 #[derive(Copy, Clone)]
@@ -23,5 +24,16 @@ impl From<PhysicalSize<u32>> for Rect {
             right: size.width.try_into().unwrap_or(i32::MAX),
             bottom: size.height.try_into().unwrap_or(i32::MAX),
         })
+    }
+}
+
+impl Debug for Rect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Rect")
+            .field("left", &self.0.left)
+            .field("top", &self.0.top)
+            .field("right", &self.0.right)
+            .field("bottom", &self.0.bottom)
+            .finish()
     }
 }
