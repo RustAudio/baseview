@@ -343,7 +343,7 @@ impl Drop for BaseviewWindow {
 
 impl WindowImpl for BaseviewWindow {
     fn non_client_create(&self, window: HWnd) -> std::result::Result<(), PlatformError> {
-        if self.shared_state.dpi_scaling_strategy.get().assume_96_dpi {
+        if self.shared_state.dpi_scaling_strategy.get().should_enable_nc_dpi_scaling_manually {
             window.enable_non_client_dpi_scaling(&self.shared_state.user32);
         }
 

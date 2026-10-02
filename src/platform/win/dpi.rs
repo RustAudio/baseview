@@ -10,6 +10,7 @@ use std::ops::Deref;
 pub(crate) struct DpiScalingStrategy {
     pub assume_96_dpi: bool,
     pub should_use_host_suggested_scale_factor: bool,
+    pub should_enable_nc_dpi_scaling_manually: bool,
     pub thread_dpi_awareness_context: Option<DpiAwarenessContext>,
 }
 
@@ -101,6 +102,7 @@ impl DpiScalingStrategy {
             return Self {
                 assume_96_dpi: false,
                 should_use_host_suggested_scale_factor: false,
+                should_enable_nc_dpi_scaling_manually: false,
                 thread_dpi_awareness_context: Some(SystemDpiAware.into()),
             };
         }
@@ -124,9 +126,13 @@ impl DpiScalingStrategy {
         let should_use_host_suggested_scale_factor =
             matches!(dpi_awareness_type, Some(PerMonitorDpiAware));
 
+        let should_enable_nc_dpi_scaling_manually =
+            matches!(dpi_awareness_type, Some(PerMonitorDpiAware));
+
         Self {
             assume_96_dpi,
             should_use_host_suggested_scale_factor,
+            should_enable_nc_dpi_scaling_manually,
             thread_dpi_awareness_context: Some(dpi_awareness_context),
         }
     }
@@ -142,10 +148,12 @@ impl DpiScalingStrategy {
 
         let assume_96_dpi = matches!(awareness, None | Some(Unaware));
         let should_use_host_suggested_scale_factor = matches!(awareness, Some(PerMonitorDpiAware));
+        let should_enable_nc_dpi_scaling_manually = matches!(awareness, Some(PerMonitorDpiAware));
 
         Self {
             assume_96_dpi,
             should_use_host_suggested_scale_factor,
+            should_enable_nc_dpi_scaling_manually,
             thread_dpi_awareness_context: None,
         }
     }
@@ -154,6 +162,7 @@ impl DpiScalingStrategy {
         Self {
             assume_96_dpi: true,
             should_use_host_suggested_scale_factor: false,
+            should_enable_nc_dpi_scaling_manually: false,
             thread_dpi_awareness_context: None,
         }
     }
