@@ -767,7 +767,7 @@ impl WindowHandle {
     pub fn create_window(init: WindowInitializer) -> Result<WindowHandle> {
         let extended_user_32 = LibraryModule::load()?;
 
-        let shared_state = WindowSharedState::new(extended_user_32, &init.settings);
+        let shared_state = WindowSharedState::new(extended_user_32, &init);
 
         if init.settings.wait_for_parent && init.settings.parent.is_none() {
             return Ok(WindowHandle {
