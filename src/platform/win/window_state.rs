@@ -8,7 +8,6 @@ use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule};
-use crate::WindowSettings;
 use crate::{MouseCursor, WindowSize};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, Ref, RefCell};
@@ -143,20 +142,27 @@ pub struct WindowSharedState {
 }
 
 impl WindowSharedState {
-    pub fn new(user32: LibraryModule<ExtendedUser32>, settings: &WindowSettings) -> Rc<Self> {
-        Self {
-            parented: (settings.parent.is_some() || settings.wait_for_parent).into(),
+    pub fn new(user32: LibraryModule<ExtendedUser32>, init: &WindowInitializer) -> Rc<Self> {
+        let state = Self {
+            sizing_strategy: SizingStrategy::from_settings(&init.settings),
+            user32,
+
+            // Internal state
             is_alive: true.into(),
-            current_dpi: Some(Dpi::default()).into(),
-            current_size: settings.size.to_physical(1.0).into(),
-            fallback_scale_factor: settings.fallback_scale_factor.into(),
             resize_host_originated: false.into(),
             destroy_host_originated: false.into(),
-            sizing_strategy: SizingStrategy::from_settings(settings),
-            user32,
+
+            // Overriden by init() below
+            parented: false.into(),
+            current_dpi: Some(Dpi::default()).into(),
+            current_size: init.settings.size.to_physical(1.0).into(),
+            fallback_scale_factor: init.settings.fallback_scale_factor.into(),
             dpi_scaling_strategy: DpiScalingStrategy::default().into(),
-        }
-        .into()
+        };
+
+        state.init(init);
+
+        state.into()
     }
 
     pub fn init(&self, init: &WindowInitializer) {
@@ -170,8 +176,21 @@ impl WindowSharedState {
 
         if strategy.assume_96_dpi {
             self.current_dpi.set(Some(Dpi::default()));
+            self.current_size.set(init.settings.size.to_physical(1.0));
+            self.fallback_scale_factor.set(Some(1.0));
+        } else {
+            let parent_dpi = parent.and_then(|p| p.get_dpi(&self.user32));
+            let scale_factor = parent_dpi
+                .map(|dpi| dpi.scale_factor())
+                .or(init.settings.fallback_scale_factor)
+                .unwrap_or(1.0);
+
+            self.current_dpi.set(parent_dpi);
+            self.current_size.set(init.settings.size.to_physical(scale_factor));
+            self.fallback_scale_factor.set(init.settings.fallback_scale_factor);
         }
 
+        self.parented.set(init.settings.parent.is_some() || init.settings.wait_for_parent);
         self.dpi_scaling_strategy.set(strategy);
     }
 
