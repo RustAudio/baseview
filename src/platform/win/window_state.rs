@@ -131,7 +131,7 @@ pub struct WindowSharedState {
     pub parented: Cell<bool>,
     pub is_alive: Cell<bool>,
     pub current_size: Cell<PhysicalSize<u32>>,
-    pub current_dpi: Cell<Option<Dpi>>, // None if Win32 HiDPI isn't supported
+    pub current_dpi: Cell<Dpi>,
     pub fallback_scale_factor: Cell<Option<f64>>,
     pub resize_host_originated: Cell<bool>,
     pub destroy_host_originated: Cell<bool>,
@@ -154,7 +154,7 @@ impl WindowSharedState {
 
             // Overriden by init() below
             parented: false.into(),
-            current_dpi: Some(Dpi::default()).into(),
+            current_dpi: Dpi::default().into(),
             current_size: init.settings.size.to_physical(1.0).into(),
             fallback_scale_factor: init.settings.fallback_scale_factor.into(),
             dpi_scaling_strategy: DpiScalingStrategy::default().into(),
@@ -175,7 +175,7 @@ impl WindowSharedState {
         );
 
         if strategy.assume_96_dpi {
-            self.current_dpi.set(Some(Dpi::default()));
+            self.current_dpi.set(Dpi::default());
             self.current_size.set(init.settings.size.to_physical(1.0));
             self.fallback_scale_factor.set(Some(1.0));
         } else {
@@ -185,7 +185,7 @@ impl WindowSharedState {
                 .or(init.settings.fallback_scale_factor)
                 .unwrap_or(1.0);
 
-            self.current_dpi.set(parent_dpi);
+            self.current_dpi.set(parent_dpi.unwrap_or_default());
             self.current_size.set(init.settings.size.to_physical(scale_factor));
             self.fallback_scale_factor.set(init.settings.fallback_scale_factor);
         }
@@ -199,15 +199,16 @@ impl WindowSharedState {
     }
 
     pub fn scale_factor(&self) -> f64 {
-        if self.dpi_scaling_strategy.get().assume_96_dpi {
+        let strategy = self.dpi_scaling_strategy.get();
+        if strategy.assume_96_dpi {
             return 1.0;
         }
 
-        if let Some(dpi) = self.current_dpi.get() {
-            dpi.scale_factor()
-        } else {
-            self.fallback_scale_factor.get().unwrap_or(1.0)
+        if strategy.should_use_host_suggested_scale_factor {
+            return self.fallback_scale_factor.get().unwrap_or(1.0);
         }
+
+        self.current_dpi.get().scale_factor()
     }
 
     pub fn originate_host_resize(&self) -> impl Drop + use<'_> {

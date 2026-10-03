@@ -121,7 +121,7 @@ impl WindowHandle {
             return Ok(());
         }
 
-        self.state.current_dpi.set(Some(new_dpi));
+        self.state.current_dpi.set(new_dpi);
 
         let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
 
@@ -141,7 +141,7 @@ impl WindowHandle {
         let _guard = self.state.originate_host_resize();
         let dpi_ctx = DpiAwarenessGuard::new(&self.state.user32, dpi_scaling_strategy)?;
 
-        hwnd.resize_and_activate(new_size, Some(new_dpi), &dpi_ctx)?;
+        hwnd.resize_and_activate(new_size, new_dpi, &dpi_ctx)?;
 
         if self.state.current_size.get() == new_size {
             Ok(())
@@ -377,12 +377,12 @@ impl WindowImpl for BaseviewWindow {
             .get_dpi_for_window(window, &self.shared_state.user32);
 
         if let Some(dpi) = dpi {
-            if Some(dpi) != window_state.shared.current_dpi.get() {
-                window_state.shared.current_dpi.set(Some(dpi));
+            if dpi != window_state.shared.current_dpi.get() {
+                window_state.shared.current_dpi.set(dpi);
 
                 // We cannot create a window in "logical" pixels, and we can't DPI-scale to physical pixels because we
                 // have no way to know where the window will end up.
-                // So, at window creation, we assume a DPI=96, and if it ends up wrong, we resize the window
+                // So, at window creation, we assume a DPI=96 (or parent DPI if available), and if it ends up wrong, we resize the window
                 // to the actual logical size the user desired.
                 let new_size = self.initial_size.to_physical(dpi.scale_factor());
 
@@ -393,11 +393,20 @@ impl WindowImpl for BaseviewWindow {
                     &window_state.shared.user32,
                     self.shared_state.dpi_scaling_strategy.get(),
                 )?;
-                window.resize_and_activate(new_size, Some(dpi), &guard)?;
+                window.resize_and_activate(new_size, dpi, &guard)?;
 
                 let _ = self.adapt_host_window_to_size(
                     previous_size,
                     WindowSize::from_physical(new_size, dpi.scale_factor()),
+                );
+            } else {
+                // If the host queried size before it gave us a parent, this is the one it's been using.
+                let previous_host_size = self.initial_size.to_physical(1.0);
+                let current_size = self.initial_size.to_physical(dpi.scale_factor());
+
+                let _ = self.adapt_host_window_to_size(
+                    previous_host_size,
+                    WindowSize::from_physical(current_size, dpi.scale_factor()),
                 );
             }
         }
@@ -670,9 +679,9 @@ unsafe fn wnd_proc_inner(
             let new_size = suggested_rect.size();
 
             let changed = window_state.shared.current_size.get() != new_size
-                || window_state.shared.current_dpi.get() != Some(dpi);
+                || window_state.shared.current_dpi.get() != dpi;
 
-            window_state.shared.current_dpi.set(Some(dpi));
+            window_state.shared.current_dpi.set(dpi);
             let previous_size = window_state.shared.current_size.replace(new_size);
 
             // Windows makes us resize the window manually. This however will not send a WM_SIZE event,
@@ -737,16 +746,22 @@ unsafe fn wnd_proc_inner(
 
             if let Some(size) = sizing.min_size() {
                 let size = size.to_physical(window_state.shared.scale_factor());
-                let size =
-                    ctx.client_area_to_nc_area(size.into(), style, dpi).unwrap().size().cast();
+                let size = ctx
+                    .client_area_to_nc_area(size.into(), style, Some(dpi))
+                    .unwrap()
+                    .size()
+                    .cast();
                 let pt = POINT { x: size.width, y: size.height };
                 (&raw mut (*info).ptMinTrackSize).write(pt);
             }
 
             if let Some(size) = sizing.max_size() {
                 let size = size.to_physical(window_state.shared.scale_factor());
-                let size =
-                    ctx.client_area_to_nc_area(size.into(), style, dpi).unwrap().size().cast();
+                let size = ctx
+                    .client_area_to_nc_area(size.into(), style, Some(dpi))
+                    .unwrap()
+                    .size()
+                    .cast();
                 let pt = POINT { x: size.width, y: size.height };
                 (&raw mut (*info).ptMaxTrackSize).write(pt);
             }
