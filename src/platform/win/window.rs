@@ -76,9 +76,7 @@ impl WindowHandle {
     }
 
     pub fn resize(&self, new_size: Size) -> Result<()> {
-        crate::debug!("Resizing to {:?}", new_size);
         let new_size = self.state.sizing_strategy.adjust_size(new_size, self.size()).physical;
-        crate::debug!("Size adjusted to {:?}", new_size);
 
         if new_size == self.state.current_size.get() {
             return Ok(());
@@ -95,7 +93,6 @@ impl WindowHandle {
         let _guard = self.state.originate_host_resize();
         let dpi_ctx =
             DpiAwarenessGuard::new(&self.state.user32, self.state.dpi_scaling_strategy.get())?;
-        crate::debug!("DPI: {:?}", hwnd.get_dpi(&self.state.user32));
         hwnd.resize_and_activate(new_size, self.state.current_dpi.get(), &dpi_ctx)?;
 
         if self.state.current_size.get() == new_size {
@@ -590,8 +587,6 @@ unsafe fn wnd_proc_inner(
 
             let new_size = PhysicalSize { width, height };
             let current_size = window_state.shared.current_size.get();
-
-            crate::debug!("WM_SIZE: new {new_size:?}, old {current_size:?}");
 
             // Only send the event if anything changed
             if current_size == new_size {

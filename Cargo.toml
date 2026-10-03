@@ -43,7 +43,7 @@ tracing = { version = "0.1", optional = true }
 x11rb = { version = "0.13.2", features = ["cursor", "dri3", "present", "resource_manager", "allow-unsafe-code", "dl-libxcb"], default-features = false }
 xkbcommon-dl = { version = "0.4.2", features = ["x11"] }
 x11-dl = { version = "2.21.0" }
-calloop = "0.14.4"
+calloop = "=0.14.4" # 0.14.5 has MSRV of 1.86
 percent-encoding = "2.3.2"
 bytemuck = { version = "1.25.2", features = ["extern_crate_alloc"] }
 libloading = "0.8.9" # Libloading 0.9 is out but its MSRV is 1.88

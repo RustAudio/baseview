@@ -122,7 +122,7 @@ impl DpiScalingStrategy {
         // If type is unknown, assume it's better than System-Aware, and we can at least fetch the actual DPI.
         let assume_96_dpi = matches!(dpi_awareness_type, Some(Unaware | UnawareGDIScaled));
 
-        // If type is unknown, assume it's better than Per-Monitor-Aware-V2, and we'll get DPI_MESSAGES from the OS
+        // If type is unknown, assume it's better than Per-Monitor-Aware-V2, and we'll get WM_DPICHANGED messages from the OS
         let should_use_host_suggested_scale_factor =
             matches!(dpi_awareness_type, Some(PerMonitorDpiAware));
 
