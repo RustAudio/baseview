@@ -1,4 +1,5 @@
 use crate::HandlerError;
+use dpi::PhysicalSize;
 use std::fmt::Display;
 
 pub type Result<T> = std::result::Result<T, PlatformError>;
@@ -6,7 +7,8 @@ pub type Result<T> = std::result::Result<T, PlatformError>;
 #[derive(Debug)]
 pub enum PlatformError {
     Win32(windows_core::Error),
-    ResizeFailed,
+    UnexpectedResizeResult { new_actual_size: PhysicalSize<u32> },
+    InvalidScaleFactor,
     Handler(HandlerError),
 }
 
@@ -27,7 +29,14 @@ impl Display for PlatformError {
         match self {
             PlatformError::Win32(e) => Display::fmt(e, f),
             PlatformError::Handler(e) => Display::fmt(e, f),
-            PlatformError::ResizeFailed => f.write_str("Window resize request failed."),
+            PlatformError::UnexpectedResizeResult { new_actual_size } => {
+                write!(
+                    f,
+                    "Resize operation did not result in expected size, got {:?} instead.",
+                    new_actual_size
+                )
+            }
+            PlatformError::InvalidScaleFactor => f.write_str("Invalid window scale factor."),
         }
     }
 }

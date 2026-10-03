@@ -173,12 +173,12 @@ impl HWnd {
     }
 
     pub fn resize_and_activate(
-        &self, client_size: PhysicalSize<u32>, window_dpi: Option<Dpi>, dpi_ctx: &DpiAwarenessGuard,
+        &self, client_size: PhysicalSize<u32>, window_dpi: Dpi, dpi_ctx: &DpiAwarenessGuard,
     ) -> Result<()> {
         let style = self.get_style()?;
 
         let rect = Rect::from(client_size);
-        let rect = dpi_ctx.client_area_to_nc_area(rect, style, window_dpi)?;
+        let rect = dpi_ctx.client_area_to_nc_area(rect, style, Some(window_dpi))?;
 
         self.resize_nc_and_activate(rect.size())
     }
