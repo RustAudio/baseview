@@ -299,14 +299,35 @@ impl BaseviewWindow {
         self.host.notify_destroyed()
     }
 
-    fn request_resize_from_host(
-        &self, new_size: WindowSize,
-    ) -> core::result::Result<(), HandlerError> {
+    fn request_host_resize(&self, new_size: WindowSize) -> core::result::Result<(), HandlerError> {
         if self.shared_state.resize_host_originated.get() {
             return Ok(());
         };
 
         self.host.request_resize(new_size)
+    }
+
+    fn adapt_host_window_to_size(
+        &self, previous_size: PhysicalSize<u32>, new_size: WindowSize,
+    ) -> core::result::Result<(), ()> {
+        if let Err(e) = self.request_host_resize(new_size) {
+            warn!("Resize request from Host failed: {}. Reverting to previous size.", e);
+
+            if let Some(handler) = self.handler.get() {
+                if let Err(e) = handler.resized(new_size) {
+                    warn!("Window Handler failed to resize to previous window size: {}", e);
+                }
+            };
+
+            self.window_state.shared.current_size.set(previous_size);
+            if let Err(e) = self.window_state.resize(previous_size.into()) {
+                warn!("Failed to resize back to previous window size: {}", e);
+            }
+
+            return Err(());
+        }
+
+        Ok(())
     }
 
     pub(crate) fn handle_on_frame(&self) {
@@ -367,12 +388,17 @@ impl WindowImpl for BaseviewWindow {
 
                 // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
                 // doesn't also emit Resized.
-                window_state.shared.current_size.set(new_size);
+                let previous_size = window_state.shared.current_size.replace(new_size);
                 let guard = DpiAwarenessGuard::new(
                     &window_state.shared.user32,
                     self.shared_state.dpi_scaling_strategy.get(),
                 )?;
                 window.resize_and_activate(new_size, Some(dpi), &guard)?;
+
+                let _ = self.adapt_host_window_to_size(
+                    previous_size,
+                    WindowSize::from_physical(new_size, dpi.scale_factor()),
+                );
             }
         }
 
@@ -608,7 +634,7 @@ unsafe fn wnd_proc_inner(
                 return Some(-1);
             }
 
-            if let Err(e) = window_bv.request_resize_from_host(new_size) {
+            if let Err(e) = window_bv.request_host_resize(new_size) {
                 warn!("Resize request from Host failed: {}. Reverting to previous size.", e);
 
                 if let Err(e) = handler.resized(new_size) {
@@ -664,20 +690,11 @@ unsafe fn wnd_proc_inner(
                     if let Err(e) = window_state.resize(previous_size.into()) {
                         warn!("Failed to resize back to previous window size: {}", e);
                     }
+
+                    return Some(-1);
                 }
 
-                if let Err(e) = window_bv.request_resize_from_host(new_size) {
-                    warn!("Resize request from Host failed: {}. Reverting to previous size.", e);
-
-                    if let Err(e) = handler.resized(new_size) {
-                        warn!("Window Handler failed to resize to previous window size: {}", e);
-                    }
-
-                    window_state.shared.current_size.set(previous_size);
-                    if let Err(e) = window_state.resize(previous_size.into()) {
-                        warn!("Failed to resize back to previous window size: {}", e);
-                    }
-
+                if let Err(()) = window_bv.adapt_host_window_to_size(previous_size, new_size) {
                     return Some(-1);
                 }
             }
