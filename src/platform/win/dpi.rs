@@ -9,6 +9,8 @@ use std::ops::Deref;
 #[derive(Copy, Clone, Default)]
 pub(crate) struct DpiScalingStrategy {
     pub assume_96_dpi: bool,
+    pub should_use_host_suggested_scale_factor: bool,
+    pub should_enable_nc_dpi_scaling_manually: bool,
     pub thread_dpi_awareness_context: Option<DpiAwarenessContext>,
 }
 
@@ -46,6 +48,11 @@ impl DpiScalingStrategy {
                 crate::debug!("Could not get DPI Awareness Context from parent, falling back to process DPI Awareness.");
                 return Self::get_from_process(user32, &shcore);
             };
+
+            crate::debug!(
+                "Parent DPI Awareness Context detected: {:?}",
+                parent_dpi_ctx.get_type(user32_lib)
+            );
 
             if parent.supports_mixed_dpi_hosting_behavior(user32_lib) {
                 Self::get_best_matching_with_dpi_parent_awareness_context(
@@ -91,9 +98,11 @@ impl DpiScalingStrategy {
         // These are documented to not be compatible with per-monitor awareness types, so we'll fall back to System-aware
         // See: https://learn.microsoft.com/en-us/windows/win32/api/windef/ne-windef-dpi_hosting_behavior#remarks
         if matches!(dpi_awareness_type, Some(Unaware | UnawareGDIScaled | SystemDpiAware)) {
-            crate::debug!("Parent has DPI Awareness Context with Per-Monitor DPI awareness, falling back to System DPI Awareness.");
+            crate::debug!("Parent has DPI Awareness Context without Per-Monitor DPI awareness, falling back to System DPI Awareness.");
             return Self {
                 assume_96_dpi: false,
+                should_use_host_suggested_scale_factor: false,
+                should_enable_nc_dpi_scaling_manually: false,
                 thread_dpi_awareness_context: Some(SystemDpiAware.into()),
             };
         }
@@ -113,7 +122,19 @@ impl DpiScalingStrategy {
         // If type is unknown, assume it's better than System-Aware, and we can at least fetch the actual DPI.
         let assume_96_dpi = matches!(dpi_awareness_type, Some(Unaware | UnawareGDIScaled));
 
-        Self { assume_96_dpi, thread_dpi_awareness_context: Some(dpi_awareness_context) }
+        // If type is unknown, assume it's better than Per-Monitor-Aware-V2, and we'll get WM_DPICHANGED messages from the OS
+        let should_use_host_suggested_scale_factor =
+            matches!(dpi_awareness_type, Some(PerMonitorDpiAware));
+
+        let should_enable_nc_dpi_scaling_manually =
+            matches!(dpi_awareness_type, Some(PerMonitorDpiAware));
+
+        Self {
+            assume_96_dpi,
+            should_use_host_suggested_scale_factor,
+            should_enable_nc_dpi_scaling_manually,
+            thread_dpi_awareness_context: Some(dpi_awareness_context),
+        }
     }
 
     fn get_from_process_legacy(shcore: &LazyLibraryModule<ExtendedShCore>) -> Self {
@@ -126,12 +147,24 @@ impl DpiScalingStrategy {
         crate::debug!("Using legacy Process DPI Awareness: {:?}", awareness);
 
         let assume_96_dpi = matches!(awareness, None | Some(Unaware));
+        let should_use_host_suggested_scale_factor = matches!(awareness, Some(PerMonitorDpiAware));
+        let should_enable_nc_dpi_scaling_manually = matches!(awareness, Some(PerMonitorDpiAware));
 
-        Self { assume_96_dpi, thread_dpi_awareness_context: None }
+        Self {
+            assume_96_dpi,
+            should_use_host_suggested_scale_factor,
+            should_enable_nc_dpi_scaling_manually,
+            thread_dpi_awareness_context: None,
+        }
     }
 
     fn completely_unaware() -> Self {
-        Self { assume_96_dpi: true, thread_dpi_awareness_context: None }
+        Self {
+            assume_96_dpi: true,
+            should_use_host_suggested_scale_factor: false,
+            should_enable_nc_dpi_scaling_manually: false,
+            thread_dpi_awareness_context: None,
+        }
     }
 
     fn get_best_supported(

@@ -8,7 +8,6 @@ use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule};
-use crate::WindowSettings;
 use crate::{MouseCursor, WindowSize};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, Ref, RefCell};
@@ -132,7 +131,7 @@ pub struct WindowSharedState {
     pub parented: Cell<bool>,
     pub is_alive: Cell<bool>,
     pub current_size: Cell<PhysicalSize<u32>>,
-    pub current_dpi: Cell<Option<Dpi>>, // None if Win32 HiDPI isn't supported
+    pub current_dpi: Cell<Dpi>,
     pub fallback_scale_factor: Cell<Option<f64>>,
     pub resize_host_originated: Cell<bool>,
     pub destroy_host_originated: Cell<bool>,
@@ -143,20 +142,27 @@ pub struct WindowSharedState {
 }
 
 impl WindowSharedState {
-    pub fn new(user32: LibraryModule<ExtendedUser32>, settings: &WindowSettings) -> Rc<Self> {
-        Self {
-            parented: (settings.parent.is_some() || settings.wait_for_parent).into(),
+    pub fn new(user32: LibraryModule<ExtendedUser32>, init: &WindowInitializer) -> Rc<Self> {
+        let state = Self {
+            sizing_strategy: SizingStrategy::from_settings(&init.settings),
+            user32,
+
+            // Internal state
             is_alive: true.into(),
-            current_dpi: None.into(),
-            current_size: settings.size.to_physical(1.0).into(),
-            fallback_scale_factor: settings.fallback_scale_factor.into(),
             resize_host_originated: false.into(),
             destroy_host_originated: false.into(),
-            sizing_strategy: SizingStrategy::from_settings(settings),
-            user32,
+
+            // Overriden by init() below
+            parented: false.into(),
+            current_dpi: Dpi::default().into(),
+            current_size: init.settings.size.to_physical(1.0).into(),
+            fallback_scale_factor: init.settings.fallback_scale_factor.into(),
             dpi_scaling_strategy: DpiScalingStrategy::default().into(),
-        }
-        .into()
+        };
+
+        state.init(init);
+
+        state.into()
     }
 
     pub fn init(&self, init: &WindowInitializer) {
@@ -169,9 +175,22 @@ impl WindowSharedState {
         );
 
         if strategy.assume_96_dpi {
-            self.current_dpi.set(Some(Dpi::default()));
+            self.current_dpi.set(Dpi::default());
+            self.current_size.set(init.settings.size.to_physical(1.0));
+            self.fallback_scale_factor.set(Some(1.0));
+        } else {
+            let parent_dpi = parent.and_then(|p| p.get_dpi(&self.user32));
+            let scale_factor = parent_dpi
+                .map(|dpi| dpi.scale_factor())
+                .or(init.settings.fallback_scale_factor)
+                .unwrap_or(1.0);
+
+            self.current_dpi.set(parent_dpi.unwrap_or_default());
+            self.current_size.set(init.settings.size.to_physical(scale_factor));
+            self.fallback_scale_factor.set(init.settings.fallback_scale_factor);
         }
 
+        self.parented.set(init.settings.parent.is_some() || init.settings.wait_for_parent);
         self.dpi_scaling_strategy.set(strategy);
     }
 
@@ -180,11 +199,16 @@ impl WindowSharedState {
     }
 
     pub fn scale_factor(&self) -> f64 {
-        if let Some(dpi) = self.current_dpi.get() {
-            dpi.scale_factor()
-        } else {
-            self.fallback_scale_factor.get().unwrap_or(1.0)
+        let strategy = self.dpi_scaling_strategy.get();
+        if strategy.assume_96_dpi {
+            return 1.0;
         }
+
+        if strategy.should_use_host_suggested_scale_factor {
+            return self.fallback_scale_factor.get().unwrap_or(1.0);
+        }
+
+        self.current_dpi.get().scale_factor()
     }
 
     pub fn originate_host_resize(&self) -> impl Drop + use<'_> {
