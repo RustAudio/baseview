@@ -575,6 +575,22 @@ unsafe fn wnd_proc_inner(
 
             None
         }
+        WM_CAPTURECHANGED => {
+            let window_gaining_capture =
+                NonNull::new(lparam as _).map(|p| unsafe { HWnd::from_raw(p) });
+
+            if window_gaining_capture != Some(window) {
+                let previous_counter = window_state.mouse_button_counter.replace(0);
+                HWnd::release_capture();
+
+                if previous_counter == 0 {
+                    window_bv.handle_event(Event::Mouse(MouseEvent::CursorLeft));
+                    window_state.mouse_was_outside_window.set(true);
+                }
+            }
+
+            Some(0)
+        }
         WM_TIMER => {
             if wparam == WIN_FRAME_TIMER.get() {
                 window_bv.handle_on_frame()
