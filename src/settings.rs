@@ -170,7 +170,7 @@ const _: () = {
 
 impl ParentWindowHandle {
     /// Grabs a handle to the given `parent_window`, to later create a child window in it.
-    pub fn from_window(parent_window: &impl HasWindowHandle) -> Self {
+    pub fn from_window(parent_window: &(impl HasWindowHandle + ?Sized)) -> Self {
         let inner = match platform::ParentWindowHandle::extract(parent_window) {
             Ok(parent) => parent,
             Err(e) => {
@@ -182,7 +182,7 @@ impl ParentWindowHandle {
     }
 }
 
-impl<W: HasWindowHandle> From<&W> for ParentWindowHandle {
+impl<W: HasWindowHandle + ?Sized> From<&W> for ParentWindowHandle {
     fn from(window: &W) -> Self {
         Self::from_window(window)
     }

@@ -100,7 +100,7 @@ pub struct ParentWindowHandle {
 
 impl ParentWindowHandle {
     pub fn extract(
-        window: &impl HasWindowHandle,
+        window: &(impl HasWindowHandle + ?Sized),
     ) -> core::result::Result<Self, ParentWindowHandleError> {
         let window_id = match window.window_handle()?.as_raw() {
             RawWindowHandle::Xlib(h) => {

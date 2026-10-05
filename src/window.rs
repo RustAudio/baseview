@@ -4,6 +4,7 @@ use crate::host::Host;
 use crate::platform;
 use crate::waker::WindowWaker;
 use crate::*;
+use raw_window_handle::HasWindowHandle;
 use std::marker::PhantomData;
 
 /// A handle to a Window created by baseview.
@@ -247,3 +248,88 @@ pub(crate) struct WindowInitializer {
 }
 
 pub use baseview_host::dpi::WindowSize;
+use baseview_host::window::HostedWindow;
+
+impl HostedWindow for Window {
+    #[inline]
+    fn run_until_closed(self) -> Result<(), Box<dyn std::error::Error>>
+    where
+        Self: Sized,
+    {
+        self.run_until_closed()?;
+        Ok(())
+    }
+
+    #[inline]
+    fn size(&self) -> WindowSize {
+        self.size()
+    }
+
+    #[inline]
+    fn resize(&self, size: Size) -> Result<(), Box<dyn std::error::Error>> {
+        self.resize(size)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn suggest_fallback_scale_factor(
+        &self, scale_factor: f64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.suggest_fallback_scale_factor(scale_factor)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn is_open(&self) -> bool {
+        self.is_open()
+    }
+
+    #[inline]
+    fn is_resizable(&self) -> bool {
+        self.is_resizable()
+    }
+
+    #[inline]
+    fn min_size(&self) -> Option<Size> {
+        self.min_size()
+    }
+
+    #[inline]
+    fn max_size(&self) -> Option<Size> {
+        self.max_size()
+    }
+
+    #[inline]
+    fn host_main_thread_callback(&self) {
+        self.host_main_thread_callback()
+    }
+
+    #[inline]
+    fn set_parent(&self, parent: &dyn HasWindowHandle) -> Result<(), Box<dyn std::error::Error>> {
+        self.set_parent(parent)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn show(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.show()?;
+        Ok(())
+    }
+
+    #[inline]
+    fn hide(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.hide()?;
+        Ok(())
+    }
+
+    #[inline]
+    fn adjust_size(&self, size: NativeSize<u32>) -> NativeSize<u32> {
+        self.adjust_size(size)
+    }
+
+    #[inline]
+    fn request_poll(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.request_poll()?;
+        Ok(())
+    }
+}
