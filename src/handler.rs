@@ -86,7 +86,7 @@ pub trait WindowHandler: 'static {
     /// The goal is for all external update logic to be contained within this method.
     /// Therefore, this method will be called in various cases, including (but not limited to):
     ///
-    /// * As a result of calling [`Window::request_poll`], at the platform's earliest convenience;
+    /// * As a result of calling [`Window::request_poll`] or [`WindowWaker::request_poll`], at the platform's earliest convenience;
     /// * Whenever a new frame has been scheduled, right before actually calling [`WindowHandler::draw`].
     ///
     /// This all means that this method will be invoked very regularly, possibly multiple times per frame interval.
