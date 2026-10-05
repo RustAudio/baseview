@@ -1,6 +1,5 @@
-use crate::dpi::Size;
+use crate::dpi::{LogicalSize, PhysicalSize, Size};
 use crate::{WindowSettings, WindowSize};
-use dpi::{LogicalSize, PhysicalSize};
 
 #[derive(Copy, Clone)]
 pub(crate) enum SizingStrategy {

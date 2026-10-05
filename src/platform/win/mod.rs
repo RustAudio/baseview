@@ -7,10 +7,10 @@ mod waker;
 mod window;
 mod window_state;
 
+pub(crate) use crate::dpi::DpiScalingStrategy;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
 use crate::wrappers::win32::{Rect, TimerId};
-pub(crate) use dpi::DpiScalingStrategy;
 pub use error::{PlatformError, Result};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle,
