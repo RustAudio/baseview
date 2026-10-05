@@ -1,5 +1,6 @@
 use crate::dpi::WindowSize;
 use std::error::Error;
+use std::time::Duration;
 
 /// A special handler for the Window thread to wake up and call methods on the main thread.
 ///
@@ -19,6 +20,22 @@ pub trait HostMainThreadCaller: Send + 'static {
     ///
     /// Only X11 needs this. This can be implemented as a no-op on Windows and macOS.
     fn call_main_thread(&mut self);
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TimerHandle(pub u32);
+
+pub trait HostTimerSupport: 'static {
+    fn register_timer(&mut self, period: Duration) -> Result<TimerHandle, HandlerError>;
+    fn unregister_timer(&mut self, timer: TimerHandle) -> Result<(), HandlerError>;
+}
+
+#[cfg(unix)]
+use std::os::fd::*;
+#[cfg(unix)]
+pub trait HostFdSupport: 'static {
+    fn register_fd(&self, fd: impl AsFd) -> Result<(), HandlerError>;
+    fn unregister_fd(&self, fd: RawFd) -> Result<(), HandlerError>;
 }
 
 /// A handler for baseview windows to interact with their host.
@@ -72,6 +89,8 @@ impl Host {
         Self {
             #[cfg(target_os = "linux")]
             main_thread: None,
+            #[cfg(target_os = "linux")]
+            timer_support: None,
             callbacks: None,
         }
     }
