@@ -1,5 +1,5 @@
-use crate::{HandlerError, WindowSize};
-use std::cell::RefCell;
+use crate::dpi::WindowSize;
+use std::error::Error;
 
 /// A special handler for the Window thread to wake up and call methods on the main thread.
 ///
@@ -35,7 +35,7 @@ pub trait HostCallbacks: 'static {
     /// This can return any type of error, indicating the host either failed or denied to handle the
     /// resize request.
     /// If it does, the error is logged and the resize operation is canceled or reverted.
-    fn request_resize(&mut self, new_size: WindowSize) -> Result<(), HandlerError>;
+    fn request_resize(&mut self, new_size: WindowSize) -> Result<(), Box<dyn Error>>;
     /// Notifies the host that the child window has been destroyed for a reason outside the host's
     /// control.
     ///
@@ -59,9 +59,9 @@ pub trait HostCallbacks: 'static {
 /// (or after this [`Host`] object is dropped, if it never made it to a
 /// [`Window::create_with_host`](crate::Window::create_with_host) call).
 pub struct Host {
+    callbacks: Option<Box<dyn HostCallbacks>>,
     #[cfg(target_os = "linux")]
-    pub(crate) main_thread: Option<Box<dyn HostMainThreadCaller>>,
-    pub(crate) callbacks: Option<RefCell<Box<dyn HostCallbacks>>>,
+    main_thread: Option<Box<dyn HostMainThreadCaller>>,
 }
 
 impl Default for Host {
@@ -90,7 +90,7 @@ impl Host {
     ///
     /// # Platform Compatibility notes
     ///
-    /// This is only useful on X11. On Window and macOS, this is a no-op.
+    /// This is only useful on X11. On Windows and macOS, this is a no-op.
     #[inline]
     pub fn with_main_thread(self, main_thread: impl HostMainThreadCaller) -> Self {
         #[cfg(target_os = "linux")]
@@ -111,21 +111,17 @@ impl Host {
     /// If another callback handler was already set, it is replaced.
     #[inline]
     pub fn with_callbacks(mut self, callbacks: impl HostCallbacks) -> Self {
-        self.callbacks = Some(RefCell::new(Box::new(callbacks)));
+        self.callbacks = Some(Box::new(callbacks));
         self
     }
 
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    pub(crate) fn notify_destroyed(&self) {
-        let Some(callbacks) = &self.callbacks else { return };
-        let Ok(mut callbacks) = callbacks.try_borrow_mut() else { return };
-        callbacks.destroyed();
+    #[inline]
+    pub fn take_callbacks(&mut self) -> Option<Box<dyn HostCallbacks>> {
+        self.callbacks.take()
     }
 
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    pub(crate) fn request_resize(&self, new_size: WindowSize) -> Result<(), HandlerError> {
-        let Some(callbacks) = &self.callbacks else { return Ok(()) };
-        let Ok(mut callbacks) = callbacks.try_borrow_mut() else { return Ok(()) };
-        callbacks.request_resize(new_size)
+    #[inline]
+    pub fn take_main_thread(&mut self) -> Option<Box<dyn HostMainThreadCaller>> {
+        self.main_thread.take()
     }
 }

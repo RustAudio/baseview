@@ -10,6 +10,7 @@ use clack_extensions::gui::{
 };
 use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::{HostMainThreadHandle, HostSharedHandle};
+use std::error::Error;
 
 pub struct ExamplePluginGui {
     pub handle: Window,
@@ -168,7 +169,7 @@ struct HostGuiCallbacks {
 }
 
 impl HostCallbacks for HostGuiCallbacks {
-    fn request_resize(&mut self, new_size: WindowSize) -> Result<(), HandlerError> {
+    fn request_resize(&mut self, new_size: WindowSize) -> Result<(), Box<dyn Error>> {
         let new_size = new_size.to_native_size();
         self.ext.request_resize(&self.host, new_size.width, new_size.height)?;
         Ok(())

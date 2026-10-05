@@ -4,7 +4,9 @@ mod damage;
 mod error;
 mod event;
 mod handler;
-pub mod host;
+pub mod host {
+    pub use baseview_host::host::*;
+}
 mod keyboard;
 mod mouse_cursor;
 mod settings;
