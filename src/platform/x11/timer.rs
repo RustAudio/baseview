@@ -5,7 +5,15 @@ use calloop::{LoopHandle, RegistrationToken};
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
-pub type TimerHandle = Rc<TimerHandleInner>;
+#[derive(Clone, Eq)]
+pub struct TimerHandle(Rc<TimerHandleInner>);
+
+impl PartialEq for TimerHandle {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
 
 #[derive(PartialEq, Eq)]
 pub struct TimerHandleInner {
@@ -19,12 +27,12 @@ pub(crate) fn insert_timer(
 ) -> Result<TimerHandle, PlatformError> {
     let timer = Timer::from_duration(duration);
 
-    let handle = Rc::new_cyclic(move |this| {
+    let handle = Rc::<TimerHandleInner>::new_cyclic(move |this| {
         let this = Weak::clone(this);
 
         let result = loop_handle.insert_source(timer, move |_, _, e| {
             if let Some(this) = this.upgrade() {
-                e.handle_timer(&this);
+                e.handle_timer(&TimerHandle(this));
             }
             TimeoutAction::ToDuration(duration)
         });
@@ -37,5 +45,5 @@ pub(crate) fn insert_timer(
         }
     });
 
-    Ok(handle)
+    Ok(TimerHandle(handle))
 }
