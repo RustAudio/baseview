@@ -22,6 +22,7 @@ mod keyboard;
 mod visual_info;
 mod xcb_window;
 
+mod timer;
 mod waker;
 mod window_shared;
 mod window_thread;
@@ -33,6 +34,7 @@ use crate::platform::x11::window_shared::WindowInner;
 use crate::wrappers::xlib::XlibXcbConnection;
 
 pub type WindowContext = Rc<WindowInner>;
+pub use timer::TimerHandle;
 pub use waker::WindowWaker;
 
 #[cfg(feature = "opengl")]

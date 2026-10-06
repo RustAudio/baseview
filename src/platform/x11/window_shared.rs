@@ -1,5 +1,6 @@
 use crate::dpi::{PhysicalSize, Size};
 use crate::platform::x11::event_loop::EventLoop;
+use crate::platform::x11::timer::insert_timer;
 use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::x11::waker::WindowWaker;
 use crate::platform::x11::window_thread::WindowThreadShared;
@@ -253,6 +254,11 @@ impl WindowInner {
         // and notify the window handler about it
 
         Ok(())
+    }
+
+    #[inline]
+    pub fn create_timer(&self, duration: Duration) -> Result<TimerHandle> {
+        insert_timer(&self.loop_handle, duration)
     }
 
     pub fn resize_immediately(

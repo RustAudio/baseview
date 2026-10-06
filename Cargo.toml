@@ -105,6 +105,7 @@ members = [
     "examples/render_wgpu",
     "examples/plugin_clack_femtovg",
     "examples/test-frame-pacing",
+    "examples/timers",
     "examples/external-wakeup",
     "tests/partial-rendering"
 ]

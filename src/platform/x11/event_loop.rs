@@ -112,6 +112,10 @@ impl EventLoop {
         })
     }
 
+    pub(crate) fn handle_timer(&mut self, handle: &TimerHandle) {
+        self.handler.on_timer(handle.into())
+    }
+
     #[inline]
     fn drain_xcb_events(&mut self) -> Result<bool, FatalError> {
         let mut event_received = false;

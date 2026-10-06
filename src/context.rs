@@ -1,5 +1,6 @@
 use super::*;
 use crate::dpi::Size;
+use crate::timer::TimerHandle;
 use crate::waker::WindowWaker;
 use crate::{platform, MouseCursor, WindowSize};
 use raw_window_handle::{
@@ -93,6 +94,11 @@ impl WindowContext {
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
         self.inner.gl_context()
+    }
+
+    #[inline]
+    pub fn create_timer(&self, duration: Duration) -> Result<TimerHandle, Error> {
+        Ok(self.inner.create_timer(duration)?.into())
     }
 }
 
