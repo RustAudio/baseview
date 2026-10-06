@@ -11,7 +11,7 @@ use crate::wrappers::win32::window::{HWnd, PostMessageExt};
 use crate::wrappers::win32::{
     Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule, TimerList, TimerSlot,
 };
-use crate::{Error, MouseCursor, WindowSize};
+use crate::{MouseCursor, WindowSize};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
 use std::cell::{Cell, Ref, RefCell};
 use std::num::NonZeroIsize;

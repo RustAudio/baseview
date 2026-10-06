@@ -109,6 +109,13 @@ pub trait WindowHandler: 'static {
     fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError>;
     fn on_event(&self, event: Event) -> EventStatus;
 
+    /// Notifies the handler that a [timer](WindowContext::create_timer) has been triggered.
+    ///
+    /// A [`TimerHandle`] is given for the handler to match and figure out which timer was triggered,
+    /// and act accordingly.
+    ///
+    /// See [`WindowContext::create_timer`] to create a new timer that will schedule this method
+    /// to be called at regular intervals, and for more information.
     fn on_timer(&self, timer: &TimerHandle) {
         let _ = timer;
     }
