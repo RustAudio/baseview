@@ -248,7 +248,7 @@ pub(crate) struct WindowInitializer {
 }
 
 pub use baseview_host::dpi::WindowSize;
-use baseview_host::window::HostedWindow;
+use baseview_host::HostedWindow;
 
 impl HostedWindow for Window {
     #[inline]

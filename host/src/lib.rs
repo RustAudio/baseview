@@ -1,3 +1,5 @@
 pub mod dpi;
 pub mod host;
-pub mod window;
+mod window;
+
+pub use window::HostedWindow;

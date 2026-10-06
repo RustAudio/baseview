@@ -8,7 +8,6 @@ use super::drop_target::DropTarget;
 use super::*;
 use crate::dpi::{PhysicalPosition, PhysicalSize, Size};
 use crate::handler::WindowHandlerBuilder;
-use crate::host::Host;
 use crate::platform::win::window_state::{WindowSharedState, WindowState};
 use crate::platform::PlatformError;
 use crate::utils::SizingStrategy;

@@ -3,7 +3,7 @@ use std::error::Error;
 
 /// A special handler for the Window thread to wake up and call methods on the main thread.
 ///
-/// [`WindowHandle::host_main_thread_callback`](crate::Window::host_main_thread_callback)
+/// [`HostedWindow::host_main_thread_callback`](crate::HostedWindow::host_main_thread_callback)
 /// should be called as a response to this.
 ///
 /// # Platform compatibility notes
@@ -12,7 +12,7 @@ use std::error::Error;
 pub trait HostMainThreadCaller: Send + 'static {
     /// Schedules a callback on the main thread.
     ///
-    /// [`WindowHandle::host_main_thread_callback`](crate::Window::host_main_thread_callback)
+    /// [`HostedWindow::host_main_thread_callback`](crate::HostedWindow::host_main_thread_callback)
     /// should be called as a response to this.
     ///
     /// # Platform compatibility notes
@@ -55,9 +55,8 @@ pub trait HostCallbacks: 'static {
 /// It also brings the additional safety guarantee that all handlers given to this type will be
 /// destroyed alongside with the window.
 ///
-/// This guarantees callbacks cannot be fired after the [`Window`](crate::Window) is dropped.
-/// (or after this [`Host`] object is dropped, if it never made it to a
-/// [`Window::create_with_host`](crate::Window::create_with_host) call).
+/// This guarantees callbacks cannot be fired after the window is dropped.
+/// (or after this [`Host`] object is dropped, if it never made it to a window creation call).
 pub struct Host {
     callbacks: Option<Box<dyn HostCallbacks>>,
     #[cfg(target_os = "linux")]
@@ -72,9 +71,6 @@ impl Default for Host {
 
 impl Host {
     /// Creates a new, empty host with no callbacks.
-    ///
-    /// Calling [`Window::create_with_host`](crate::Window::create_with_host) with this is equivalent
-    /// to just calling [`Window::create`](crate::Window::create).
     #[inline]
     pub fn new() -> Self {
         Self {

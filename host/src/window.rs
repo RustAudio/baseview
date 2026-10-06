@@ -103,7 +103,7 @@ pub trait HostedWindow {
 
     /// Performs the work the window thread had scheduled for the main thread.
     ///
-    /// This must be called back on the main thread, as a response to [`HostMainThreadCaller::call_main_thread`](host::HostMainThreadCaller::call_main_thread).
+    /// This must be called back on the main thread, as a response to [`HostMainThreadCaller::call_main_thread`](crate::host::HostMainThreadCaller::call_main_thread).
     ///
     /// # Platform compatibility notes
     ///
