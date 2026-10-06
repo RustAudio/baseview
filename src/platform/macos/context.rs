@@ -1,6 +1,6 @@
 use crate::dpi::Size;
 use crate::platform::macos::view::BaseviewView;
-use crate::platform::{PlatformHandle, WindowSharedState};
+use crate::platform::{PlatformError, PlatformHandle, WindowSharedState};
 use crate::platform::{Result, WindowWaker};
 use crate::wrappers::appkit::{View, ViewRef};
 use crate::*;
@@ -134,5 +134,18 @@ impl WindowContext {
 
     pub fn platform_handle(&self) -> PlatformHandle {
         PlatformHandle { inner: MainThreadBound::new(self.view.clone(), self.mtm) }
+    }
+
+    #[inline]
+    pub fn create_timer(&self, duration: Duration) -> Result<super::TimerHandle> {
+        let Some(view_retained) = self.view.load() else {
+            return Err(PlatformError::InvalidWindowContext);
+        };
+
+        let Some(view) = view_retained.inner_ref() else {
+            return Err(PlatformError::InvalidWindowContext);
+        };
+
+        autoreleasepool(|_| Ok(view.create_timer(&view_retained, duration)))
     }
 }

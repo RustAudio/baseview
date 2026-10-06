@@ -3,6 +3,7 @@ mod cursor;
 mod damage;
 mod error;
 mod keyboard;
+mod timer;
 mod view;
 mod waker;
 mod window;
@@ -20,6 +21,7 @@ use objc2_app_kit::NSView;
 use raw_window_handle::{DisplayHandle, HasWindowHandle};
 use std::fmt;
 use std::fmt::Formatter;
+pub use timer::TimerHandle;
 pub use waker::WindowWaker;
 pub use window::*;
 
