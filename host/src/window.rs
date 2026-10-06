@@ -41,6 +41,8 @@ pub trait HostedWindow {
     where
         Self: Sized;
 
+    fn run_until_closed_dyn(self: Box<Self>) -> Result<(), Box<dyn Error>>;
+
     /// The current size of the window.
     fn size(&self) -> WindowSize;
 

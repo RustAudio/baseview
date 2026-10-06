@@ -261,6 +261,12 @@ impl HostedWindow for Window {
     }
 
     #[inline]
+    fn run_until_closed_dyn(self: Box<Self>) -> Result<(), Box<dyn std::error::Error>> {
+        self.run_until_closed()?;
+        Ok(())
+    }
+
+    #[inline]
     fn size(&self) -> WindowSize {
         self.size()
     }

@@ -6,7 +6,6 @@ use crate::platform::x11::window_thread::RedrawRequested;
 use crate::DamageArea;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::LoopHandle;
-use dpi::{PhysicalPosition, PhysicalSize};
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;

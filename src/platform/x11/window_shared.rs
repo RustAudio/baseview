@@ -1,6 +1,5 @@
 use super::prelude::*;
 use calloop::{LoopHandle, LoopSignal};
-use dpi::Size;
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::time::Duration;
 use x11rb::protocol::xproto;

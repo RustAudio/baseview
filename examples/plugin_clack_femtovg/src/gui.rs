@@ -3,7 +3,7 @@ use crate::ExamplePluginMainThread;
 use baseview::dpi::*;
 use baseview::gl::GlConfig;
 use baseview::host::{Host, HostCallbacks, HostMainThreadCaller};
-use baseview::{HandlerError, Window, WindowSettings, WindowSize};
+use baseview::{Window, WindowSettings, WindowSize};
 use clack_extensions::gui::{
     AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, HostGui,
     PluginGuiImpl, Window as ClapWindow,
