@@ -1,7 +1,6 @@
 use super::*;
 use crate::platform::DpiScalingStrategy;
 use crate::wrappers::win32::user32::ExtendedUser32;
-use crate::wrappers::win32::DpiAwarenessContextType::*;
 use std::ffi::c_void;
 use std::fmt::{Debug, Formatter};
 use std::num::NonZeroU32;
@@ -11,6 +10,7 @@ use windows_sys::Win32::Foundation::{FALSE, RECT, TRUE};
 use windows_sys::Win32::Graphics::Gdi::{GetDC, GetDeviceCaps, ReleaseDC, LOGPIXELSX};
 use windows_sys::Win32::UI::HiDpi::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::{AdjustWindowRectEx, USER_DEFAULT_SCREEN_DPI};
+use DpiAwarenessContextType::*;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct Dpi(pub NonZeroU32);

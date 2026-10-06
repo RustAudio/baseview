@@ -122,6 +122,13 @@ impl Host {
 
     #[inline]
     pub fn take_main_thread(&mut self) -> Option<Box<dyn HostMainThreadCaller>> {
-        self.main_thread.take()
+        #[cfg(target_os = "linux")]
+        {
+            self.main_thread.take()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            None
+        }
     }
 }

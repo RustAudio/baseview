@@ -10,7 +10,7 @@ mod user32;
 pub mod uuid;
 pub mod window;
 
-pub use crate::dpi::*;
+pub use dpi::*;
 pub use library::*;
 pub use rect::Rect;
 pub use shcore::*;
