@@ -86,6 +86,10 @@ impl TimerList {
         Ok(())
     }
 
+    pub fn exists(&self, timer_id: TimerId) -> bool {
+        self.timers.borrow().contains(&timer_id)
+    }
+
     pub fn remove_if_exists(&self, window: HWnd, id: TimerId) -> Result<bool, Error> {
         if !self.pop_if_exists(id) {
             return Ok(false);
@@ -101,5 +105,17 @@ impl TimerList {
         let Some(index) = timers.iter().position(|&t| t == id) else { return false };
         timers.swap_remove(index);
         true
+    }
+
+    fn pop(&self) -> Option<TimerId> {
+        self.timers.borrow_mut().pop()
+    }
+
+    pub fn stop_and_destroy_all(&self, window: HWnd) {
+        while let Some(timer) = self.pop() {
+            if let Err(e) = window.kill_timer(timer) {
+                crate::warn!("Failed to kill timer: {}", e);
+            }
+        }
     }
 }

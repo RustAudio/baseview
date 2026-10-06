@@ -9,7 +9,7 @@ mod window_state;
 
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::HWnd;
-use crate::wrappers::win32::Rect;
+use crate::wrappers::win32::{Rect, TimerId};
 pub(crate) use dpi::DpiScalingStrategy;
 pub use error::{PlatformError, Result};
 use raw_window_handle::{
@@ -21,6 +21,8 @@ use std::ptr::NonNull;
 use std::rc::Rc;
 pub use waker::WindowWaker;
 pub use window::*;
+
+pub type TimerHandle = TimerId;
 
 #[cfg(feature = "opengl")]
 pub mod gl;
