@@ -79,11 +79,11 @@ impl TimerList {
         Self { timers: Vec::new().into() }
     }
 
-    pub fn add_new_timer(&self, window: HWnd, timeout: Duration) -> Result<(), Error> {
+    pub fn add_new_timer(&self, window: HWnd, timeout: Duration) -> Result<TimerId, Error> {
         let timeout_msec = timeout.as_millis().try_into().unwrap_or(u32::MAX);
         let new_timer_id = window.create_timer(timeout_msec)?;
         self.timers.borrow_mut().push(new_timer_id);
-        Ok(())
+        Ok(new_timer_id)
     }
 
     pub fn exists(&self, timer_id: TimerId) -> bool {

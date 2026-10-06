@@ -153,9 +153,7 @@ impl WindowState {
 
     #[inline]
     pub fn create_timer(&self, duration: Duration) -> Result<TimerHandle, super::PlatformError> {
-        let duration_millis = duration.as_millis().try_into().unwrap_or(u32::MAX);
-
-        Ok(self.hwnd.create_timer(duration_millis)?)
+        Ok(self.shared.user_timers.add_new_timer(self.hwnd, duration)?)
     }
 }
 

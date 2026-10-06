@@ -626,9 +626,7 @@ unsafe fn wnd_proc_inner(
         WM_TIMER => {
             let timer_id = TimerId::from_raw(wparam)?;
 
-            if window_state.redraw_timer.matches_id(timer_id)
-                && window_state.redraw_timer.is_running()
-            {
+            if window_state.redraw_timer.matches_id(timer_id) {
                 if !window_state.redraw_timer.is_running() {
                     return None;
                 };
