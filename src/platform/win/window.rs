@@ -235,6 +235,9 @@ pub struct BaseviewWindow {
     handler: OnceCell<Box<dyn WindowHandler>>,
     host: Host,
 
+    // Workaround some VST3 hosts (e.g. Bitwig) not allowing request_resize before show() occurs
+    pub host_needs_new_size_notified_on_show: Cell<Option<PhysicalSize<u32>>>,
+
     // Things not directly used, but kept so their Drop impl runs when the window is destroyed
     _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
     _drop_target: Cell<Option<ComObject<DropTarget>>>,
@@ -274,6 +277,7 @@ impl BaseviewWindow {
                     handler: OnceCell::new(),
                     shared_state,
                     host: init.host,
+                    host_needs_new_size_notified_on_show: None.into(),
 
                     _drop_target: None.into(),
                     _keyboard_hook: None.into(),
@@ -411,19 +415,15 @@ impl WindowImpl for BaseviewWindow {
                 )?;
                 window.resize_and_activate(new_size, dpi, &guard)?;
 
-                let _ = self.adapt_host_window_to_size(
-                    previous_size,
-                    WindowSize::from_physical(new_size, dpi.scale_factor()),
-                );
+                self.host_needs_new_size_notified_on_show.set(Some(previous_size));
             } else {
                 // If the host queried size before it gave us a parent, this is the one it's been using.
                 let previous_host_size = self.initial_size.to_physical(1.0);
                 let current_size = self.initial_size.to_physical(dpi.scale_factor());
 
-                let _ = self.adapt_host_window_to_size(
-                    previous_host_size,
-                    WindowSize::from_physical(current_size, dpi.scale_factor()),
-                );
+                if previous_host_size != current_size {
+                    self.host_needs_new_size_notified_on_show.set(Some(previous_host_size));
+                }
             }
         }
 
@@ -716,6 +716,19 @@ unsafe fn wnd_proc_inner(
             }
 
             window.invalidate_window();
+
+            None
+        }
+        WM_SHOWWINDOW => {
+            if let Some(previous_size) = window_bv.host_needs_new_size_notified_on_show.take() {
+                let new_size = window_state.shared.current_size.get();
+                let dpi = window_state.shared.current_dpi.get();
+
+                let _ = window_bv.adapt_host_window_to_size(
+                    previous_size,
+                    WindowSize::from_physical(new_size, dpi.scale_factor()),
+                );
+            }
 
             None
         }
