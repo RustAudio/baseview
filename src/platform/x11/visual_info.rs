@@ -1,4 +1,4 @@
-use super::xcb_connection::X11Connection;
+use super::x11_connection::X11Connection;
 use crate::platform::*;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{

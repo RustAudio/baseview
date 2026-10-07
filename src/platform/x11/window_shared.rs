@@ -1,10 +1,12 @@
 use crate::dpi::{PhysicalSize, Size};
 use crate::platform::x11::event_loop::EventLoop;
+use crate::platform::x11::handler::Handler;
+use crate::platform::x11::present::{PresentState, PresentStateShared};
 use crate::platform::x11::timer::insert_timer;
 use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::x11::waker::WindowWaker;
 use crate::platform::x11::window_thread::WindowThreadShared;
-use crate::platform::x11::xcb_connection::get_size_hints;
+use crate::platform::x11::x11_connection::get_size_hints;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::platform::*;
 use crate::utils::SizingStrategy;
@@ -46,10 +48,10 @@ impl ScalingFactor {
     }
 }
 
-pub(crate) struct WindowInner {
-    // GlContext should be dropped **before** XcbConnection is dropped
+/// Data that is shared between the event loop and the window handler.
+pub(crate) struct WindowShared {
     #[cfg(feature = "opengl")]
-    gl_context: Option<super::gl::GlContext>,
+    gl_context: Option<gl::GlContext>,
 
     pub(crate) xcb_window: XcbWindow,
     pub(crate) parent_id: Cell<Option<NonZeroU32>>,
@@ -63,7 +65,7 @@ pub(crate) struct WindowInner {
     pub(crate) visual_id: Visualid,
 
     pub(crate) is_focused: Cell<bool>,
-    pub(crate) present_notify_requested: Cell<bool>,
+    pub present_state: PresentStateShared,
     pub(crate) poll_requested: Cell<bool>,
     pub(crate) loop_signal: LoopSignal,
     loop_handle: LoopHandle<'static, EventLoop>,
@@ -71,7 +73,7 @@ pub(crate) struct WindowInner {
     pub(crate) main_thread_shared: Arc<WindowThreadShared>,
 }
 
-impl WindowInner {
+impl WindowShared {
     pub(crate) fn create(
         options: WindowSettings, ev_loop: &calloop::EventLoop<'static, EventLoop>,
         shared: Arc<WindowThreadShared>,
@@ -145,7 +147,7 @@ impl WindowInner {
             loop_handle: ev_loop.handle(),
 
             is_focused: false.into(),
-            present_notify_requested: false.into(),
+            present_state: PresentStateShared::new(),
             poll_requested: false.into(),
             main_thread_shared: shared,
 
@@ -196,24 +198,11 @@ impl WindowInner {
     }
 
     pub fn request_redraw(&self) {
-        self.present_notify_requested.set(true)
+        self.present_state.request_present_notify()
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
-        if duration.is_zero() || duration.as_millis() < 1 {
-            self.request_redraw();
-            return;
-        }
-
-        let result = self.loop_handle.insert_source(Timer::from_duration(duration), |_, _, e| {
-            e.request_redraw();
-            TimeoutAction::Drop
-        });
-
-        if let Err(e) = result {
-            warn!("{}", e);
-            self.request_redraw();
-        }
+        self.present_state.request_present_notify_after(duration, &self.loop_handle);
     }
 
     pub fn waker(&self) -> WindowWaker {
@@ -261,21 +250,18 @@ impl WindowInner {
         insert_timer(&self.loop_handle, duration)
     }
 
-    pub fn resize_immediately(
-        &self, new_size: PhysicalSize<u16>, handler: &dyn WindowHandler,
-    ) -> Result<()> {
+    pub fn resize_immediately(&self, new_size: PhysicalSize<u16>, handler: &Handler) -> Result<()> {
         let previous = self.store_size(new_size);
 
         if previous == new_size {
             return Ok(());
         };
 
-        if let Err(e) =
-            handler.resized(WindowSize::from_physical(new_size.cast(), self.scaling_factor.get()))
+        if let Err(()) =
+            handler.resize(WindowSize::from_physical(new_size.cast(), self.scaling_factor.get()))
         {
-            warn!("Window Handler failed to resize: {}. Reverting to previous size", &e);
             self.store_size(previous);
-            return Err(e.into());
+            return Ok(());
         }
 
         self.xcb_window.resize(new_size.cast())?.check()?; // Will not call handler, as size is the same as above.

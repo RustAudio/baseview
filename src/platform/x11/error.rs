@@ -1,6 +1,6 @@
 use crate::platform::x11::drag_n_drop::ParseError;
 use crate::platform::x11::window_thread::RequestFailed;
-use crate::platform::x11::xcb_connection::GetPropertyError;
+use crate::platform::x11::x11_connection::GetPropertyError;
 use crate::warn;
 use crate::wrappers::xlib::{DisplayOpenFailedError, InitThreadsFailedError};
 use crate::HandlerError;
@@ -16,6 +16,7 @@ pub enum FatalError {
     Connection(ConnectionError),
     Calloop(calloop::Error),
     SendMainThread,
+    Redraw(String),
 }
 
 impl Display for FatalError {
@@ -26,6 +27,7 @@ impl Display for FatalError {
             FatalError::SendMainThread => {
                 f.write_str("Failed to send callback from X11 thread to main thread")
             }
+            FatalError::Redraw(e) => write!(f, "Fatal error while drawing the window: {}", e),
         }
     }
 }
@@ -62,6 +64,7 @@ pub enum PlatformError {
     Calloop(calloop::Error),
     RequestFromMainThreadFailed(RequestFailed),
     SendMainThread,
+    Redraw(String),
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
     #[cfg(feature = "opengl")]
@@ -88,7 +91,8 @@ impl Display for PlatformError {
             PlatformError::Handler(e) => e.fmt(f),
             PlatformError::MainThreadRecvResult => {
                 f.write_str("Failed to receive Window creation response from X11 thread: channel was closed unexpectedly")
-            }
+            },
+            PlatformError::Redraw(e) => e.fmt(f),
             PlatformError::Calloop(e) => e.fmt(f),
             PlatformError::RequestFromMainThreadFailed(e) => e.fmt(f),
             PlatformError::SendMainThread => FatalError::SendMainThread.fmt(f),
@@ -178,6 +182,7 @@ impl From<FatalError> for PlatformError {
             FatalError::Connection(e) => Self::Connection(e),
             FatalError::Calloop(e) => Self::Calloop(e),
             FatalError::SendMainThread => Self::SendMainThread,
+            FatalError::Redraw(s) => Self::Redraw(s),
         }
     }
 }

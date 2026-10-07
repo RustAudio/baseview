@@ -6,21 +6,20 @@ use std::result::Result;
 use crate::dpi::{PhysicalPosition, PhysicalSize};
 use crate::host::HostMainThreadCaller;
 use crate::platform::x11::error::FatalError;
+use crate::platform::x11::handler::Handler;
+use crate::platform::x11::present::PresentState;
 use crate::platform::x11::window_thread::{
     HostCallback, WindowThreadRequest, WindowThreadResponseMessage,
 };
+use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
-use crate::{warn, DamageArea};
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
 use calloop::generic::Generic;
-use calloop::timer::{TimeoutAction, Timer};
 use calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
-use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
-use x11rb::protocol::present::CompleteKind;
 use x11rb::protocol::Event as XEvent;
 
 pub struct MainThreadCaller {
@@ -48,15 +47,13 @@ impl MainThreadCaller {
 }
 
 pub(crate) struct EventLoop {
-    handler: Box<dyn WindowHandler>,
-    window: Rc<WindowInner>,
+    handler: Handler,
+    shared: Rc<WindowShared>,
 
     new_size: Option<PhysicalSize<u16>>,
     new_parent_size: Option<PhysicalSize<u16>>,
-    draw_now: bool,
-    last_requested_serial: Option<u32>,
-    last_received_present: Option<(u32, u64)>,
 
+    pub present_state: PresentState,
     loop_signal: LoopSignal,
     loop_handle: LoopHandle<'static, Self>,
 
@@ -71,7 +68,7 @@ pub(crate) struct EventLoop {
 
 impl EventLoop {
     pub fn new(
-        window: Rc<WindowInner>, handler: Box<dyn WindowHandler>,
+        window: Rc<WindowShared>, handler: Box<dyn WindowHandler>,
         request_receiver: calloop::channel::Channel<WindowThreadRequest>,
         response_sender: mpsc::Sender<WindowThreadResponseMessage>,
         main_thread: Option<MainThreadCaller>, inner: &mut calloop::EventLoop<'static, Self>,
@@ -96,18 +93,16 @@ impl EventLoop {
         Ok(Self {
             loop_signal: inner.get_signal(),
             loop_handle,
-            handler,
+            handler: Handler::new(handler),
+            present_state: PresentState::new(),
             new_size: None,
             new_parent_size: None,
-            draw_now: false,
-            last_requested_serial: None,
-            last_received_present: None,
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
             run_error: None,
             main_thread,
 
-            window,
+            shared: window,
             response_sender,
         })
     }
@@ -119,7 +114,7 @@ impl EventLoop {
     #[inline]
     fn drain_xcb_events(&mut self) -> Result<bool, FatalError> {
         let mut event_received = false;
-        while let Some(event) = self.window.connection.conn.poll_for_event()? {
+        while let Some(event) = self.shared.connection.conn.poll_for_event()? {
             event_received = true;
             self.handle_xcb_event(event)?;
         }
@@ -127,94 +122,12 @@ impl EventLoop {
         Ok(event_received)
     }
 
-    fn setup_fallback_frame_timer(&self) -> Result<(), calloop::Error> {
-        const FRAME_INTERVAL: Duration = Duration::from_millis(15);
-
-        fn handle_frame(evloop: &mut EventLoop, previous_deadline: Instant) -> TimeoutAction {
-            evloop.draw_now = true;
-
-            // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
-            // the expected frame time, this will throttle down to prevent multiple frames from
-            // being queued up.
-
-            let now = Instant::now();
-
-            let Some(next_deadline) = previous_deadline.checked_add(FRAME_INTERVAL) else {
-                return TimeoutAction::ToDuration(FRAME_INTERVAL);
-            };
-
-            if next_deadline >= now {
-                return TimeoutAction::ToDuration(FRAME_INTERVAL);
-            }
-
-            TimeoutAction::ToInstant(next_deadline)
-        }
-
-        self.loop_handle
-            .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| handle_frame(e, i))
-            .map_err(|e| e.error)?;
-
-        Ok(())
-    }
-
-    fn redraw(&mut self) -> Result<(), FatalError> {
-        self.window.present_notify_requested.set(false);
-        self.draw_now = false;
-
-        if let Err(e) = self.handler.draw() {
-            self.trigger_fatal_error(e.into());
-            return Ok(());
-        }
-
-        self.window.connection.conn.flush()?;
-        Ok(())
-    }
-
-    fn handle_present_notify(&mut self) -> Result<(), FatalError> {
-        if !self.window.present_notify_requested.get() {
-            return Ok(());
-        }
-
-        if !self.window.xcb_window.present_supported() {
-            self.window.present_notify_requested.set(false);
-            return Ok(());
-        }
-
-        let (next_serial, target_msc) =
-            match (self.last_requested_serial, self.last_received_present) {
-                // First request, always send
-                (None, None) => (0, 0),
-                (Some(sent_serial), Some((received_serial, last_msc)))
-                    if sent_serial == received_serial =>
-                {
-                    (sent_serial.wrapping_add(1), last_msc.wrapping_add(2))
-                }
-                // We sent our first request but have not gotten a response yet.
-                // Or, we sent a request, but the last response we've gotten isn't that one.
-                // Do not send.
-                _ => {
-                    self.window.present_notify_requested.set(false);
-                    return Ok(());
-                }
-            };
-
-        if self.window.xcb_window.present_notify(target_msc, next_serial)?.check_is_ok() {
-            self.last_requested_serial = Some(next_serial);
-        } else {
-            self.last_requested_serial = None;
-            self.setup_fallback_frame_timer()?;
-        }
-        self.window.present_notify_requested.set(false);
-
-        Ok(())
-    }
-
     fn handle_coalesced_resize_events(&mut self) -> Result<(), FatalError> {
         let mut comes_from_parent = false;
         if let Some(new_parent_size) = self.new_parent_size.take() {
-            if new_parent_size != self.window.get_size() {
+            if new_parent_size != self.shared.get_size() {
                 // The parent was resized, which means we should resize ourselves too.
-                if let Err(e) = self.window.xcb_window.resize(new_parent_size.cast()) {
+                if let Err(e) = self.shared.xcb_window.resize(new_parent_size.cast()) {
                     crate::warn!("Failed to resize window: {}", e);
                 } else {
                     // Makes the rest of this function run on the new parent size immediately (without waiting for a ConfigureNotify round-trip)
@@ -226,19 +139,18 @@ impl EventLoop {
         }
 
         let Some(new_size) = self.new_size.take() else { return Ok(()) };
-        let previous = self.window.store_size(new_size);
+        let previous = self.shared.store_size(new_size);
 
         if previous == new_size {
             return Ok(());
         };
 
-        let scale_factor = self.window.scaling_factor.get();
+        let scale_factor = self.shared.scaling_factor.get();
         let new_size = WindowSize::from_physical(new_size.cast(), scale_factor);
 
-        if let Err(e) = self.handler.resized(new_size) {
-            warn!("Window Handler failed to resize: {}", e);
-            self.window.store_size(previous);
-            self.window.xcb_window.resize(previous.cast())?.check_warn();
+        if let Err(()) = self.handler.resize(new_size) {
+            self.shared.store_size(previous);
+            self.shared.xcb_window.resize(previous.cast())?.check_warn();
             return Ok(());
         }
 
@@ -255,7 +167,7 @@ impl EventLoop {
         }
 
         // Immediately schedule a redraw, do not wait for an "expose" event
-        self.window.present_notify_requested.set(true);
+        self.shared.request_redraw();
 
         Ok(())
     }
@@ -285,12 +197,12 @@ impl EventLoop {
         }
     }
 
-    fn stop_now(&self) {
+    pub fn stop_now(&self) {
         self.loop_signal.stop();
         self.loop_signal.wakeup();
     }
 
-    fn trigger_fatal_error(&mut self, error: PlatformError) {
+    pub fn trigger_fatal_error(&mut self, error: PlatformError) {
         if self.run_error.is_none() {
             self.run_error = Some(error);
         }
@@ -300,37 +212,37 @@ impl EventLoop {
     fn handle_request(&mut self, req: WindowThreadRequest) -> Result<(), PlatformError> {
         match req {
             WindowThreadRequest::Resize(new_size) => {
-                let scale_factor = self.window.scaling_factor.get();
+                let scale_factor = self.shared.scaling_factor.get();
                 let new_size = new_size.to_physical(scale_factor);
 
-                self.window.resize_immediately(new_size, &*self.handler)?;
+                self.shared.resize_immediately(new_size, &self.handler)?;
 
                 Ok(())
             }
             WindowThreadRequest::SuggestScaleFactor(scale) => {
                 // If the scaling factor is already provided by the system, do nothing
-                if !self.window.scaling_factor.suggest(scale) {
+                if !self.shared.scaling_factor.suggest(scale) {
                     return Ok(());
                 };
 
-                let current_logical_size = self.window.get_size().to_logical::<f64>(1.0);
+                let current_logical_size = self.shared.get_size().to_logical::<f64>(1.0);
                 let new_physical_size = current_logical_size.to_physical(scale);
 
-                self.window.resize_immediately(new_physical_size, &*self.handler)?;
+                self.shared.resize_immediately(new_physical_size, &self.handler)?;
 
                 Ok(())
             }
             WindowThreadRequest::SetParent(new_parent) => {
-                self.window.xcb_window.reparent(Some(new_parent.window_id))?;
+                self.shared.xcb_window.reparent(Some(new_parent.window_id))?;
 
                 Ok(())
             }
             WindowThreadRequest::Show => {
-                self.window.xcb_window.map_window()?.check()?;
+                self.shared.xcb_window.map_window()?.check()?;
                 Ok(())
             }
             WindowThreadRequest::Hide => {
-                self.window.xcb_window.unmap_window()?.check()?;
+                self.shared.xcb_window.unmap_window()?.check()?;
                 Ok(())
             }
         }
@@ -356,29 +268,36 @@ impl EventLoop {
             self.handle_coalesced_resize_events()?;
 
             // Consume all requests from above poll
-            if let Some(redraw_after) = self.window.main_thread_shared.take_redraw_request() {
-                self.window.request_redraw_after(redraw_after)
+            if let Some(redraw_after) = self.shared.main_thread_shared.take_redraw_request() {
+                self.shared.request_redraw_after(redraw_after)
             }
 
-            let shared_poll_requested = self.window.main_thread_shared.take_poll_request();
+            let shared_poll_requested = self.shared.main_thread_shared.take_poll_request();
+            let did_redraw = self.present_state.redraw_if_needed(
+                &self.shared.present_state,
+                &mut self.handler,
+                &self.shared.connection.conn,
+            )?;
 
-            if self.draw_now {
-                self.handler.poll();
-                self.redraw()?;
-                self.window.poll_requested.set(false);
-            } else if shared_poll_requested || self.window.poll_requested.get() {
-                self.handler.poll();
-                self.window.poll_requested.set(false);
+            if !did_redraw {
+                if shared_poll_requested || self.shared.poll_requested.get() {
+                    self.handler.poll();
+                    self.shared.poll_requested.set(false);
+                }
             }
 
-            self.handle_present_notify()?;
+            self.present_state.handle_present_notify(
+                &self.shared.present_state,
+                &self.shared.xcb_window,
+                &self.loop_handle,
+            )?;
 
             if !self.drain_xcb_events()? {
                 break;
             }
         }
 
-        self.window.connection.conn.flush()?;
+        self.shared.connection.conn.flush()?;
 
         Ok(())
     }
@@ -390,7 +309,7 @@ impl EventLoop {
         self.handle_event(Event::Window(WindowEvent::WillClose));
 
         // If the event loop doesn't stop because the host asked it to, then we should notify it
-        if !self.window.main_thread_shared.is_stop_host_requested() {
+        if !self.shared.main_thread_shared.is_stop_host_requested() {
             if let Some(main_thread) = self.main_thread.as_mut() {
                 if let Err(e) = main_thread.send(HostCallback::Destroyed) {
                     warn!("Could not notify host that X11 thread is stopping: {}", e)
@@ -406,7 +325,11 @@ impl EventLoop {
     }
 
     pub fn request_redraw(&self) {
-        self.window.request_redraw();
+        self.shared.request_redraw();
+    }
+
+    pub fn shared(&self) -> &WindowShared {
+        &self.shared
     }
 
     fn handle_xcb_event(&mut self, event: XEvent) -> Result<(), FatalError> {
@@ -431,38 +354,32 @@ impl EventLoop {
         //   http://rtbo.github.io/rust-xcb/src/xcb/ffi/xproto.rs.html#445
 
         match event {
-            ////
-            // window
-            ////
-            XEvent::ClientMessage(event) if event.window == self.window.raw_id() => {
+            XEvent::ClientMessage(event) if event.window == self.shared.raw_id() => {
                 if event.format != 32 {
                     return Ok(());
                 }
 
-                if event.data.as_data32()[0] == self.window.connection.atoms.WM_DELETE_WINDOW {
-                    self.window.request_close();
+                if event.data.as_data32()[0] == self.shared.connection.atoms.WM_DELETE_WINDOW {
+                    self.shared.request_close();
                     return Ok(());
                 }
 
-                ////
-                // drag n drop
-                ////
-                if event.type_ == self.window.connection.atoms.XdndEnter {
-                    self.drag_n_drop.handle_enter_event(&self.window, &*self.handler, &event)?;
-                } else if event.type_ == self.window.connection.atoms.XdndPosition {
-                    self.drag_n_drop.handle_position_event(&self.window, &*self.handler, &event)?;
-                } else if event.type_ == self.window.connection.atoms.XdndDrop {
-                    self.drag_n_drop.handle_drop_event(&self.window, &*self.handler, &event)?;
-                } else if event.type_ == self.window.connection.atoms.XdndLeave {
-                    self.drag_n_drop.handle_leave_event(&*self.handler, &event);
+                if event.type_ == self.shared.connection.atoms.XdndEnter {
+                    self.drag_n_drop.handle_enter_event(&self.shared, &self.handler, &event)?;
+                } else if event.type_ == self.shared.connection.atoms.XdndPosition {
+                    self.drag_n_drop.handle_position_event(&self.shared, &self.handler, &event)?;
+                } else if event.type_ == self.shared.connection.atoms.XdndDrop {
+                    self.drag_n_drop.handle_drop_event(&self.shared, &self.handler, &event)?;
+                } else if event.type_ == self.shared.connection.atoms.XdndLeave {
+                    self.drag_n_drop.handle_leave_event(&self.handler, &event);
                 }
             }
 
             XEvent::SelectionNotify(event) => {
-                if event.property == self.window.connection.atoms.XdndSelection {
+                if event.property == self.shared.connection.atoms.XdndSelection {
                     self.drag_n_drop.handle_selection_notify_event(
-                        &self.window,
-                        &*self.handler,
+                        &self.shared,
+                        &self.handler,
                         &event,
                     )?;
                 }
@@ -475,9 +392,9 @@ impl EventLoop {
             XEvent::ConfigureNotify(event) => {
                 if let Some(window_id) = NonZero::new(event.window) {
                     // These are coalesced and then handled asynchronously at the end of the event loop
-                    if window_id == self.window.xcb_window.id() {
+                    if window_id == self.shared.xcb_window.id() {
                         self.new_size = Some(PhysicalSize::new(event.width, event.height));
-                    } else if Some(window_id) == self.window.parent_id.get() {
+                    } else if Some(window_id) == self.shared.parent_id.get() {
                         // Also resize the window if the parent is resized
                         // This works around some hosts that might not call set_size() right away (or at all...)
                         self.new_parent_size = Some(PhysicalSize::new(event.width, event.height));
@@ -485,27 +402,10 @@ impl EventLoop {
                 }
             }
 
-            XEvent::Expose(e) if e.window == self.window.raw_id() => {
-                if e.count == 0 {
-                    self.window.present_notify_requested.set(true);
-                }
-
-                let current_window_size = self.new_size.unwrap_or_else(|| self.window.get_size());
-
-                let damage_rect = DamageRect::new(&e);
-                let area = if damage_rect.fully_covers(current_window_size) {
-                    DamageArea::FullWindow
-                } else {
-                    DamageArea::Rect(damage_rect.into())
-                };
-
-                self.handler.damage(area);
-            }
-
             ////
             // mouse
             ////
-            XEvent::MotionNotify(event) if event.event == self.window.raw_id() => {
+            XEvent::MotionNotify(event) if event.event == self.shared.raw_id() => {
                 let physical_pos = PhysicalPosition::new(event.event_x, event.event_y);
 
                 self.handle_event(Event::Mouse(MouseEvent::CursorMoved {
@@ -514,7 +414,7 @@ impl EventLoop {
                 }));
             }
 
-            XEvent::EnterNotify(event) if event.event == self.window.raw_id() => {
+            XEvent::EnterNotify(event) if event.event == self.shared.raw_id() => {
                 self.handle_event(Event::Mouse(MouseEvent::CursorEntered));
                 // since no `MOTION_NOTIFY` event is generated when `ENTER_NOTIFY` is generated,
                 // we generate a CursorMoved as well, so the mouse position from here isn't lost
@@ -525,11 +425,11 @@ impl EventLoop {
                 }));
             }
 
-            XEvent::LeaveNotify(event) if event.event == self.window.raw_id() => {
+            XEvent::LeaveNotify(event) if event.event == self.shared.raw_id() => {
                 self.handle_event(Event::Mouse(MouseEvent::CursorLeft));
             }
 
-            XEvent::ButtonPress(event) if event.event == self.window.raw_id() => {
+            XEvent::ButtonPress(event) if event.event == self.shared.raw_id() => {
                 match event.detail {
                     4..=7 => {
                         self.handle_event(Event::Mouse(MouseEvent::WheelScrolled {
@@ -553,7 +453,7 @@ impl EventLoop {
             }
 
             XEvent::ButtonRelease(event)
-                if event.event == self.window.raw_id() && !(4..=7).contains(&event.detail) =>
+                if event.event == self.shared.raw_id() && !(4..=7).contains(&event.detail) =>
             {
                 let button_id = mouse_id(event.detail);
                 self.handle_event(Event::Mouse(MouseEvent::ButtonReleased {
@@ -565,79 +465,51 @@ impl EventLoop {
             ////
             // keys
             ////
-            XEvent::KeyPress(event) if event.event == self.window.raw_id() => {
+            XEvent::KeyPress(event) if event.event == self.shared.raw_id() => {
                 let ev = Event::Keyboard(convert_key_press_event(&event, &mut self.xkb_state));
                 self.handle_event(ev);
             }
 
-            XEvent::KeyRelease(event) if event.event == self.window.raw_id() => {
+            XEvent::KeyRelease(event) if event.event == self.shared.raw_id() => {
                 let ev = Event::Keyboard(convert_key_release_event(&event, &mut self.xkb_state));
                 self.handle_event(ev);
             }
 
-            XEvent::FocusIn(event) if event.event == self.window.raw_id() => {
-                self.window.is_focused.set(true);
+            XEvent::FocusIn(event) if event.event == self.shared.raw_id() => {
+                self.shared.is_focused.set(true);
                 self.handle_event(Event::Window(WindowEvent::Focused));
             }
 
-            XEvent::FocusOut(e) if e.event == self.window.raw_id() => {
-                self.window.is_focused.set(false);
+            XEvent::FocusOut(e) if e.event == self.shared.raw_id() => {
+                self.shared.is_focused.set(false);
                 self.handle_event(Event::Window(WindowEvent::Unfocused));
+            }
+
+            XEvent::ReparentNotify(e) if e.window == self.shared.raw_id() => {
+                self.shared.parent_id.set(NonZero::new(e.parent));
             }
 
             XEvent::MapNotify(e) => {
                 if let Some(window_id) = NonZero::new(e.window) {
-                    if window_id == self.window.xcb_window.id() {
-                        if self.window.xcb_window.present_supported()
-                            && self.window.xcb_window.present_select_input()?
-                        {
-                            self.window.present_notify_requested.set(true);
-                        } else {
-                            self.setup_fallback_frame_timer()?;
-                        }
+                    if window_id == self.shared.xcb_window.id() {
+                        self.present_state.handle_window_mapped(
+                            &self.shared.present_state,
+                            &self.shared.xcb_window,
+                            &self.loop_handle,
+                        )?;
                     }
                 }
             }
 
-            XEvent::ReparentNotify(e) => {
-                if let Some(window_id) = NonZero::new(e.window) {
-                    if window_id == self.window.xcb_window.id() {
-                        self.window.parent_id.set(NonZero::new(e.parent));
-                    }
-                }
+            XEvent::PresentCompleteNotify(e) if e.window != self.shared.raw_id() => {
+                self.present_state.handle_present_complete_notify(e);
             }
-
-            XEvent::PresentCompleteNotify(e) => {
-                if e.kind != CompleteKind::NOTIFY_MSC {
-                    return Ok(());
-                }
-
-                if e.window != self.window.raw_id() {
-                    return Ok(());
-                }
-
-                let Some(last_requested_serial) = self.last_requested_serial else {
-                    return Ok(());
-                };
-
-                if last_requested_serial != e.serial {
-                    return Ok(());
-                }
-
-                if let Some((last_received_serial, last_received_msc)) = self.last_received_present
-                {
-                    if last_received_serial == e.serial {
-                        return Ok(());
-                    }
-
-                    if e.msc <= last_received_msc {
-                        self.last_received_present = Some((e.serial, e.msc));
-                        return Ok(());
-                    }
-                }
-
-                self.last_received_present = Some((e.serial, e.msc));
-                self.draw_now = true;
+            XEvent::Expose(e) if e.window == self.shared.raw_id() => {
+                self.present_state.handle_expose_event(
+                    e,
+                    &self.shared.present_state,
+                    &self.handler,
+                );
             }
 
             _ => {}

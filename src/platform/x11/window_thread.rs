@@ -3,7 +3,7 @@ use crate::dpi::{PhysicalSize, Size};
 use crate::handler::WindowHandlerBuilder;
 use crate::host::HostCallbacks;
 use crate::platform::x11::event_loop::{EventLoop, MainThreadCaller};
-use crate::platform::x11::window_shared::WindowInner;
+use crate::platform::x11::window_shared::WindowShared;
 use crate::utils::SizingStrategy;
 use crate::warn;
 use crate::window::WindowInitializer;
@@ -72,7 +72,7 @@ impl WindowThreadShared {
         }
     }
 
-    fn init(&self, window: &WindowInner) {
+    fn init(&self, window: &WindowShared) {
         self.set_size(window.get_size());
         self.set_scaling_factor(window.scale_factor());
         let Ok(()) = self.sizing_strategy.set(window.sizing_strategy) else { unreachable!() };
@@ -373,7 +373,7 @@ impl WindowThread {
         main_thread_caller: Option<MainThreadCaller>,
     ) -> Result<Self> {
         let mut ev_loop = calloop::EventLoop::try_new()?;
-        let inner = WindowInner::create(options, &ev_loop, Arc::clone(&shared))?;
+        let inner = WindowShared::create(options, &ev_loop, Arc::clone(&shared))?;
 
         shared.init(&inner);
 

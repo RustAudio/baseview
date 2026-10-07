@@ -43,7 +43,7 @@ impl XlibXcbConnection {
         assert!(!xcb_connection.is_null());
 
         // Wrap the XCB connection object in a x11rb connection object
-        // SAFETY: The xcb_connection pointer should be valid. We also enforce the drop order in this
+        // SAFETY: The x11_connection pointer should be valid. We also enforce the drop order in this
         let xcb_connection =
             unsafe { XCBConnection::from_raw_xcb_connection(xcb_connection, false)? };
 

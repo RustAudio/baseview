@@ -1,6 +1,3 @@
-mod xcb_connection;
-
-use dpi::{PhysicalPosition, PhysicalSize};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasWindowHandle, RawWindowHandle, XcbWindowHandle,
 };
@@ -8,32 +5,35 @@ use std::fmt::{Display, Formatter};
 use std::num::{NonZero, NonZeroU32, TryFromIntError};
 use std::rc::Rc;
 use std::sync::Arc;
-use x11rb::protocol::xproto::ExposeEvent;
-pub(crate) use xcb_connection::X11Connection;
-
-mod window;
-pub use window::*;
+pub(crate) use x11_connection::X11Connection;
 
 mod cursor;
 mod drag_n_drop;
 mod error;
 mod event_loop;
+mod handler;
 mod keyboard;
+mod present;
 mod visual_info;
 mod xcb_window;
 
 mod timer;
 mod waker;
+mod window;
 mod window_shared;
 mod window_thread;
+mod x11_connection;
+mod xcb_window;
 
 pub use error::{CookieExt as _, PlatformError};
 pub(crate) type Result<T> = std::result::Result<T, PlatformError>;
 
-use crate::platform::x11::window_shared::WindowInner;
+use crate::platform::x11::window_shared::WindowShared;
 use crate::wrappers::xlib::XlibXcbConnection;
+pub use window::*;
 
-pub type WindowContext = Rc<WindowInner>;
+pub type WindowContext = Rc<WindowShared>;
+pub use present::DamageRect;
 pub use timer::TimerHandle;
 pub use waker::WindowWaker;
 
@@ -127,37 +127,4 @@ impl Display for ParentWindowHandleError {
 #[inline]
 pub fn assume_standalone_in_process() {
     // No-op on X11
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct DamageRect {
-    pos: PhysicalPosition<u16>,
-    size: PhysicalSize<u16>,
-}
-
-impl DamageRect {
-    #[inline]
-    pub fn new(event: &ExposeEvent) -> Self {
-        Self {
-            pos: PhysicalPosition::new(event.x, event.y),
-            size: PhysicalSize::new(event.width, event.height),
-        }
-    }
-
-    #[inline]
-    pub fn position(&self) -> PhysicalPosition<u32> {
-        PhysicalPosition { x: self.pos.x.into(), y: self.pos.y.into() }
-    }
-
-    #[inline]
-    pub fn size(&self) -> PhysicalSize<u32> {
-        PhysicalSize { height: self.size.height.into(), width: self.size.width.into() }
-    }
-
-    pub fn fully_covers(&self, window_size: PhysicalSize<u16>) -> bool {
-        self.pos.x == 0
-            && self.pos.y == 0
-            && window_size.width <= self.size.width
-            && window_size.height <= self.size.height
-    }
 }
