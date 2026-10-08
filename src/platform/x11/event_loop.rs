@@ -1,9 +1,6 @@
 use super::drag_n_drop::DragNDropState;
-use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mods};
-use super::*;
-use std::result::Result;
-
-use crate::dpi::PhysicalPosition;
+use super::keyboard::{convert_key_press_event, convert_key_release_event};
+use super::prelude::*;
 use crate::host::HostMainThreadCaller;
 use crate::platform::x11::error::FatalError;
 use crate::platform::x11::handler::Handler;
@@ -14,10 +11,11 @@ use crate::platform::x11::window_thread::{
 };
 use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
-use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler};
+use crate::{Event, WindowEvent, WindowHandler};
 use calloop::generic::Generic;
 use calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction};
-use std::rc::Rc;
+use std::num::NonZeroU32;
+use std::result::Result;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 use x11rb::connection::Connection;
@@ -48,22 +46,21 @@ impl MainThreadCaller {
 }
 
 pub(crate) struct EventLoop {
+    response_sender: mpsc::Sender<WindowThreadResponseMessage>,
+    main_thread: Option<MainThreadCaller>,
+
     handler: Handler,
     shared: Rc<WindowShared>,
 
-    pub sizing_state: SizingState,
+    drag_n_drop: DragNDropState,
+    sizing_state: SizingState,
     pub present_state: PresentState,
+    xkb_state: Option<XkbcommonState>,
 
     loop_signal: LoopSignal,
     loop_handle: LoopHandle<'static, Self>,
 
-    drag_n_drop: DragNDropState,
-    xkb_state: Option<XkbcommonState>,
-
     run_error: Option<PlatformError>,
-
-    response_sender: mpsc::Sender<WindowThreadResponseMessage>,
-    main_thread: Option<MainThreadCaller>,
 }
 
 impl EventLoop {
@@ -216,7 +213,7 @@ impl EventLoop {
         self.drain_xcb_events()?;
         inner.run(None, &mut self, Self::handle_idle)?;
 
-        self.handle_event(Event::Window(WindowEvent::WillClose));
+        self.handler.on_event(Event::Window(WindowEvent::WillClose));
 
         // If the event loop doesn't stop because the host asked it to, then we should notify it
         if !self.shared.main_thread_shared.is_stop_host_requested() {
@@ -239,26 +236,6 @@ impl EventLoop {
     }
 
     fn handle_xcb_event(&mut self, event: XEvent) -> Result<(), FatalError> {
-        // For all the keyboard and mouse events, you can fetch
-        // `x`, `y`, `detail`, and `state`.
-        // - `x` and `y` are the position inside the window where the cursor currently is
-        //   when the event happened.
-        // - `detail` will tell you which keycode was pressed/released (for keyboard events)
-        //   or which mouse button was pressed/released (for mouse events).
-        //   For mouse events, here's what the value means (at least on my current mouse):
-        //      1 = left mouse button
-        //      2 = middle mouse button (scroll wheel)
-        //      3 = right mouse button
-        //      4 = scroll wheel up
-        //      5 = scroll wheel down
-        //      8 = lower side button ("back" button)
-        //      9 = upper side button ("forward" button)
-        //   Note that you *will* get a "button released" event for even the scroll wheel
-        //   events, which you can probably ignore.
-        // - `state` will tell you the state of the main three mouse buttons and some of
-        //   the keyboard modifier keys at the time of the event.
-        //   http://rtbo.github.io/rust-xcb/src/xcb/ffi/xproto.rs.html#445
-
         match event {
             XEvent::ClientMessage(event) if event.window == self.shared.raw_id() => {
                 if event.format != 32 {
@@ -303,83 +280,46 @@ impl EventLoop {
             // mouse
             ////
             XEvent::MotionNotify(event) if event.event == self.shared.raw_id() => {
-                let physical_pos = PhysicalPosition::new(event.event_x, event.event_y);
-
-                self.handle_event(Event::Mouse(MouseEvent::CursorMoved {
-                    position: physical_pos.cast(),
-                    modifiers: key_mods(event.state),
-                }));
+                handle_motion_notify(event, &self.handler)
             }
-
             XEvent::EnterNotify(event) if event.event == self.shared.raw_id() => {
-                self.handle_event(Event::Mouse(MouseEvent::CursorEntered));
-                // since no `MOTION_NOTIFY` event is generated when `ENTER_NOTIFY` is generated,
-                // we generate a CursorMoved as well, so the mouse position from here isn't lost
-                let physical_pos = PhysicalPosition::new(event.event_x, event.event_y);
-                self.handle_event(Event::Mouse(MouseEvent::CursorMoved {
-                    position: physical_pos.cast(),
-                    modifiers: key_mods(event.state),
-                }));
+                handle_enter_notify(event, &self.handler)
             }
-
             XEvent::LeaveNotify(event) if event.event == self.shared.raw_id() => {
-                self.handle_event(Event::Mouse(MouseEvent::CursorLeft));
+                handle_leave_notify(event, &self.handler)
             }
-
             XEvent::ButtonPress(event) if event.event == self.shared.raw_id() => {
-                match event.detail {
-                    4..=7 => {
-                        self.handle_event(Event::Mouse(MouseEvent::WheelScrolled {
-                            delta: match event.detail {
-                                4 => ScrollDelta::Lines { x: 0.0, y: 1.0 },
-                                5 => ScrollDelta::Lines { x: 0.0, y: -1.0 },
-                                6 => ScrollDelta::Lines { x: -1.0, y: 0.0 },
-                                7 => ScrollDelta::Lines { x: 1.0, y: 0.0 },
-                                _ => unreachable!(),
-                            },
-                            modifiers: key_mods(event.state),
-                        }));
-                    }
-                    detail => {
-                        self.handle_event(Event::Mouse(MouseEvent::ButtonPressed {
-                            button: mouse_id(detail),
-                            modifiers: key_mods(event.state),
-                        }));
-                    }
-                }
+                handle_button_press(event, &self.handler)
             }
-
-            XEvent::ButtonRelease(event)
-                if event.event == self.shared.raw_id() && !(4..=7).contains(&event.detail) =>
-            {
-                let button_id = mouse_id(event.detail);
-                self.handle_event(Event::Mouse(MouseEvent::ButtonReleased {
-                    button: button_id,
-                    modifiers: key_mods(event.state),
-                }));
+            XEvent::ButtonRelease(event) if event.event == self.shared.raw_id() => {
+                handle_button_release(event, &self.handler);
             }
 
             ////
             // keys
             ////
             XEvent::KeyPress(event) if event.event == self.shared.raw_id() => {
-                let ev = Event::Keyboard(convert_key_press_event(&event, &mut self.xkb_state));
-                self.handle_event(ev);
+                self.handler.on_event(Event::Keyboard(convert_key_press_event(
+                    &event,
+                    &mut self.xkb_state,
+                )));
             }
 
             XEvent::KeyRelease(event) if event.event == self.shared.raw_id() => {
-                let ev = Event::Keyboard(convert_key_release_event(&event, &mut self.xkb_state));
-                self.handle_event(ev);
+                self.handler.on_event(Event::Keyboard(convert_key_release_event(
+                    &event,
+                    &mut self.xkb_state,
+                )));
             }
 
             XEvent::FocusIn(event) if event.event == self.shared.raw_id() => {
                 self.shared.is_focused.set(true);
-                self.handle_event(Event::Window(WindowEvent::Focused));
+                self.handler.on_event(Event::Window(WindowEvent::Focused));
             }
 
             XEvent::FocusOut(e) if e.event == self.shared.raw_id() => {
                 self.shared.is_focused.set(false);
-                self.handle_event(Event::Window(WindowEvent::Unfocused));
+                self.handler.on_event(Event::Window(WindowEvent::Unfocused));
             }
 
             XEvent::ReparentNotify(e) if e.window == self.shared.raw_id() => {
@@ -410,20 +350,5 @@ impl EventLoop {
         }
 
         Ok(())
-    }
-
-    fn handle_event(&mut self, event: Event) {
-        self.handler.on_event(event);
-    }
-}
-
-fn mouse_id(id: u8) -> MouseButton {
-    match id {
-        1 => MouseButton::Left,
-        2 => MouseButton::Middle,
-        3 => MouseButton::Right,
-        8 => MouseButton::Back,
-        9 => MouseButton::Forward,
-        id => MouseButton::Other(id),
     }
 }

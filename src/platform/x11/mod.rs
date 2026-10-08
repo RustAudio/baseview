@@ -6,6 +6,7 @@ mod event_loop;
 pub mod gl;
 mod handler;
 mod keyboard;
+mod mouse;
 mod present;
 mod sizing;
 mod visual_info;
@@ -23,6 +24,7 @@ pub(crate) mod prelude {
     pub use super::error::{CookieExt as _, FatalError, PlatformError, ReplyExt as _};
     pub use super::event_loop::*;
     pub use super::handler::Handler;
+    pub use super::mouse::*;
     pub use super::present::*;
     pub use super::sizing::*;
     pub use super::visual_info::WindowVisualConfig;

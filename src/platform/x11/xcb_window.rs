@@ -6,10 +6,11 @@ use x11rb::properties::WmSizeHints;
 use x11rb::protocol::present;
 use x11rb::protocol::present::ConnectionExt as _;
 use x11rb::protocol::xproto::{
-    AtomEnum, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, PropMode,
-    WindowClass,
+    AtomEnum, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, InputFocus,
+    PropMode, WindowClass,
 };
 use x11rb::wrapper::ConnectionExt as _;
+use x11rb::CURRENT_TIME;
 
 pub struct XcbWindow {
     connection: Rc<X11Connection>,
@@ -141,6 +142,15 @@ impl XcbWindow {
             AtomEnum::ATOM,
             &[5u32], // Latest version; hasn't changed since 2002
         )
+    }
+
+    pub fn focus(&self) -> PlatformResult<()> {
+        self.connection
+            .conn
+            .set_input_focus(InputFocus::POINTER_ROOT, self.id(), CURRENT_TIME)?
+            .check()?;
+
+        Ok(())
     }
 
     pub fn set_size_hints(

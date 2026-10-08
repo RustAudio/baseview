@@ -108,12 +108,7 @@ impl WindowShared {
     }
 
     pub fn focus(&self) -> PlatformResult<()> {
-        self.connection
-            .conn
-            .set_input_focus(InputFocus::POINTER_ROOT, self.xcb_window.id(), CURRENT_TIME)?
-            .check()?;
-
-        Ok(())
+        self.xcb_window.focus()
     }
 
     pub fn resize(&self, new_size: Size) -> PlatformResult<()> {
