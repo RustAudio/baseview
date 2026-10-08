@@ -4,8 +4,7 @@ use dpi::Size;
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::time::Duration;
 use x11rb::protocol::xproto;
-use x11rb::protocol::xproto::{ConnectionExt, InputFocus, Visualid};
-use x11rb::CURRENT_TIME;
+use x11rb::protocol::xproto::Visualid;
 
 /// Data that is shared between the event loop and the window handler.
 pub struct WindowShared {
@@ -137,8 +136,9 @@ impl WindowShared {
     pub fn gl_context(&self) -> Option<GlContext> {
         Some(GlContext::new(Rc::clone(self.gl_context.as_ref()?)))
     }
+
     #[inline]
-    pub fn create_timer(&self, duration: Duration) -> Result<TimerHandle> {
+    pub fn create_timer(&self, duration: Duration) -> PlatformResult<TimerHandle> {
         insert_timer(&self.loop_handle, duration)
     }
 

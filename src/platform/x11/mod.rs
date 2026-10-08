@@ -9,10 +9,8 @@ mod keyboard;
 mod mouse;
 mod present;
 mod sizing;
-mod visual_info;
-mod xcb_window;
-
 mod timer;
+mod visual_info;
 mod waker;
 mod window_shared;
 mod window_thread;
@@ -27,6 +25,7 @@ pub(crate) mod prelude {
     pub use super::mouse::*;
     pub use super::present::*;
     pub use super::sizing::*;
+    pub use super::timer::*;
     pub use super::visual_info::WindowVisualConfig;
     pub use super::waker::WindowWaker;
     pub use super::window_shared::WindowShared;
