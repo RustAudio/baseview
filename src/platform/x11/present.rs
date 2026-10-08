@@ -11,7 +11,6 @@ use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tracing::warn;
 use x11rb::connection::Connection;
 use x11rb::protocol::present::{CompleteKind, CompleteNotifyEvent};
 use x11rb::protocol::xproto::ExposeEvent;

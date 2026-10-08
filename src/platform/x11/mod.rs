@@ -30,7 +30,7 @@ pub(crate) mod prelude {
     pub use super::window_thread::{HostCallback, WindowThreadHandle, WindowThreadShared};
     pub use super::x11_connection::X11Connection;
     pub use super::xcb_window::XcbWindow;
-    pub use crate::{dpi::*, tracing::*, MouseCursor, WindowSettings, WindowSize};
+    pub(crate) use crate::{dpi::*, tracing::*, MouseCursor, WindowSettings, WindowSize};
     pub use std::cell::Cell;
     pub use std::rc::Rc;
     pub use std::sync::Arc;
