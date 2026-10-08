@@ -60,7 +60,7 @@ pub struct X11Connection {
 }
 
 impl X11Connection {
-    pub fn new() -> Result<Self> {
+    pub fn connect() -> Result<Self> {
         let conn = XlibXcbConnection::open()?;
         let screen = conn.default_screen_index();
         let xcb_conn = conn.xcb_connection();

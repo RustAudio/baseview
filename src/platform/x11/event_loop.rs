@@ -3,11 +3,12 @@ use super::keyboard::{convert_key_press_event, convert_key_release_event, key_mo
 use super::*;
 use std::result::Result;
 
-use crate::dpi::{PhysicalPosition, PhysicalSize};
+use crate::dpi::PhysicalPosition;
 use crate::host::HostMainThreadCaller;
 use crate::platform::x11::error::FatalError;
 use crate::platform::x11::handler::Handler;
 use crate::platform::x11::present::PresentState;
+use crate::platform::x11::sizing::SizingState;
 use crate::platform::x11::window_thread::{
     HostCallback, WindowThreadRequest, WindowThreadResponseMessage,
 };
@@ -50,10 +51,9 @@ pub(crate) struct EventLoop {
     handler: Handler,
     shared: Rc<WindowShared>,
 
-    new_size: Option<PhysicalSize<u16>>,
-    new_parent_size: Option<PhysicalSize<u16>>,
-
+    pub sizing_state: SizingState,
     pub present_state: PresentState,
+
     loop_signal: LoopSignal,
     loop_handle: LoopHandle<'static, Self>,
 
@@ -68,7 +68,7 @@ pub(crate) struct EventLoop {
 
 impl EventLoop {
     pub fn new(
-        window: Rc<WindowShared>, handler: Box<dyn WindowHandler>,
+        window: Rc<WindowShared>, handler: Box<dyn WindowHandler>, parent_id: Option<NonZeroU32>,
         request_receiver: calloop::channel::Channel<WindowThreadRequest>,
         response_sender: mpsc::Sender<WindowThreadResponseMessage>,
         main_thread: Option<MainThreadCaller>, inner: &mut calloop::EventLoop<'static, Self>,
@@ -95,8 +95,8 @@ impl EventLoop {
             loop_handle,
             handler: Handler::new(handler),
             present_state: PresentState::new(),
-            new_size: None,
-            new_parent_size: None,
+            sizing_state: SizingState::new(parent_id),
+
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&window.connection),
             run_error: None,
@@ -120,56 +120,6 @@ impl EventLoop {
         }
 
         Ok(event_received)
-    }
-
-    fn handle_coalesced_resize_events(&mut self) -> Result<(), FatalError> {
-        let mut comes_from_parent = false;
-        if let Some(new_parent_size) = self.new_parent_size.take() {
-            if new_parent_size != self.shared.get_size() {
-                // The parent was resized, which means we should resize ourselves too.
-                if let Err(e) = self.shared.xcb_window.resize(new_parent_size.cast()) {
-                    crate::warn!("Failed to resize window: {}", e);
-                } else {
-                    // Makes the rest of this function run on the new parent size immediately (without waiting for a ConfigureNotify round-trip)
-                    // Also overrides any new sizes we may have received this event loop iteration,it would probably be invalidated anyway
-                    self.new_size = Some(new_parent_size);
-                    comes_from_parent = true;
-                }
-            }
-        }
-
-        let Some(new_size) = self.new_size.take() else { return Ok(()) };
-        let previous = self.shared.store_size(new_size);
-
-        if previous == new_size {
-            return Ok(());
-        };
-
-        let scale_factor = self.shared.scaling_factor.get();
-        let new_size = WindowSize::from_physical(new_size.cast(), scale_factor);
-
-        if let Err(()) = self.handler.resize(new_size) {
-            self.shared.store_size(previous);
-            self.shared.xcb_window.resize(previous.cast())?.check_warn();
-            return Ok(());
-        }
-
-        // Host requests use resize_immediately, which stops the previous == new_size condition
-        // So if we're here, it's guaranteed not to be from a host request
-
-        if !comes_from_parent {
-            if let Some(host) = self.main_thread.as_mut() {
-                host.send(HostCallback::Resized {
-                    new_size,
-                    previous: WindowSize::from_physical(previous.cast(), scale_factor),
-                })?;
-            }
-        }
-
-        // Immediately schedule a redraw, do not wait for an "expose" event
-        self.shared.request_redraw();
-
-        Ok(())
     }
 
     fn handle_main_thread_request(&mut self, event: calloop::channel::Event<WindowThreadRequest>) {
@@ -212,40 +162,19 @@ impl EventLoop {
     fn handle_request(&mut self, req: WindowThreadRequest) -> Result<(), PlatformError> {
         match req {
             WindowThreadRequest::Resize(new_size) => {
-                let scale_factor = self.shared.scaling_factor.get();
-                let new_size = new_size.to_physical(scale_factor);
-
-                self.shared.resize_immediately(new_size, &self.handler)?;
-
-                Ok(())
+                self.sizing_state.handle_host_resize(new_size, &self.handler, &self.shared)?
             }
-            WindowThreadRequest::SuggestScaleFactor(scale) => {
-                // If the scaling factor is already provided by the system, do nothing
-                if !self.shared.scaling_factor.suggest(scale) {
-                    return Ok(());
-                };
-
-                let current_logical_size = self.shared.get_size().to_logical::<f64>(1.0);
-                let new_physical_size = current_logical_size.to_physical(scale);
-
-                self.shared.resize_immediately(new_physical_size, &self.handler)?;
-
-                Ok(())
-            }
+            WindowThreadRequest::SuggestScaleFactor(scale) => self
+                .sizing_state
+                .handle_host_suggest_scale_factor(scale, &self.handler, &self.shared)?,
             WindowThreadRequest::SetParent(new_parent) => {
-                self.shared.xcb_window.reparent(Some(new_parent.window_id))?;
-
-                Ok(())
+                self.shared.xcb_window.reparent(Some(new_parent.window_id))?.check()?
             }
-            WindowThreadRequest::Show => {
-                self.shared.xcb_window.map_window()?.check()?;
-                Ok(())
-            }
-            WindowThreadRequest::Hide => {
-                self.shared.xcb_window.unmap_window()?.check()?;
-                Ok(())
-            }
+            WindowThreadRequest::Show => self.shared.xcb_window.map_window()?.check()?,
+            WindowThreadRequest::Hide => self.shared.xcb_window.unmap_window()?.check()?,
         }
+
+        Ok(())
     }
 
     fn handle_connection_event_ready(&mut self) -> Result<PostAction, FatalError> {
@@ -265,7 +194,11 @@ impl EventLoop {
         self.drain_xcb_events()?;
 
         loop {
-            self.handle_coalesced_resize_events()?;
+            self.sizing_state.handle_coalesced_resize_events(
+                &self.shared,
+                &self.handler,
+                self.main_thread.as_mut(),
+            )?;
 
             // Consume all requests from above poll
             if let Some(redraw_after) = self.shared.main_thread_shared.take_redraw_request() {
@@ -324,10 +257,6 @@ impl EventLoop {
         Ok(())
     }
 
-    pub fn request_redraw(&self) {
-        self.shared.request_redraw();
-    }
-
     pub fn shared(&self) -> &WindowShared {
         &self.shared
     }
@@ -360,7 +289,8 @@ impl EventLoop {
                 }
 
                 if event.data.as_data32()[0] == self.shared.connection.atoms.WM_DELETE_WINDOW {
-                    self.shared.request_close();
+                    self.shared.request_close(); // TODO: this doesn't work anymore?
+                    eprintln!("CLOSE!");
                     return Ok(());
                 }
 
@@ -390,16 +320,7 @@ impl EventLoop {
             }
 
             XEvent::ConfigureNotify(event) => {
-                if let Some(window_id) = NonZero::new(event.window) {
-                    // These are coalesced and then handled asynchronously at the end of the event loop
-                    if window_id == self.shared.xcb_window.id() {
-                        self.new_size = Some(PhysicalSize::new(event.width, event.height));
-                    } else if Some(window_id) == self.shared.parent_id.get() {
-                        // Also resize the window if the parent is resized
-                        // This works around some hosts that might not call set_size() right away (or at all...)
-                        self.new_parent_size = Some(PhysicalSize::new(event.width, event.height));
-                    }
-                }
+                self.sizing_state.handle_configure_notify_event(event, &self.shared.xcb_window);
             }
 
             ////
@@ -486,7 +407,7 @@ impl EventLoop {
             }
 
             XEvent::ReparentNotify(e) if e.window == self.shared.raw_id() => {
-                self.shared.parent_id.set(NonZero::new(e.parent));
+                self.sizing_state.handle_parent_notify(e)
             }
 
             XEvent::MapNotify(e) => {
@@ -507,8 +428,9 @@ impl EventLoop {
             XEvent::Expose(e) if e.window == self.shared.raw_id() => {
                 self.present_state.handle_expose_event(
                     e,
-                    &self.shared.present_state,
                     &self.handler,
+                    &self.shared,
+                    &self.sizing_state,
                 );
             }
 

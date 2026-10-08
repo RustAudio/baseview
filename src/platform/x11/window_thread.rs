@@ -3,6 +3,7 @@ use crate::dpi::{PhysicalSize, Size};
 use crate::handler::WindowHandlerBuilder;
 use crate::host::HostCallbacks;
 use crate::platform::x11::event_loop::{EventLoop, MainThreadCaller};
+use crate::platform::x11::sizing::SizingThreadShared;
 use crate::platform::x11::window_shared::WindowShared;
 use crate::utils::SizingStrategy;
 use crate::warn;
@@ -20,12 +21,12 @@ use std::time::{Duration, Instant};
 
 pub(crate) struct WindowThreadShared {
     stopped: AtomicBool,
-    scaling_factor: AtomicU64,
-    size: AtomicU32,
+
+    pub sizing: SizingThreadShared,
+
     final_error: Mutex<Option<String>>,
     stopped_requested_from_host: AtomicBool,
     poll_requested: AtomicBool,
-    sizing_strategy: OnceLock<SizingStrategy>,
 
     redraw_requested_after: Mutex<Option<RedrawRequested>>,
 }
@@ -63,45 +64,15 @@ impl WindowThreadShared {
         Self {
             stopped: false.into(),
             final_error: None.into(),
-            size: 0.into(),
-            scaling_factor: 0.into(),
             stopped_requested_from_host: false.into(),
-            sizing_strategy: OnceLock::new(),
             redraw_requested_after: None.into(),
             poll_requested: false.into(),
+            sizing: SizingThreadShared::new(),
         }
     }
 
     fn init(&self, window: &WindowShared) {
-        self.set_size(window.get_size());
-        self.set_scaling_factor(window.scale_factor());
-        let Ok(()) = self.sizing_strategy.set(window.sizing_strategy) else { unreachable!() };
-    }
-
-    pub fn get_size(&self) -> PhysicalSize<u16> {
-        let bytes = self.size.load(Ordering::Relaxed);
-        let low = (bytes & u16::MAX as u32) as u16;
-        let high = (bytes >> 16) as u16;
-
-        PhysicalSize::new(low, high)
-    }
-
-    pub fn set_size(&self, size: PhysicalSize<u16>) {
-        let bytes = ((size.height as u32) << 16) | (size.width as u32);
-        self.size.store(bytes, Ordering::Relaxed);
-    }
-
-    pub fn sizing_strategy(&self) -> SizingStrategy {
-        self.sizing_strategy.get().copied().unwrap_or_default()
-    }
-
-    pub fn get_scaling_factor(&self) -> f64 {
-        f64::from_be_bytes(self.scaling_factor.load(Ordering::Relaxed).to_ne_bytes())
-    }
-
-    pub fn set_scaling_factor(&self, scale_factor: f64) {
-        self.scaling_factor
-            .store(u64::from_be_bytes(scale_factor.to_ne_bytes()), Ordering::Relaxed);
+        self.sizing.init(&window.sizing_state)
     }
 
     pub fn is_stop_host_requested(&self) -> bool {
@@ -211,10 +182,7 @@ impl WindowThreadHandle {
     }
 
     pub fn size(&self) -> WindowSize {
-        let scale_factor = self.shared.get_scaling_factor();
-        let size = self.shared.get_size();
-
-        WindowSize::from_physical(size.cast(), scale_factor)
+        self.shared.sizing.window_size()
     }
 
     pub fn resize(&self, size: Size) -> Result<()> {
@@ -233,7 +201,7 @@ impl WindowThreadHandle {
     }
 
     pub fn sizing_strategy(&self) -> SizingStrategy {
-        self.shared.sizing_strategy.get().copied().unwrap_or_default()
+        self.shared.sizing.sizing_strategy()
     }
 
     pub fn run_until_closed(&self) -> Result<()> {
@@ -268,15 +236,15 @@ impl WindowThreadHandle {
     }
 
     pub fn is_resizable(&self) -> bool {
-        self.shared.sizing_strategy().is_resizable()
+        self.sizing_strategy().is_resizable()
     }
 
     pub fn min_size(&self) -> Option<Size> {
-        self.shared.sizing_strategy().min_size()
+        self.sizing_strategy().min_size()
     }
 
     pub fn max_size(&self) -> Option<Size> {
-        self.shared.sizing_strategy().max_size()
+        self.sizing_strategy().max_size()
     }
 
     pub fn handle_main_thread_callback(&self) {
@@ -373,13 +341,21 @@ impl WindowThread {
         main_thread_caller: Option<MainThreadCaller>,
     ) -> Result<Self> {
         let mut ev_loop = calloop::EventLoop::try_new()?;
+        let parent_id = options.parent.as_ref().map(|p| p.inner.window_id);
         let inner = WindowShared::create(options, &ev_loop, Arc::clone(&shared))?;
 
         shared.init(&inner);
 
         let handler = handler.build(WindowContext::new(Rc::clone(&inner)))?;
-        let event_loop =
-            EventLoop::new(inner, handler, receiver, sender, main_thread_caller, &mut ev_loop)?;
+        let event_loop = EventLoop::new(
+            inner,
+            handler,
+            parent_id,
+            receiver,
+            sender,
+            main_thread_caller,
+            &mut ev_loop,
+        )?;
 
         Ok(Self { event_loop, ev_loop, shared })
     }

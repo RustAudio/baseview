@@ -14,6 +14,7 @@ mod event_loop;
 mod handler;
 mod keyboard;
 mod present;
+mod sizing;
 mod visual_info;
 mod xcb_window;
 

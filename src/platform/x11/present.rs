@@ -1,6 +1,8 @@
 use crate::platform::x11::error::{CookieExt, FatalError};
 use crate::platform::x11::event_loop::EventLoop;
 use crate::platform::x11::handler::Handler;
+use crate::platform::x11::sizing::SizingState;
+use crate::platform::x11::window_shared::WindowShared;
 use crate::platform::x11::xcb_window::XcbWindow;
 use crate::wrappers::xlib::XlibXcbConnection;
 use crate::DamageArea;
@@ -57,13 +59,13 @@ pub struct PresentState {
 
 impl PresentState {
     pub(crate) fn handle_expose_event(
-        &self, e: ExposeEvent, shared: &PresentStateShared, handler: &Handler,
+        &self, e: ExposeEvent, handler: &Handler, shared: &WindowShared, sizing_state: &SizingState,
     ) {
         if e.count == 0 {
-            shared.present_notify_requested.set(true);
+            shared.present_state.present_notify_requested.set(true);
         }
 
-        let current_window_size = self.new_size.unwrap_or_else(|| self.window.get_size());
+        let current_window_size = sizing_state.non_coalesced_current_size(shared);
 
         let damage_rect = DamageRect::new(&e);
         let area = if damage_rect.fully_covers(current_window_size) {
