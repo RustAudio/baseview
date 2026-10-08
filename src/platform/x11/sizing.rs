@@ -141,7 +141,7 @@ impl SizingStateShared {
         let scaling = connection.get_scaling();
         let initial_scale_factor = scaling.unwrap_or(1.0);
 
-        let sizing_strategy = SizingStrategy::from_settings(&settings);
+        let sizing_strategy = SizingStrategy::from_settings(settings);
         let window_size = settings.size.to_physical(initial_scale_factor);
 
         sizing_thread_shared.set_scaling_factor(initial_scale_factor);

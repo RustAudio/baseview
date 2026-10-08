@@ -1,19 +1,7 @@
 use super::prelude::*;
-use crate::platform::x11::event_loop::EventLoop;
-use crate::platform::x11::present::PresentStateShared;
-use crate::platform::x11::sizing::SizingStateShared;
-use crate::platform::x11::timer::insert_timer;
-use crate::platform::x11::visual_info::WindowVisualConfig;
-use crate::platform::x11::waker::WindowWaker;
-use crate::platform::x11::window_thread::WindowThreadShared;
-use crate::platform::x11::xcb_window::XcbWindow;
-use crate::{MouseCursor, WindowSettings, WindowSize};
 use calloop::{LoopHandle, LoopSignal};
 use dpi::Size;
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
-use std::cell::Cell;
-use std::rc::Rc;
-use std::sync::Arc;
 use std::time::Duration;
 use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, InputFocus, Visualid};
@@ -29,7 +17,6 @@ pub struct WindowShared {
     visual_id: Visualid,
 
     mouse_cursor: Cell<MouseCursor>,
-    pub poll_requested: Cell<bool>,
     pub is_focused: Cell<bool>,
 
     pub present_state: PresentStateShared,
@@ -60,7 +47,6 @@ impl WindowShared {
         #[cfg(not(feature = "opengl"))]
         let visual_info = WindowVisualConfig::find_best_visual_config(&connection)?;
 
-        settings.parent.is_some() || settings.wait_for_parent;
         let parent_id = settings.parent.map(|p| p.inner.window_id);
 
         let xcb_window =
@@ -97,7 +83,6 @@ impl WindowShared {
             is_focused: false.into(),
             present_state: PresentStateShared::new(),
             sizing_state,
-            poll_requested: false.into(),
             main_thread_shared: thread_shared,
 
             #[cfg(feature = "opengl")]

@@ -15,12 +15,12 @@ impl WindowWaker {
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
-        self.shared.request_redraw_after(duration);
+        self.shared.present.request_redraw_after(duration);
         self.loop_signal.wakeup();
     }
 
     pub fn request_poll(&self) {
-        self.shared.request_poll();
+        self.shared.present.request_poll();
         self.loop_signal.wakeup();
     }
 }

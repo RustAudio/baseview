@@ -3,6 +3,7 @@ use crate::dpi::Size;
 use crate::handler::WindowHandlerBuilder;
 use crate::host::HostCallbacks;
 use crate::platform::x11::event_loop::{EventLoop, MainThreadCaller};
+use crate::platform::x11::present::PresentThreadShared;
 use crate::platform::x11::sizing::SizingThreadShared;
 use crate::platform::x11::window_shared::WindowShared;
 use crate::utils::SizingStrategy;
@@ -19,16 +20,14 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-pub(crate) struct WindowThreadShared {
+pub struct WindowThreadShared {
     stopped: AtomicBool,
 
     pub sizing: SizingThreadShared,
+    pub present: PresentThreadShared,
 
     final_error: Mutex<Option<String>>,
     stopped_requested_from_host: AtomicBool,
-    poll_requested: AtomicBool,
-
-    redraw_requested_after: Mutex<Option<RedrawRequested>>,
 }
 
 pub enum RedrawRequested {
@@ -65,8 +64,7 @@ impl WindowThreadShared {
             stopped: false.into(),
             final_error: None.into(),
             stopped_requested_from_host: false.into(),
-            redraw_requested_after: None.into(),
-            poll_requested: false.into(),
+            present: PresentThreadShared::new(),
             sizing: SizingThreadShared::new(),
         }
     }
@@ -77,25 +75,6 @@ impl WindowThreadShared {
 
     pub fn is_stop_host_requested(&self) -> bool {
         self.stopped_requested_from_host.load(Ordering::Relaxed)
-    }
-
-    pub fn request_redraw_after(&self, duration: Duration) {
-        // Ignore a poisoned mutex, we just fully override this value anyway.
-        let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
-        *guard = Some(RedrawRequested::from_duration(duration));
-    }
-
-    pub fn take_redraw_request(&self) -> Option<Duration> {
-        let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
-        guard.take().map(|w| w.to_duration())
-    }
-
-    pub fn request_poll(&self) {
-        self.poll_requested.store(true, Ordering::Relaxed);
-    }
-
-    pub fn take_poll_request(&self) -> bool {
-        self.poll_requested.swap(false, Ordering::Relaxed)
     }
 }
 
@@ -261,7 +240,7 @@ impl WindowThreadHandle {
     }
 
     pub fn request_poll(&self) -> PlatformResult<()> {
-        self.shared.request_poll();
+        self.shared.present.request_poll();
         self.loop_signal.wakeup();
 
         Ok(())

@@ -1,7 +1,6 @@
 use super::prelude::*;
 use crate::gl::*;
 use crate::wrappers::glx::*;
-use crate::wrappers::xlib::XLibError;
 use std::error::Error;
 
 use crate::platform::gl::egl::EglGlContext;

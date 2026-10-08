@@ -1,15 +1,15 @@
-use crate::platform::x11::error::{CookieExt, FatalError};
-use crate::platform::x11::event_loop::EventLoop;
+use crate::platform::prelude::*;
 use crate::platform::x11::handler::Handler;
 use crate::platform::x11::sizing::SizingState;
 use crate::platform::x11::window_shared::WindowShared;
-use crate::platform::x11::xcb_window::XcbWindow;
-use crate::wrappers::xlib::XlibXcbConnection;
+use crate::platform::x11::window_thread::RedrawRequested;
 use crate::DamageArea;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::LoopHandle;
 use dpi::{PhysicalPosition, PhysicalSize};
 use std::cell::Cell;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tracing::warn;
 use x11rb::connection::Connection;
@@ -18,6 +18,7 @@ use x11rb::protocol::xproto::ExposeEvent;
 
 pub struct PresentStateShared {
     present_notify_requested: Cell<bool>,
+    poll_requested: Cell<bool>,
 }
 
 impl PresentStateShared {
@@ -43,7 +44,7 @@ impl PresentStateShared {
 
 impl PresentStateShared {
     pub fn new() -> Self {
-        Self { present_notify_requested: false.into() }
+        Self { present_notify_requested: false.into(), poll_requested: false.into() }
     }
 
     pub fn request_present_notify(&self) {
@@ -55,6 +56,40 @@ pub struct PresentState {
     draw_now: bool,
     last_requested_serial: Option<u32>,
     last_received_present: Option<(u32, u64)>,
+}
+
+impl PresentState {
+    pub(crate) fn handle_requests(
+        &mut self, shared: &WindowShared, handler: &Handler, loop_handle: &LoopHandle<EventLoop>,
+    ) -> Result<(), FatalError> {
+        let shared_state = &shared.present_state;
+        let thread_state = &shared.main_thread_shared.present;
+
+        // Consume all requests from above poll
+        if let Some(redraw_after) = thread_state.take_redraw_request() {
+            shared.request_redraw_after(redraw_after)
+        }
+
+        if self.draw_now {
+            let _ = thread_state.take_poll_request();
+
+            handler.poll();
+            shared.present_state.present_notify_requested.set(false);
+
+            handler.draw()?;
+
+            shared_state.poll_requested.set(false);
+            self.draw_now = false;
+
+            shared.connection.conn.flush()?;
+        } else if thread_state.take_poll_request() || shared_state.poll_requested.take() {
+            handler.poll();
+        }
+
+        self.handle_present_notify(&shared.present_state, &shared.xcb_window, loop_handle)?;
+
+        Ok(())
+    }
 }
 
 impl PresentState {
@@ -95,22 +130,6 @@ impl PresentState {
 impl PresentState {
     pub fn new() -> Self {
         Self { draw_now: false, last_requested_serial: None, last_received_present: None }
-    }
-
-    // TODO: check this & error handling
-    pub fn redraw_if_needed(
-        &mut self, shared: &PresentStateShared, handler: &mut Handler,
-        connection: &XlibXcbConnection,
-    ) -> Result<bool, FatalError> {
-        handler.poll();
-
-        shared.present_notify_requested.set(false);
-        self.draw_now = false;
-
-        handler.draw()?;
-
-        connection.flush()?;
-        Ok(true)
     }
 
     pub fn handle_present_complete_notify(&mut self, e: CompleteNotifyEvent) {
@@ -211,6 +230,36 @@ impl PresentState {
         shared.present_notify_requested.set(false);
 
         Ok(())
+    }
+}
+
+pub struct PresentThreadShared {
+    poll_requested: AtomicBool,
+    redraw_requested_after: Mutex<Option<RedrawRequested>>,
+}
+
+impl PresentThreadShared {
+    pub(crate) fn new() -> Self {
+        Self { poll_requested: false.into(), redraw_requested_after: None.into() }
+    }
+
+    pub fn request_redraw_after(&self, duration: Duration) {
+        // Ignore a poisoned mutex, we just fully override this value anyway.
+        let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
+        *guard = Some(RedrawRequested::from_duration(duration));
+    }
+
+    fn take_redraw_request(&self) -> Option<Duration> {
+        let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
+        guard.take().map(|w| w.to_duration())
+    }
+
+    pub fn request_poll(&self) {
+        self.poll_requested.store(true, Ordering::Relaxed);
+    }
+
+    fn take_poll_request(&self) -> bool {
+        self.poll_requested.swap(false, Ordering::Relaxed)
     }
 }
 

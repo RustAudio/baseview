@@ -14,7 +14,7 @@ use crate::platform::x11::window_thread::{
 };
 use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
-use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler, WindowSize};
+use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowHandler};
 use calloop::generic::Generic;
 use calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction};
 use std::rc::Rc;
@@ -200,30 +200,7 @@ impl EventLoop {
                 self.main_thread.as_mut(),
             )?;
 
-            // Consume all requests from above poll
-            if let Some(redraw_after) = self.shared.main_thread_shared.take_redraw_request() {
-                self.shared.request_redraw_after(redraw_after)
-            }
-
-            let shared_poll_requested = self.shared.main_thread_shared.take_poll_request();
-            let did_redraw = self.present_state.redraw_if_needed(
-                &self.shared.present_state,
-                &mut self.handler,
-                &self.shared.connection.conn,
-            )?;
-
-            if !did_redraw {
-                if shared_poll_requested || self.shared.poll_requested.get() {
-                    self.handler.poll();
-                    self.shared.poll_requested.set(false);
-                }
-            }
-
-            self.present_state.handle_present_notify(
-                &self.shared.present_state,
-                &self.shared.xcb_window,
-                &self.loop_handle,
-            )?;
+            self.present_state.handle_requests(&self.shared, &self.handler, &self.loop_handle)?;
 
             if !self.drain_xcb_events()? {
                 break;
@@ -289,8 +266,7 @@ impl EventLoop {
                 }
 
                 if event.data.as_data32()[0] == self.shared.connection.atoms.WM_DELETE_WINDOW {
-                    self.shared.request_close(); // TODO: this doesn't work anymore?
-                    eprintln!("CLOSE!");
+                    self.shared.request_close();
                     return Ok(());
                 }
 
@@ -410,19 +386,15 @@ impl EventLoop {
                 self.sizing_state.handle_parent_notify(e)
             }
 
-            XEvent::MapNotify(e) => {
-                if let Some(window_id) = NonZero::new(e.window) {
-                    if window_id == self.shared.xcb_window.id() {
-                        self.present_state.handle_window_mapped(
-                            &self.shared.present_state,
-                            &self.shared.xcb_window,
-                            &self.loop_handle,
-                        )?;
-                    }
-                }
+            XEvent::MapNotify(e) if e.window == self.shared.raw_id() => {
+                self.present_state.handle_window_mapped(
+                    &self.shared.present_state,
+                    &self.shared.xcb_window,
+                    &self.loop_handle,
+                )?;
             }
 
-            XEvent::PresentCompleteNotify(e) if e.window != self.shared.raw_id() => {
+            XEvent::PresentCompleteNotify(e) if e.window == self.shared.raw_id() => {
                 self.present_state.handle_present_complete_notify(e);
             }
             XEvent::Expose(e) if e.window == self.shared.raw_id() => {

@@ -1,7 +1,6 @@
 use super::x11_connection::{Atoms, GetPropertyError};
 use super::*;
 use crate::dpi::PhysicalPosition;
-use crate::handler::WindowHandler;
 use crate::platform::x11::error::ReplyExt;
 use crate::platform::x11::handler::Handler;
 use crate::warn;

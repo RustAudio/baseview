@@ -6,7 +6,7 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::COPY_FROM_PARENT;
 
-pub(crate) struct WindowVisualConfig {
+pub struct WindowVisualConfig {
     #[cfg(feature = "opengl")]
     pub fb_config: Option<super::gl::FbConfig>,
 
@@ -19,12 +19,12 @@ pub(crate) struct WindowVisualConfig {
 impl WindowVisualConfig {
     #[cfg(feature = "opengl")]
     pub fn find_best_visual_config_for_gl(
-        connection: &std::rc::Rc<X11Connection>, gl_config: Option<crate::gl::GlConfig>,
+        connection: &Rc<X11Connection>, gl_config: Option<GlConfig>,
     ) -> PlatformResult<Self> {
         let Some(gl_config) = gl_config else { return Self::find_best_visual_config(connection) };
 
         let (fb_config, window_config) =
-            super::gl::GlContextInner::get_fb_config_and_visual(connection, gl_config)?;
+            GlContextInner::get_fb_config_and_visual(connection, gl_config)?;
 
         Ok(Self {
             fb_config: Some(fb_config),
