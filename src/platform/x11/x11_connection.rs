@@ -1,13 +1,9 @@
 use super::prelude::*;
 use crate::wrappers::xlib::XlibXcbConnection;
 use x11rb::connection::RequestConnection;
-use x11rb::cookie::VoidCookie;
 use x11rb::cursor::Handle as CursorHandle;
-use x11rb::errors::ConnectionError;
 use x11rb::protocol::present;
-use x11rb::protocol::xproto::{
-    self, Atom, ChangeWindowAttributesAux, ConnectionExt, EventMask, Screen,
-};
+use x11rb::protocol::xproto::{self, Atom, Screen};
 use x11rb::resource_manager;
 use x11rb::xcb_ffi::XCBConnection;
 
@@ -72,17 +68,6 @@ impl X11Connection {
         &self, window: xproto::Window, property: Atom, property_type: Atom,
     ) -> Result<Vec<T>, GetPropertyError> {
         get_property::get_property(window, property, property_type, &self.conn)
-    }
-
-    pub fn register_tree_structure_events(
-        &self,
-    ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
-        let root = self.default_screen().root;
-
-        self.conn.change_window_attributes(
-            root,
-            &ChangeWindowAttributesAux::new().event_mask(EventMask::SUBSTRUCTURE_NOTIFY),
-        )
     }
 }
 

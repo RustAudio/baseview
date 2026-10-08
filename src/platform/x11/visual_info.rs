@@ -33,6 +33,9 @@ impl WindowVisualConfig {
             });
         }
 
+        #[cfg(not(feature = "opengl"))]
+        let _ = settings;
+
         match find_visual_for_depth(connection.default_screen(), 32) {
             None => Ok(Self::copy_from_parent()),
             Some(visual_id) => Ok(Self {
