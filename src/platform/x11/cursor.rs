@@ -1,6 +1,64 @@
 use super::prelude::*;
 use crate::wrappers::xlib::XlibXcbConnection;
 use crate::MouseCursor;
+use std::cell::RefCell;
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+use x11rb::protocol::xproto::ChangeWindowAttributesAux;
+
+pub struct CursorStateShared {
+    mouse_cursor: Cell<MouseCursor>,
+    cursor_cache: RefCell<HashMap<MouseCursor, u32>>,
+}
+
+impl CursorStateShared {
+    pub(crate) fn set_mouse_cursor(
+        &self, mouse_cursor: MouseCursor, window: &XcbWindow,
+    ) -> PlatformResult<()> {
+        if self.mouse_cursor.get() == mouse_cursor {
+            return Ok(());
+        }
+
+        let xid = self.get_cursor(mouse_cursor, window.connection())?;
+
+        if xid != 0 {
+            window
+                .connection()
+                .conn
+                .change_window_attributes(
+                    window.id().get(),
+                    &ChangeWindowAttributesAux::new().cursor(xid),
+                )?
+                .check()?;
+        }
+
+        self.mouse_cursor.set(mouse_cursor);
+
+        Ok(())
+    }
+
+    #[inline]
+    fn get_cursor(&self, cursor: MouseCursor, conn: &X11Connection) -> PlatformResult<Cursor> {
+        // PANIC: this function is the only point where we access the cache, and we never call
+        // external functions that may make a reentrant call to this function
+        let mut cursor_cache = self.cursor_cache.borrow_mut();
+
+        match cursor_cache.entry(cursor) {
+            Entry::Occupied(entry) => Ok(*entry.get()),
+            Entry::Vacant(entry) => {
+                let cursor = get_xcursor(conn, cursor)?;
+                entry.insert(cursor);
+                Ok(cursor)
+            }
+        }
+    }
+}
+
+impl CursorStateShared {
+    pub fn new() -> Self {
+        Self { mouse_cursor: MouseCursor::Default.into(), cursor_cache: HashMap::new().into() }
+    }
+}
 
 fn create_empty_cursor(conn: &XlibXcbConnection) -> PlatformResult<Cursor> {
     let cursor_id = conn.generate_id()?;
@@ -13,10 +71,9 @@ fn create_empty_cursor(conn: &XlibXcbConnection) -> PlatformResult<Cursor> {
     Ok(cursor_id)
 }
 
-fn load_cursor(
-    conn: &XCBConnection, cursor_handle: &CursorHandle, name: &str,
-) -> PlatformResult<Option<Cursor>> {
-    let cursor = cursor_handle.load_cursor(conn, name)?;
+#[inline(never)]
+fn load_cursor(conn: &X11Connection, name: &str) -> PlatformResult<Option<Cursor>> {
+    let cursor = conn.resources.cursor_handle.load_cursor(&conn.conn as &XCBConnection, name)?;
     if cursor != x11rb::NONE {
         Ok(Some(cursor))
     } else {
@@ -24,11 +81,12 @@ fn load_cursor(
     }
 }
 
+#[inline(never)]
 fn load_first_existing_cursor(
-    conn: &XCBConnection, cursor_handle: &CursorHandle, names: &[&str],
+    conn: &X11Connection, names: &[&str],
 ) -> PlatformResult<Option<Cursor>> {
     for name in names {
-        let cursor = load_cursor(conn, cursor_handle, name)?;
+        let cursor = load_cursor(conn, name)?;
         if cursor.is_some() {
             return Ok(cursor);
         }
@@ -37,11 +95,9 @@ fn load_first_existing_cursor(
     Ok(None)
 }
 
-pub(crate) fn get_xcursor(
-    conn: &XlibXcbConnection, cursor_handle: &CursorHandle, cursor: MouseCursor,
-) -> PlatformResult<Cursor> {
-    let load = |name: &str| load_cursor(conn, cursor_handle, name);
-    let loadn = |names: &[&str]| load_first_existing_cursor(conn, cursor_handle, names);
+pub(crate) fn get_xcursor(conn: &X11Connection, cursor: MouseCursor) -> PlatformResult<Cursor> {
+    let load = |name: &str| load_cursor(conn, name);
+    let loadn = |names: &[&str]| load_first_existing_cursor(conn, names);
 
     let cursor = match cursor {
         MouseCursor::Default => None, // catch this in the fallback case below
@@ -50,7 +106,7 @@ pub(crate) fn get_xcursor(
         MouseCursor::HandGrabbing => loadn(&["closedhand", "grabbing"])?,
         MouseCursor::Help => load("question_arrow")?,
 
-        MouseCursor::Hidden => Some(create_empty_cursor(conn)?),
+        MouseCursor::Hidden => Some(create_empty_cursor(&conn.conn)?),
 
         MouseCursor::Text => loadn(&["text", "xterm"])?,
         MouseCursor::VerticalText => load("vertical-text")?,

@@ -138,7 +138,7 @@ impl SizingStateShared {
         connection: &X11Connection, sizing_thread_shared: &SizingThreadShared,
         settings: &WindowSettings,
     ) -> Result<Self, FatalError> {
-        let scaling = connection.get_scaling();
+        let scaling = connection.resources.xft_dpi.map(|dpi| dpi as f64 / 96.0);
         let initial_scale_factor = scaling.unwrap_or(1.0);
 
         let sizing_strategy = SizingStrategy::from_settings(settings);

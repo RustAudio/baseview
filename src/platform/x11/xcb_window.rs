@@ -163,6 +163,10 @@ impl XcbWindow {
     pub fn id(&self) -> NonZeroU32 {
         self.window_id
     }
+
+    pub fn connection(&self) -> &X11Connection {
+        &self.connection
+    }
 }
 
 impl Drop for XcbWindow {

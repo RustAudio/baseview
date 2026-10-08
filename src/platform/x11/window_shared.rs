@@ -4,7 +4,7 @@ use dpi::Size;
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::time::Duration;
 use x11rb::protocol::xproto;
-use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, InputFocus, Visualid};
+use x11rb::protocol::xproto::{ConnectionExt, InputFocus, Visualid};
 use x11rb::CURRENT_TIME;
 
 /// Data that is shared between the event loop and the window handler.
@@ -13,9 +13,9 @@ pub struct WindowShared {
     pub connection: Rc<X11Connection>,
     visual_id: Visualid,
 
-    mouse_cursor: Cell<MouseCursor>,
     pub is_focused: Cell<bool>,
 
+    pub cursor_state: CursorStateShared,
     pub present_state: PresentStateShared,
     pub sizing_state: SizingStateShared,
 
@@ -64,11 +64,12 @@ impl WindowShared {
             #[cfg(feature = "opengl")]
             gl_context: visual_config.make_gl_context(&xcb_window, &connection)?,
 
-            mouse_cursor: MouseCursor::default().into(),
             loop_signal: ev_loop.get_signal(),
             loop_handle: ev_loop.handle(),
 
             is_focused: false.into(),
+
+            cursor_state: CursorStateShared::new(),
             present_state: PresentStateShared::new(),
             sizing_state,
             main_thread_shared: thread_shared,
@@ -79,25 +80,7 @@ impl WindowShared {
     }
 
     pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) -> PlatformResult<()> {
-        if self.mouse_cursor.get() == mouse_cursor {
-            return Ok(());
-        }
-
-        let xid = self.connection.get_cursor(mouse_cursor)?;
-
-        if xid != 0 {
-            self.connection
-                .conn
-                .change_window_attributes(
-                    self.xcb_window.id().get(),
-                    &ChangeWindowAttributesAux::new().cursor(xid),
-                )?
-                .check()?;
-        }
-
-        self.mouse_cursor.set(mouse_cursor);
-
-        Ok(())
+        self.cursor_state.set_mouse_cursor(mouse_cursor, &self.xcb_window)
     }
 
     pub fn request_close(&self) {

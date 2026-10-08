@@ -19,6 +19,7 @@ mod x11_connection;
 mod xcb_window;
 
 pub(crate) mod prelude {
+    pub use super::cursor::*;
     pub use super::error::{CookieExt as _, FatalError, PlatformError, ReplyExt as _};
     pub use super::event_loop::*;
     pub use super::handler::Handler;
@@ -35,7 +36,6 @@ pub(crate) mod prelude {
     pub use std::rc::Rc;
     pub use std::sync::Arc;
     pub use x11rb::connection::Connection;
-    pub use x11rb::cursor::Handle as CursorHandle;
     pub use x11rb::errors::{ConnectionError, ReplyOrIdError};
     pub use x11rb::protocol::xproto::{ConnectionExt as _, Cursor};
     pub use x11rb::xcb_ffi::XCBConnection;
