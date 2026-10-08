@@ -57,10 +57,10 @@ impl EglConfig {
         Ok(value)
     }
 
-    pub fn get_visual_id(&self, display: &EglDisplay) -> Result<Visualid, CreationFailedError> {
+    pub fn get_visual_id(&self, display: &EglDisplay) -> Result<Visualid, GlCreationFailedError> {
         let value = self.get_attrib(display, EGL_NATIVE_VISUAL_ID)?;
         let value: Visualid =
-            value.try_into().map_err(|e| CreationFailedError::EglInvalidVisualId(value, e))?;
+            value.try_into().map_err(|e| GlCreationFailedError::EglInvalidVisualId(value, e))?;
         Ok(value)
     }
 }

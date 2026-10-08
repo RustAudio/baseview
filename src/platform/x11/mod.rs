@@ -1,16 +1,9 @@
-use raw_window_handle::{
-    DisplayHandle, HandleError, HasWindowHandle, RawWindowHandle, XcbWindowHandle,
-};
-use std::fmt::{Display, Formatter};
-use std::num::{NonZero, NonZeroU32, TryFromIntError};
-use std::rc::Rc;
-use std::sync::Arc;
-pub(crate) use x11_connection::X11Connection;
-
 mod cursor;
 mod drag_n_drop;
 mod error;
 mod event_loop;
+#[cfg(feature = "opengl")]
+pub mod gl;
 mod handler;
 mod keyboard;
 mod present;
@@ -20,26 +13,51 @@ mod xcb_window;
 
 mod timer;
 mod waker;
-mod window;
 mod window_shared;
 mod window_thread;
 mod x11_connection;
 mod xcb_window;
 
-pub use error::{CookieExt as _, PlatformError};
-pub(crate) type Result<T> = std::result::Result<T, PlatformError>;
+pub(crate) mod prelude {
+    pub use super::error::{CookieExt as _, FatalError, PlatformError, ReplyExt as _};
+    pub use super::event_loop::*;
+    pub use super::handler::Handler;
+    pub use super::sizing::*;
+    pub use super::window_shared::WindowShared;
+    pub use super::window_thread::{HostCallback, WindowThreadHandle};
+    pub use super::x11_connection::X11Connection;
+    pub use super::xcb_window::XcbWindow;
+    pub use crate::tracing::*;
+    pub use crate::PlatformHandle;
+    pub use dpi::*;
+    pub use std::rc::Rc;
+    pub use std::sync::Arc;
+    pub use x11rb::connection::Connection;
+    pub use x11rb::cursor::Handle as CursorHandle;
+    pub use x11rb::errors::{ConnectionError, ReplyOrIdError};
+    pub use x11rb::protocol::xproto::{ConnectionExt as _, Cursor};
+    pub use x11rb::xcb_ffi::XCBConnection;
+    pub type PlatformResult<T> = Result<T, PlatformError>;
+    #[cfg(feature = "opengl")]
+    pub use super::gl::{GlContextInner, GlCreationFailedError, PlatformGlContext};
+    #[cfg(feature = "opengl")]
+    pub use crate::gl::{GlConfig, GlContext};
+}
 
-use crate::platform::x11::window_shared::WindowShared;
+use prelude::*;
+
 use crate::wrappers::xlib::XlibXcbConnection;
-pub use window::*;
+use raw_window_handle::{
+    DisplayHandle, HandleError, HasWindowHandle, RawWindowHandle, XcbWindowHandle,
+};
+use std::fmt::{Display, Formatter};
+use std::num::{NonZero, NonZeroU32, TryFromIntError};
 
 pub type WindowContext = Rc<WindowShared>;
+pub use error::PlatformError;
 pub use present::DamageRect;
 pub use timer::TimerHandle;
 pub use waker::WindowWaker;
-
-#[cfg(feature = "opengl")]
-pub mod gl;
 
 #[derive(Clone)]
 pub struct PlatformHandle {
@@ -128,4 +146,10 @@ impl Display for ParentWindowHandleError {
 #[inline]
 pub fn assume_standalone_in_process() {
     // No-op on X11
+}
+
+pub type WindowHandle = WindowThreadHandle;
+
+pub fn copy_to_clipboard(_data: &str) {
+    unimplemented!()
 }

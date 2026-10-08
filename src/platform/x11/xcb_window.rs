@@ -1,21 +1,15 @@
-use crate::dpi::PhysicalSize;
-use crate::platform::x11::error::CookieExt;
+use super::prelude::*;
 use crate::platform::x11::visual_info::WindowVisualConfig;
-use crate::platform::X11Connection;
 use std::num::{NonZero, NonZeroU32};
-use std::rc::Rc;
-use x11rb::connection::Connection;
 use x11rb::cookie::VoidCookie;
-use x11rb::errors::{ConnectionError, ReplyOrIdError};
 use x11rb::properties::WmSizeHints;
 use x11rb::protocol::present;
-use x11rb::protocol::present::ConnectionExt;
+use x11rb::protocol::present::ConnectionExt as _;
 use x11rb::protocol::xproto::{
     AtomEnum, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, PropMode,
     WindowClass,
 };
 use x11rb::wrapper::ConnectionExt as _;
-use x11rb::xcb_ffi::XCBConnection;
 
 pub struct XcbWindow {
     connection: Rc<X11Connection>,

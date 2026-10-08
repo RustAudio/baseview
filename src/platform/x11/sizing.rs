@@ -1,11 +1,4 @@
-use crate::platform::x11::error::{CookieExt, FatalError};
-use crate::platform::x11::event_loop::MainThreadCaller;
-use crate::platform::x11::handler::Handler;
-use crate::platform::x11::window_shared::WindowShared;
-use crate::platform::x11::window_thread::HostCallback;
-use crate::platform::x11::x11_connection::get_size_hints;
-use crate::platform::x11::xcb_window::XcbWindow;
-use crate::platform::{PlatformError, X11Connection};
+use super::prelude::*;
 use crate::utils::SizingStrategy;
 use crate::{WindowSettings, WindowSize};
 use dpi::{PhysicalSize, Size};
@@ -109,7 +102,7 @@ impl SizingState {
     pub fn handle_host_resize(
         &mut self, new_size: Size, handler: &Handler, shared: &WindowShared,
     ) -> Result<(), PlatformError> {
-        let scale_factor = shared.sizing_state.scaling_factor.get();
+        let scale_factor = shared.sizing_state.scale_factor();
         let new_size = new_size.to_physical(scale_factor);
 
         shared.sizing_state.resize_from_host(new_size, handler, shared)
@@ -118,8 +111,10 @@ impl SizingState {
     pub fn handle_host_suggest_scale_factor(
         &mut self, scale: f64, handler: &Handler, shared: &WindowShared,
     ) -> Result<(), PlatformError> {
+        shared.sizing_state.host_suggested_scale_factor.set(Some(scale));
+
         // If the scaling factor is already provided by the system, do nothing
-        if !shared.sizing_state.scaling_factor.suggest(scale) {
+        if shared.sizing_state.system_scale_factor.get().is_some() {
             return Ok(());
         };
 
@@ -133,7 +128,9 @@ impl SizingState {
 pub struct SizingStateShared {
     window_size: Cell<PhysicalSize<u16>>,
     sizing_strategy: SizingStrategy,
-    scaling_factor: ScalingFactor,
+
+    system_scale_factor: Cell<Option<f64>>,
+    host_suggested_scale_factor: Cell<Option<f64>>,
 }
 
 impl SizingStateShared {
@@ -152,15 +149,21 @@ impl SizingStateShared {
         Ok(Self {
             sizing_strategy,
             window_size: window_size.into(),
-            scaling_factor: ScalingFactor {
-                system: scaling.into(),
-                suggested: settings.fallback_scale_factor.into(),
-            },
+            system_scale_factor: scaling.into(),
+            host_suggested_scale_factor: settings.fallback_scale_factor.into(),
         })
     }
 
     pub fn scale_factor(&self) -> f64 {
-        self.scaling_factor.get()
+        if let Some(factor) = self.system_scale_factor.get() {
+            return factor;
+        };
+
+        if let Some(factor) = self.host_suggested_scale_factor.get() {
+            return factor;
+        }
+
+        1.0
     }
 
     pub fn size(&self) -> PhysicalSize<u16> {
@@ -168,11 +171,11 @@ impl SizingStateShared {
     }
 
     pub fn window_size(&self) -> WindowSize {
-        WindowSize::from_physical(self.window_size.get().cast(), self.scaling_factor.get())
+        WindowSize::from_physical(self.window_size.get().cast(), self.scale_factor())
     }
 
     pub fn make_size_hints(&self) -> WmSizeHints {
-        get_size_hints(&self.sizing_strategy, self.window_size.get(), self.scaling_factor.get())
+        get_size_hints(&self.sizing_strategy, self.window_size.get(), self.scale_factor())
     }
 
     pub fn store_size(
@@ -187,9 +190,7 @@ impl SizingStateShared {
         previous
     }
 
-    pub fn resize_from_handler(
-        &self, size: Size, window: &XcbWindow,
-    ) -> crate::platform::Result<()> {
+    pub fn resize_from_handler(&self, size: Size, window: &XcbWindow) -> PlatformResult<()> {
         let new_size = self.sizing_strategy.adjust_size(size, self.window_size()).physical;
 
         if new_size == self.window_size.get().cast() {
@@ -211,7 +212,7 @@ impl SizingStateShared {
 
     pub fn resize_from_host(
         &self, new_size: PhysicalSize<u16>, handler: &Handler, shared: &WindowShared,
-    ) -> crate::platform::Result<()> {
+    ) -> PlatformResult<()> {
         let previous = self.store_size(new_size, &shared.main_thread_shared.sizing);
 
         if previous == new_size {
@@ -219,7 +220,7 @@ impl SizingStateShared {
         };
 
         if let Err(()) =
-            handler.resize(WindowSize::from_physical(new_size.cast(), self.scaling_factor.get()))
+            handler.resize(WindowSize::from_physical(new_size.cast(), self.scale_factor()))
         {
             self.store_size(previous, &shared.main_thread_shared.sizing);
             return Ok(());
@@ -251,7 +252,7 @@ impl SizingThreadShared {
     pub fn init(&self, state: &SizingStateShared) {
         let Ok(()) = self.sizing_strategy.set(state.sizing_strategy) else { unreachable!() };
         self.set_size(state.size());
-        self.set_scaling_factor(state.scaling_factor.get());
+        self.set_scaling_factor(state.scale_factor());
     }
 
     pub fn get_scaling_factor(&self) -> f64 {
@@ -288,27 +289,28 @@ impl SizingThreadShared {
     }
 }
 
-pub struct ScalingFactor {
-    system: Cell<Option<f64>>,
-    suggested: Cell<Option<f64>>,
+pub fn get_size_hints(
+    strategy: &SizingStrategy, current_size: PhysicalSize<impl Pixel>, scale_factor: f64,
+) -> WmSizeHints {
+    let mut size_hints = WmSizeHints::default();
+
+    match strategy {
+        SizingStrategy::Fixed => {
+            size_hints.min_size = Some(to_size_hint(current_size));
+            size_hints.max_size = size_hints.min_size;
+        }
+        SizingStrategy::Resizable { min_size, max_size } => {
+            size_hints.min_size =
+                min_size.map(|s| to_size_hint(s.to_physical::<i32>(scale_factor)));
+            size_hints.max_size =
+                max_size.map(|s| to_size_hint(s.to_physical::<i32>(scale_factor)));
+        }
+    }
+
+    size_hints
 }
 
-impl ScalingFactor {
-    pub fn get(&self) -> f64 {
-        if let Some(factor) = self.system.get() {
-            return factor;
-        };
-
-        if let Some(factor) = self.suggested.get() {
-            return factor;
-        }
-
-        1.0
-    }
-
-    pub fn suggest(&self, value: f64) -> bool {
-        self.suggested.set(Some(value));
-
-        self.system.get().is_none()
-    }
+fn to_size_hint(size: PhysicalSize<impl Pixel>) -> (i32, i32) {
+    let size = size.cast();
+    (size.width, size.height)
 }

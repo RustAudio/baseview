@@ -1,4 +1,4 @@
-use crate::platform::gl::CreationFailedError;
+use crate::platform::gl::GlCreationFailedError;
 use libloading::Library;
 use std::ffi::{c_void, CStr};
 use std::rc::Rc;
@@ -34,7 +34,7 @@ pub struct Egl {
 }
 
 impl Egl {
-    pub fn open() -> Result<Self, CreationFailedError> {
+    pub fn open() -> Result<Self, GlCreationFailedError> {
         let library =
             unsafe { Library::new("libEGL.so.1").or_else(|_| Library::new("libEGL.so")) }?;
 

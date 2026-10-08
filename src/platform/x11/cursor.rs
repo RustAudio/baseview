@@ -1,13 +1,8 @@
-use x11rb::connection::Connection;
-use x11rb::cursor::Handle as CursorHandle;
-use x11rb::protocol::xproto::{ConnectionExt as _, Cursor};
-use x11rb::xcb_ffi::XCBConnection;
-
-use crate::platform::*;
+use super::prelude::*;
 use crate::wrappers::xlib::XlibXcbConnection;
 use crate::MouseCursor;
 
-fn create_empty_cursor(conn: &XlibXcbConnection) -> Result<Cursor> {
+fn create_empty_cursor(conn: &XlibXcbConnection) -> PlatformResult<Cursor> {
     let cursor_id = conn.generate_id()?;
     let pixmap_id = conn.generate_id()?;
     let root_window = conn.default_screen().root;
@@ -20,7 +15,7 @@ fn create_empty_cursor(conn: &XlibXcbConnection) -> Result<Cursor> {
 
 fn load_cursor(
     conn: &XCBConnection, cursor_handle: &CursorHandle, name: &str,
-) -> Result<Option<Cursor>> {
+) -> PlatformResult<Option<Cursor>> {
     let cursor = cursor_handle.load_cursor(conn, name)?;
     if cursor != x11rb::NONE {
         Ok(Some(cursor))
@@ -31,7 +26,7 @@ fn load_cursor(
 
 fn load_first_existing_cursor(
     conn: &XCBConnection, cursor_handle: &CursorHandle, names: &[&str],
-) -> Result<Option<Cursor>> {
+) -> PlatformResult<Option<Cursor>> {
     for name in names {
         let cursor = load_cursor(conn, cursor_handle, name)?;
         if cursor.is_some() {
@@ -44,7 +39,7 @@ fn load_first_existing_cursor(
 
 pub(crate) fn get_xcursor(
     conn: &XlibXcbConnection, cursor_handle: &CursorHandle, cursor: MouseCursor,
-) -> Result<Cursor> {
+) -> PlatformResult<Cursor> {
     let load = |name: &str| load_cursor(conn, cursor_handle, name);
     let loadn = |names: &[&str]| load_first_existing_cursor(conn, cursor_handle, names);
 

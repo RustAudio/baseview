@@ -9,7 +9,7 @@ use raw_window_handle::{
 use std::fmt::Debug;
 use std::time::Duration;
 
-/// A handle to the window given to a [`WindowHandler`](crate::WindowHandler), which it can then
+/// A handle to the window given to a [`WindowHandler`](WindowHandler), which it can then
 /// use to perform various operations on the window itself.
 #[derive(Clone)]
 pub struct WindowContext {
@@ -31,7 +31,7 @@ impl WindowContext {
     ///
     /// This request is not immediate. When exactly it will be closed is platform-dependent.
     ///
-    /// However, it is guaranteed to only get closed after all [`WindowHandler`](crate::WindowHandler)
+    /// However, it is guaranteed to only get closed after all [`WindowHandler`](WindowHandler)
     /// methods are completed, and soon enough to be perceived as instantaneous by the user.
     pub fn request_close(&self) {
         self.inner.request_close();
@@ -88,11 +88,11 @@ impl WindowContext {
         PlatformHandle { inner: self.inner.platform_handle() }
     }
 
-    /// Returns the [`GlContext`](crate::gl::GlContext) associated to this window.
+    /// Returns the [`GlContext`](gl::GlContext) associated to this window.
     ///
     /// If the window was not created with a GL context, this will return [`None`].
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
+    pub fn gl_context(&self) -> Option<gl::GlContext> {
         self.inner.gl_context()
     }
 
@@ -131,13 +131,13 @@ impl WindowContext {
 }
 
 impl HasWindowHandle for WindowContext {
-    fn window_handle(&self) -> core::result::Result<WindowHandle<'_>, HandleError> {
+    fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
         self.inner.window_handle().ok_or(HandleError::Unavailable)
     }
 }
 
 impl HasDisplayHandle for WindowContext {
-    fn display_handle(&self) -> core::result::Result<DisplayHandle<'_>, HandleError> {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
         Ok(self.inner.display_handle())
     }
 }
@@ -177,13 +177,13 @@ const _: () = {
 };
 
 impl HasWindowHandle for PlatformHandle {
-    fn window_handle(&self) -> core::result::Result<WindowHandle<'_>, HandleError> {
+    fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
         self.inner.window_handle().ok_or(HandleError::Unavailable)
     }
 }
 
 impl HasDisplayHandle for PlatformHandle {
-    fn display_handle(&self) -> core::result::Result<DisplayHandle<'_>, HandleError> {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
         Ok(self.inner.display_handle())
     }
 }

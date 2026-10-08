@@ -1,10 +1,9 @@
 use super::cursor;
-use crate::platform::*;
+use super::prelude::*;
 use crate::wrappers::xlib::XlibXcbConnection;
 use crate::MouseCursor;
 use std::cell::RefCell;
 use std::collections::hash_map::{Entry, HashMap};
-use std::sync::Arc;
 use x11rb::connection::RequestConnection;
 use x11rb::cookie::VoidCookie;
 use x11rb::cursor::Handle as CursorHandle;
@@ -18,8 +17,6 @@ use x11rb::xcb_ffi::XCBConnection;
 
 mod get_property;
 pub use get_property::GetPropertyError;
-mod size_hints;
-pub use size_hints::get_size_hints;
 
 x11rb::atom_manager! {
     pub Atoms: AtomsCookie {
@@ -60,7 +57,7 @@ pub struct X11Connection {
 }
 
 impl X11Connection {
-    pub fn connect() -> Result<Self> {
+    pub fn connect() -> PlatformResult<Self> {
         let conn = XlibXcbConnection::open()?;
         let screen = conn.default_screen_index();
         let xcb_conn = conn.xcb_connection();
@@ -90,7 +87,7 @@ impl X11Connection {
     }
 
     #[inline]
-    pub fn get_cursor(&self, cursor: MouseCursor) -> Result<Cursor> {
+    pub fn get_cursor(&self, cursor: MouseCursor) -> PlatformResult<Cursor> {
         // PANIC: this function is the only point where we access the cache, and we never call
         // external functions that may make a reentrant call to this function
         let mut cursor_cache = self.cursor_cache.borrow_mut();

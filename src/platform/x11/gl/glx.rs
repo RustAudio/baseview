@@ -1,8 +1,6 @@
 use super::*;
 use crate::gl::GlConfig;
-use crate::platform::gl::CreationFailedError;
 use crate::platform::x11::xcb_window::XcbWindow;
-use crate::platform::X11Connection;
 use crate::wrappers::glx::{Glx, GlxFbConfig};
 use crate::wrappers::xlib::XErrorHandler;
 use std::ffi::{c_ulong, c_void, CStr};
@@ -21,12 +19,12 @@ impl GlxGlContext {
     pub fn create(
         window: &XcbWindow, connection: &Rc<X11Connection>, gl_config: GlConfig,
         fb_config: GlxFbConfig, glx: Glx,
-    ) -> Result<Self> {
+    ) -> PlatformResult<Self> {
         let xlib_connection = connection.conn.xlib_connection();
 
         XErrorHandler::handle(xlib_connection, |error_handler| {
             let Some(create_context) = glx.get_glx_create_context_attribs_arb() else {
-                return Err(CreationFailedError::GetProcAddressFailed.into());
+                return Err(GlCreationFailedError::GetProcAddressFailed.into());
             };
 
             let context =
@@ -38,7 +36,7 @@ impl GlxGlContext {
 
     pub fn get_fb_config_and_visual(
         connection: &X11Connection, config: GlConfig,
-    ) -> Result<(FbConfig, WindowConfig)> {
+    ) -> PlatformResult<(FbConfig, WindowConfig)> {
         let glx = Glx::open()?;
 
         let xlib_connection = connection.conn.xlib_connection();
@@ -61,7 +59,7 @@ impl GlxGlContext {
         })
     }
 
-    pub unsafe fn make_current(&self) -> Result<()> {
+    pub unsafe fn make_current(&self) -> PlatformResult<()> {
         XErrorHandler::handle(self.connection.conn.xlib_connection(), |error_handler| {
             self.glx.make_current(
                 self.connection.conn.xlib_connection(),
@@ -72,7 +70,7 @@ impl GlxGlContext {
         })
     }
 
-    pub unsafe fn make_not_current(&self) -> Result<()> {
+    pub unsafe fn make_not_current(&self) -> PlatformResult<()> {
         XErrorHandler::handle(self.connection.conn.xlib_connection(), |error_handler| {
             self.glx.clear_current(self.connection.conn.xlib_connection(), error_handler)
         })
@@ -89,7 +87,7 @@ impl GlxGlContext {
         }
     }
 
-    pub fn swap_buffers(&self) -> Result<()> {
+    pub fn swap_buffers(&self) -> PlatformResult<()> {
         XErrorHandler::handle(self.connection.conn.xlib_connection(), |error_handler| {
             self.glx.swap_buffers(
                 self.connection.conn.xlib_connection(),

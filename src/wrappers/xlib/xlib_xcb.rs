@@ -1,12 +1,10 @@
-use crate::platform::*;
-use crate::wrappers::xlib::xlib_connection::XlibConnection;
-use crate::wrappers::xlib::ScreenIndex;
+use super::*;
+use crate::platform::prelude::*;
 use raw_window_handle::{DisplayHandle, XcbDisplayHandle, XlibDisplayHandle};
 use std::ops::Deref;
 use std::os::fd::{AsFd, BorrowedFd};
 use std::ptr::NonNull;
 use x11_dl::xlib_xcb::Xlib_xcb;
-use x11rb::connection::Connection;
 use x11rb::protocol::xproto::Screen;
 use x11rb::xcb_ffi::XCBConnection;
 
@@ -26,7 +24,7 @@ pub struct XlibXcbConnection {
 }
 
 impl XlibXcbConnection {
-    pub fn open() -> Result<Self> {
+    pub fn open() -> PlatformResult<Self> {
         let xlib_xcb = Xlib_xcb::open()?;
         // Open the connection to the X11 server as a Xlib/XCB connection object
         let xlib_connection = XlibConnection::open()?;

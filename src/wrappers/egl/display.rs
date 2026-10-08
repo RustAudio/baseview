@@ -1,11 +1,5 @@
-use crate::gl::GlConfig;
-use crate::platform::gl::CreationFailedError;
-use crate::platform::X11Connection;
-use crate::wrappers::egl::bound_api::BoundApi;
-use crate::wrappers::egl::config::EglConfig;
-use crate::wrappers::egl::context::EglContext;
-use crate::wrappers::egl::surface::EglSurface;
-use crate::wrappers::egl::{sys, Egl, EglError};
+use super::*;
+use crate::platform::prelude::*;
 use crate::wrappers::xlib::XlibConnection;
 use std::ffi::c_void;
 use std::ptr::NonNull;
@@ -67,10 +61,10 @@ pub struct EglVersion {
 impl Egl {
     pub fn create_display(
         &self, connection: &Rc<X11Connection>,
-    ) -> Result<EglDisplay, CreationFailedError> {
+    ) -> Result<EglDisplay, GlCreationFailedError> {
         let display = self
             .create_display_basic(connection.conn.xlib_connection())
-            .ok_or(CreationFailedError::EglNoDisplay)?;
+            .ok_or(GlCreationFailedError::EglNoDisplay)?;
 
         let egl = self.clone();
 
@@ -80,7 +74,7 @@ impl Egl {
         let inner = EglDisplayInner { egl, raw: display, _connection: Rc::clone(connection) };
 
         if version.major != 1 || version.minor < 5 {
-            return Err(CreationFailedError::EglUnsupportedVersion(version));
+            return Err(GlCreationFailedError::EglUnsupportedVersion(version));
         }
 
         Ok(EglDisplay { inner: Rc::new(inner) })

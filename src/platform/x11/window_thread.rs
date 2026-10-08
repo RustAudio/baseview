@@ -1,5 +1,5 @@
 use super::*;
-use crate::dpi::{PhysicalSize, Size};
+use crate::dpi::Size;
 use crate::handler::WindowHandlerBuilder;
 use crate::host::HostCallbacks;
 use crate::platform::x11::event_loop::{EventLoop, MainThreadCaller};
@@ -13,8 +13,8 @@ use calloop::LoopSignal;
 use std::cell::{Cell, RefCell};
 use std::panic::resume_unwind;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::{mpsc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -134,7 +134,7 @@ pub struct WindowThreadHandle {
 }
 
 impl WindowThreadHandle {
-    pub fn create_window(init: WindowInitializer) -> Result<Self> {
+    pub fn create_window(init: WindowInitializer) -> PlatformResult<Self> {
         let (tx, rx) = result_channel();
         let shared = Arc::new(WindowThreadShared::new());
         let (request_sender, request_receiver) = calloop::channel::sync_channel(1);
@@ -185,15 +185,15 @@ impl WindowThreadHandle {
         self.shared.sizing.window_size()
     }
 
-    pub fn resize(&self, size: Size) -> Result<()> {
+    pub fn resize(&self, size: Size) -> PlatformResult<()> {
         self.request(WindowThreadRequest::Resize(size))
     }
 
-    pub fn suggest_scale_factor(&self, scale_factor: f64) -> Result<()> {
+    pub fn suggest_scale_factor(&self, scale_factor: f64) -> PlatformResult<()> {
         self.request(WindowThreadRequest::SuggestScaleFactor(scale_factor))
     }
 
-    fn request(&self, req: WindowThreadRequest) -> Result<()> {
+    fn request(&self, req: WindowThreadRequest) -> PlatformResult<()> {
         self.request_sender.send(req).map_err(|_| RequestFailed::Send)?;
         let result = self.response_receiver.recv().map_err(|_| RequestFailed::Recv)?;
 
@@ -204,7 +204,7 @@ impl WindowThreadHandle {
         self.shared.sizing.sizing_strategy()
     }
 
-    pub fn run_until_closed(&self) -> Result<()> {
+    pub fn run_until_closed(&self) -> PlatformResult<()> {
         if !self.shared.stopped.load(Ordering::Relaxed) {
             self.request(WindowThreadRequest::Show)?;
         }
@@ -223,11 +223,11 @@ impl WindowThreadHandle {
         Ok(())
     }
 
-    pub fn show(&self) -> Result<()> {
+    pub fn show(&self) -> PlatformResult<()> {
         self.request(WindowThreadRequest::Show)
     }
 
-    pub fn hide(&self) -> Result<()> {
+    pub fn hide(&self) -> PlatformResult<()> {
         self.request(WindowThreadRequest::Hide)
     }
 
@@ -256,11 +256,11 @@ impl WindowThreadHandle {
         }
     }
 
-    pub fn set_parent(&self, new_parent: ParentWindowHandle) -> Result<()> {
+    pub fn set_parent(&self, new_parent: ParentWindowHandle) -> PlatformResult<()> {
         self.request(WindowThreadRequest::SetParent(new_parent))
     }
 
-    pub fn request_poll(&self) -> Result<()> {
+    pub fn request_poll(&self) -> PlatformResult<()> {
         self.shared.request_poll();
         self.loop_signal.wakeup();
 
@@ -339,7 +339,7 @@ impl WindowThread {
         receiver: calloop::channel::Channel<WindowThreadRequest>,
         sender: mpsc::Sender<WindowThreadResponseMessage>,
         main_thread_caller: Option<MainThreadCaller>,
-    ) -> Result<Self> {
+    ) -> PlatformResult<Self> {
         let mut ev_loop = calloop::EventLoop::try_new()?;
         let parent_id = options.parent.as_ref().map(|p| p.inner.window_id);
         let inner = WindowShared::create(options, &ev_loop, Arc::clone(&shared))?;
@@ -398,7 +398,7 @@ impl WindowResultSender {
 
 struct WindowResultReceiver(mpsc::Receiver<WindowOpenResult>);
 impl WindowResultReceiver {
-    pub fn receive(self) -> Result<LoopSignal> {
+    pub fn receive(self) -> PlatformResult<LoopSignal> {
         let result = self.0.recv().map_err(|_| PlatformError::MainThreadRecvResult)?;
 
         match result {

@@ -1,6 +1,6 @@
 #![allow(non_snake_case, non_camel_case_types, reason = "To match EGL function naming")]
 
-use crate::platform::gl::CreationFailedError;
+use crate::platform::gl::GlCreationFailedError;
 use libloading::Library;
 use std::ffi::*;
 use std::fmt::{Display, Formatter};
@@ -106,13 +106,13 @@ impl Display for MissingSymbolError {
     }
 }
 
-impl From<MissingSymbolError> for CreationFailedError {
+impl From<MissingSymbolError> for GlCreationFailedError {
     fn from(value: MissingSymbolError) -> Self {
         Self::EGLMissingSymbol(value)
     }
 }
 
-impl From<libloading::Error> for CreationFailedError {
+impl From<libloading::Error> for GlCreationFailedError {
     fn from(value: libloading::Error) -> Self {
         Self::EGLLoadError(value)
     }
@@ -139,7 +139,7 @@ pub struct Functions {
 }
 
 impl Functions {
-    pub unsafe fn load_from(library: &Library) -> Result<Self, CreationFailedError> {
+    pub unsafe fn load_from(library: &Library) -> Result<Self, GlCreationFailedError> {
         Ok(Self {
             eglGetError: Self::get(library, c"eglGetError")?,
             eglBindAPI: Self::get(library, c"eglBindAPI")?,
@@ -163,7 +163,7 @@ impl Functions {
 
     unsafe fn get<T: Copy>(
         library: &Library, name: &'static CStr,
-    ) -> Result<T, CreationFailedError> {
+    ) -> Result<T, GlCreationFailedError> {
         let symbol = library.get::<Option<T>>(name.to_bytes_with_nul())?;
         let symbol = symbol.lift_option().ok_or(MissingSymbolError { name })?;
         Ok(*symbol)

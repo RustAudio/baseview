@@ -1,3 +1,4 @@
+use super::prelude::*;
 use crate::platform::x11::event_loop::EventLoop;
 use crate::platform::x11::present::PresentStateShared;
 use crate::platform::x11::sizing::SizingStateShared;
@@ -6,7 +7,6 @@ use crate::platform::x11::visual_info::WindowVisualConfig;
 use crate::platform::x11::waker::WindowWaker;
 use crate::platform::x11::window_thread::WindowThreadShared;
 use crate::platform::x11::xcb_window::XcbWindow;
-use crate::platform::*;
 use crate::{MouseCursor, WindowSettings, WindowSize};
 use calloop::{LoopHandle, LoopSignal};
 use dpi::Size;
@@ -20,31 +20,32 @@ use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, InputFoc
 use x11rb::CURRENT_TIME;
 
 /// Data that is shared between the event loop and the window handler.
-pub(crate) struct WindowShared {
+pub struct WindowShared {
     #[cfg(feature = "opengl")]
-    gl_context: Option<gl::GlContext>,
+    gl_context: Option<PlatformGlContext>,
 
-    pub(crate) xcb_window: XcbWindow,
-    pub(crate) connection: Rc<X11Connection>,
+    pub xcb_window: XcbWindow,
+    pub connection: Rc<X11Connection>,
+    visual_id: Visualid,
 
     mouse_cursor: Cell<MouseCursor>,
-    pub(crate) visual_id: Visualid,
+    pub poll_requested: Cell<bool>,
+    pub is_focused: Cell<bool>,
 
-    pub(crate) is_focused: Cell<bool>,
     pub present_state: PresentStateShared,
     pub sizing_state: SizingStateShared,
-    pub(crate) poll_requested: Cell<bool>,
-    pub(crate) loop_signal: LoopSignal,
+
+    loop_signal: LoopSignal,
     loop_handle: LoopHandle<'static, EventLoop>,
 
-    pub(crate) main_thread_shared: Arc<WindowThreadShared>,
+    pub main_thread_shared: Arc<WindowThreadShared>,
 }
 
 impl WindowShared {
     pub(crate) fn create(
         settings: WindowSettings, ev_loop: &calloop::EventLoop<'static, EventLoop>,
         thread_shared: Arc<WindowThreadShared>,
-    ) -> Result<Rc<Self>> {
+    ) -> PlatformResult<Rc<Self>> {
         let connection = X11Connection::connect()?;
 
         let sizing_state = SizingStateShared::load(&connection, &thread_shared.sizing, &settings)?;
@@ -81,7 +82,7 @@ impl WindowShared {
             None => None,
             Some(fb_config) => {
                 // Because of the visual negotation we had to take some extra steps to create this context
-                Some(super::gl::GlContextInner::create(&xcb_window, &connection, fb_config)?)
+                Some(GlContextInner::create(&xcb_window, &connection, fb_config)?)
             }
         };
 
@@ -104,7 +105,7 @@ impl WindowShared {
         }))
     }
 
-    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) -> Result<()> {
+    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) -> PlatformResult<()> {
         if self.mouse_cursor.get() == mouse_cursor {
             return Ok(());
         }
@@ -150,7 +151,7 @@ impl WindowShared {
         self.is_focused.get()
     }
 
-    pub fn focus(&self) -> Result<()> {
+    pub fn focus(&self) -> PlatformResult<()> {
         self.connection
             .conn
             .set_input_focus(InputFocus::POINTER_ROOT, self.xcb_window.id(), CURRENT_TIME)?
@@ -159,7 +160,7 @@ impl WindowShared {
         Ok(())
     }
 
-    pub fn resize(&self, new_size: Size) -> Result<()> {
+    pub fn resize(&self, new_size: Size) -> PlatformResult<()> {
         self.sizing_state.resize_from_handler(new_size, &self.xcb_window)
     }
 
@@ -173,8 +174,8 @@ impl WindowShared {
         self.connection.conn.xlib_display_handle()
     }
 
-    pub fn platform_handle(&self) -> PlatformHandle {
-        PlatformHandle {
+    pub fn platform_handle(&self) -> super::PlatformHandle {
+        super::PlatformHandle {
             connection: Arc::clone(&self.connection.conn),
             window_id: self.xcb_window.id(),
             visual_id: self.visual_id,
@@ -182,8 +183,8 @@ impl WindowShared {
     }
 
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
-        Some(crate::gl::GlContext::new(Rc::clone(self.gl_context.as_ref()?)))
+    pub fn gl_context(&self) -> Option<GlContext> {
+        Some(GlContext::new(Rc::clone(self.gl_context.as_ref()?)))
     }
     #[inline]
     pub fn create_timer(&self, duration: Duration) -> Result<TimerHandle> {

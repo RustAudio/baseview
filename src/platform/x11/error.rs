@@ -1,7 +1,7 @@
+use super::prelude::*;
 use crate::platform::x11::drag_n_drop::ParseError;
 use crate::platform::x11::window_thread::RequestFailed;
 use crate::platform::x11::x11_connection::GetPropertyError;
-use crate::warn;
 use crate::wrappers::xlib::{DisplayOpenFailedError, InitThreadsFailedError};
 use crate::HandlerError;
 use std::fmt::{Display, Formatter};
@@ -70,7 +70,7 @@ pub enum PlatformError {
     #[cfg(feature = "opengl")]
     EGl(crate::wrappers::egl::EglError),
     #[cfg(feature = "opengl")]
-    Gl(super::gl::CreationFailedError),
+    Gl(super::gl::GlCreationFailedError),
 }
 
 impl Display for PlatformError {
@@ -234,8 +234,8 @@ impl From<ReplyError> for PlatformError {
 }
 
 #[cfg(feature = "opengl")]
-impl From<super::gl::CreationFailedError> for PlatformError {
-    fn from(value: super::gl::CreationFailedError) -> Self {
+impl From<super::gl::GlCreationFailedError> for PlatformError {
+    fn from(value: super::gl::GlCreationFailedError) -> Self {
         Self::Gl(value)
     }
 }
