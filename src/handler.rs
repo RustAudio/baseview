@@ -1,5 +1,6 @@
 use super::*;
 use crate::platform::PlatformError;
+use crate::timer::TimerHandle;
 
 pub trait WindowHandler: 'static {
     /// Requests the handler to draw a new frame immediately.
@@ -107,6 +108,17 @@ pub trait WindowHandler: 'static {
     /// previous size, but this is only a best-effort attempt since those operations can also fail.
     fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError>;
     fn on_event(&self, event: Event) -> EventStatus;
+
+    /// Notifies the handler that a [timer](WindowContext::create_timer) has been triggered.
+    ///
+    /// A [`TimerHandle`] is given for the handler to match and figure out which timer was triggered,
+    /// and act accordingly.
+    ///
+    /// See [`WindowContext::create_timer`] to create a new timer that will schedule this method
+    /// to be called at regular intervals, and for more information.
+    fn on_timer(&self, timer: &TimerHandle) {
+        let _ = timer;
+    }
 }
 
 type DynBuilderResult = Result<Box<dyn WindowHandler>, HandlerError>;

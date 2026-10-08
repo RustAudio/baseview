@@ -9,6 +9,7 @@ pub mod host;
 mod keyboard;
 mod mouse_cursor;
 mod settings;
+mod timer;
 mod tracing;
 mod waker;
 mod window;
@@ -26,6 +27,7 @@ pub use event::*;
 pub use handler::WindowHandler;
 pub use mouse_cursor::MouseCursor;
 pub use settings::*;
+pub use timer::TimerHandle;
 pub use waker::WindowWaker;
 pub use window::*;
 

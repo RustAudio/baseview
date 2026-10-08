@@ -76,7 +76,7 @@ objc2 = "0.6.4"
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString", "CFUUID", "block2", "objc2"] }
 block2 = "0.6.2"
 dispatch2 = "0.3.1"
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSEnumerator", "block2", "NSOperation"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSEnumerator", "block2", "NSTimer", "NSOperation"] }
 objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["CADisplayLink"] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "NSApplication",
@@ -105,6 +105,7 @@ members = [
     "examples/render_wgpu",
     "examples/plugin_clack_femtovg",
     "examples/test-frame-pacing",
+    "examples/timers",
     "examples/external-wakeup",
     "tests/partial-rendering"
 ]

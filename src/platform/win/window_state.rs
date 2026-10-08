@@ -2,7 +2,7 @@ use crate::dpi::{PhysicalSize, Size};
 use crate::platform::win::dpi::DpiScalingStrategy;
 use crate::platform::win::keyboard::KeyboardState;
 use crate::platform::win::waker::WindowWakerSource;
-use crate::platform::{PlatformHandle, WindowWaker};
+use crate::platform::{PlatformHandle, TimerHandle, WindowWaker};
 use crate::utils::SizingStrategy;
 use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
@@ -150,6 +150,11 @@ impl WindowState {
     pub fn waker(&self) -> WindowWaker {
         self.shared.window_waker_source.waker()
     }
+
+    #[inline]
+    pub fn create_timer(&self, duration: Duration) -> Result<TimerHandle, super::PlatformError> {
+        Ok(self.shared.user_timers.add_new_timer(self.hwnd, duration)?)
+    }
 }
 
 pub struct WindowSharedState {
@@ -166,6 +171,7 @@ pub struct WindowSharedState {
     pub user32: LibraryModule<ExtendedUser32>,
     pub sizing_strategy: SizingStrategy,
     pub delayed_redraw_timers: TimerList,
+    pub user_timers: TimerList,
     pub window_waker_source: WindowWakerSource,
 }
 
@@ -187,6 +193,7 @@ impl WindowSharedState {
             fallback_scale_factor: init.settings.fallback_scale_factor.into(),
             dpi_scaling_strategy: DpiScalingStrategy::default().into(),
             delayed_redraw_timers: TimerList::new(),
+            user_timers: TimerList::new(),
             window_waker_source: WindowWakerSource::new(),
             hwnd: None.into(),
         };
@@ -255,6 +262,15 @@ impl WindowSharedState {
     pub fn originate_host_destroy(&self) -> impl Drop + use<'_> {
         self.destroy_host_originated.set(true);
         Guard(&self.destroy_host_originated)
+    }
+}
+
+impl Drop for WindowSharedState {
+    fn drop(&mut self) {
+        if let Some(hwnd) = self.hwnd.get() {
+            self.user_timers.stop_and_destroy_all(hwnd);
+            self.delayed_redraw_timers.stop_and_destroy_all(hwnd);
+        }
     }
 }
 

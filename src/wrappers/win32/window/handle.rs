@@ -223,7 +223,7 @@ impl HWnd {
     }
 
     pub fn create_timer(&self, elapse: u32) -> Result<TimerId> {
-        let result = unsafe { SetTimer(self.as_raw(), 0, elapse, None) };
+        let result = unsafe { SetTimer(null_mut(), 0, elapse, None) };
         let timer_id = TimerId::from_raw(result).ok_or_else(Error::from_thread)?;
 
         self.reset_timer(timer_id, elapse)?;

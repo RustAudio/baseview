@@ -359,6 +359,12 @@ impl BaseviewWindow {
         handler.poll();
     }
 
+    pub(crate) fn handle_timer(&self, timer: &TimerHandle) {
+        let Some(handler) = self.handler.get() else { return };
+
+        handler.on_timer(timer.into());
+    }
+
     pub(crate) fn handle_event(&self, event: Event) -> EventStatus {
         let Some(handler) = self.handler.get() else {
             return EventStatus::Ignored;
@@ -620,23 +626,31 @@ unsafe fn wnd_proc_inner(
         WM_TIMER => {
             let timer_id = TimerId::from_raw(wparam)?;
 
-            if window_state.redraw_timer.matches_id(timer_id)
-                && window_state.redraw_timer.is_running()
-            {
+            if window_state.redraw_timer.matches_id(timer_id) {
+                if !window_state.redraw_timer.is_running() {
+                    return None;
+                };
                 window.invalidate_window();
+                return Some(0);
+            }
+
+            match window_state.shared.delayed_redraw_timers.remove_if_exists(window, timer_id) {
+                Ok(false) => {}
+                Err(e) => {
+                    warn!("Could not remove timer: {}", e);
+                    return None;
+                }
+                Ok(true) => {
+                    window_state.request_redraw();
+                    return Some(0);
+                }
+            }
+
+            if window_state.shared.user_timers.exists(timer_id) {
+                window_bv.handle_timer(&timer_id);
                 Some(0)
             } else {
-                match window_state.shared.delayed_redraw_timers.remove_if_exists(window, timer_id) {
-                    Ok(false) => None,
-                    Err(e) => {
-                        warn!("Could not remove timer: {}", e);
-                        None
-                    }
-                    Ok(true) => {
-                        window_state.request_redraw();
-                        Some(0)
-                    }
-                }
+                None
             }
         }
         WM_CLOSE => {

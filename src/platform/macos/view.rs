@@ -5,6 +5,7 @@ use super::window::WindowSharedState;
 use crate::dpi::{LogicalPosition, LogicalSize};
 use crate::host::Host;
 use crate::platform::macos::cursor::CursorManager;
+use crate::platform::macos::timer::TimerManager;
 use crate::platform::*;
 use crate::tracing::warn;
 use crate::utils::SizingStrategy;
@@ -28,6 +29,7 @@ use objc2_quartz_core::CADisplayLink;
 use std::cell::{Cell, OnceCell, RefCell};
 use std::ptr::null;
 use std::rc::Rc;
+use std::time::Duration;
 
 pub enum ViewParentingType {
     Parented { parent_view: Weak<NSView> },
@@ -79,6 +81,8 @@ pub(crate) struct BaseviewView {
     host: Host,
     pub(crate) cursor_manager: CursorManager,
 
+    timers: TimerManager,
+
     #[cfg(feature = "opengl")]
     pub(crate) gl_context: OnceCell<super::gl::GlContext>,
 }
@@ -110,6 +114,8 @@ impl BaseviewView {
             host: init.host,
             lifetime_tied_to_app: None.into(),
             cursor_manager: CursorManager::new(),
+
+            timers: TimerManager::new(),
 
             #[cfg(feature = "opengl")]
             gl_context: OnceCell::new(),
@@ -287,6 +293,19 @@ impl BaseviewView {
         } else {
             this.set_next_frame_needed(this.state.redraw_requested.take())
         }
+    }
+
+    pub(crate) fn trigger_timer(this: ViewRef<Self>, handle: &TimerHandle) {
+        this.window_handler.use_handler(|h| {
+            h.on_timer(handle.into());
+        });
+    }
+
+    pub(crate) fn create_timer(
+        &self, this: &Retained<View<Self>>, duration: Duration,
+    ) -> TimerHandle {
+        let view = Weak::from_retained(this);
+        self.timers.create_timer(view, duration)
     }
 
     fn apply_size_constraints(this: ViewRef<Self>) {

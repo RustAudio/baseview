@@ -79,11 +79,15 @@ impl TimerList {
         Self { timers: Vec::new().into() }
     }
 
-    pub fn add_new_timer(&self, window: HWnd, timeout: Duration) -> Result<(), Error> {
+    pub fn add_new_timer(&self, window: HWnd, timeout: Duration) -> Result<TimerId, Error> {
         let timeout_msec = timeout.as_millis().try_into().unwrap_or(u32::MAX);
         let new_timer_id = window.create_timer(timeout_msec)?;
         self.timers.borrow_mut().push(new_timer_id);
-        Ok(())
+        Ok(new_timer_id)
+    }
+
+    pub fn exists(&self, timer_id: TimerId) -> bool {
+        self.timers.borrow().contains(&timer_id)
     }
 
     pub fn remove_if_exists(&self, window: HWnd, id: TimerId) -> Result<bool, Error> {
@@ -101,5 +105,17 @@ impl TimerList {
         let Some(index) = timers.iter().position(|&t| t == id) else { return false };
         timers.swap_remove(index);
         true
+    }
+
+    fn pop(&self) -> Option<TimerId> {
+        self.timers.borrow_mut().pop()
+    }
+
+    pub fn stop_and_destroy_all(&self, window: HWnd) {
+        while let Some(timer) = self.pop() {
+            if let Err(e) = window.kill_timer(timer) {
+                crate::warn!("Failed to kill timer: {}", e);
+            }
+        }
     }
 }

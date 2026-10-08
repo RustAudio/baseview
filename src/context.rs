@@ -1,5 +1,6 @@
 use super::*;
 use crate::dpi::Size;
+use crate::timer::TimerHandle;
 use crate::waker::WindowWaker;
 use crate::{platform, MouseCursor, WindowSize};
 use raw_window_handle::{
@@ -93,6 +94,39 @@ impl WindowContext {
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
         self.inner.gl_context()
+    }
+
+    /// Creates a new timer that will trigger regularly at the specified `interval`.
+    ///
+    /// When the timer is triggered, the [`WindowHandler::on_timer`] callback will be called with a
+    /// handle to the timer that was triggered.
+    ///
+    /// This returns a [`TimerHandle`], which can be stored and later matched against the one given in
+    /// [`WindowHandler::on_timer`] to identify which timer was triggered, and process it accordingly.
+    ///
+    /// The returned [`TimerHandle`] is a weak handle and has no effect on the underlying timer's
+    /// lifetime. See the [`TimerHandle`] documentation for more information.
+    ///
+    /// The created timer is automatically stopped and cleaned up when the window is destroyed.
+    ///
+    /// # Timer precision
+    ///
+    /// The timers created by this function rely on the platform's GUI timers implementation, which
+    /// are often imprecise.
+    ///
+    /// They often have a minimum firing interval that can be as high as 10ms (e.g. on Windows).
+    /// They can also drift, so two timers with the same interval may not trigger in sync forever.
+    ///
+    /// Moreover, all platforms have something akin to some kind of "event queue", which can back
+    /// up if the thread is overloaded.
+    /// When that happens, depending on the platform, timer firings may be skipped, coalesced, or
+    /// even have multiple firings come all flooding at once when said queue is emptying.
+    ///
+    /// Therefore, this function should *not* be used if you need high-precision timers, e.g. for
+    /// hardware synchronization, MIDI, etc.
+    #[inline]
+    pub fn create_timer(&self, interval: Duration) -> Result<TimerHandle, Error> {
+        Ok(self.inner.create_timer(interval)?.into())
     }
 }
 
