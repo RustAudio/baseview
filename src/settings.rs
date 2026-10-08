@@ -78,7 +78,7 @@ impl WindowSettings {
         self
     }
 
-    /// Sets [`size`](Self::size) to the given value.
+    /// Sets [`parent`](Self::parent) to the given value.
     #[inline]
     pub fn with_parent<'a, P: HasWindowHandle + 'a>(
         mut self, parent: impl Into<Option<&'a P>>,
