@@ -11,7 +11,7 @@ use crate::wrappers::win32::window::{
 };
 use crate::wrappers::win32::RawLibrary;
 
-pub type GlContext = Rc<GlContextInner>;
+pub type PlatformGlContext = Rc<GlContextInner>;
 
 pub struct GlContextInner {
     hdc: OwnDeviceContext,

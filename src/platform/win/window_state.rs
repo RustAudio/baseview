@@ -35,7 +35,7 @@ pub(crate) struct WindowState {
     pub redraw_requested: Cell<bool>,
 
     #[cfg(feature = "opengl")]
-    pub gl_context: std::cell::OnceCell<super::gl::GlContext>,
+    pub gl_context: std::cell::OnceCell<super::gl::PlatformGlContext>,
 }
 
 impl WindowState {
