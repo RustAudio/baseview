@@ -84,7 +84,7 @@ pub(crate) struct BaseviewView {
     timers: TimerManager,
 
     #[cfg(feature = "opengl")]
-    pub(crate) gl_context: OnceCell<super::gl::GlContext>,
+    pub(crate) gl_context: OnceCell<super::gl::PlatformGlContext>,
 }
 
 impl BaseviewView {
@@ -133,7 +133,8 @@ impl BaseviewView {
 
             #[cfg(feature = "opengl")]
             if let Some(gl_config) = init.settings.gl_config {
-                let gl_context = super::gl::GlContext::create(view.view, gl_config, view.mtm)?;
+                let gl_context =
+                    super::gl::PlatformGlContext::create(view.view, gl_config, view.mtm)?;
                 let Ok(()) = view.gl_context.set(gl_context) else { unreachable!() };
             }
 

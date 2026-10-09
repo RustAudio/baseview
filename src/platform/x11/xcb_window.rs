@@ -1,21 +1,16 @@
-use crate::dpi::PhysicalSize;
-use crate::platform::x11::error::CookieExt;
+use super::prelude::*;
 use crate::platform::x11::visual_info::WindowVisualConfig;
-use crate::platform::X11Connection;
 use std::num::{NonZero, NonZeroU32};
-use std::rc::Rc;
-use x11rb::connection::Connection;
 use x11rb::cookie::VoidCookie;
-use x11rb::errors::{ConnectionError, ReplyOrIdError};
 use x11rb::properties::WmSizeHints;
 use x11rb::protocol::present;
-use x11rb::protocol::present::ConnectionExt;
+use x11rb::protocol::present::ConnectionExt as _;
 use x11rb::protocol::xproto::{
-    AtomEnum, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, PropMode,
-    WindowClass,
+    AtomEnum, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, InputFocus,
+    PropMode, WindowClass,
 };
 use x11rb::wrapper::ConnectionExt as _;
-use x11rb::xcb_ffi::XCBConnection;
+use x11rb::CURRENT_TIME;
 
 pub struct XcbWindow {
     connection: Rc<X11Connection>,
@@ -149,6 +144,15 @@ impl XcbWindow {
         )
     }
 
+    pub fn focus(&self) -> PlatformResult<()> {
+        self.connection
+            .conn
+            .set_input_focus(InputFocus::POINTER_ROOT, self.id(), CURRENT_TIME)?
+            .check()?;
+
+        Ok(())
+    }
+
     pub fn set_size_hints(
         &self, size_hints: WmSizeHints,
     ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
@@ -168,6 +172,10 @@ impl XcbWindow {
     #[inline]
     pub fn id(&self) -> NonZeroU32 {
         self.window_id
+    }
+
+    pub fn connection(&self) -> &X11Connection {
+        &self.connection
     }
 }
 

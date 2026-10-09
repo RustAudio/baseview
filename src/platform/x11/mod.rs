@@ -1,44 +1,66 @@
-mod xcb_connection;
+mod cursor;
+mod drag_n_drop;
+mod error;
+mod event_loop;
+#[cfg(feature = "opengl")]
+pub mod gl;
+mod handler;
+mod keyboard;
+mod mouse;
+mod present;
+mod sizing;
+mod timer;
+mod visual_info;
+mod waker;
+mod window_shared;
+mod window_thread;
+mod x11_connection;
+mod xcb_window;
 
-use dpi::{PhysicalPosition, PhysicalSize};
+pub(crate) mod prelude {
+    pub use super::cursor::*;
+    pub use super::error::{CookieExt as _, FatalError, PlatformError, ReplyExt as _};
+    pub use super::event_loop::*;
+    pub use super::handler::Handler;
+    pub use super::mouse::*;
+    pub use super::present::*;
+    pub use super::sizing::*;
+    pub use super::timer::*;
+    pub use super::visual_info::WindowVisualConfig;
+    pub use super::waker::WindowWaker;
+    pub use super::window_shared::WindowShared;
+    pub use super::window_thread::{HostCallback, WindowThreadHandle, WindowThreadShared};
+    pub use super::x11_connection::X11Connection;
+    pub use super::xcb_window::XcbWindow;
+    pub(crate) use crate::{dpi::*, tracing::*, MouseCursor, WindowSettings, WindowSize};
+    pub use std::cell::Cell;
+    pub use std::rc::Rc;
+    pub use std::sync::Arc;
+    pub use x11rb::connection::Connection;
+    pub use x11rb::errors::{ConnectionError, ReplyOrIdError};
+    pub use x11rb::protocol::xproto::{ConnectionExt as _, Cursor};
+    pub use x11rb::xcb_ffi::XCBConnection;
+    pub type PlatformResult<T> = Result<T, PlatformError>;
+    #[cfg(feature = "opengl")]
+    pub use super::gl::{GlContextInner, GlCreationFailedError, PlatformGlContext};
+    #[cfg(feature = "opengl")]
+    pub use crate::gl::{GlConfig, GlContext};
+}
+
+use prelude::*;
+
+use crate::wrappers::xlib::XlibXcbConnection;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasWindowHandle, RawWindowHandle, XcbWindowHandle,
 };
 use std::fmt::{Display, Formatter};
 use std::num::{NonZero, NonZeroU32, TryFromIntError};
-use std::rc::Rc;
-use std::sync::Arc;
-use x11rb::protocol::xproto::ExposeEvent;
-pub(crate) use xcb_connection::X11Connection;
 
-mod window;
-pub use window::*;
-
-mod cursor;
-mod drag_n_drop;
-mod error;
-mod event_loop;
-mod keyboard;
-mod visual_info;
-mod xcb_window;
-
-mod timer;
-mod waker;
-mod window_shared;
-mod window_thread;
-
-pub use error::{CookieExt as _, PlatformError};
-pub(crate) type Result<T> = std::result::Result<T, PlatformError>;
-
-use crate::platform::x11::window_shared::WindowInner;
-use crate::wrappers::xlib::XlibXcbConnection;
-
-pub type WindowContext = Rc<WindowInner>;
+pub type WindowContext = Rc<WindowShared>;
+pub use error::PlatformError;
+pub use present::DamageRect;
 pub use timer::TimerHandle;
 pub use waker::WindowWaker;
-
-#[cfg(feature = "opengl")]
-pub mod gl;
 
 #[derive(Clone)]
 pub struct PlatformHandle {
@@ -129,35 +151,8 @@ pub fn assume_standalone_in_process() {
     // No-op on X11
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct DamageRect {
-    pos: PhysicalPosition<u16>,
-    size: PhysicalSize<u16>,
-}
+pub type WindowHandle = WindowThreadHandle;
 
-impl DamageRect {
-    #[inline]
-    pub fn new(event: &ExposeEvent) -> Self {
-        Self {
-            pos: PhysicalPosition::new(event.x, event.y),
-            size: PhysicalSize::new(event.width, event.height),
-        }
-    }
-
-    #[inline]
-    pub fn position(&self) -> PhysicalPosition<u32> {
-        PhysicalPosition { x: self.pos.x.into(), y: self.pos.y.into() }
-    }
-
-    #[inline]
-    pub fn size(&self) -> PhysicalSize<u32> {
-        PhysicalSize { height: self.size.height.into(), width: self.size.width.into() }
-    }
-
-    pub fn fully_covers(&self, window_size: PhysicalSize<u16>) -> bool {
-        self.pos.x == 0
-            && self.pos.y == 0
-            && window_size.width <= self.size.width
-            && window_size.height <= self.size.height
-    }
+pub fn copy_to_clipboard(_data: &str) {
+    unimplemented!()
 }

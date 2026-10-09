@@ -1,12 +1,10 @@
 use super::xlib::*;
 use crate::gl::{GlConfig, Profile};
-use crate::platform::gl::CreationFailedError;
-use crate::platform::*;
+use crate::platform::prelude::*;
 
 use std::ffi::{c_ulong, c_void, CStr};
 use std::os::raw::c_int;
 use std::ptr::NonNull;
-use std::rc::Rc;
 use x11_dl::glx::{arb::*, *};
 use x11_dl::xlib;
 use x11_dl::xlib::XVisualInfo;
@@ -29,7 +27,7 @@ pub struct Glx {
 }
 
 impl Glx {
-    pub fn open() -> Result<Self> {
+    pub fn open() -> PlatformResult<Self> {
         Ok(Self { inner: Rc::new(x11_dl::glx::Glx::open()?) })
     }
 
@@ -58,7 +56,7 @@ impl Glx {
 
     pub fn choose_best_fb_config(
         &self, connection: &XlibConnection, config: &GlConfig, error_handler: &XErrorHandler,
-    ) -> Result<GlxFbConfig> {
+    ) -> PlatformResult<GlxFbConfig> {
         let fb_attribs = Self::get_fb_attribs(config);
 
         let mut nelements = 0;
@@ -75,7 +73,7 @@ impl Glx {
 
         error_handler.check()?;
         if nelements == 0 || result.is_null() {
-            return Err(CreationFailedError::NoValidFBConfig.into());
+            return Err(GlCreationFailedError::NoValidFBConfig.into());
         }
 
         // SAFETY: If nelements != 0, the result pointer is non-null, and no Xlib error occured, then
@@ -91,14 +89,14 @@ impl Glx {
 
     pub fn get_visual_from_fb_config(
         &self, connection: &XlibConnection, fb_config: GlxFbConfig, error_handler: &XErrorHandler,
-    ) -> Result<XVisualInfo> {
+    ) -> PlatformResult<XVisualInfo> {
         // SAFETY: XlibConnection guarantees the inner dpy is valid.
         let result =
             unsafe { (self.inner.glXGetVisualFromFBConfig)(connection.as_raw(), fb_config.0) };
 
         error_handler.check()?;
         if result.is_null() {
-            return Err(CreationFailedError::NoVisual.into());
+            return Err(GlCreationFailedError::NoVisual.into());
         }
 
         // SAFETY: If the result pointer is non-null, and no Xlib error occured, then
@@ -113,7 +111,7 @@ impl Glx {
 
     pub fn swap_buffers(
         &self, connection: &XlibConnection, window_id: c_ulong, error_handler: &XErrorHandler,
-    ) -> Result<()> {
+    ) -> PlatformResult<()> {
         // SAFETY: XlibConnection guarantees the inner dpy is valid.
         unsafe { (self.inner.glXSwapBuffers)(connection.as_raw(), window_id) };
 
@@ -143,13 +141,13 @@ impl Glx {
     pub unsafe fn make_current(
         &self, connection: &XlibConnection, window_id: c_ulong, context: GLXContext,
         error_handler: &XErrorHandler,
-    ) -> Result<()> {
+    ) -> PlatformResult<()> {
         // SAFETY: XlibConnection guarantees the inner dpy is valid.
         let res = unsafe { (self.inner.glXMakeCurrent)(connection.as_raw(), window_id, context) };
 
         error_handler.check()?;
         if res == 0 {
-            return Err(CreationFailedError::MakeCurrentFailed.into());
+            return Err(GlCreationFailedError::MakeCurrentFailed.into());
         }
 
         Ok(())
@@ -157,7 +155,7 @@ impl Glx {
 
     pub unsafe fn clear_current(
         &self, connection: &XlibConnection, error_handler: &XErrorHandler,
-    ) -> Result<()> {
+    ) -> PlatformResult<()> {
         self.make_current(connection, 0, core::ptr::null_mut(), error_handler)
     }
 }
@@ -185,7 +183,7 @@ impl GlxCreateContextAttribsARB {
     pub fn call(
         &self, connection: &XlibConnection, gl_config: &GlConfig, glx_fb_config: GlxFbConfig,
         error_handler: &XErrorHandler,
-    ) -> Result<GLXContext> {
+    ) -> PlatformResult<GLXContext> {
         let ctx_attribs = Self::get_ctx_attribs(gl_config);
 
         let context = unsafe {
@@ -201,7 +199,7 @@ impl GlxCreateContextAttribsARB {
         error_handler.check()?;
 
         if context.is_null() {
-            return Err(CreationFailedError::ContextCreationFailed.into());
+            return Err(GlCreationFailedError::ContextCreationFailed.into());
         }
 
         Ok(context)

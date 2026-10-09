@@ -51,16 +51,16 @@ impl Display for GlError {
 }
 
 #[derive(Clone)]
-pub struct GlContext {
+pub struct PlatformGlContext {
     pub(crate) view: Retained<NSOpenGLView>,
     context: Retained<NSOpenGLContext>,
     gl_bundle: CFRetained<CFBundle>,
 }
 
-impl GlContext {
+impl PlatformGlContext {
     pub(crate) fn create(
         parent_view: &NSView, config: GlConfig, marker: MainThreadMarker,
-    ) -> Result<GlContext> {
+    ) -> Result<PlatformGlContext> {
         let version = if config.version < (3, 2) && config.profile == Profile::Compatibility {
             NSOpenGLProfileVersionLegacy
         } else if config.version == (3, 2) && config.profile == Profile::Core {
@@ -133,7 +133,7 @@ impl GlContext {
         let gl_bundle = CFBundle::bundle_with_identifier(Some(&framework_name))
             .ok_or(GlError::OpenGlBundleNotFound)?;
 
-        Ok(GlContext { view, context, gl_bundle })
+        Ok(PlatformGlContext { view, context, gl_bundle })
     }
 
     pub unsafe fn make_current(&self) -> Result<()> {

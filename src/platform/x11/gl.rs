@@ -1,79 +1,22 @@
-use super::*;
+use super::prelude::*;
 use crate::gl::*;
 use crate::wrappers::glx::*;
-use crate::wrappers::xlib::XLibError;
 use std::error::Error;
 
 use crate::platform::gl::egl::EglGlContext;
 use crate::platform::gl::glx::GlxGlContext;
 use crate::platform::x11::xcb_window::XcbWindow;
-use crate::wrappers::egl::{EglConfig, EglDisplay, EglError, EglVersion, MissingSymbolError};
+use crate::wrappers::egl::*;
 use std::ffi::{c_void, CStr};
 use std::rc::Rc;
-use x11_dl::error::OpenError;
 use x11rb::protocol::xproto::Visualid;
 
 mod egl;
+mod error;
 mod glx;
 
-#[derive(Debug)]
-pub enum CreationFailedError {
-    NoValidFBConfig,
-    NoVisual,
-    GetProcAddressFailed,
-    MakeCurrentFailed,
-    ContextCreationFailed,
-    X11Error(XLibError),
-    OpenError(OpenError),
-    EGLLoadError(libloading::Error),
-    EGLMissingSymbol(MissingSymbolError),
-    EglError(EglError),
-    EglNoDisplay,
-    EglUnsupportedVersion(EglVersion),
-    EglUnknownVisualId(Visualid),
-    EglInvalidVisualId(i32, TryFromIntError),
-}
-
-impl Display for CreationFailedError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CreationFailedError::NoValidFBConfig => {
-                f.write_str("Could not find a valid Framebuffer configuration")
-            }
-            CreationFailedError::NoVisual => {
-                f.write_str("Could not find a matching visual configuration")
-            }
-            CreationFailedError::GetProcAddressFailed => f.write_str("GetProcAddress failed"),
-            CreationFailedError::MakeCurrentFailed => f.write_str("MakeCurrent failed"),
-            CreationFailedError::ContextCreationFailed => f.write_str("Faile to create GL context"),
-            CreationFailedError::X11Error(e) => e.fmt(f),
-            CreationFailedError::OpenError(e) => e.fmt(f),
-            CreationFailedError::EGLLoadError(e) => {
-                write!(f, "Could not load EGL library: {e}, {:?}", e.source())
-            }
-            CreationFailedError::EGLMissingSymbol(e) => e.fmt(f),
-            CreationFailedError::EglError(e) => e.fmt(f),
-            CreationFailedError::EglNoDisplay => f.write_str("EGL returned no valid display"),
-            CreationFailedError::EglUnsupportedVersion(e) => {
-                write!(f, "Unsupported EGL version: {}.{} (EGL 1.5 is required)", e.major, e.minor)
-            }
-            CreationFailedError::EglInvalidVisualId(id, e) => {
-                write!(f, "Invalid Visual ID ({id}) returned by EGL: {e}")
-            }
-            CreationFailedError::EglUnknownVisualId(id) => {
-                write!(f, "Unknown Visual ID returned by EGL: {id}")
-            }
-        }
-    }
-}
-
-impl From<EglError> for CreationFailedError {
-    fn from(err: EglError) -> Self {
-        CreationFailedError::EglError(err)
-    }
-}
-
-pub type GlContext = Rc<GlContextInner>;
+pub use error::GlCreationFailedError;
+pub type PlatformGlContext = Rc<GlContextInner>;
 
 pub enum GlContextInner {
     Glx(GlxGlContext),
@@ -110,7 +53,7 @@ impl GlContextInner {
     /// Use [Self::get_fb_config_and_visual] to create both of these things.
     pub fn create(
         window: &XcbWindow, connection: &Rc<X11Connection>, fb_config: FbConfig,
-    ) -> Result<Rc<GlContextInner>> {
+    ) -> PlatformResult<Rc<GlContextInner>> {
         let inner =
             match fb_config.fb_config {
                 FbConfigInner::Glx { glx, config } => GlContextInner::Glx(GlxGlContext::create(
@@ -133,19 +76,19 @@ impl GlContextInner {
     /// using the visual also returned from this function.
     pub fn get_fb_config_and_visual(
         connection: &Rc<X11Connection>, config: GlConfig,
-    ) -> Result<(FbConfig, WindowConfig)> {
+    ) -> PlatformResult<(FbConfig, WindowConfig)> {
         EglGlContext::get_fb_config_and_visual(connection, config.clone())
             .or_else(|_| GlxGlContext::get_fb_config_and_visual(connection, config))
     }
 
-    pub unsafe fn make_current(&self) -> Result<()> {
+    pub unsafe fn make_current(&self) -> PlatformResult<()> {
         match self {
             GlContextInner::Glx(glx) => glx.make_current(),
             GlContextInner::Egl(egl) => egl.make_current(),
         }
     }
 
-    pub unsafe fn make_not_current(&self) -> Result<()> {
+    pub unsafe fn make_not_current(&self) -> PlatformResult<()> {
         match self {
             GlContextInner::Glx(glx) => glx.make_not_current(),
             GlContextInner::Egl(egl) => egl.make_not_current(),
@@ -159,7 +102,7 @@ impl GlContextInner {
         }
     }
 
-    pub fn swap_buffers(&self) -> Result<()> {
+    pub fn swap_buffers(&self) -> PlatformResult<()> {
         match self {
             GlContextInner::Glx(glx) => glx.swap_buffers(),
             GlContextInner::Egl(egl) => egl.swap_buffers(),

@@ -1,4 +1,4 @@
-use crate::platform::*;
+use crate::platform::prelude::*;
 use std::error::Error;
 use std::ffi::CStr;
 use std::fmt::Formatter;
@@ -25,7 +25,7 @@ unsafe impl Send for XlibConnection {}
 unsafe impl Sync for XlibConnection {}
 
 impl XlibConnection {
-    pub fn open() -> Result<Self> {
+    pub fn open() -> PlatformResult<Self> {
         let xlib = Box::new(Xlib::open()?);
 
         if unsafe { (xlib.XInitThreads)() } == 0 {

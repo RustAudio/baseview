@@ -1,193 +1,85 @@
-use crate::dpi::{PhysicalSize, Size};
-use crate::platform::x11::event_loop::EventLoop;
-use crate::platform::x11::timer::insert_timer;
-use crate::platform::x11::visual_info::WindowVisualConfig;
-use crate::platform::x11::waker::WindowWaker;
-use crate::platform::x11::window_thread::WindowThreadShared;
-use crate::platform::x11::xcb_connection::get_size_hints;
-use crate::platform::x11::xcb_window::XcbWindow;
-use crate::platform::*;
-use crate::utils::SizingStrategy;
-use crate::{warn, MouseCursor, WindowHandler, WindowSettings, WindowSize};
-use calloop::timer::{TimeoutAction, Timer};
+use super::prelude::*;
 use calloop::{LoopHandle, LoopSignal};
+use dpi::Size;
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
-use std::cell::Cell;
-use std::num::NonZeroU32;
-use std::rc::Rc;
-use std::sync::Arc;
 use std::time::Duration;
 use x11rb::protocol::xproto;
-use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConnectionExt, InputFocus, Visualid};
-use x11rb::CURRENT_TIME;
+use x11rb::protocol::xproto::Visualid;
 
-pub struct ScalingFactor {
-    system: Cell<Option<f64>>,
-    suggested: Cell<Option<f64>>,
-}
+/// Data that is shared between the event loop and the window handler.
+pub struct WindowShared {
+    pub xcb_window: XcbWindow,
+    pub connection: Rc<X11Connection>,
+    visual_id: Visualid,
 
-impl ScalingFactor {
-    pub fn get(&self) -> f64 {
-        if let Some(factor) = self.system.get() {
-            return factor;
-        };
+    pub is_focused: Cell<bool>,
 
-        if let Some(factor) = self.suggested.get() {
-            return factor;
-        }
+    pub cursor_state: CursorStateShared,
+    pub present_state: PresentStateShared,
+    pub sizing_state: SizingStateShared,
 
-        1.0
-    }
-
-    pub fn suggest(&self, value: f64) -> bool {
-        self.suggested.set(Some(value));
-
-        self.system.get().is_none()
-    }
-}
-
-pub(crate) struct WindowInner {
-    // GlContext should be dropped **before** XcbConnection is dropped
-    #[cfg(feature = "opengl")]
-    gl_context: Option<super::gl::GlContext>,
-
-    pub(crate) xcb_window: XcbWindow,
-    pub(crate) parent_id: Cell<Option<NonZeroU32>>,
-    pub(crate) connection: Rc<X11Connection>,
-
-    pub(crate) scaling_factor: ScalingFactor,
-
-    window_size: Cell<PhysicalSize<u16>>,
-    pub(crate) sizing_strategy: SizingStrategy,
-    mouse_cursor: Cell<MouseCursor>,
-    pub(crate) visual_id: Visualid,
-
-    pub(crate) is_focused: Cell<bool>,
-    pub(crate) present_notify_requested: Cell<bool>,
-    pub(crate) poll_requested: Cell<bool>,
-    pub(crate) loop_signal: LoopSignal,
+    loop_signal: LoopSignal,
     loop_handle: LoopHandle<'static, EventLoop>,
 
-    pub(crate) main_thread_shared: Arc<WindowThreadShared>,
+    pub main_thread_shared: Arc<WindowThreadShared>,
+
+    #[cfg(feature = "opengl")]
+    gl_context: Option<PlatformGlContext>,
 }
 
-impl WindowInner {
+impl WindowShared {
     pub(crate) fn create(
-        options: WindowSettings, ev_loop: &calloop::EventLoop<'static, EventLoop>,
-        shared: Arc<WindowThreadShared>,
-    ) -> Result<Rc<Self>> {
-        // Connect to the X server
-        let xcb_connection = X11Connection::new()?;
+        mut settings: WindowSettings, ev_loop: &calloop::EventLoop<'static, EventLoop>,
+        thread_shared: Arc<WindowThreadShared>,
+    ) -> PlatformResult<Rc<Self>> {
+        let connection = X11Connection::connect()?;
 
-        let scaling = xcb_connection.get_scaling();
+        let sizing_state = SizingStateShared::load(&connection, &thread_shared.sizing, &settings)?;
 
-        let initial_scale_factor = scaling.unwrap_or(1.0);
-        shared.set_scaling_factor(initial_scale_factor);
+        let connection = Rc::new(connection);
 
-        let physical_size = options.size.to_physical(initial_scale_factor);
+        let visual_config =
+            WindowVisualConfig::find_best_visual_config(&connection, &mut settings)?;
 
-        let sizing_strategy = SizingStrategy::from_settings(&options);
-
-        let size_hints = get_size_hints(&sizing_strategy, physical_size, initial_scale_factor);
-
-        let connection = Rc::new(xcb_connection);
-
-        #[cfg(feature = "opengl")]
-        let visual_info =
-            WindowVisualConfig::find_best_visual_config_for_gl(&connection, options.gl_config)?;
-
-        #[cfg(not(feature = "opengl"))]
-        let visual_info = WindowVisualConfig::find_best_visual_config(&connection)?;
-
-        let will_have_parent = options.parent.is_some() || options.wait_for_parent;
-        let parent_id = options.parent.map(|p| p.inner.window_id);
+        let parent_id = settings.parent.map(|p| p.inner.window_id);
 
         let xcb_window =
-            XcbWindow::new(Rc::clone(&connection), physical_size, &visual_info, parent_id)?;
-
-        if will_have_parent {
-            connection.register_tree_structure_events()?.check()?;
-        }
+            XcbWindow::new(Rc::clone(&connection), sizing_state.size(), &visual_config, parent_id)?;
 
         let cookies = [
-            xcb_window.set_title(&options.title)?,
+            xcb_window.set_title(&settings.title)?,
             xcb_window.enable_wm_protocols()?,
             xcb_window.enable_dnd_protocols()?,
-            xcb_window.set_size_hints(size_hints)?,
+            xcb_window.set_size_hints(sizing_state.make_size_hints())?,
         ];
 
         for cookie in cookies {
             cookie.check()?;
         }
 
-        #[cfg(feature = "opengl")]
-        let gl_context = match visual_info.fb_config {
-            None => None,
-            Some(fb_config) => {
-                // Because of the visual negotation we had to take some extra steps to create this context
-                Some(super::gl::GlContextInner::create(&xcb_window, &connection, fb_config)?)
-            }
-        };
-
         Ok(Rc::new(Self {
-            connection,
-            xcb_window,
-            parent_id: parent_id.into(),
-            visual_id: visual_info.visual_id,
-            window_size: physical_size.into(),
-            scaling_factor: ScalingFactor {
-                system: scaling.into(),
-                suggested: options.fallback_scale_factor.into(),
-            },
-            sizing_strategy,
-            mouse_cursor: MouseCursor::default().into(),
+            visual_id: visual_config.visual_id,
+
+            #[cfg(feature = "opengl")]
+            gl_context: visual_config.make_gl_context(&xcb_window, &connection)?,
+
             loop_signal: ev_loop.get_signal(),
             loop_handle: ev_loop.handle(),
 
             is_focused: false.into(),
-            present_notify_requested: false.into(),
-            poll_requested: false.into(),
-            main_thread_shared: shared,
 
-            #[cfg(feature = "opengl")]
-            gl_context,
+            cursor_state: CursorStateShared::new(),
+            present_state: PresentStateShared::new(),
+            sizing_state,
+            main_thread_shared: thread_shared,
+
+            xcb_window,
+            connection,
         }))
     }
 
-    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) -> Result<()> {
-        if self.mouse_cursor.get() == mouse_cursor {
-            return Ok(());
-        }
-
-        let xid = self.connection.get_cursor(mouse_cursor)?;
-
-        if xid != 0 {
-            self.connection
-                .conn
-                .change_window_attributes(
-                    self.xcb_window.id().get(),
-                    &ChangeWindowAttributesAux::new().cursor(xid),
-                )?
-                .check()?;
-        }
-
-        self.mouse_cursor.set(mouse_cursor);
-
-        Ok(())
-    }
-
-    pub fn store_size(&self, size: PhysicalSize<u16>) -> PhysicalSize<u16> {
-        let previous = self.window_size.replace(size);
-
-        if previous != size {
-            self.main_thread_shared.set_size(size);
-        }
-
-        previous
-    }
-
-    pub fn get_size(&self) -> PhysicalSize<u16> {
-        self.window_size.get()
+    pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) -> PlatformResult<()> {
+        self.cursor_state.set_mouse_cursor(mouse_cursor, &self.xcb_window)
     }
 
     pub fn request_close(&self) {
@@ -196,24 +88,11 @@ impl WindowInner {
     }
 
     pub fn request_redraw(&self) {
-        self.present_notify_requested.set(true)
+        self.present_state.request_present_notify()
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
-        if duration.is_zero() || duration.as_millis() < 1 {
-            self.request_redraw();
-            return;
-        }
-
-        let result = self.loop_handle.insert_source(Timer::from_duration(duration), |_, _, e| {
-            e.request_redraw();
-            TimeoutAction::Drop
-        });
-
-        if let Err(e) = result {
-            warn!("{}", e);
-            self.request_redraw();
-        }
+        self.present_state.request_present_notify_after(duration, &self.loop_handle);
     }
 
     pub fn waker(&self) -> WindowWaker {
@@ -227,66 +106,12 @@ impl WindowInner {
         self.is_focused.get()
     }
 
-    pub fn focus(&self) -> Result<()> {
-        self.connection
-            .conn
-            .set_input_focus(InputFocus::POINTER_ROOT, self.xcb_window.id(), CURRENT_TIME)?
-            .check()?;
-
-        Ok(())
+    pub fn focus(&self) -> PlatformResult<()> {
+        self.xcb_window.focus()
     }
 
-    pub fn resize(&self, size: Size) -> Result<()> {
-        let new_size = self.sizing_strategy.adjust_size(size, self.size()).physical;
-
-        if new_size == self.window_size.get().cast() {
-            return Ok(());
-        }
-
-        self.xcb_window.resize(new_size)?.check()?;
-
-        if !self.sizing_strategy.is_resizable() {
-            let size_hints = get_size_hints(&self.sizing_strategy, new_size, self.scale_factor());
-            self.xcb_window.set_size_hints(size_hints)?.check()?;
-        }
-
-        // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
-        // and notify the window handler about it
-
-        Ok(())
-    }
-
-    #[inline]
-    pub fn create_timer(&self, duration: Duration) -> Result<TimerHandle> {
-        insert_timer(&self.loop_handle, duration)
-    }
-
-    pub fn resize_immediately(
-        &self, new_size: PhysicalSize<u16>, handler: &dyn WindowHandler,
-    ) -> Result<()> {
-        let previous = self.store_size(new_size);
-
-        if previous == new_size {
-            return Ok(());
-        };
-
-        if let Err(e) =
-            handler.resized(WindowSize::from_physical(new_size.cast(), self.scaling_factor.get()))
-        {
-            warn!("Window Handler failed to resize: {}. Reverting to previous size", &e);
-            self.store_size(previous);
-            return Err(e.into());
-        }
-
-        self.xcb_window.resize(new_size.cast())?.check()?; // Will not call handler, as size is the same as above.
-        if !self.sizing_strategy.is_resizable() {
-            let size_hints = get_size_hints(&self.sizing_strategy, new_size, self.scale_factor());
-            self.xcb_window.set_size_hints(size_hints)?.check()?;
-        }
-
-        // These come from the Host, no need to notify it about the new size
-
-        Ok(())
+    pub fn resize(&self, new_size: Size) -> PlatformResult<()> {
+        self.sizing_state.resize_from_handler(new_size, &self.xcb_window)
     }
 
     pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
@@ -299,8 +124,8 @@ impl WindowInner {
         self.connection.conn.xlib_display_handle()
     }
 
-    pub fn platform_handle(&self) -> PlatformHandle {
-        PlatformHandle {
+    pub fn platform_handle(&self) -> super::PlatformHandle {
+        super::PlatformHandle {
             connection: Arc::clone(&self.connection.conn),
             window_id: self.xcb_window.id(),
             visual_id: self.visual_id,
@@ -308,16 +133,21 @@ impl WindowInner {
     }
 
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<crate::gl::GlContext> {
-        Some(crate::gl::GlContext::new(Rc::clone(self.gl_context.as_ref()?)))
+    pub fn gl_context(&self) -> Option<GlContext> {
+        Some(GlContext::new(Rc::clone(self.gl_context.as_ref()?)))
+    }
+
+    #[inline]
+    pub fn create_timer(&self, duration: Duration) -> PlatformResult<TimerHandle> {
+        insert_timer(&self.loop_handle, duration)
     }
 
     pub fn scale_factor(&self) -> f64 {
-        self.scaling_factor.get()
+        self.sizing_state.scale_factor()
     }
 
     pub fn size(&self) -> WindowSize {
-        WindowSize::from_physical(self.window_size.get().cast(), self.scaling_factor.get())
+        self.sizing_state.window_size()
     }
 
     pub fn raw_id(&self) -> xproto::Window {

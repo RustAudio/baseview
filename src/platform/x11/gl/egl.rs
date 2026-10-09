@@ -1,11 +1,6 @@
-use crate::gl::GlConfig;
-use crate::platform::gl::{CreationFailedError, FbConfig, FbConfigInner, WindowConfig};
+use super::*;
 use crate::platform::x11::xcb_window::XcbWindow;
-use crate::platform::{PlatformError, X11Connection};
-use crate::wrappers::egl::{Egl, EglConfig, EglContext, EglDisplay, EglSurface};
 use std::ffi::{c_void, CStr};
-use std::rc::Rc;
-use x11rb::protocol::xproto::Visualid;
 
 pub struct EglGlContext {
     surface: EglSurface,
@@ -32,11 +27,12 @@ impl EglGlContext {
         let egl = Egl::open()?;
         let display = egl.create_display(connection)?;
 
-        let config = display.choose_config(&gl_config)?.ok_or(CreationFailedError::EglNoDisplay)?;
+        let config =
+            display.choose_config(&gl_config)?.ok_or(GlCreationFailedError::EglNoDisplay)?;
         let visual = config.get_visual_id(&display)?;
 
         let depth = Self::find_visual_depth_for_id(connection, visual)
-            .ok_or(CreationFailedError::EglUnknownVisualId(visual))?;
+            .ok_or(GlCreationFailedError::EglUnknownVisualId(visual))?;
 
         let window_config = WindowConfig { depth, visual };
         let fb_config = FbConfig { gl_config, fb_config: FbConfigInner::Egl { display, config } };

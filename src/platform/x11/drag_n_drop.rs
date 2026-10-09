@@ -1,8 +1,8 @@
-use super::xcb_connection::{Atoms, GetPropertyError};
+use super::x11_connection::{Atoms, GetPropertyError};
 use super::*;
 use crate::dpi::PhysicalPosition;
-use crate::handler::WindowHandler;
 use crate::platform::x11::error::ReplyExt;
+use crate::platform::x11::handler::Handler;
 use crate::warn;
 use crate::{DropData, Event, MouseEvent};
 use core::result::Result;
@@ -95,7 +95,7 @@ pub(crate) enum DragNDropState {
 // Other errors (protocol errors, transfer errors) should be dealt with as gracefully as possible.
 impl DragNDropState {
     pub fn handle_enter_event(
-        &mut self, window: &WindowInner, handler: &dyn WindowHandler, event: &ClientMessageEvent,
+        &mut self, window: &WindowShared, handler: &Handler, event: &ClientMessageEvent,
     ) -> Result<(), ConnectionError> {
         let data = event.data.as_data32();
 
@@ -154,7 +154,7 @@ impl DragNDropState {
     }
 
     pub fn handle_position_event(
-        &mut self, window: &WindowInner, handler: &dyn WindowHandler, event: &ClientMessageEvent,
+        &mut self, window: &WindowShared, handler: &Handler, event: &ClientMessageEvent,
     ) -> Result<(), ConnectionError> {
         let event_data = event.data.as_data32();
 
@@ -260,7 +260,7 @@ impl DragNDropState {
         }
     }
 
-    pub fn handle_leave_event(&mut self, handler: &dyn WindowHandler, event: &ClientMessageEvent) {
+    pub fn handle_leave_event(&mut self, handler: &Handler, event: &ClientMessageEvent) {
         let data = event.data.as_data32();
         let event_source_window = data[0] as xproto::Window;
 
@@ -291,7 +291,7 @@ impl DragNDropState {
     }
 
     pub fn handle_drop_event(
-        &mut self, window: &WindowInner, handler: &dyn WindowHandler, event: &ClientMessageEvent,
+        &mut self, window: &WindowShared, handler: &Handler, event: &ClientMessageEvent,
     ) -> Result<(), ConnectionError> {
         let data = event.data.as_data32();
 
@@ -395,7 +395,7 @@ impl DragNDropState {
     }
 
     pub fn handle_selection_notify_event(
-        &mut self, window: &WindowInner, handler: &dyn WindowHandler, event: &SelectionNotifyEvent,
+        &mut self, window: &WindowShared, handler: &Handler, event: &SelectionNotifyEvent,
     ) -> Result<(), ConnectionError> {
         // Ignore the event if we weren't actually waiting for a selection notify event
         let WaitingForData {
@@ -488,7 +488,7 @@ impl DragNDropState {
 }
 
 fn send_status_rejected(
-    source_window: xproto::Window, window: &WindowInner,
+    source_window: xproto::Window, window: &WindowShared,
 ) -> Result<(), ConnectionError> {
     let conn = &window.connection;
 
@@ -509,7 +509,7 @@ fn send_status_rejected(
 }
 
 fn send_status_event(
-    source_window: xproto::Window, window: &WindowInner, action: Option<DndAction>,
+    source_window: xproto::Window, window: &WindowShared, action: Option<DndAction>,
 ) -> Result<(), ConnectionError> {
     let conn = &window.connection;
 
@@ -532,7 +532,7 @@ fn send_status_event(
 }
 
 pub fn send_finished_rejected(
-    source_window: xproto::Window, window: &WindowInner,
+    source_window: xproto::Window, window: &WindowShared,
 ) -> Result<(), ConnectionError> {
     let conn = &window.connection;
 
@@ -553,7 +553,7 @@ pub fn send_finished_rejected(
 }
 
 fn send_finished_event(
-    source_window: xproto::Window, window: &WindowInner, action: Option<DndAction>,
+    source_window: xproto::Window, window: &WindowShared, action: Option<DndAction>,
 ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
     let conn = &window.connection;
     let action =
@@ -572,7 +572,7 @@ fn send_finished_event(
 }
 
 fn request_convert_selection(
-    window: &WindowInner, timestamp: Option<Timestamp>,
+    window: &WindowShared, timestamp: Option<Timestamp>,
 ) -> Result<VoidCookie<'_, XCBConnection>, ConnectionError> {
     window.connection.conn.convert_selection(
         window.xcb_window.id().get(),
@@ -588,7 +588,7 @@ fn decode_xy(data: u32) -> (u16, u16) {
 }
 
 fn translate_root_coordinates(
-    window: &WindowInner, x: u16, y: u16,
+    window: &WindowShared, x: u16, y: u16,
 ) -> Result<Option<PhysicalPosition<i16>>, ConnectionError> {
     let root_id = window.connection.default_screen().root;
     let x = x.try_into().unwrap_or(i16::MAX);
@@ -609,7 +609,7 @@ fn translate_root_coordinates(
     Ok(Some(PhysicalPosition::new(reply.dst_x, reply.dst_y)))
 }
 
-fn fetch_dnd_data(window: &WindowInner) -> Result<Option<DropData>, ConnectionError> {
+fn fetch_dnd_data(window: &WindowShared) -> Result<Option<DropData>, ConnectionError> {
     let conn = &window.connection;
 
     let data: Vec<u8> = match conn.get_property(

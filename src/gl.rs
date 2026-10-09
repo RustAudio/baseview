@@ -1,3 +1,4 @@
+use crate::platform::gl::PlatformGlContext;
 use std::ffi::{c_void, CStr, CString};
 use std::marker::PhantomData;
 
@@ -54,13 +55,13 @@ pub enum Profile {
 
 #[derive(Clone)]
 pub struct GlContext {
-    inner: crate::platform::gl::GlContext,
+    inner: PlatformGlContext,
     // To make sure this is !Send, !Sync, and !UnwindSafe on all platforms
     phantom: PhantomData<(*mut (), &'static mut ())>,
 }
 
 impl GlContext {
-    pub(crate) fn new(context: crate::platform::gl::GlContext) -> GlContext {
+    pub(crate) fn new(context: PlatformGlContext) -> GlContext {
         GlContext { inner: context, phantom: PhantomData }
     }
 

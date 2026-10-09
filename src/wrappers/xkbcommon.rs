@@ -1,3 +1,4 @@
+use crate::platform::prelude::*;
 use xkbcommon_dl as xkbc;
 
 pub(crate) type Keycode = xkbcommon_dl::xkb_keycode_t;
@@ -8,7 +9,7 @@ pub struct XkbcommonState {
 }
 
 impl XkbcommonState {
-    pub fn new(xcb_connection: &crate::platform::X11Connection) -> Option<Self> {
+    pub fn new(xcb_connection: &X11Connection) -> Option<Self> {
         let xkb_common = xkbc::xkbcommon_option()?;
         let xkb_x11 = xkbc::x11::xkbcommon_x11_option()?;
 

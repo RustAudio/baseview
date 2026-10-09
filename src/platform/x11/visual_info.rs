@@ -1,40 +1,41 @@
-use super::xcb_connection::X11Connection;
-use crate::platform::*;
+use super::prelude::*;
+use super::x11_connection::X11Connection;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     Colormap, ColormapAlloc, ConnectionExt, Screen, VisualClass, Visualid,
 };
 use x11rb::COPY_FROM_PARENT;
 
-pub(crate) struct WindowVisualConfig {
-    #[cfg(feature = "opengl")]
-    pub fb_config: Option<super::gl::FbConfig>,
-
+pub struct WindowVisualConfig {
     pub visual_depth: u8,
     pub visual_id: Visualid,
     pub color_map: Option<Colormap>,
+
+    #[cfg(feature = "opengl")]
+    pub fb_config: Option<super::gl::FbConfig>,
 }
 
 // TODO: make visual negotiation actually check all of a visual's parameters
 impl WindowVisualConfig {
-    #[cfg(feature = "opengl")]
-    pub fn find_best_visual_config_for_gl(
-        connection: &std::rc::Rc<X11Connection>, gl_config: Option<crate::gl::GlConfig>,
-    ) -> Result<Self> {
-        let Some(gl_config) = gl_config else { return Self::find_best_visual_config(connection) };
+    pub fn find_best_visual_config(
+        connection: &Rc<X11Connection>, settings: &mut WindowSettings,
+    ) -> PlatformResult<Self> {
+        #[cfg(feature = "opengl")]
+        if let Some(gl_config) = settings.gl_config.take() {
+            let (fb_config, window_config) =
+                GlContextInner::get_fb_config_and_visual(connection, gl_config)?;
 
-        let (fb_config, window_config) =
-            super::gl::GlContextInner::get_fb_config_and_visual(connection, gl_config)?;
+            return Ok(Self {
+                fb_config: Some(fb_config),
+                visual_depth: window_config.depth,
+                visual_id: window_config.visual,
+                color_map: Some(create_color_map(connection, window_config.visual)?),
+            });
+        }
 
-        Ok(Self {
-            fb_config: Some(fb_config),
-            visual_depth: window_config.depth,
-            visual_id: window_config.visual,
-            color_map: Some(create_color_map(connection, window_config.visual)?),
-        })
-    }
+        #[cfg(not(feature = "opengl"))]
+        let _ = settings;
 
-    pub fn find_best_visual_config(connection: &X11Connection) -> Result<Self> {
         match find_visual_for_depth(connection.default_screen(), 32) {
             None => Ok(Self::copy_from_parent()),
             Some(visual_id) => Ok(Self {
@@ -56,11 +57,21 @@ impl WindowVisualConfig {
             color_map: None,
         }
     }
+
+    #[cfg(feature = "opengl")]
+    pub fn make_gl_context(
+        self, window: &XcbWindow, connection: &Rc<X11Connection>,
+    ) -> PlatformResult<Option<Rc<GlContextInner>>> {
+        match self.fb_config {
+            None => Ok(None),
+            Some(fb_config) => Ok(Some(GlContextInner::create(window, connection, fb_config)?)),
+        }
+    }
 }
 
 // For this 32-bit depth to work, you also need to define a color map and set a border
 // pixel: https://cgit.freedesktop.org/xorg/xserver/tree/dix/window.c#n818
-fn create_color_map(connection: &X11Connection, visual_id: Visualid) -> Result<Colormap> {
+fn create_color_map(connection: &X11Connection, visual_id: Visualid) -> PlatformResult<Colormap> {
     let colormap = connection.conn.generate_id()?;
     connection.conn.create_colormap(
         ColormapAlloc::NONE,
