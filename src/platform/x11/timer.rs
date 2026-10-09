@@ -1,52 +1,101 @@
-use crate::platform::x11::event_loop::EventLoop;
+use crate::platform::prelude::PlatformResult;
 use crate::platform::x11::host_handle::HostHandle;
-use crate::platform::PlatformError;
-use calloop::timer::{TimeoutAction, Timer};
-use calloop::{LoopHandle, RegistrationToken};
-use std::rc::{Rc, Weak};
-use std::time::Duration;
+use slotmap::{DefaultKey, DenseSlotMap, Key};
+use std::cell::RefCell;
+use std::time::{Duration, Instant};
 
-#[derive(Clone, Eq)]
-pub struct TimerHandle(Rc<TimerHandleInner>);
+// Compatible with both TimerHandles from host (u32) and
+pub type TimerHandle = u64;
 
-impl PartialEq for TimerHandle {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
+pub enum TimerManager {
+    Hosted(),
+    Standalone(StandaloneTimerStore),
+}
+
+impl TimerManager {
+    pub fn new(host: &HostHandle) -> Self {
+        if host.timer_support().is_some() {
+            todo!()
+        } else {
+            Self::Standalone(StandaloneTimerStore::new())
+        }
+    }
+
+    pub fn create_timer(
+        &self, duration: Duration, host: &HostHandle,
+    ) -> PlatformResult<TimerHandle> {
+        match self {
+            TimerManager::Hosted() => todo!(),
+            TimerManager::Standalone(store) => Ok(store.insert_new_timer(duration).data().as_ffi()),
+        }
+    }
+
+    pub fn tick_next_timer(&self) -> (Option<Instant>, Option<TimerHandle>) {
+        match self {
+            TimerManager::Hosted() => todo!(),
+            TimerManager::Standalone(store) => store.tick_next_timer(),
+        }
+    }
+
+    pub fn destroy_all(&self) {
+        match self {
+            TimerManager::Hosted() => todo!(),
+            TimerManager::Standalone(store) => store.destroy_all(),
+        }
     }
 }
 
-#[derive(PartialEq, Eq)]
-pub struct TimerHandleInner {
-    token: RegistrationToken,
+#[derive(Debug)]
+struct Timer {
+    interval: Duration,
+    next_trigger: Option<Instant>,
 }
 
-impl TimerHandleInner {}
+struct StandaloneTimerStore(RefCell<DenseSlotMap<DefaultKey, Timer>>);
 
-pub(crate) fn insert_timer(
-    loop_handle: &HostHandle, duration: Duration,
-) -> Result<TimerHandle, PlatformError> {
-    let timer = Timer::from_duration(duration);
+impl StandaloneTimerStore {
+    pub fn new() -> Self {
+        Self(DenseSlotMap::new().into())
+    }
 
-    let handle = Rc::<TimerHandleInner>::new_cyclic(move |this| {
-        let this = Weak::clone(this);
-        todo!()
+    pub fn insert_new_timer(&self, interval: Duration) -> DefaultKey {
+        let mut store = self.0.borrow_mut();
+        store.insert(Timer { interval, next_trigger: Instant::now().checked_add(interval) })
+    }
 
-        /*
-        let result = loop_handle.insert_source(timer, move |_, _, e| {
-            if let Some(this) = this.upgrade() {
-                e.handle_timer(&TimerHandle(this));
+    pub fn tick_next_timer(&self) -> (Option<Instant>, Option<TimerHandle>) {
+        let mut store = self.0.borrow_mut();
+        let now = Instant::now();
+
+        let mut soonest_trigger = None;
+        let mut triggered_key = None;
+
+        for (key, timer) in store.iter_mut() {
+            // Interval was so long it overflowed. This will essentially never trigger, so we just never trigger it.
+            let Some(next_trigger) = timer.next_trigger else { continue };
+
+            if triggered_key.is_none() && next_trigger <= now {
+                // Timer triggered!
+                triggered_key = Some(key.data().as_ffi());
+                timer.next_trigger = now.checked_add(timer.interval);
             }
-            TimeoutAction::ToDuration(duration)
-        });
 
-        match result {
-            Err(e) => {
-                panic!("Failed to insert timer: {:?}", e);
+            let Some(next_trigger) = timer.next_trigger else { continue };
+
+            match soonest_trigger {
+                Some(previous_soonest_trigger) => {
+                    if previous_soonest_trigger > next_trigger {
+                        soonest_trigger = Some(next_trigger);
+                    }
+                }
+                None => soonest_trigger = Some(next_trigger),
             }
-            Ok(token) => TimerHandleInner { token },
-        }*/
-    });
+        }
 
-    Ok(TimerHandle(handle))
+        (soonest_trigger, triggered_key)
+    }
+
+    fn destroy_all(&self) {
+        self.0.borrow_mut().clear();
+    }
 }
