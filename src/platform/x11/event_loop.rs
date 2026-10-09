@@ -76,16 +76,16 @@ impl EventLoop {
         self.shared.stop_own_event_loop.set(false);
 
         while !self.shared.stop_own_event_loop.get() {
-            // TODO: handle timers
+            let (next_deadline, triggered_timer) = self.shared.timer_manager.tick_next_timer();
 
-            // Check for any events in the internal buffers
-            // before going to sleep:
-            self.handle_idle();
+            if let Some(triggered_timer) = triggered_timer {
+                self.handler.on_timer(&triggered_timer.into());
+            }
 
-            eprintln!("WAITING...");
-            // FIXME: handle errors
-            if let PollStatus::ReadAvailable = dbg!(poller.wait())? {
-                self.drain_xcb_events()?;
+            self.handle_idle()?;
+
+            if let PollStatus::ReadAvailable = poller.wait(next_deadline)? {
+                self.flush_drain_xcb_events()?;
             }
             /*
             // Check if the user has requested the window to close
@@ -96,6 +96,7 @@ impl EventLoop {
         }
 
         poller.delete()?;
+        self.hide()?;
 
         Ok(())
     }
@@ -131,7 +132,9 @@ impl EventLoop {
     }
 
     #[inline]
-    fn drain_xcb_events(&self) -> Result<bool, FatalError> {
+    fn flush_drain_xcb_events(&self) -> Result<bool, FatalError> {
+        self.shared.connection.conn.flush()?;
+
         let mut event_received = false;
         while let Some(event) = self.shared.connection.conn.poll_for_event()? {
             event_received = true;
@@ -177,21 +180,9 @@ impl EventLoop {
         Ok(())
     }
 
-    fn handle_connection_event_ready(&mut self) -> Result<PostAction, FatalError> {
-        self.drain_xcb_events()?;
-
-        Ok(PostAction::Continue)
-    }
-
-    fn handle_idle(&self) {
-        if let Err(e) = self.try_handle_idle() {
-            self.trigger_fatal_error(e.into());
-        }
-    }
-
-    fn try_handle_idle(&self) -> Result<(), FatalError> {
+    fn handle_idle(&self) -> Result<(), FatalError> {
         // Check for any events in the internal buffers before going to sleep:
-        self.drain_xcb_events()?;
+        self.flush_drain_xcb_events()?;
 
         loop {
             self.sizing_state.handle_coalesced_resize_events(
@@ -202,12 +193,10 @@ impl EventLoop {
 
             self.present_state.handle_requests(&self.shared, &self.handler, &self.host)?;
 
-            if !self.drain_xcb_events()? {
+            if !self.flush_drain_xcb_events()? {
                 break;
             }
         }
-
-        self.shared.connection.conn.flush()?;
 
         Ok(())
     }

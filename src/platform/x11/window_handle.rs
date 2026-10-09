@@ -20,3 +20,9 @@ impl WindowHandle {
         Ok(Self { shared, handler: Handler::new(handler), ev_loop: event_loop_handle })
     }
 }
+
+impl Drop for WindowHandle {
+    fn drop(&mut self) {
+        todo!() // Deinit timers & FD watchers
+    }
+}

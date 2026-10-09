@@ -1,5 +1,6 @@
-use polling::{Event, Events, Poller};
+use polling::{Event, Events, PollMode, Poller};
 use std::io;
+use std::io::ErrorKind;
 use std::os::fd::{AsFd, BorrowedFd};
 use std::time::Instant;
 
@@ -15,15 +16,19 @@ impl<'a> ConnectionPoller<'a> {
     pub fn new(source: &'a impl AsFd) -> io::Result<Self> {
         let poller = Poller::new()?;
         let fd = source.as_fd();
-        unsafe { poller.add(&fd, Event::readable(CONNECTION_KEY))? };
+        unsafe { poller.add_with_mode(&fd, Event::readable(CONNECTION_KEY), PollMode::Level)? };
 
         Ok(Self { poller, fd, events: Events::new() })
     }
 
-    pub fn wait(&mut self) -> io::Result<PollStatus> {
+    pub fn wait(&mut self, deadline: Option<Instant>) -> io::Result<PollStatus> {
         self.events.clear();
+
         // NOTE: polling crate already handles retrying on EINTR
-        let new_events_count = self.poller.wait(&mut self.events, None)?;
+        let new_events_count = match deadline {
+            Some(deadline) => self.poller.wait_deadline(&mut self.events, deadline)?,
+            None => self.poller.wait(&mut self.events, None)?,
+        };
 
         if new_events_count == 0 {
             return Ok(PollStatus::Nothing);
@@ -35,7 +40,7 @@ impl<'a> ConnectionPoller<'a> {
             }
 
             if let Some(true) = event.is_err() {
-                panic!("xcb connection poll error")
+                return Err(io::Error::new(ErrorKind::BrokenPipe, "X11 connection closed"));
             }
 
             if event.is_interrupt() {

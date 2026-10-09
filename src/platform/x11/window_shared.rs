@@ -18,6 +18,7 @@ pub struct WindowShared {
     pub cursor_state: CursorStateShared,
     pub present_state: PresentStateShared,
     pub sizing_state: SizingStateShared,
+    pub timer_manager: TimerManager,
 
     #[cfg(feature = "opengl")]
     gl_context: Option<PlatformGlContext>,
@@ -64,6 +65,7 @@ impl WindowShared {
             cursor_state: CursorStateShared::new(),
             present_state: PresentStateShared::new(),
             sizing_state,
+            timer_manager: TimerManager::new(&host),
             host,
 
             xcb_window,
@@ -134,7 +136,7 @@ impl WindowShared {
 
     #[inline]
     pub fn create_timer(&self, duration: Duration) -> PlatformResult<TimerHandle> {
-        insert_timer(&self.host, duration)
+        self.timer_manager.create_timer(duration, &self.host)
     }
 
     pub fn scale_factor(&self) -> f64 {
