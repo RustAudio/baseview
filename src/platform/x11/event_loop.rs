@@ -9,11 +9,13 @@ use crate::platform::x11::sizing::SizingState;
 use crate::platform::ParentWindowHandle;
 use crate::utils::SizingStrategy;
 use crate::window::WindowInitializer;
+use crate::wrappers::poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{warn, WindowContext};
 use crate::{Event, WindowEvent};
 use calloop::PostAction;
 use std::result::Result;
+use std::time::Instant;
 use x11rb::connection::Connection;
 use x11rb::protocol::Event as XEvent;
 
@@ -65,7 +67,37 @@ impl EventLoop {
     }
 
     pub fn run_until_closed(&self) -> PlatformResult<()> {
-        todo!()
+        self.show()?;
+
+        let connection = Rc::clone(&self.shared.connection);
+        let mut poller = ConnectionPoller::new(&connection.conn)?;
+
+        let mut last_frame = Instant::now();
+        self.shared.stop_own_event_loop.set(false);
+
+        while !self.shared.stop_own_event_loop.get() {
+            // TODO: handle timers
+
+            // Check for any events in the internal buffers
+            // before going to sleep:
+            self.handle_idle();
+
+            eprintln!("WAITING...");
+            // FIXME: handle errors
+            if let PollStatus::ReadAvailable = dbg!(poller.wait())? {
+                self.drain_xcb_events()?;
+            }
+            /*
+            // Check if the user has requested the window to close
+            if self.window.close_requested.get() {
+                self.handle_must_close();
+                self.window.close_requested.set(false);
+            }*/
+        }
+
+        poller.delete()?;
+
+        Ok(())
     }
 
     pub fn size(&self) -> WindowSize {
@@ -115,9 +147,9 @@ impl EventLoop {
         //self.loop_signal.wakeup();
     }
 
-    pub fn trigger_fatal_error(&mut self, error: PlatformError) {
+    pub fn trigger_fatal_error(&self, error: PlatformError) {
         if self.run_error.is_none() {
-            self.run_error = Some(error);
+            //self.run_error = Some(error); TODO
         }
         self.stop_now();
     }
@@ -151,7 +183,7 @@ impl EventLoop {
         Ok(PostAction::Continue)
     }
 
-    fn handle_idle(&mut self) {
+    fn handle_idle(&self) {
         if let Err(e) = self.try_handle_idle() {
             self.trigger_fatal_error(e.into());
         }
