@@ -1,5 +1,5 @@
+use crate::dpi::PhysicalPosition;
 use crate::dpi::PhysicalSize;
-use dpi::PhysicalPosition;
 use std::fmt::Debug;
 use windows_sys::Win32::Foundation::RECT;
 

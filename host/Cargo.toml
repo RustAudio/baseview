@@ -1,0 +1,18 @@
+[package]
+name = "baseview-host"
+version = "0.1.0"
+authors = [
+    "Adrien Prokopowicz <prokopylmc@gmail.com>"
+]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Interoperability library for plugin UIs"
+keywords = ["windowing", "audio", "plugin"]
+categories = ["gui"]
+repository = "https://github.com/RustAudio/baseview"
+
+rust-version = "1.82"
+
+[dependencies]
+dpi = "0.1.2"
+raw-window-handle = "0.6.2"

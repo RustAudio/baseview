@@ -113,13 +113,13 @@ pub struct WindowThreadHandle {
 }
 
 impl WindowThreadHandle {
-    pub fn create_window(init: WindowInitializer) -> PlatformResult<Self> {
+    pub fn create_window(mut init: WindowInitializer) -> PlatformResult<Self> {
         let (tx, rx) = result_channel();
         let shared = Arc::new(WindowThreadShared::new());
         let (request_sender, request_receiver) = calloop::channel::sync_channel(1);
         let (response_sender, response_receiver) = mpsc::channel();
         let (main_thread_caller, main_thread_receiver) =
-            MainThreadCaller::new(init.host.main_thread);
+            MainThreadCaller::new(init.host.take_main_thread());
 
         let join_handle = {
             let shared = Arc::clone(&shared);
@@ -155,7 +155,7 @@ impl WindowThreadHandle {
             loop_signal,
             request_sender,
             response_receiver,
-            host_callbacks: init.host.callbacks.map(|c| c.into_inner().into()),
+            host_callbacks: init.host.take_callbacks().map(|c| c.into()),
             callback_receiver: main_thread_receiver,
         })
     }

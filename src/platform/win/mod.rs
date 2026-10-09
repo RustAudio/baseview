@@ -69,7 +69,7 @@ unsafe impl Sync for ParentWindowHandle {}
 
 impl ParentWindowHandle {
     pub fn extract(
-        parent: &impl HasWindowHandle,
+        parent: &(impl HasWindowHandle + ?Sized),
     ) -> core::result::Result<Self, ParentWindowHandleError> {
         let parent = match parent.window_handle()?.as_raw() {
             RawWindowHandle::Win32(h) => h.hwnd,

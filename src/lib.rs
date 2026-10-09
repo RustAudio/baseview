@@ -1,11 +1,12 @@
 mod clipboard;
 mod context;
 mod damage;
-pub mod dpi;
 mod error;
 mod event;
 mod handler;
-pub mod host;
+pub mod host {
+    pub use baseview_host::host::*;
+}
 mod keyboard;
 mod mouse_cursor;
 mod settings;
@@ -30,6 +31,8 @@ pub use settings::*;
 pub use timer::TimerHandle;
 pub use waker::WindowWaker;
 pub use window::*;
+
+pub mod dpi;
 
 #[allow(unused, reason = "Some platforms may not use all exports from this mod")]
 pub(crate) use tracing::*;

@@ -3,7 +3,6 @@
 use super::keyboard::{make_modifiers, KeyboardState};
 use super::window::WindowSharedState;
 use crate::dpi::{LogicalPosition, LogicalSize};
-use crate::host::Host;
 use crate::platform::macos::cursor::CursorManager;
 use crate::platform::macos::timer::TimerManager;
 use crate::platform::*;
@@ -16,6 +15,7 @@ use crate::{
     DamageArea, DropData, DropEffect, Event, EventStatus, HandlerError, MouseButton, MouseEvent,
     ScrollDelta, WindowEvent, WindowHandler, WindowSize,
 };
+use baseview_host::host::HostCallbacks;
 use objc2::__framework_prelude::Retained;
 use objc2::rc::Weak;
 use objc2::runtime::{NSObjectProtocol, ProtocolObject};
@@ -78,7 +78,7 @@ pub(crate) struct BaseviewView {
     display_link: OnceCell<Retained<CADisplayLink>>,
     display_link_started: Cell<bool>,
 
-    host: Host,
+    host: Option<RefCell<Box<dyn HostCallbacks>>>,
     pub(crate) cursor_manager: CursorManager,
 
     timers: TimerManager,
@@ -89,7 +89,7 @@ pub(crate) struct BaseviewView {
 
 impl BaseviewView {
     pub fn new(
-        init: WindowInitializer, parenting: ViewParentingType, final_size: LogicalSize<f64>,
+        mut init: WindowInitializer, parenting: ViewParentingType, final_size: LogicalSize<f64>,
         mtm: MainThreadMarker,
     ) -> Result<(Retained<View<Self>>, Rc<WindowSharedState>)> {
         let view_rect =
@@ -111,7 +111,7 @@ impl BaseviewView {
             window_handler: WindowHandlerContainer::new(),
             notification_center_observer: None.into(),
             parenting: ViewParentingType::Uninitialized.into(),
-            host: init.host,
+            host: init.host.take_callbacks().map(|c| c.into()),
             lifetime_tied_to_app: None.into(),
             cursor_manager: CursorManager::new(),
 
@@ -226,7 +226,7 @@ impl BaseviewView {
         }
 
         if !from_host {
-            this.host.notify_destroyed();
+            this.host_notify_destroyed();
         }
     }
 
@@ -326,6 +326,19 @@ impl BaseviewView {
             window.setContentMaxSize(NSSize::new(max_size.width, max_size.height));
         }
     }
+
+    fn host_notify_destroyed(&self) {
+        let Some(host) = &self.host else { return };
+        let Ok(mut host) = host.try_borrow_mut() else { return };
+        host.destroyed();
+    }
+
+    fn host_request_resize(&self, new_size: WindowSize) -> core::result::Result<(), HandlerError> {
+        let Some(host) = &self.host else { return Ok(()) };
+        let Ok(mut host) = host.try_borrow_mut() else { return Ok(()) };
+        host.request_resize(new_size).map_err(HandlerError::from_boxed)?;
+        Ok(())
+    }
 }
 
 impl Drop for BaseviewView {
@@ -396,7 +409,7 @@ impl ViewImpl for BaseviewView {
             }
 
             if notify_host {
-                if let Err(e) = this.host.request_resize(new_size) {
+                if let Err(e) = this.host_request_resize(new_size) {
                     warn!("Host failed to resize parent view: {}", e);
 
                     Self::resize(this, previous, false, false);

@@ -36,7 +36,7 @@ opengl = [
 [dependencies]
 keyboard-types = { version = "0.8.3" }
 raw-window-handle = "0.6.2"
-dpi = "0.1.2"
+baseview-host = { path = "./host", version = "0.1.0" }
 tracing = { version = "0.1", optional = true }
 
 [target.'cfg(target_os="linux")'.dependencies]
@@ -97,6 +97,7 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
 
 [workspace]
 members = [
+    "host",
     "examples/cursors",
     "examples/open_parented",
     "examples/open_window",
@@ -108,7 +109,7 @@ members = [
     "examples/timers",
     "examples/external-wakeup",
     "tests/partial-rendering"
-]
+    , "host"]
 
 [lints.clippy]
 missing_safety_doc = "allow"

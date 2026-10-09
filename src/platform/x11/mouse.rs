@@ -18,10 +18,9 @@
 //   the keyboard modifier keys at the time of the event.
 //   http://rtbo.github.io/rust-xcb/src/xcb/ffi/xproto.rs.html#445
 
-use crate::platform::prelude::Handler;
+use crate::platform::prelude::*;
 use crate::platform::x11::keyboard::key_mods;
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta};
-use dpi::PhysicalPosition;
 use x11rb::protocol::xproto::{
     ButtonPressEvent, ButtonReleaseEvent, EnterNotifyEvent, LeaveNotifyEvent, MotionNotifyEvent,
 };

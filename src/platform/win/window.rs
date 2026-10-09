@@ -4,16 +4,10 @@ use windows_sys::Win32::{
     UI::{Controls::WM_MOUSELEAVE, WindowsAndMessaging::*},
 };
 
-use crate::dpi::{PhysicalPosition, PhysicalSize, Size};
-use crate::{warn, DamageArea, EventStatus, HandlerError, WindowHandler};
-use std::cell::{Cell, OnceCell};
-use std::num::NonZeroU32;
-use windows_sys::Win32::Foundation::POINT;
-
 use super::drop_target::DropTarget;
 use super::*;
+use crate::dpi::{PhysicalPosition, PhysicalSize, Size};
 use crate::handler::WindowHandlerBuilder;
-use crate::host::Host;
 use crate::platform::win::window_state::{WindowSharedState, WindowState};
 use crate::platform::PlatformError;
 use crate::utils::SizingStrategy;
@@ -24,7 +18,12 @@ use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, LibraryModule, Rect,
     TimerId, WindowStyle,
 };
+use crate::{warn, DamageArea, EventStatus, HandlerError, WindowHandler};
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
+use baseview_host::host::HostCallbacks;
+use std::cell::{Cell, OnceCell, RefCell};
+use std::num::NonZeroU32;
+use windows_sys::Win32::Foundation::POINT;
 
 fn hi_word(wparam: WPARAM) -> u16 {
     ((wparam >> 16) & 0xffff) as u16
@@ -233,7 +232,7 @@ pub struct BaseviewWindow {
 
     handler_builder: Cell<Option<WindowHandlerBuilder>>,
     handler: OnceCell<Box<dyn WindowHandler>>,
-    host: Host,
+    host: Option<RefCell<Box<dyn HostCallbacks>>>,
 
     // Workaround some VST3 hosts (e.g. Bitwig) not allowing request_resize before show() occurs
     pub host_needs_new_size_notified_on_show: Cell<Option<PhysicalSize<u32>>>,
@@ -247,7 +246,9 @@ pub struct BaseviewWindow {
 }
 
 impl BaseviewWindow {
-    pub fn create(shared_state: Rc<WindowSharedState>, init: WindowInitializer) -> Result<HWnd> {
+    pub fn create(
+        shared_state: Rc<WindowSharedState>, mut init: WindowInitializer,
+    ) -> Result<HWnd> {
         shared_state.init(&init);
 
         let style = WindowStyle::from_settings(&init.settings);
@@ -276,7 +277,7 @@ impl BaseviewWindow {
                     handler_builder: Cell::new(Some(init.builder)),
                     handler: OnceCell::new(),
                     shared_state,
-                    host: init.host,
+                    host: init.host.take_callbacks().map(|cb| cb.into()),
                     host_needs_new_size_notified_on_show: None.into(),
 
                     _drop_target: None.into(),
@@ -300,7 +301,9 @@ impl BaseviewWindow {
             return;
         };
 
-        self.host.notify_destroyed()
+        let Some(host) = &self.host else { return };
+        let Ok(mut host) = host.try_borrow_mut() else { return };
+        host.destroyed();
     }
 
     fn request_host_resize(&self, new_size: WindowSize) -> core::result::Result<(), HandlerError> {
@@ -308,7 +311,10 @@ impl BaseviewWindow {
             return Ok(());
         };
 
-        self.host.request_resize(new_size)
+        let Some(host) = &self.host else { return Ok(()) };
+        let Ok(mut host) = host.try_borrow_mut() else { return Ok(()) };
+        host.request_resize(new_size).map_err(HandlerError::from_boxed)?;
+        Ok(())
     }
 
     fn adapt_host_window_to_size(

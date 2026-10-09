@@ -1,5 +1,5 @@
+use crate::dpi::PhysicalSize;
 use crate::HandlerError;
-use dpi::PhysicalSize;
 use std::fmt::Display;
 
 pub type Result<T> = std::result::Result<T, PlatformError>;

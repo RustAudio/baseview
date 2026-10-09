@@ -4,6 +4,7 @@ use crate::host::Host;
 use crate::platform;
 use crate::waker::WindowWaker;
 use crate::*;
+use raw_window_handle::HasWindowHandle;
 use std::marker::PhantomData;
 
 /// A handle to a Window created by baseview.
@@ -246,65 +247,95 @@ pub(crate) struct WindowInitializer {
     pub host: Host,
 }
 
-/// A window's size, which can be read in either logical or physical pixels.
-///
-/// Methods that produce this type in baseview guarantee that either the physical or the logical
-/// size is directly from the underlying platform API.
-///
-/// This means that for either of the size types, there is at most only one conversion performed,
-/// which minimizes errors that may occur due to rounding.
-#[derive(Debug, Copy, Clone)]
-pub struct WindowSize {
-    /// The window's size in physical pixels.
-    pub physical: PhysicalSize<u32>,
-    /// The window's size in logical pixels.
-    pub logical: LogicalSize<f64>,
-    /// The backing scale factor of the window.
-    ///
-    /// This is the value used to convert between the physical and logical sizes.
-    pub scale_factor: f64,
-}
+pub use baseview_host::dpi::WindowSize;
+use baseview_host::HostedWindow;
 
-impl WindowSize {
-    /// Constructs a [`WindowSize`] from a given [`PhysicalSize`] and `scale_factor`.
-    ///
-    /// The [`LogicalSize`] is converted from the given physical size, using the given scale factor.
+impl HostedWindow for Window {
     #[inline]
-    pub fn from_physical(physical: PhysicalSize<u32>, scale_factor: f64) -> Self {
-        Self { physical, logical: physical.to_logical(scale_factor), scale_factor }
-    }
-
-    /// Constructs a [`WindowSize`] from a given [`LogicalSize`] and `scale_factor`.
-    ///
-    /// The [`PhysicalSize`] is converted from the given physical size, using the given scale factor.
-    #[inline]
-    pub fn from_logical(logical: LogicalSize<f64>, scale_factor: f64) -> Self {
-        Self { physical: logical.to_physical(scale_factor), logical, scale_factor }
+    fn run_until_closed(self) -> Result<(), Box<dyn std::error::Error>>
+    where
+        Self: Sized,
+    {
+        self.run_until_closed()?;
+        Ok(())
     }
 
     #[inline]
-    pub fn to_native_size<P: Pixel>(&self) -> NativeSize<P> {
-        (*self).into()
+    fn run_until_closed_dyn(self: Box<Self>) -> Result<(), Box<dyn std::error::Error>> {
+        self.run_until_closed()?;
+        Ok(())
     }
-}
 
-impl<P: Pixel> From<WindowSize> for PhysicalSize<P> {
     #[inline]
-    fn from(size: WindowSize) -> Self {
-        size.physical.cast()
+    fn size(&self) -> WindowSize {
+        self.size()
     }
-}
 
-impl<P: Pixel> From<WindowSize> for LogicalSize<P> {
     #[inline]
-    fn from(size: WindowSize) -> Self {
-        size.logical.cast()
+    fn resize(&self, size: Size) -> Result<(), Box<dyn std::error::Error>> {
+        self.resize(size)?;
+        Ok(())
     }
-}
 
-impl From<WindowSize> for Size {
     #[inline]
-    fn from(value: WindowSize) -> Self {
-        value.to_native_size::<f64>().into()
+    fn suggest_fallback_scale_factor(
+        &self, scale_factor: f64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.suggest_fallback_scale_factor(scale_factor)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn is_open(&self) -> bool {
+        self.is_open()
+    }
+
+    #[inline]
+    fn is_resizable(&self) -> bool {
+        self.is_resizable()
+    }
+
+    #[inline]
+    fn min_size(&self) -> Option<Size> {
+        self.min_size()
+    }
+
+    #[inline]
+    fn max_size(&self) -> Option<Size> {
+        self.max_size()
+    }
+
+    #[inline]
+    fn host_main_thread_callback(&self) {
+        self.host_main_thread_callback()
+    }
+
+    #[inline]
+    fn set_parent(&self, parent: &dyn HasWindowHandle) -> Result<(), Box<dyn std::error::Error>> {
+        self.set_parent(parent)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn show(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.show()?;
+        Ok(())
+    }
+
+    #[inline]
+    fn hide(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.hide()?;
+        Ok(())
+    }
+
+    #[inline]
+    fn adjust_size(&self, size: NativeSize<u32>) -> NativeSize<u32> {
+        self.adjust_size(size)
+    }
+
+    #[inline]
+    fn request_poll(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.request_poll()?;
+        Ok(())
     }
 }

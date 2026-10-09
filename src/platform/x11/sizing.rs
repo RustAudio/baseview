@@ -1,7 +1,6 @@
 use super::prelude::*;
 use crate::utils::SizingStrategy;
 use crate::{WindowSettings, WindowSize};
-use dpi::{PhysicalSize, Size};
 use std::cell::Cell;
 use std::num::{NonZero, NonZeroU32};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};

@@ -1,4 +1,4 @@
-use dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize};
+use crate::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize};
 use objc2_foundation::NSRect;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
