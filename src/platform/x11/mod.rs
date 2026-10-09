@@ -5,6 +5,7 @@ mod event_loop;
 #[cfg(feature = "opengl")]
 pub mod gl;
 mod handler;
+mod host_handle;
 mod keyboard;
 mod mouse;
 mod present;
@@ -12,8 +13,9 @@ mod sizing;
 mod timer;
 mod visual_info;
 mod waker;
+mod window_handle;
 mod window_shared;
-mod window_thread;
+// mod window_thread;
 mod x11_connection;
 mod xcb_window;
 
@@ -29,7 +31,6 @@ pub(crate) mod prelude {
     pub use super::visual_info::WindowVisualConfig;
     pub use super::waker::WindowWaker;
     pub use super::window_shared::WindowShared;
-    pub use super::window_thread::{HostCallback, WindowThreadHandle, WindowThreadShared};
     pub use super::x11_connection::X11Connection;
     pub use super::xcb_window::XcbWindow;
     pub(crate) use crate::{dpi::*, tracing::*, MouseCursor, WindowSettings, WindowSize};
@@ -61,6 +62,7 @@ pub use error::PlatformError;
 pub use present::DamageRect;
 pub use timer::TimerHandle;
 pub use waker::WindowWaker;
+pub type WindowHandle = EventLoop;
 
 #[derive(Clone)]
 pub struct PlatformHandle {
@@ -150,8 +152,6 @@ impl Display for ParentWindowHandleError {
 pub fn assume_standalone_in_process() {
     // No-op on X11
 }
-
-pub type WindowHandle = WindowThreadHandle;
 
 pub fn copy_to_clipboard(_data: &str) {
     unimplemented!()

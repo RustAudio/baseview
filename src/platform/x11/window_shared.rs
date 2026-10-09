@@ -1,5 +1,5 @@
 use super::prelude::*;
-use calloop::{LoopHandle, LoopSignal};
+use crate::platform::x11::host_handle::HostHandle;
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::time::Duration;
 use x11rb::protocol::xproto;
@@ -9,6 +9,7 @@ use x11rb::protocol::xproto::Visualid;
 pub struct WindowShared {
     pub xcb_window: XcbWindow,
     pub connection: Rc<X11Connection>,
+    host: Rc<HostHandle>,
     visual_id: Visualid,
 
     pub is_focused: Cell<bool>,
@@ -17,23 +18,17 @@ pub struct WindowShared {
     pub present_state: PresentStateShared,
     pub sizing_state: SizingStateShared,
 
-    loop_signal: LoopSignal,
-    loop_handle: LoopHandle<'static, EventLoop>,
-
-    pub main_thread_shared: Arc<WindowThreadShared>,
-
     #[cfg(feature = "opengl")]
     gl_context: Option<PlatformGlContext>,
 }
 
 impl WindowShared {
     pub(crate) fn create(
-        mut settings: WindowSettings, ev_loop: &calloop::EventLoop<'static, EventLoop>,
-        thread_shared: Arc<WindowThreadShared>,
+        mut settings: WindowSettings, host: Rc<HostHandle>,
     ) -> PlatformResult<Rc<Self>> {
         let connection = X11Connection::connect()?;
 
-        let sizing_state = SizingStateShared::load(&connection, &thread_shared.sizing, &settings)?;
+        let sizing_state = SizingStateShared::load(&connection, &settings)?;
 
         let connection = Rc::new(connection);
 
@@ -62,15 +57,12 @@ impl WindowShared {
             #[cfg(feature = "opengl")]
             gl_context: visual_config.make_gl_context(&xcb_window, &connection)?,
 
-            loop_signal: ev_loop.get_signal(),
-            loop_handle: ev_loop.handle(),
-
             is_focused: false.into(),
 
             cursor_state: CursorStateShared::new(),
             present_state: PresentStateShared::new(),
             sizing_state,
-            main_thread_shared: thread_shared,
+            host,
 
             xcb_window,
             connection,
@@ -82,8 +74,7 @@ impl WindowShared {
     }
 
     pub fn request_close(&self) {
-        self.loop_signal.stop();
-        self.loop_signal.wakeup();
+        todo!()
     }
 
     pub fn request_redraw(&self) {
@@ -91,14 +82,16 @@ impl WindowShared {
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
-        self.present_state.request_present_notify_after(duration, &self.loop_handle);
+        self.present_state.request_present_notify_after(duration, &self.host);
     }
 
     pub fn waker(&self) -> WindowWaker {
+        todo!()
+        /*
         WindowWaker {
             loop_signal: self.loop_signal.clone(),
             shared: Arc::clone(&self.main_thread_shared),
-        }
+        }*/
     }
 
     pub fn has_focus(&self) -> bool {
@@ -138,7 +131,7 @@ impl WindowShared {
 
     #[inline]
     pub fn create_timer(&self, duration: Duration) -> PlatformResult<TimerHandle> {
-        insert_timer(&self.loop_handle, duration)
+        insert_timer(&self.host, duration)
     }
 
     pub fn scale_factor(&self) -> f64 {

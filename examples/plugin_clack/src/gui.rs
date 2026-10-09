@@ -1,9 +1,7 @@
 use crate::window_handler::OpenWindowExample;
 use crate::ExamplePluginMainThread;
 use baseview::dpi::*;
-use baseview::host::{
-    Host, HostCallbacks, HostFdSupport, HostMainThreadCaller, HostTimerSupport, TimerHandle,
-};
+use baseview::host::{Host, HostCallbacks, HostFdSupport, HostTimerSupport, TimerHandle};
 use baseview::{Window, WindowSettings, WindowSize};
 use clack_extensions::gui::{
     AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, HostGui,
@@ -12,7 +10,7 @@ use clack_extensions::gui::{
 use clack_extensions::posix_fd::{FdFlags, HostPosixFd};
 use clack_extensions::timer::{HostTimer, TimerId};
 use clack_plugin::plugin::PluginError;
-use clack_plugin::prelude::{HostMainThreadHandle, HostSharedHandle};
+use clack_plugin::prelude::HostMainThreadHandle;
 use std::error::Error;
 use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::time::Duration;
@@ -45,8 +43,7 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
         // it releases all references to host callbacks on `drop` (which we do unconditionally)
         let host_handle = unsafe { self.host.with_arbitrary_lifetime() };
 
-        let mut host =
-            Host::new().with_main_thread(MainThreadHandler { host: host_handle.shared() });
+        let mut host = Host::new();
 
         if let Some(gui) = self.host_gui {
             host = host.with_callbacks(HostGuiCallbacks { ext: gui, host: host_handle });
@@ -168,29 +165,19 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 }
 
-struct MainThreadHandler {
-    host: HostSharedHandle<'static>,
-}
-
-impl HostMainThreadCaller for MainThreadHandler {
-    fn call_main_thread(&mut self) {
-        self.host.request_callback();
-    }
-}
-
 struct HostGuiCallbacks {
     ext: HostGui,
     host: HostMainThreadHandle<'static>,
 }
 
 impl HostCallbacks for HostGuiCallbacks {
-    fn request_resize(&mut self, new_size: WindowSize) -> Result<(), Box<dyn Error>> {
+    fn request_resize(&self, new_size: WindowSize) -> Result<(), Box<dyn Error>> {
         let new_size = new_size.to_native_size();
         self.ext.request_resize(&self.host, new_size.width, new_size.height)?;
         Ok(())
     }
 
-    fn destroyed(&mut self) {
+    fn destroyed(&self) {
         self.ext.closed(&self.host, true);
     }
 }
@@ -201,13 +188,13 @@ struct HostTimerCallbacks {
 }
 
 impl HostTimerSupport for HostTimerCallbacks {
-    fn register_timer(&mut self, period: Duration) -> Result<TimerHandle, Box<dyn Error>> {
+    fn register_timer(&self, period: Duration) -> Result<TimerHandle, Box<dyn Error>> {
         let period_ms = period.as_millis().try_into().unwrap_or(u32::MAX);
         let timer = self.ext.register_timer(&self.host, period_ms)?;
         Ok(TimerHandle(timer.0))
     }
 
-    fn unregister_timer(&mut self, timer: TimerHandle) -> Result<(), Box<dyn Error>> {
+    fn unregister_timer(&self, timer: TimerHandle) -> Result<(), Box<dyn Error>> {
         self.ext.unregister_timer(&self.host, TimerId(timer.0))?;
         Ok(())
     }

@@ -399,7 +399,7 @@ pub(crate) fn key_mods(mods: KeyButMask) -> Modifiers {
 }
 
 pub(crate) fn convert_key_press_event(
-    key_press: &KeyPressEvent, state: &mut Option<XkbcommonState>,
+    key_press: &KeyPressEvent, state: &Option<XkbcommonState>,
 ) -> KeyboardEvent {
     let hw_keycode = key_press.detail;
 
@@ -419,7 +419,7 @@ pub(crate) fn convert_key_press_event(
 }
 
 pub(crate) fn convert_key_release_event(
-    key_release: &KeyReleaseEvent, state: &mut Option<XkbcommonState>,
+    key_release: &KeyReleaseEvent, state: &Option<XkbcommonState>,
 ) -> KeyboardEvent {
     let hw_keycode = key_release.detail;
 

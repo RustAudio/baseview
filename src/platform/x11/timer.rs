@@ -1,4 +1,5 @@
 use crate::platform::x11::event_loop::EventLoop;
+use crate::platform::x11::host_handle::HostHandle;
 use crate::platform::PlatformError;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::{LoopHandle, RegistrationToken};
@@ -23,13 +24,15 @@ pub struct TimerHandleInner {
 impl TimerHandleInner {}
 
 pub(crate) fn insert_timer(
-    loop_handle: &LoopHandle<EventLoop>, duration: Duration,
+    loop_handle: &HostHandle, duration: Duration,
 ) -> Result<TimerHandle, PlatformError> {
     let timer = Timer::from_duration(duration);
 
     let handle = Rc::<TimerHandleInner>::new_cyclic(move |this| {
         let this = Weak::clone(this);
+        todo!()
 
+        /*
         let result = loop_handle.insert_source(timer, move |_, _, e| {
             if let Some(this) = this.upgrade() {
                 e.handle_timer(&TimerHandle(this));
@@ -42,7 +45,7 @@ pub(crate) fn insert_timer(
                 panic!("Failed to insert timer: {:?}", e);
             }
             Ok(token) => TimerHandleInner { token },
-        }
+        }*/
     });
 
     Ok(TimerHandle(handle))

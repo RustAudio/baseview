@@ -1,12 +1,9 @@
-use crate::platform::x11::window_thread::WindowThreadShared;
 use calloop::LoopSignal;
-use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Clone)]
 pub struct WindowWaker {
     pub(crate) loop_signal: LoopSignal,
-    pub(crate) shared: Arc<WindowThreadShared>,
 }
 
 impl WindowWaker {
@@ -15,12 +12,10 @@ impl WindowWaker {
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
-        self.shared.present.request_redraw_after(duration);
-        self.loop_signal.wakeup();
+        todo!()
     }
 
     pub fn request_poll(&self) {
-        self.shared.present.request_poll();
-        self.loop_signal.wakeup();
+        todo!()
     }
 }

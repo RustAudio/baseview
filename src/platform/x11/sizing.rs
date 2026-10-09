@@ -1,4 +1,5 @@
 use super::prelude::*;
+use crate::platform::x11::host_handle::HostHandle;
 use crate::utils::SizingStrategy;
 use crate::{WindowSettings, WindowSize};
 use std::cell::Cell;
@@ -9,27 +10,26 @@ use x11rb::properties::WmSizeHints;
 use x11rb::protocol::xproto::{ConfigureNotifyEvent, ReparentNotifyEvent};
 
 pub struct SizingState {
-    new_size: Option<PhysicalSize<u16>>,
-    new_parent_size: Option<PhysicalSize<u16>>,
-    parent_id: Option<NonZeroU32>,
+    new_size: Cell<Option<PhysicalSize<u16>>>,
+    new_parent_size: Cell<Option<PhysicalSize<u16>>>,
+    parent_id: Cell<Option<NonZeroU32>>,
 }
 
 impl SizingState {
     pub fn new(parent_id: Option<NonZeroU32>) -> Self {
-        Self { new_size: None, new_parent_size: None, parent_id }
+        Self { new_size: None.into(), new_parent_size: None.into(), parent_id: parent_id.into() }
     }
 
-    pub fn handle_parent_notify(&mut self, e: ReparentNotifyEvent) {
-        self.parent_id = NonZero::new(e.parent);
+    pub fn handle_parent_notify(&self, e: ReparentNotifyEvent) {
+        self.parent_id.set(NonZero::new(e.parent));
     }
 
     pub fn non_coalesced_current_size(&self, shared: &WindowShared) -> PhysicalSize<u16> {
-        self.new_size.unwrap_or_else(|| shared.sizing_state.size())
+        self.new_size.get().unwrap_or_else(|| shared.sizing_state.size())
     }
 
     pub fn handle_coalesced_resize_events(
-        &mut self, shared: &WindowShared, handler: &Handler,
-        main_thread: Option<&mut MainThreadCaller>,
+        &self, shared: &WindowShared, handler: &Handler, host_handle: &HostHandle,
     ) -> Result<(), FatalError> {
         let mut comes_from_parent = false;
 
@@ -41,14 +41,14 @@ impl SizingState {
                 } else {
                     // Makes the rest of this function run on the new parent size immediately (without waiting for a ConfigureNotify round-trip)
                     // Also overrides any new sizes we may have received this event loop iteration,it would probably be invalidated anyway
-                    self.new_size = Some(new_parent_size);
+                    self.new_size.set(Some(new_parent_size));
                     comes_from_parent = true;
                 }
             }
         }
 
         let Some(new_size) = self.new_size.take() else { return Ok(()) };
-        let previous = shared.sizing_state.store_size(new_size, &shared.main_thread_shared.sizing);
+        let previous = shared.sizing_state.store_size(new_size);
 
         if previous == new_size {
             return Ok(());
@@ -58,7 +58,7 @@ impl SizingState {
         let new_size = shared.sizing_state.window_size();
 
         if let Err(()) = handler.resize(new_size) {
-            shared.sizing_state.store_size(previous, &shared.main_thread_shared.sizing);
+            shared.sizing_state.store_size(previous);
             shared.xcb_window.resize(previous.cast())?.check_warn();
             return Ok(());
         }
@@ -67,11 +67,9 @@ impl SizingState {
         // So if we're here, it's guaranteed not to be from a host request
 
         if !comes_from_parent {
-            if let Some(host) = main_thread {
-                host.send(HostCallback::Resized {
-                    new_size,
-                    previous: WindowSize::from_physical(previous.cast(), scale_factor),
-                })?;
+            if let Err(()) = host_handle.request_resize(new_size) {
+                let previous = WindowSize::from_physical(previous.cast(), scale_factor);
+                todo!() // roll back
             }
         }
 
@@ -81,25 +79,23 @@ impl SizingState {
         Ok(())
     }
 
-    pub fn handle_configure_notify_event(
-        &mut self, event: ConfigureNotifyEvent, window: &XcbWindow,
-    ) {
+    pub fn handle_configure_notify_event(&self, event: ConfigureNotifyEvent, window: &XcbWindow) {
         if event.window == 0 {
             return;
         }
 
         // These are coalesced and then handled asynchronously at the end of the event loop
         if event.window == window.id().get() {
-            self.new_size = Some(PhysicalSize::new(event.width, event.height));
-        } else if self.parent_id.is_some_and(|pid| pid.get() == event.window) {
+            self.new_size.set(Some(PhysicalSize::new(event.width, event.height)));
+        } else if self.parent_id.get().is_some_and(|pid| pid.get() == event.window) {
             // Also resize the window if the parent is resized
             // This works around some hosts that might not call set_size() right away (or at all...)
-            self.new_parent_size = Some(PhysicalSize::new(event.width, event.height));
+            self.new_parent_size.set(Some(PhysicalSize::new(event.width, event.height)));
         }
     }
 
     pub fn handle_host_resize(
-        &mut self, new_size: Size, handler: &Handler, shared: &WindowShared,
+        &self, new_size: Size, handler: &Handler, shared: &WindowShared,
     ) -> Result<(), PlatformError> {
         let scale_factor = shared.sizing_state.scale_factor();
         let new_size = new_size.to_physical(scale_factor);
@@ -108,7 +104,7 @@ impl SizingState {
     }
 
     pub fn handle_host_suggest_scale_factor(
-        &mut self, scale: f64, handler: &Handler, shared: &WindowShared,
+        &self, scale: f64, handler: &Handler, shared: &WindowShared,
     ) -> Result<(), PlatformError> {
         shared.sizing_state.host_suggested_scale_factor.set(Some(scale));
 
@@ -133,17 +129,12 @@ pub struct SizingStateShared {
 }
 
 impl SizingStateShared {
-    pub fn load(
-        connection: &X11Connection, sizing_thread_shared: &SizingThreadShared,
-        settings: &WindowSettings,
-    ) -> Result<Self, FatalError> {
+    pub fn load(connection: &X11Connection, settings: &WindowSettings) -> Result<Self, FatalError> {
         let scaling = connection.resources.xft_dpi.map(|dpi| dpi as f64 / 96.0);
         let initial_scale_factor = scaling.unwrap_or(1.0);
 
         let sizing_strategy = SizingStrategy::from_settings(settings);
         let window_size = settings.size.to_physical(initial_scale_factor);
-
-        sizing_thread_shared.set_scaling_factor(initial_scale_factor);
 
         Ok(Self {
             sizing_strategy,
@@ -177,16 +168,8 @@ impl SizingStateShared {
         get_size_hints(&self.sizing_strategy, self.window_size.get(), self.scale_factor())
     }
 
-    pub fn store_size(
-        &self, size: PhysicalSize<u16>, thread_shared: &SizingThreadShared,
-    ) -> PhysicalSize<u16> {
-        let previous = self.window_size.replace(size);
-
-        if previous != size {
-            thread_shared.set_size(size);
-        }
-
-        previous
+    pub fn store_size(&self, size: PhysicalSize<u16>) -> PhysicalSize<u16> {
+        self.window_size.replace(size)
     }
 
     pub fn resize_from_handler(&self, size: Size, window: &XcbWindow) -> PlatformResult<()> {
@@ -209,10 +192,10 @@ impl SizingStateShared {
         Ok(())
     }
 
-    pub fn resize_from_host(
+    fn resize_from_host(
         &self, new_size: PhysicalSize<u16>, handler: &Handler, shared: &WindowShared,
     ) -> PlatformResult<()> {
-        let previous = self.store_size(new_size, &shared.main_thread_shared.sizing);
+        let previous = self.store_size(new_size);
 
         if previous == new_size {
             return Ok(());
@@ -221,7 +204,7 @@ impl SizingStateShared {
         if let Err(()) =
             handler.resize(WindowSize::from_physical(new_size.cast(), self.scale_factor()))
         {
-            self.store_size(previous, &shared.main_thread_shared.sizing);
+            self.store_size(previous);
             return Ok(());
         }
 
@@ -234,57 +217,6 @@ impl SizingStateShared {
         // These come from the Host, no need to notify it about the new size
 
         Ok(())
-    }
-}
-
-pub struct SizingThreadShared {
-    scaling_factor: AtomicU64,
-    size: AtomicU32,
-    sizing_strategy: OnceLock<SizingStrategy>,
-}
-
-impl SizingThreadShared {
-    pub fn new() -> Self {
-        Self { size: 0.into(), scaling_factor: 0.into(), sizing_strategy: OnceLock::new() }
-    }
-
-    pub fn init(&self, state: &SizingStateShared) {
-        let Ok(()) = self.sizing_strategy.set(state.sizing_strategy) else { unreachable!() };
-        self.set_size(state.size());
-        self.set_scaling_factor(state.scale_factor());
-    }
-
-    pub fn get_scaling_factor(&self) -> f64 {
-        f64::from_be_bytes(self.scaling_factor.load(Ordering::Relaxed).to_ne_bytes())
-    }
-
-    fn set_scaling_factor(&self, scale_factor: f64) {
-        self.scaling_factor
-            .store(u64::from_be_bytes(scale_factor.to_ne_bytes()), Ordering::Relaxed);
-    }
-
-    pub fn sizing_strategy(&self) -> SizingStrategy {
-        self.sizing_strategy.get().copied().unwrap_or_default()
-    }
-
-    pub fn get_size(&self) -> PhysicalSize<u16> {
-        let bytes = self.size.load(Ordering::Relaxed);
-        let low = (bytes & u16::MAX as u32) as u16;
-        let high = (bytes >> 16) as u16;
-
-        PhysicalSize::new(low, high)
-    }
-
-    pub fn set_size(&self, size: PhysicalSize<u16>) {
-        let bytes = ((size.height as u32) << 16) | (size.width as u32);
-        self.size.store(bytes, Ordering::Relaxed);
-    }
-
-    pub fn window_size(&self) -> WindowSize {
-        let scale_factor = self.get_scaling_factor();
-        let size = self.get_size();
-
-        WindowSize::from_physical(size.cast(), scale_factor)
     }
 }
 
