@@ -26,10 +26,6 @@ pub trait HostCallbacks: 'static {
     /// Requests the parent window to be resized to accommodate the child window with the given new
     /// size.
     ///
-    /// Note that this method may be called *during* window initialization, i.e. in the middle of
-    /// [`Window::create_with_host`](crate::Window::create_with_host). Implementations should still
-    /// properly handle requests to the host in this case.
-    ///
     /// # Errors
     ///
     /// This can return any type of error, indicating the host either failed or denied to handle the

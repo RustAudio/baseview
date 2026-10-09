@@ -50,7 +50,7 @@ pub trait HostedWindow {
     ///
     /// The `size` can be provided in either physical or logical pixels.
     ///
-    /// Using this method does *not* trigger the [`HostCallbacks::request_resize`](host::HostCallbacks) callback.
+    /// Using this method does *not* trigger the [`HostCallbacks::request_resize`](super::host::HostCallbacks::request_resize) callback.
     fn resize(&self, size: Size) -> Result<(), Box<dyn Error>>;
 
     /// Suggests a fallback scale factor, if Baseview couldn't get one from the platform.
@@ -76,7 +76,7 @@ pub trait HostedWindow {
     /// It is guaranteed that no other objects (e.g. the parent window) are used by this window after
     /// this call.
     ///
-    /// Calling this method is more explicit, but otherwise identical to just dropping this [`Window`].
+    /// Calling this method is more explicit, but otherwise identical to just dropping this [`HostedWindow`].
     fn close(self)
     where
         Self: Sized,
@@ -90,17 +90,17 @@ pub trait HostedWindow {
 
     /// Returns `true` if the window can be resized by the user, `false` otherwise.
     ///
-    /// This is set by the [`WindowSettings::resizable`] field.
+    // This is set by the [`WindowSettings::resizable`] field. TODO: move some windowSettings to baseview-host
     fn is_resizable(&self) -> bool;
 
     /// Returns the minimum size of the window, if it has one.
     ///
-    /// This is set by the [`WindowSettings::min_size`] field.
+    // This is set by the [`WindowSettings::min_size`] field.
     fn min_size(&self) -> Option<Size>;
 
     /// Returns the minimum size of the window, if it has one.
     ///
-    /// This is set by the [`WindowSettings::max_size`] field.
+    // This is set by the [`WindowSettings::max_size`] field.
     fn max_size(&self) -> Option<Size>;
 
     /// Performs the work the window thread had scheduled for the main thread.
