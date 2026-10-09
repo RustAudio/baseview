@@ -1,6 +1,5 @@
 use super::prelude::*;
 use crate::platform::x11::drag_n_drop::ParseError;
-use crate::platform::x11::window_thread::RequestFailed;
 use crate::platform::x11::x11_connection::GetPropertyError;
 use crate::wrappers::xlib::{DisplayOpenFailedError, InitThreadsFailedError};
 use crate::HandlerError;
@@ -15,7 +14,6 @@ use x11rb::x11_utils::{TryParse, X11Error};
 pub enum FatalError {
     Connection(ConnectionError),
     Calloop(calloop::Error),
-    SendMainThread,
     Redraw(String),
 }
 
@@ -24,9 +22,6 @@ impl Display for FatalError {
         match self {
             FatalError::Connection(e) => e.fmt(f),
             FatalError::Calloop(e) => e.fmt(f),
-            FatalError::SendMainThread => {
-                f.write_str("Failed to send callback from X11 thread to main thread")
-            }
             FatalError::Redraw(e) => write!(f, "Fatal error while drawing the window: {}", e),
         }
     }
@@ -60,10 +55,7 @@ pub enum PlatformError {
     Connect(ConnectError),
     DisplayOpenFailed(DisplayOpenFailedError),
     Handler(HandlerError),
-    MainThreadRecvResult,
     Calloop(calloop::Error),
-    RequestFromMainThreadFailed(RequestFailed),
-    SendMainThread,
     Redraw(String),
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
@@ -89,13 +81,8 @@ impl Display for PlatformError {
             PlatformError::Connect(e) => e.fmt(f),
             PlatformError::DisplayOpenFailed(e) => e.fmt(f),
             PlatformError::Handler(e) => e.fmt(f),
-            PlatformError::MainThreadRecvResult => {
-                f.write_str("Failed to receive Window creation response from X11 thread: channel was closed unexpectedly")
-            },
             PlatformError::Redraw(e) => e.fmt(f),
             PlatformError::Calloop(e) => e.fmt(f),
-            PlatformError::RequestFromMainThreadFailed(e) => e.fmt(f),
-            PlatformError::SendMainThread => FatalError::SendMainThread.fmt(f),
             #[cfg(feature = "opengl")]
             PlatformError::XLib(e) => e.fmt(f),
             #[cfg(feature = "opengl")]
@@ -170,18 +157,11 @@ impl From<calloop::Error> for PlatformError {
     }
 }
 
-impl From<RequestFailed> for PlatformError {
-    fn from(value: RequestFailed) -> Self {
-        Self::RequestFromMainThreadFailed(value)
-    }
-}
-
 impl From<FatalError> for PlatformError {
     fn from(value: FatalError) -> Self {
         match value {
             FatalError::Connection(e) => Self::Connection(e),
             FatalError::Calloop(e) => Self::Calloop(e),
-            FatalError::SendMainThread => Self::SendMainThread,
             FatalError::Redraw(s) => Self::Redraw(s),
         }
     }

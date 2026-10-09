@@ -155,14 +155,14 @@ fn main() -> Result<(), baseview::Error> {
         })
     })?;
 
-    let waker = window.waker();
+    //let waker = window.waker();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(5));
 
         if tx.push(Message::Hello).is_err() {
             println!("Failed sending message");
         } else {
-            waker.request_poll();
+            //waker.request_poll();
         }
     });
 

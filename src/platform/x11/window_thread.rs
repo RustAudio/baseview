@@ -326,15 +326,7 @@ impl WindowThread {
         shared.init(&inner);
 
         let handler = handler.build(WindowContext::new(Rc::clone(&inner)))?;
-        let event_loop = EventLoop::new(
-            inner,
-            handler,
-            parent_id,
-            receiver,
-            sender,
-            main_thread_caller,
-            &mut ev_loop,
-        )?;
+        let event_loop = EventLoop::new(inner, handler, parent_id)?;
 
         Ok(Self { event_loop, ev_loop, shared })
     }
