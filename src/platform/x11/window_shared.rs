@@ -13,6 +13,7 @@ pub struct WindowShared {
     visual_id: Visualid,
 
     pub is_focused: Cell<bool>,
+    pub stop_own_event_loop: Cell<bool>,
 
     pub cursor_state: CursorStateShared,
     pub present_state: PresentStateShared,
@@ -58,6 +59,7 @@ impl WindowShared {
             gl_context: visual_config.make_gl_context(&xcb_window, &connection)?,
 
             is_focused: false.into(),
+            stop_own_event_loop: false.into(),
 
             cursor_state: CursorStateShared::new(),
             present_state: PresentStateShared::new(),
@@ -74,7 +76,8 @@ impl WindowShared {
     }
 
     pub fn request_close(&self) {
-        todo!()
+        self.stop_own_event_loop.set(true);
+        // TODO: external event loop
     }
 
     pub fn request_redraw(&self) {
