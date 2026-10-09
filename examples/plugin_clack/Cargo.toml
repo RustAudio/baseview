@@ -8,6 +8,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 clack-plugin = "0.2.0"
-clack-extensions = { version = "0.2.0", features = ["gui", "state", "clack-plugin", "raw-window-handle_06"] }
+clack-extensions = { version = "0.2.0", features = ["clack-plugin", "raw-window-handle_06", "gui", "state", "timer", "posix-fd"] }
 baseview = { path = "../..", features = ["tracing"] }
 softbuffer = "0.4.8"

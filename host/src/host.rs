@@ -26,16 +26,17 @@ pub trait HostMainThreadCaller: Send + 'static {
 pub struct TimerHandle(pub u32);
 
 pub trait HostTimerSupport: 'static {
-    fn register_timer(&mut self, period: Duration) -> Result<TimerHandle, HandlerError>;
-    fn unregister_timer(&mut self, timer: TimerHandle) -> Result<(), HandlerError>;
+    fn register_timer(&mut self, period: Duration) -> Result<TimerHandle, Box<dyn Error>>;
+    fn unregister_timer(&mut self, timer: TimerHandle) -> Result<(), Box<dyn Error>>;
 }
 
 #[cfg(unix)]
 use std::os::fd::*;
-#[cfg(unix)]
 pub trait HostFdSupport: 'static {
-    fn register_fd(&self, fd: impl AsFd) -> Result<(), HandlerError>;
-    fn unregister_fd(&self, fd: RawFd) -> Result<(), HandlerError>;
+    #[cfg(unix)]
+    fn register_fd(&self, fd: BorrowedFd) -> Result<(), Box<dyn Error>>;
+    #[cfg(unix)]
+    fn unregister_fd(&self, fd: RawFd) -> Result<(), Box<dyn Error>>;
 }
 
 /// A handler for baseview windows to interact with their host.
@@ -74,6 +75,10 @@ pub struct Host {
     callbacks: Option<Box<dyn HostCallbacks>>,
     #[cfg(target_os = "linux")]
     main_thread: Option<Box<dyn HostMainThreadCaller>>,
+    #[cfg(target_os = "linux")]
+    timer: Option<Box<dyn HostTimerSupport>>,
+    #[cfg(target_os = "linux")]
+    fd: Option<Box<dyn HostFdSupport>>,
 }
 
 impl Default for Host {
@@ -87,11 +92,13 @@ impl Host {
     #[inline]
     pub fn new() -> Self {
         Self {
+            callbacks: None,
             #[cfg(target_os = "linux")]
             main_thread: None,
             #[cfg(target_os = "linux")]
-            timer_support: None,
-            callbacks: None,
+            timer: None,
+            #[cfg(target_os = "linux")]
+            fd: None,
         }
     }
 
@@ -113,6 +120,36 @@ impl Host {
         #[cfg(not(target_os = "linux"))]
         {
             let _ = main_thread;
+            self
+        }
+    }
+
+    #[inline]
+    pub fn with_fd(self, fd: impl HostFdSupport) -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            let mut this = self;
+            this.fd = Some(Box::new(fd));
+            this
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = fd;
+            self
+        }
+    }
+
+    #[inline]
+    pub fn with_timer(self, timer: impl HostTimerSupport) -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            let mut this = self;
+            this.timer = Some(Box::new(timer));
+            this
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = timer;
             self
         }
     }
