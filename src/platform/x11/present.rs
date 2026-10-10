@@ -4,7 +4,6 @@ use crate::platform::x11::host_handle::HostHandle;
 use crate::platform::x11::sizing::SizingState;
 use crate::platform::x11::window_shared::WindowShared;
 use crate::DamageArea;
-use calloop::timer::TimeoutAction;
 use std::cell::Cell;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
@@ -141,7 +140,7 @@ impl PresentState {
         self.draw_now.set(true);
     }
 
-    fn tick_fallback_frame_timer(&self) -> Option<Instant> {
+    pub fn tick_fallback_frame_timer(&self) -> Option<Instant> {
         let Some(timer_handle) = self.fallback_frame_timer.get() else { return None };
 
         let (deadline, triggered) = self.fallback_frame_timer_manager.tick_next_timer();
@@ -154,21 +153,26 @@ impl PresentState {
         deadline
     }
 
-    fn setup_fallback_frame_timer(&self, host: &HostHandle) -> Result<(), PlatformError> {
+    fn setup_fallback_frame_timer(&self, host: &HostHandle) -> Result<(), FatalError> {
         const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 
         if let Some(previous) = self.fallback_frame_timer.take() {
             self.fallback_frame_timer_manager.destroy_timer(previous, host);
         }
 
-        self.fallback_frame_timer_manager.create_timer(FRAME_INTERVAL, host)?;
+        let handle = self
+            .fallback_frame_timer_manager
+            .create_timer(FRAME_INTERVAL, host)
+            .map_err(FatalError::Host)?;
+
+        self.fallback_frame_timer.set(Some(handle));
 
         Ok(())
     }
 
     pub fn handle_present_notify(
         &self, shared: &PresentStateShared, window: &XcbWindow, host: &HostHandle,
-    ) -> Result<(), PlatformError> {
+    ) -> Result<(), FatalError> {
         if !shared.present_notify_requested.get() {
             return Ok(());
         }
