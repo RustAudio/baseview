@@ -9,6 +9,12 @@ use std::time::{Duration, Instant};
 #[derive(PartialEq, Eq, Copy, Clone)]
 pub struct TimerHandle(u64);
 
+impl TimerHandle {
+    pub fn to_id(self) -> Option<TimerId> {
+        Some(TimerId(self.0.try_into().ok()?))
+    }
+}
+
 pub enum TimerManager {
     Hosted(HostedTimerStore),
     Standalone(StandaloneTimerStore),

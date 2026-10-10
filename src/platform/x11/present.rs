@@ -17,22 +17,6 @@ pub struct PresentStateShared {
 }
 
 impl PresentStateShared {
-    pub(crate) fn request_present_notify_after(
-        &self, duration: Duration, loop_handle: &HostHandle, redraw_timers: &TimerManager,
-    ) {
-        if duration.is_zero() || duration.as_millis() < 1 {
-            self.request_present_notify();
-            return;
-        }
-
-        if let Err(e) = redraw_timers.create_timer(duration, loop_handle) {
-            warn!("{}", e);
-            self.request_present_notify();
-        }
-    }
-}
-
-impl PresentStateShared {
     pub fn new() -> Self {
         Self { present_notify_requested: false.into(), poll_requested: false.into() }
     }
@@ -40,17 +24,44 @@ impl PresentStateShared {
     pub fn request_present_notify(&self) {
         self.present_notify_requested.set(true)
     }
+
+    pub fn request_present_notify_after(
+        &self, duration: Duration, host: &HostHandle, redraw_timers: &TimerManager,
+    ) {
+        if duration.is_zero() || duration.as_millis() < 1 {
+            self.request_present_notify();
+            return;
+        }
+
+        if let Err(e) = redraw_timers.create_timer(duration, host) {
+            warn!("{}", e);
+            self.request_present_notify();
+        }
+    }
 }
 
 pub struct PresentState {
     draw_now: Cell<bool>,
     last_requested_serial: Cell<Option<u32>>,
     last_received_present: Cell<Option<(u32, u64)>>,
+
+    fallback_frame_timer_manager: TimerManager,
+    fallback_frame_timer: Cell<Option<TimerHandle>>,
 }
 
 impl PresentState {
-    pub(crate) fn handle_requests(
-        &self, shared: &WindowShared, handler: &Handler, loop_handle: &HostHandle,
+    pub fn new(host: &HostHandle) -> Self {
+        Self {
+            draw_now: false.into(),
+            last_requested_serial: None.into(),
+            last_received_present: None.into(),
+            fallback_frame_timer_manager: TimerManager::new(host),
+            fallback_frame_timer: None.into(),
+        }
+    }
+
+    pub fn handle_requests(
+        &self, shared: &WindowShared, handler: &Handler, host: &HostHandle,
     ) -> Result<(), FatalError> {
         let shared_state = &shared.present_state;
 
@@ -68,14 +79,12 @@ impl PresentState {
             handler.poll();
         }
 
-        self.handle_present_notify(&shared.present_state, &shared.xcb_window, loop_handle)?;
+        self.handle_present_notify(&shared.present_state, &shared.xcb_window, host)?;
 
         Ok(())
     }
-}
 
-impl PresentState {
-    pub(crate) fn handle_expose_event(
+    pub fn handle_expose_event(
         &self, e: ExposeEvent, handler: &Handler, shared: &WindowShared, sizing_state: &SizingState,
     ) {
         if e.count == 0 {
@@ -93,29 +102,17 @@ impl PresentState {
 
         handler.damage(area);
     }
-}
 
-impl PresentState {
     pub fn handle_window_mapped(
-        &self, shared: &PresentStateShared, window: &XcbWindow, loop_handle: &HostHandle,
+        &self, shared: &PresentStateShared, window: &XcbWindow, host: &HostHandle,
     ) -> Result<(), FatalError> {
         if window.present_supported() && window.present_select_input()? {
             shared.present_notify_requested.set(true);
         } else {
-            Self::setup_fallback_frame_timer(loop_handle)?;
+            self.setup_fallback_frame_timer(host)?;
         }
 
         Ok(())
-    }
-}
-
-impl PresentState {
-    pub fn new() -> Self {
-        Self {
-            draw_now: false.into(),
-            last_requested_serial: None.into(),
-            last_received_present: None.into(),
-        }
     }
 
     pub fn handle_present_complete_notify(&self, e: CompleteNotifyEvent) {
@@ -144,43 +141,34 @@ impl PresentState {
         self.draw_now.set(true);
     }
 
-    fn setup_fallback_frame_timer(loop_handle: &HostHandle) -> Result<(), FatalError> {
-        const FRAME_INTERVAL: Duration = Duration::from_millis(15);
+    fn tick_fallback_frame_timer(&self) -> Option<Instant> {
+        let Some(timer_handle) = self.fallback_frame_timer.get() else { return None };
 
-        fn handle_frame(evloop: &mut EventLoop, previous_deadline: Instant) -> TimeoutAction {
-            evloop.present_state.draw_now.set(true);
-
-            // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
-            // the expected frame time, this will throttle down to prevent multiple frames from
-            // being queued up.
-
-            let now = Instant::now();
-
-            let Some(next_deadline) = previous_deadline.checked_add(FRAME_INTERVAL) else {
-                return TimeoutAction::ToDuration(FRAME_INTERVAL);
-            };
-
-            if next_deadline >= now {
-                return TimeoutAction::ToDuration(FRAME_INTERVAL);
+        let (deadline, triggered) = self.fallback_frame_timer_manager.tick_next_timer();
+        if let Some(triggered) = triggered {
+            if triggered == timer_handle {
+                self.draw_now.set(true);
             }
-
-            TimeoutAction::ToInstant(next_deadline)
         }
 
-        todo!();
-        /*
-        loop_handle
-            .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| handle_frame(e, i))
-            .map_err(|e| e.error)?;
+        deadline
+    }
 
-         */
+    fn setup_fallback_frame_timer(&self, host: &HostHandle) -> Result<(), PlatformError> {
+        const FRAME_INTERVAL: Duration = Duration::from_millis(15);
+
+        if let Some(previous) = self.fallback_frame_timer.take() {
+            self.fallback_frame_timer_manager.destroy_timer(previous, host);
+        }
+
+        self.fallback_frame_timer_manager.create_timer(FRAME_INTERVAL, host)?;
 
         Ok(())
     }
 
     pub fn handle_present_notify(
-        &self, shared: &PresentStateShared, window: &XcbWindow, loop_handle: &HostHandle,
-    ) -> Result<(), FatalError> {
+        &self, shared: &PresentStateShared, window: &XcbWindow, host: &HostHandle,
+    ) -> Result<(), PlatformError> {
         if !shared.present_notify_requested.get() {
             return Ok(());
         }
@@ -212,7 +200,7 @@ impl PresentState {
             self.last_requested_serial.set(Some(next_serial));
         } else {
             self.last_requested_serial.set(None);
-            Self::setup_fallback_frame_timer(loop_handle)?;
+            self.setup_fallback_frame_timer(host)?;
         }
         shared.present_notify_requested.set(false);
 
