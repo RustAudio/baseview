@@ -1,7 +1,7 @@
 use crate::platform::prelude::PlatformResult;
 use crate::platform::x11::host_handle::HostHandle;
 use baseview_host::host::TimerId;
-use slotmap::{DefaultKey, DenseSlotMap, Key};
+use slotmap::{DefaultKey, DenseSlotMap, Key, KeyData};
 use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
@@ -45,8 +45,24 @@ impl TimerManager {
         }
     }
 
+    pub fn destroy_timer(&self, handle: TimerHandle, host: &HostHandle) {
+        match self {
+            TimerManager::Standalone(s) => s.remove(handle),
+            TimerManager::Hosted(s) => {
+                let Some(timer_support) = host.timer_support() else { unreachable!() };
+                let Ok(id) = handle.0.try_into() else { return };
+
+                if let Err(e) = timer_support.unregister_timer(TimerId(id)) {
+                    crate::warn!("Failed to unregister host timer: {}", e);
+                }
+
+                s.remove(TimerId(id))
+            }
+        }
+    }
+
     pub fn get_handle_if_exists(&self, id: TimerId) -> Option<TimerHandle> {
-        let TimerManager::Hosted(store) = self else { return None };
+        let TimerManager::Hosted(store) = self else { return None }; // Only hosted mode needs this
 
         if store.exists(id) {
             Some(TimerHandle(id.0.into()))
@@ -93,6 +109,13 @@ impl HostedTimerStore {
 
     fn take_all(&self) -> Vec<TimerId> {
         std::mem::take(&mut self.0.borrow_mut())
+    }
+
+    fn remove(&self, handle: TimerId) {
+        let mut store = self.0.borrow_mut();
+        let Some(index) = store.iter().position(|&x| x == handle) else { return };
+
+        store.swap_remove(index);
     }
 }
 
@@ -141,6 +164,11 @@ impl StandaloneTimerStore {
         }
 
         (soonest_trigger, triggered_key)
+    }
+
+    fn remove(&self, handle: TimerHandle) {
+        let mut store = self.0.borrow_mut();
+        store.remove(DefaultKey::from(KeyData::from_ffi(handle.0)));
     }
 
     fn destroy_all(&self) {

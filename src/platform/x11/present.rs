@@ -18,24 +18,17 @@ pub struct PresentStateShared {
 
 impl PresentStateShared {
     pub(crate) fn request_present_notify_after(
-        &self, duration: Duration, loop_handle: &HostHandle,
+        &self, duration: Duration, loop_handle: &HostHandle, redraw_timers: &TimerManager,
     ) {
         if duration.is_zero() || duration.as_millis() < 1 {
             self.request_present_notify();
             return;
         }
 
-        todo!()
-        /*
-        let result = loop_handle.insert_source(Timer::from_duration(duration), |_, _, e| {
-            e.shared().present_state.request_present_notify();
-            TimeoutAction::Drop
-        });
-
-        if let Err(e) = result {
+        if let Err(e) = redraw_timers.create_timer(duration, loop_handle) {
             warn!("{}", e);
             self.request_present_notify();
-        }*/
+        }
     }
 }
 

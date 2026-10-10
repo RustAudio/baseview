@@ -13,7 +13,6 @@ mod sizing;
 mod timer;
 mod visual_info;
 mod waker;
-mod window_handle;
 mod window_shared;
 // mod window_thread;
 mod x11_connection;
