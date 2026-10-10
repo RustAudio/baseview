@@ -19,6 +19,7 @@ pub struct WindowShared {
     pub present_state: PresentStateShared,
     pub sizing_state: SizingStateShared,
     pub timer_manager: TimerManager,
+    pub redraw_delayed_timers: TimerManager,
 
     #[cfg(feature = "opengl")]
     gl_context: Option<PlatformGlContext>,
@@ -66,6 +67,7 @@ impl WindowShared {
             present_state: PresentStateShared::new(),
             sizing_state,
             timer_manager: TimerManager::new(&host),
+            redraw_delayed_timers: TimerManager::new(&host),
             host,
 
             xcb_window,
@@ -87,7 +89,11 @@ impl WindowShared {
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
-        self.present_state.request_present_notify_after(duration, &self.host);
+        self.present_state.request_present_notify_after(
+            duration,
+            &self.host,
+            &self.redraw_delayed_timers,
+        );
     }
 
     pub fn waker(&self) -> WindowWaker {

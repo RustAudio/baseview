@@ -13,7 +13,6 @@ use crate::wrappers::poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{warn, WindowContext};
 use crate::{Event, WindowEvent};
-use calloop::PostAction;
 use std::result::Result;
 use std::time::Instant;
 use x11rb::connection::Connection;
@@ -72,16 +71,10 @@ impl EventLoop {
         let connection = Rc::clone(&self.shared.connection);
         let mut poller = ConnectionPoller::new(&connection.conn)?;
 
-        let mut last_frame = Instant::now();
         self.shared.stop_own_event_loop.set(false);
 
         while !self.shared.stop_own_event_loop.get() {
-            let (next_deadline, triggered_timer) = self.shared.timer_manager.tick_next_timer();
-
-            if let Some(triggered_timer) = triggered_timer {
-                self.handler.on_timer(&triggered_timer.into());
-            }
-
+            let next_deadline = self.tick_all_timers();
             self.handle_idle()?;
 
             if let PollStatus::ReadAvailable = poller.wait(next_deadline)? {
@@ -127,8 +120,25 @@ impl EventLoop {
         })
     }
 
-    pub(crate) fn handle_timer(&mut self, handle: &TimerHandle) {
-        self.handler.on_timer(handle.into())
+    fn tick_all_timers(&self) -> Option<Instant> {
+        let (deadline_1, triggered_timer) = (&self.shared.timer_manager).tick_next_timer();
+
+        if let Some(triggered_timer) = triggered_timer {
+            self.handler.on_timer(&triggered_timer.into());
+        }
+
+        let (deadline_2, triggered_timer) = (&self.shared.redraw_delayed_timers).tick_next_timer();
+
+        if let Some(h) = triggered_timer {
+            self.shared.present_state.request_present_notify();
+            self.shared.redraw_delayed_timers.destroy_timer(h, &self.host);
+        }
+
+        match (deadline_1, deadline_2) {
+            (Some(deadline_1), Some(deadline_2)) => Some(deadline_2.min(deadline_1)),
+            (None, Some(d)) | (Some(d), None) => Some(d),
+            (None, None) => None,
+        }
     }
 
     #[inline]
@@ -320,5 +330,13 @@ impl EventLoop {
         }
 
         Ok(())
+    }
+}
+
+impl Drop for EventLoop {
+    fn drop(&mut self) {
+        // Deinit timers & FD watchers
+        self.shared.timer_manager.destroy_all(&self.host);
+        self.shared.redraw_delayed_timers.destroy_all(&self.host);
     }
 }
