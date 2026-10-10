@@ -3,11 +3,11 @@ use std::error::Error;
 use std::time::Duration;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TimerHandle(pub u32);
+pub struct TimerId(pub u32);
 
 pub trait HostTimerSupport: 'static {
-    fn register_timer(&self, period: Duration) -> Result<TimerHandle, Box<dyn Error>>;
-    fn unregister_timer(&self, timer: TimerHandle) -> Result<(), Box<dyn Error>>;
+    fn register_timer(&self, period: Duration) -> Result<TimerId, Box<dyn Error>>;
+    fn unregister_timer(&self, timer: TimerId) -> Result<(), Box<dyn Error>>;
 }
 
 #[cfg(unix)]

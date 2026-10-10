@@ -3,6 +3,7 @@ use crate::platform::x11::drag_n_drop::ParseError;
 use crate::platform::x11::x11_connection::GetPropertyError;
 use crate::wrappers::xlib::{DisplayOpenFailedError, InitThreadsFailedError};
 use crate::HandlerError;
+use std::error::Error;
 use std::fmt::{Display, Formatter};
 use x11_dl::error::OpenError;
 use x11rb::connection::RequestConnection;
@@ -112,6 +113,12 @@ impl std::error::Error for PlatformError {
 impl From<std::io::Error> for PlatformError {
     fn from(value: std::io::Error) -> Self {
         Self::Io(value)
+    }
+}
+
+impl From<Box<dyn Error>> for PlatformError {
+    fn from(value: Box<dyn Error>) -> Self {
+        Self::Handler(HandlerError::from_boxed(value))
     }
 }
 
