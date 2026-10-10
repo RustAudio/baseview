@@ -142,7 +142,7 @@ impl WindowShared {
 
     #[inline]
     pub fn create_timer(&self, duration: Duration) -> PlatformResult<TimerHandle> {
-        self.timer_manager.create_timer(duration, &self.host)
+        self.timer_manager.create_timer(duration, &self.host).map_err(|e| PlatformError::Host(e))
     }
 
     pub fn scale_factor(&self) -> f64 {

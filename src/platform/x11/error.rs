@@ -16,6 +16,7 @@ pub enum FatalError {
     Connection(ConnectionError),
     Calloop(calloop::Error),
     Redraw(String),
+    Host(Box<dyn Error>),
 }
 
 impl Display for FatalError {
@@ -24,11 +25,12 @@ impl Display for FatalError {
             FatalError::Connection(e) => e.fmt(f),
             FatalError::Calloop(e) => e.fmt(f),
             FatalError::Redraw(e) => write!(f, "Fatal error while drawing the window: {}", e),
+            FatalError::Host(e) => e.fmt(f),
         }
     }
 }
 
-impl std::error::Error for FatalError {}
+impl Error for FatalError {}
 
 impl From<ConnectionError> for FatalError {
     fn from(err: ConnectionError) -> FatalError {
@@ -56,6 +58,7 @@ pub enum PlatformError {
     Connect(ConnectError),
     DisplayOpenFailed(DisplayOpenFailedError),
     Handler(HandlerError),
+    Host(Box<dyn Error>),
     Calloop(calloop::Error),
     Redraw(String),
     #[cfg(feature = "opengl")]
@@ -63,11 +66,11 @@ pub enum PlatformError {
     #[cfg(feature = "opengl")]
     EGl(crate::wrappers::egl::EglError),
     #[cfg(feature = "opengl")]
-    Gl(super::gl::GlCreationFailedError),
+    Gl(GlCreationFailedError),
 }
 
 impl Display for PlatformError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             PlatformError::Io(e) => e.fmt(f),
             Self::IdsExhausted => f.write_str("X11 IDs have been exhausted"),
@@ -82,6 +85,7 @@ impl Display for PlatformError {
             PlatformError::Connect(e) => e.fmt(f),
             PlatformError::DisplayOpenFailed(e) => e.fmt(f),
             PlatformError::Handler(e) => e.fmt(f),
+            PlatformError::Host(e) => e.fmt(f),
             PlatformError::Redraw(e) => e.fmt(f),
             PlatformError::Calloop(e) => e.fmt(f),
             #[cfg(feature = "opengl")]
@@ -94,13 +98,14 @@ impl Display for PlatformError {
     }
 }
 
-impl std::error::Error for PlatformError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+impl Error for PlatformError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             PlatformError::Io(e) => Some(e),
             PlatformError::DylibOpen(e) => Some(e),
             PlatformError::Connect(e) => Some(e),
             PlatformError::Handler(e) => Some(e.source()),
+            PlatformError::Host(e) => e.source(),
             #[cfg(feature = "opengl")]
             PlatformError::XLib(e) => Some(e),
             #[cfg(feature = "opengl")]
@@ -170,6 +175,7 @@ impl From<FatalError> for PlatformError {
             FatalError::Connection(e) => Self::Connection(e),
             FatalError::Calloop(e) => Self::Calloop(e),
             FatalError::Redraw(s) => Self::Redraw(s),
+            FatalError::Host(e) => Self::Handler(HandlerError::from_boxed(e)),
         }
     }
 }
@@ -221,8 +227,8 @@ impl From<ReplyError> for PlatformError {
 }
 
 #[cfg(feature = "opengl")]
-impl From<super::gl::GlCreationFailedError> for PlatformError {
-    fn from(value: super::gl::GlCreationFailedError) -> Self {
+impl From<GlCreationFailedError> for PlatformError {
+    fn from(value: GlCreationFailedError) -> Self {
         Self::Gl(value)
     }
 }

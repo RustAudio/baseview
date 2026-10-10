@@ -3,6 +3,7 @@ use crate::platform::x11::host_handle::HostHandle;
 use baseview_host::host::TimerId;
 use slotmap::{DefaultKey, DenseSlotMap, Key, KeyData};
 use std::cell::RefCell;
+use std::error::Error;
 use std::time::{Duration, Instant};
 
 // Compatible with both TimerHandles from host (u32) and slotmap keys (u64)
@@ -31,7 +32,7 @@ impl TimerManager {
 
     pub fn create_timer(
         &self, duration: Duration, host: &HostHandle,
-    ) -> PlatformResult<TimerHandle> {
+    ) -> Result<TimerHandle, Box<dyn Error>> {
         match self {
             TimerManager::Standalone(store) => Ok(store.insert_new_timer(duration)),
             TimerManager::Hosted(store) => {
@@ -55,14 +56,9 @@ impl TimerManager {
         match self {
             TimerManager::Standalone(s) => s.remove(handle),
             TimerManager::Hosted(s) => {
-                let Some(timer_support) = host.timer_support() else { unreachable!() };
-                let Ok(id) = handle.0.try_into() else { return };
-
-                if let Err(e) = timer_support.unregister_timer(TimerId(id)) {
-                    crate::warn!("Failed to unregister host timer: {}", e);
-                }
-
-                s.remove(TimerId(id))
+                let Some(id) = handle.to_id() else { return };
+                let _ = host.unregister_timer(id);
+                s.remove(id)
             }
         }
     }
