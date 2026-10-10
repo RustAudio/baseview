@@ -1,7 +1,7 @@
 use crate::window_handler::OpenWindowExample;
 use crate::ExamplePluginMainThread;
 use baseview::dpi::*;
-use baseview::host::{Host, HostCallbacks, HostFdSupport, HostTimerSupport, TimerHandle};
+use baseview::host::{Host, HostCallbacks, HostFdSupport, HostTimerSupport, TimerId as BvTimerId};
 use baseview::{Window, WindowSettings, WindowSize};
 use clack_extensions::gui::{
     AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, HostGui,
@@ -188,13 +188,13 @@ struct HostTimerCallbacks {
 }
 
 impl HostTimerSupport for HostTimerCallbacks {
-    fn register_timer(&self, period: Duration) -> Result<TimerHandle, Box<dyn Error>> {
+    fn register_timer(&self, period: Duration) -> Result<BvTimerId, Box<dyn Error>> {
         let period_ms = period.as_millis().try_into().unwrap_or(u32::MAX);
         let timer = self.ext.register_timer(&self.host, period_ms)?;
-        Ok(TimerHandle(timer.0))
+        Ok(BvTimerId(timer.0))
     }
 
-    fn unregister_timer(&self, timer: TimerHandle) -> Result<(), Box<dyn Error>> {
+    fn unregister_timer(&self, timer: BvTimerId) -> Result<(), Box<dyn Error>> {
         self.ext.unregister_timer(&self.host, TimerId(timer.0))?;
         Ok(())
     }
