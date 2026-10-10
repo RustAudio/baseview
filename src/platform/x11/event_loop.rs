@@ -102,21 +102,21 @@ impl EventLoop {
 impl EventLoop {
     pub fn create_window(init: WindowInitializer) -> PlatformResult<Self> {
         let parent_id = init.settings.parent.as_ref().map(|p| p.inner.window_id);
-        let loop_handle = HostHandle::new(init.host);
-        let shared = WindowShared::create(init.settings, Rc::clone(&loop_handle))?;
+        let host = HostHandle::new(init.host);
+        let shared = WindowShared::create(init.settings, Rc::clone(&host))?;
         let handler = init.builder.build(WindowContext::new(Rc::clone(&shared)))?;
 
         Ok(Self {
             handler: Handler::new(handler),
-            present_state: PresentState::new(),
-            sizing_state: SizingState::new(parent_id),
 
+            present_state: PresentState::new(&host),
+            sizing_state: SizingState::new(parent_id),
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&shared.connection),
             run_error: None,
 
             shared,
-            host: loop_handle,
+            host,
         })
     }
 

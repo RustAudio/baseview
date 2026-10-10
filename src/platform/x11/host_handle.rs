@@ -37,4 +37,15 @@ impl HostHandle {
     pub fn timer_support(&self) -> Option<&dyn HostTimerSupport> {
         self.timer.as_deref()
     }
+
+    pub fn unregister_timer(&self, id: TimerId) -> Result<(), ()> {
+        let Some(callbacks) = &self.timer else { unreachable!() };
+
+        if let Err(e) = callbacks.unregister_timer(id) {
+            crate::warn!("Host failed to unregister timer: {}", e);
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
 }
