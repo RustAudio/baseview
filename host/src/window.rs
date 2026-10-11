@@ -1,7 +1,9 @@
 use crate::dpi::{NativeSize, WindowSize};
+use crate::host::TimerId;
 use dpi::Size;
 use raw_window_handle::HasWindowHandle;
 use std::error::Error;
+use std::os::fd::RawFd;
 
 /// A handle to a hostable Window.
 ///
@@ -113,6 +115,11 @@ pub trait HostedWindow {
     ///
     /// On Windows and macOS, this is always a no-op.
     fn host_main_thread_callback(&self);
+
+    fn host_timer_callback(&self, timer_id: TimerId);
+
+    #[cfg(unix)]
+    fn host_fd_callback(&self, fd: RawFd);
 
     /// Reparents this window using the given `parent`.
     ///

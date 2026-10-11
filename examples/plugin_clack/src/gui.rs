@@ -7,8 +7,8 @@ use clack_extensions::gui::{
     AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, HostGui,
     PluginGuiImpl, Window as ClapWindow,
 };
-use clack_extensions::posix_fd::{FdFlags, HostPosixFd};
-use clack_extensions::timer::{HostTimer, TimerId};
+use clack_extensions::posix_fd::{FdFlags, HostPosixFd, PluginPosixFdImpl};
+use clack_extensions::timer::{HostTimer, PluginTimerImpl, TimerId};
 use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::HostMainThreadHandle;
 use std::error::Error;
@@ -207,6 +207,7 @@ struct HostFdCallbacks {
 
 impl HostFdSupport for HostFdCallbacks {
     fn register_fd(&self, fd: BorrowedFd) -> Result<(), Box<dyn Error>> {
+        dbg!(fd);
         self.ext.register_fd(&self.host, fd.as_raw_fd(), FdFlags::READ)?;
         Ok(())
     }
@@ -214,5 +215,22 @@ impl HostFdSupport for HostFdCallbacks {
     fn unregister_fd(&self, fd: RawFd) -> Result<(), Box<dyn Error>> {
         self.ext.unregister_fd(&self.host, fd)?;
         Ok(())
+    }
+}
+
+impl PluginTimerImpl for ExamplePluginMainThread<'_> {
+    fn on_timer(&self, timer_id: TimerId) {
+        if let Some(gui) = self.gui.borrow().as_ref() {
+            gui.handle.host_timer_callback(BvTimerId(timer_id.0));
+        }
+    }
+}
+
+impl PluginPosixFdImpl for ExamplePluginMainThread<'_> {
+    fn on_fd(&self, fd: RawFd, _: FdFlags) {
+        dbg!(fd);
+        if let Some(gui) = self.gui.borrow().as_ref() {
+            gui.handle.host_fd_callback(fd)
+        }
     }
 }
