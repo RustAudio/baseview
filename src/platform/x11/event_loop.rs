@@ -144,7 +144,7 @@ impl EventLoop {
 
             present_state: PresentState::new(&host),
             sizing_state: SizingState::new(parent_id),
-            drag_n_drop: DragNDropState::NoCurrentSession,
+            drag_n_drop: DragNDropState::new(),
             xkb_state: XkbcommonState::new(&shared.connection),
             run_error: None,
             fd_registered: false.into(),
@@ -276,8 +276,6 @@ impl EventLoop {
                     return Ok(());
                 }
 
-                todo!();
-                /*
                 if event.type_ == self.shared.connection.atoms.XdndEnter {
                     self.drag_n_drop.handle_enter_event(&self.shared, &self.handler, &event)?;
                 } else if event.type_ == self.shared.connection.atoms.XdndPosition {
@@ -286,19 +284,17 @@ impl EventLoop {
                     self.drag_n_drop.handle_drop_event(&self.shared, &self.handler, &event)?;
                 } else if event.type_ == self.shared.connection.atoms.XdndLeave {
                     self.drag_n_drop.handle_leave_event(&self.handler, &event);
-                }*/
+                }
             }
 
             XEvent::SelectionNotify(event) => {
-                todo!()
-                /*
                 if event.property == self.shared.connection.atoms.XdndSelection {
                     self.drag_n_drop.handle_selection_notify_event(
                         &self.shared,
                         &self.handler,
                         &event,
                     )?;
-                }*/
+                }
             }
 
             XEvent::Error(e) => {

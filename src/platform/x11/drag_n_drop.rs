@@ -8,6 +8,7 @@ use crate::{DropData, Event, MouseEvent};
 use core::result::Result;
 use keyboard_types::Modifiers;
 use percent_encoding::percent_decode;
+use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::{
@@ -24,13 +25,96 @@ use x11rb::{
     protocol::xproto::{self, ConnectionExt},
     x11_utils::Serialize,
 };
-use DragNDropState::*;
+use DragNDropStateInner::*;
+
+pub(crate) struct DragNDropState(RefCell<DragNDropStateInner>);
+
+impl DragNDropState {
+    pub fn new() -> Self {
+        Self(NoCurrentSession.into())
+    }
+
+    pub fn handle_enter_event(
+        &self, window: &WindowShared, handler: &Handler, event: &ClientMessageEvent,
+    ) -> Result<(), ConnectionError> {
+        let interrupted_active_drag = {
+            let mut inner = self.0.borrow_mut();
+            inner.handle_enter_event(window, event)?
+        };
+
+        if interrupted_active_drag {
+            handler.on_event(Event::Mouse(MouseEvent::DragLeft));
+        }
+
+        Ok(())
+    }
+
+    pub fn handle_position_event(
+        &self, window: &WindowShared, handler: &Handler, event: &ClientMessageEvent,
+    ) -> Result<(), ConnectionError> {
+        let event = {
+            let mut inner = self.0.borrow_mut();
+            inner.handle_position_event(window, event)?
+        };
+
+        if let Some(event) = event {
+            handler.on_event(event);
+        }
+
+        Ok(())
+    }
+
+    pub fn handle_leave_event(&self, handler: &Handler, event: &ClientMessageEvent) {
+        let generate_left_event = {
+            let mut inner = self.0.borrow_mut();
+            inner.handle_leave_event(event)
+        };
+
+        if generate_left_event {
+            handler.on_event(Event::Mouse(MouseEvent::DragLeft));
+        }
+    }
+
+    pub fn handle_drop_event(
+        &self, window: &WindowShared, handler: &Handler, event: &ClientMessageEvent,
+    ) -> Result<(), ConnectionError> {
+        let event = {
+            let mut inner = self.0.borrow_mut();
+            inner.handle_drop_event(window, event)?
+        };
+
+        if let Some(event) = event {
+            handler.on_event(event);
+        }
+
+        Ok(())
+    }
+
+    pub fn handle_selection_notify_event(
+        &self, window: &WindowShared, handler: &Handler, event: &SelectionNotifyEvent,
+    ) -> Result<(), ConnectionError> {
+        let (e1, e2, r) = {
+            let mut inner = self.0.borrow_mut();
+            inner.handle_selection_notify_event(window, event)
+        };
+
+        if let Some(event) = e1 {
+            handler.on_event(event);
+        }
+
+        if let Some(event) = e2 {
+            handler.on_event(event);
+        }
+
+        r
+    }
+}
 
 /// The Drag-N-Drop session state of a `baseview` X11 window, for which it is the target.
 ///
 /// For more information about what the heck is going on here, see the
 /// [XDND (X Drag-n-Drop) specification](https://www.freedesktop.org/wiki/Specifications/XDND/).
-pub(crate) enum DragNDropState {
+pub(crate) enum DragNDropStateInner {
     /// There is no active XDND session for this window.
     NoCurrentSession,
     /// At some point in this session's lifetime, we have decided we couldn't possibly handle the
@@ -93,10 +177,10 @@ pub(crate) enum DragNDropState {
 
 // Note: For all X11 operations on this type, only ConnectionErrors are considered fatal.
 // Other errors (protocol errors, transfer errors) should be dealt with as gracefully as possible.
-impl DragNDropState {
-    pub fn handle_enter_event(
-        &mut self, window: &WindowShared, handler: &Handler, event: &ClientMessageEvent,
-    ) -> Result<(), ConnectionError> {
+impl DragNDropStateInner {
+    fn handle_enter_event(
+        &mut self, window: &WindowShared, event: &ClientMessageEvent,
+    ) -> Result<bool, ConnectionError> {
         let data = event.data.as_data32();
 
         let source_window = data[0] as xproto::Window;
@@ -114,7 +198,7 @@ impl DragNDropState {
             let result = window.connection.get_property(
                 source_window,
                 window.connection.atoms.XdndTypeList,
-                xproto::Atom::from(xproto::AtomEnum::ATOM),
+                Atom::from(xproto::AtomEnum::ATOM),
             );
 
             match result {
@@ -145,17 +229,12 @@ impl DragNDropState {
             PermanentlyRejected { source_window }
         };
 
-        // Do this at the end, in case the handler panics, so that it doesn't poison our internal state.
-        if interrupted_active_drag {
-            handler.on_event(Event::Mouse(MouseEvent::DragLeft));
-        }
-
-        Ok(())
+        Ok(interrupted_active_drag)
     }
 
-    pub fn handle_position_event(
-        &mut self, window: &WindowShared, handler: &Handler, event: &ClientMessageEvent,
-    ) -> Result<(), ConnectionError> {
+    fn handle_position_event(
+        &mut self, window: &WindowShared, event: &ClientMessageEvent,
+    ) -> Result<Option<Event>, ConnectionError> {
         let event_data = event.data.as_data32();
 
         let event_source_window = event_data[0] as xproto::Window;
@@ -164,7 +243,10 @@ impl DragNDropState {
         match self {
             // Someone sent us a position event without first sending an enter event.
             // Weird, but we'll still politely tell them we reject the drop.
-            NoCurrentSession => Ok(send_status_rejected(event_source_window, window)?),
+            NoCurrentSession => {
+                send_status_rejected(event_source_window, window)?;
+                Ok(None)
+            }
 
             // The current session's source window does not match the given event.
             // This means it can either be from a stale session, or a misbehaving app.
@@ -175,12 +257,16 @@ impl DragNDropState {
             | Ready { source_window, .. }
                 if *source_window != event_source_window =>
             {
-                Ok(send_status_rejected(event_source_window, window)?)
+                send_status_rejected(event_source_window, window)?;
+                Ok(None)
             }
 
             // We decided to permanently reject this drop.
             // This means the WindowHandler can't do anything with the data, so we reject the drop.
-            PermanentlyRejected { .. } => Ok(send_status_rejected(event_source_window, window)?),
+            PermanentlyRejected { .. } => {
+                send_status_rejected(event_source_window, window)?;
+                Ok(None)
+            }
 
             // This is the position event we were waiting for. Now we can request the selection data.
             // The code above already checks that source_window == event_source_window.
@@ -220,7 +306,7 @@ impl DragNDropState {
                     *position = result;
                 }
 
-                Ok(())
+                Ok(None)
             }
 
             // We are still waiting for the data. So we'll just update the position in the meantime.
@@ -229,7 +315,7 @@ impl DragNDropState {
                     *position = result;
                 }
 
-                Ok(())
+                Ok(None)
             }
 
             // We have already received the data. We can update the position and notify the handler
@@ -248,24 +334,22 @@ impl DragNDropState {
                     DndAction::from_atom(event_data[4] as Atom, &window.connection.atoms)
                 };
 
-                handler.on_event(Event::Mouse(MouseEvent::DragMoved {
+                Ok(Some(Event::Mouse(MouseEvent::DragMoved {
                     position: position.cast(),
                     data: data.clone(),
                     // We don't get modifiers for drag n drop events.
                     modifiers: Modifiers::empty(),
-                }));
-
-                Ok(())
+                })))
             }
         }
     }
 
-    pub fn handle_leave_event(&mut self, handler: &Handler, event: &ClientMessageEvent) {
+    pub fn handle_leave_event(&mut self, event: &ClientMessageEvent) -> bool {
         let data = event.data.as_data32();
         let event_source_window = data[0] as xproto::Window;
 
         let current_source_window = match self {
-            NoCurrentSession => return,
+            NoCurrentSession => return false,
             WaitingForPosition { source_window, .. }
             | PermanentlyRejected { source_window, .. }
             | WaitingForData { source_window, .. }
@@ -274,7 +358,7 @@ impl DragNDropState {
 
         // Only accept the leave event if it comes from the source window of the current drag session.
         if event_source_window != current_source_window {
-            return;
+            return false;
         }
 
         // If there was an active drag session that we informed the handler about, we need to
@@ -285,14 +369,12 @@ impl DragNDropState {
         *self = NoCurrentSession;
 
         // Do this at the end, in case the handler panics, so that it doesn't poison our internal state.
-        if left_active_drag {
-            handler.on_event(Event::Mouse(MouseEvent::DragLeft));
-        }
+        left_active_drag
     }
 
     pub fn handle_drop_event(
-        &mut self, window: &WindowShared, handler: &Handler, event: &ClientMessageEvent,
-    ) -> Result<(), ConnectionError> {
+        &mut self, window: &WindowShared, event: &ClientMessageEvent,
+    ) -> Result<Option<Event>, ConnectionError> {
         let data = event.data.as_data32();
 
         let event_source_window = data[0] as xproto::Window;
@@ -339,7 +421,8 @@ impl DragNDropState {
                     *self = PermanentlyRejected { source_window: *source_window };
 
                     // Try to inform the source that we ended up rejecting the drop.
-                    return send_finished_rejected(event_source_window, window);
+                    send_finished_rejected(event_source_window, window)?;
+                    return Ok(None);
                 };
 
                 *self = WaitingForData {
@@ -363,7 +446,7 @@ impl DragNDropState {
 
                     // Just in case, check if this drop event isn't stale
                     if requested_at > event_timestamp {
-                        return Ok(());
+                        return Ok(None);
                     }
                 }
 
@@ -382,21 +465,21 @@ impl DragNDropState {
 
                 send_finished_event(event_source_window, window, requested_action)?.check_warn();
 
-                handler.on_event(Event::Mouse(MouseEvent::DragDropped {
+                return Ok(Some(Event::Mouse(MouseEvent::DragDropped {
                     position: position.cast(),
                     data,
                     // We don't get modifiers for drag n drop events.
                     modifiers: Modifiers::empty(),
-                }));
+                })));
             }
         };
 
-        Ok(())
+        Ok(None)
     }
 
     pub fn handle_selection_notify_event(
-        &mut self, window: &WindowShared, handler: &Handler, event: &SelectionNotifyEvent,
-    ) -> Result<(), ConnectionError> {
+        &mut self, window: &WindowShared, event: &SelectionNotifyEvent,
+    ) -> (Option<Event>, Option<Event>, Result<(), ConnectionError>) {
         // Ignore the event if we weren't actually waiting for a selection notify event
         let WaitingForData {
             source_window,
@@ -407,33 +490,38 @@ impl DragNDropState {
             requested_action,
         } = *self
         else {
-            return Ok(());
+            return (None, None, Ok(()));
         };
 
         // Ignore if this was meant for another window (?)
         if event.requestor != window.xcb_window.id().get() {
-            return Ok(());
+            return (None, None, Ok(()));
         }
 
         // Ignore if this is stale selection data.
         if let Some(requested_at) = requested_at {
             if requested_at != event.time {
-                return Ok(());
+                return (None, None, Ok(()));
             }
         }
 
         // The sender should have set the data on our window, let's fetch it.
-        match fetch_dnd_data(window)? {
-            None => {
+        match fetch_dnd_data(window) {
+            Err(e) => (None, None, Err(e)),
+            Ok(None) => {
                 *self = PermanentlyRejected { source_window };
 
-                if dropped {
-                    send_finished_rejected(source_window, window)?;
-                } else {
-                    send_status_rejected(source_window, window)?;
-                }
+                (
+                    None,
+                    None,
+                    if dropped {
+                        send_finished_rejected(source_window, window)
+                    } else {
+                        send_status_rejected(source_window, window)
+                    },
+                )
             }
-            Some(data) => {
+            Ok(Some(data)) => {
                 // Inform the source that we are (still) accepting the drop.
 
                 // Handle the case where the user already dropped, but we only received the data later.
@@ -443,21 +531,21 @@ impl DragNDropState {
                     let reply_result = send_finished_event(source_window, window, requested_action);
 
                     // Now that we have actual drop data, we can inform the handler about the drag AND drop events.
-                    handler.on_event(Event::Mouse(MouseEvent::DragEntered {
-                        position: position.cast(),
-                        data: data.clone(),
-                        // We don't get modifiers for drag n drop events.
-                        modifiers: Modifiers::empty(),
-                    }));
-
-                    handler.on_event(Event::Mouse(MouseEvent::DragDropped {
-                        position: position.cast(),
-                        data: data.clone(),
-                        // We don't get modifiers for drag n drop events.
-                        modifiers: Modifiers::empty(),
-                    }));
-
-                    reply_result?.check_warn();
+                    (
+                        Some(Event::Mouse(MouseEvent::DragEntered {
+                            position: position.cast(),
+                            data: data.clone(),
+                            // We don't get modifiers for drag n drop events.
+                            modifiers: Modifiers::empty(),
+                        })),
+                        Some(Event::Mouse(MouseEvent::DragDropped {
+                            position: position.cast(),
+                            data: data.clone(),
+                            // We don't get modifiers for drag n drop events.
+                            modifiers: Modifiers::empty(),
+                        })),
+                        reply_result.map(|c| c.check_warn()),
+                    )
                 } else {
                     // Save the data, now that we finally have it!
                     *self = Ready {
@@ -471,19 +559,19 @@ impl DragNDropState {
                     let reply_result = send_status_event(source_window, window, requested_action);
 
                     // Now that we have actual drop data, we can inform the handler about the drag event.
-                    handler.on_event(Event::Mouse(MouseEvent::DragEntered {
-                        position: position.cast(),
-                        data,
-                        // We don't get modifiers for drag n drop events.
-                        modifiers: Modifiers::empty(),
-                    }));
-
-                    reply_result?;
+                    (
+                        Some(Event::Mouse(MouseEvent::DragEntered {
+                            position: position.cast(),
+                            data,
+                            // We don't get modifiers for drag n drop events.
+                            modifiers: Modifiers::empty(),
+                        })),
+                        None,
+                        reply_result,
+                    )
                 }
             }
         }
-
-        Ok(())
     }
 }
 
