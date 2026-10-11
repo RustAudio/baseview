@@ -161,20 +161,6 @@ impl Window {
         self.inner.max_size()
     }
 
-    /// Performs the work the window thread had scheduled for the main thread.
-    ///
-    /// This must be called back on the main thread, as a response to [`HostMainThreadCaller::call_main_thread`](host::HostMainThreadCaller::call_main_thread).
-    ///
-    /// # Platform compatibility notes
-    ///
-    /// Only the X11 platform has a separate window thread, so this is only needed to run host callbacks on X11.
-    ///
-    /// On Windows and macOS, this is always a no-op.
-    #[inline]
-    pub fn host_main_thread_callback(&self) {
-        self.inner.handle_main_thread_callback()
-    }
-
     #[inline]
     pub fn host_timer_callback(&self, timer_id: TimerId) {
         self.inner.host_timer_callback(timer_id)
@@ -298,11 +284,6 @@ impl HostedWindow for Window {
     #[inline]
     fn max_size(&self) -> Option<Size> {
         self.max_size()
-    }
-
-    #[inline]
-    fn host_main_thread_callback(&self) {
-        self.host_main_thread_callback()
     }
 
     #[inline]
