@@ -168,7 +168,11 @@ impl SizingStateShared {
         get_size_hints(&self.sizing_strategy, self.window_size.get(), self.scale_factor())
     }
 
-    pub fn store_size(&self, size: PhysicalSize<u16>) -> PhysicalSize<u16> {
+    pub fn strategy(&self) -> SizingStrategy {
+        self.sizing_strategy
+    }
+
+    fn store_size(&self, size: PhysicalSize<u16>) -> PhysicalSize<u16> {
         self.window_size.replace(size)
     }
 

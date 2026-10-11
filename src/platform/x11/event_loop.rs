@@ -38,11 +38,12 @@ impl EventLoop {
     }
 
     pub fn request_poll(&self) -> PlatformResult<()> {
-        todo!()
+        self.handler.poll();
+        Ok(())
     }
 
     pub fn sizing_strategy(&self) -> SizingStrategy {
-        todo!()
+        self.shared.sizing_state.strategy()
     }
 
     pub fn handle_main_thread_callback(&self) {
@@ -50,15 +51,15 @@ impl EventLoop {
     }
 
     pub fn max_size(&self) -> Option<Size> {
-        todo!()
+        self.sizing_strategy().max_size()
     }
 
     pub fn min_size(&self) -> Option<Size> {
-        todo!()
+        self.sizing_strategy().min_size()
     }
 
     pub fn is_resizable(&self) -> bool {
-        todo!()
+        self.sizing_strategy().is_resizable()
     }
 
     pub fn is_open(&self) -> bool {
@@ -95,7 +96,7 @@ impl EventLoop {
     }
 
     pub fn size(&self) -> WindowSize {
-        todo!()
+        self.shared.sizing_state.window_size()
     }
 }
 

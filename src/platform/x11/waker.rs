@@ -1,5 +1,20 @@
+use crate::platform::prelude::PlatformResult;
+use crate::platform::x11::host_handle::HostHandle;
 use calloop::LoopSignal;
+use std::task::Waker;
 use std::time::Duration;
+
+pub(crate) struct WakerSource {}
+
+impl WakerSource {
+    pub fn new(host: &HostHandle) -> Self {
+        todo!()
+    }
+
+    pub fn new_waker(&self) -> Waker {
+        todo!()
+    }
+}
 
 #[derive(Clone)]
 pub struct WindowWaker {
