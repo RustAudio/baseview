@@ -1,9 +1,9 @@
 use crate::audio::ExamplePluginAudioProcessor;
 use crate::gui::ExamplePluginGui;
 use clack_extensions::gui::{HostGui, PluginGui};
-use clack_extensions::posix_fd::HostPosixFd;
+use clack_extensions::posix_fd::{HostPosixFd, PluginPosixFd};
 use clack_extensions::state::{PluginState, PluginStateImpl};
-use clack_extensions::timer::HostTimer;
+use clack_extensions::timer::{HostTimer, PluginTimer};
 use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
 use std::cell::{Ref, RefCell};
@@ -23,7 +23,11 @@ impl Plugin for ExamplePlugin {
     type MainThread<'a> = ExamplePluginMainThread<'a>;
 
     fn declare_extensions(builder: &mut PluginExtensions<Self>, _shared: Option<&()>) {
-        builder.register::<PluginGui>().register::<PluginState>();
+        builder
+            .register::<PluginGui>()
+            .register::<PluginState>()
+            .register::<PluginTimer>()
+            .register::<PluginPosixFd>();
     }
 }
 

@@ -13,6 +13,8 @@ use crate::wrappers::poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
 use crate::{warn, WindowContext};
 use crate::{Event, WindowEvent};
+use baseview_host::host::TimerId;
+use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::result::Result;
 use std::time::Instant;
 use x11rb::connection::Connection;
@@ -30,6 +32,7 @@ pub(crate) struct EventLoop {
     host: Rc<HostHandle>,
 
     run_error: Option<PlatformError>,
+    fd_registered: Cell<bool>,
 }
 
 impl EventLoop {
@@ -48,6 +51,28 @@ impl EventLoop {
 
     pub fn handle_main_thread_callback(&self) {
         todo!()
+    }
+
+    pub fn host_timer_callback(&self, timer_id: TimerId) {
+        if let Some(timer) = self.shared.timer_manager.get_handle_if_exists(timer_id) {
+            self.handler.on_timer(&timer.into())
+        } else if let Some(redraw_timer) =
+            self.shared.redraw_delayed_timers.get_handle_if_exists(timer_id)
+        {
+            self.shared.present_state.request_present_notify();
+            self.shared.redraw_delayed_timers.destroy_timer(redraw_timer, &self.host);
+        } else {
+            self.present_state.trigger_possible_fallback_frame_timer(timer_id);
+        }
+    }
+
+    pub fn host_fd_callback(&self, fd: RawFd) {
+        if fd != self.shared.connection.conn.as_raw_fd() {
+            return;
+        };
+
+        self.flush_drain_xcb_events().unwrap(); // TODO: unwraps
+        self.handle_idle().unwrap();
     }
 
     pub fn max_size(&self) -> Option<Size> {
@@ -104,10 +129,11 @@ impl EventLoop {
     pub fn create_window(init: WindowInitializer) -> PlatformResult<Self> {
         let parent_id = init.settings.parent.as_ref().map(|p| p.inner.window_id);
         let host = HostHandle::new(init.host);
+        // TODO: check deinit runs on initialization error
         let shared = WindowShared::create(init.settings, Rc::clone(&host))?;
         let handler = init.builder.build(WindowContext::new(Rc::clone(&shared)))?;
 
-        Ok(Self {
+        let this = Self {
             handler: Handler::new(handler),
 
             present_state: PresentState::new(&host),
@@ -115,10 +141,26 @@ impl EventLoop {
             drag_n_drop: DragNDropState::NoCurrentSession,
             xkb_state: XkbcommonState::new(&shared.connection),
             run_error: None,
+            fd_registered: false.into(),
 
             shared,
             host,
-        })
+        };
+
+        this.register_fd()?;
+
+        Ok(this)
+    }
+
+    fn register_fd(&self) -> PlatformResult<()> {
+        if let Some(fd_support) = self.host.fd_support() {
+            fd_support.register_fd(self.shared.connection.conn.as_fd())?;
+            self.fd_registered.set(true);
+        } else {
+            todo!()
+        }
+
+        Ok(())
     }
 
     fn tick_all_timers(&self) -> Option<Instant> {
@@ -345,5 +387,11 @@ impl Drop for EventLoop {
         // Deinit timers & FD watchers
         self.shared.timer_manager.destroy_all(&self.host);
         self.shared.redraw_delayed_timers.destroy_all(&self.host);
+
+        if self.fd_registered.get() {
+            let Some(fd_support) = self.host.fd_support() else { unreachable!() };
+            fd_support.unregister_fd(self.shared.connection.conn.as_raw_fd()).unwrap();
+            // TODO: unwrap
+        }
     }
 }

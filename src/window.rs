@@ -6,6 +6,7 @@ use crate::waker::WindowWaker;
 use crate::*;
 use raw_window_handle::HasWindowHandle;
 use std::marker::PhantomData;
+use std::os::fd::RawFd;
 
 /// A handle to a Window created by baseview.
 ///
@@ -191,6 +192,16 @@ impl Window {
         self.inner.handle_main_thread_callback()
     }
 
+    #[inline]
+    pub fn host_timer_callback(&self, timer_id: TimerId) {
+        self.inner.host_timer_callback(timer_id)
+    }
+
+    #[inline]
+    pub fn host_fd_callback(&self, fd: RawFd) {
+        self.inner.host_fd_callback(fd)
+    }
+
     /// Reparents this window using the given `parent`.
     ///
     /// # Panics
@@ -248,6 +259,7 @@ pub(crate) struct WindowInitializer {
 }
 
 pub use baseview_host::dpi::WindowSize;
+use baseview_host::host::TimerId;
 use baseview_host::HostedWindow;
 
 impl HostedWindow for Window {
@@ -308,6 +320,16 @@ impl HostedWindow for Window {
     #[inline]
     fn host_main_thread_callback(&self) {
         self.host_main_thread_callback()
+    }
+
+    #[inline]
+    fn host_timer_callback(&self, timer_id: TimerId) {
+        self.host_timer_callback(timer_id)
+    }
+
+    #[inline]
+    fn host_fd_callback(&self, fd: RawFd) {
+        self.host_fd_callback(fd)
     }
 
     #[inline]

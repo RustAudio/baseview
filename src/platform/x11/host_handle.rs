@@ -38,6 +38,10 @@ impl HostHandle {
         self.timer.as_deref()
     }
 
+    pub fn fd_support(&self) -> Option<&dyn HostFdSupport> {
+        self.fd.as_deref()
+    }
+
     pub fn unregister_timer(&self, id: TimerId) -> Result<(), ()> {
         let Some(callbacks) = &self.timer else { unreachable!() };
 

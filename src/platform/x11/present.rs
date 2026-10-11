@@ -4,6 +4,7 @@ use crate::platform::x11::host_handle::HostHandle;
 use crate::platform::x11::sizing::SizingState;
 use crate::platform::x11::window_shared::WindowShared;
 use crate::DamageArea;
+use baseview_host::host::TimerId;
 use std::cell::Cell;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
@@ -141,7 +142,7 @@ impl PresentState {
     }
 
     pub fn tick_fallback_frame_timer(&self) -> Option<Instant> {
-        let Some(timer_handle) = self.fallback_frame_timer.get() else { return None };
+        let timer_handle = self.fallback_frame_timer.get()?;
 
         let (deadline, triggered) = self.fallback_frame_timer_manager.tick_next_timer();
         if let Some(triggered) = triggered {
@@ -151,6 +152,18 @@ impl PresentState {
         }
 
         deadline
+    }
+
+    pub fn trigger_possible_fallback_frame_timer(&self, id: TimerId) {
+        let Some(fallback_timer_handle) = self.fallback_frame_timer.get() else { return };
+
+        let Some(handle) = self.fallback_frame_timer_manager.get_handle_if_exists(id) else {
+            return;
+        };
+
+        if handle == fallback_timer_handle {
+            self.draw_now.set(true);
+        }
     }
 
     fn setup_fallback_frame_timer(&self, host: &HostHandle) -> Result<(), FatalError> {
