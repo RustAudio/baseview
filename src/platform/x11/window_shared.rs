@@ -1,5 +1,6 @@
 use super::prelude::*;
 use crate::platform::x11::host_handle::HostHandle;
+use crate::platform::x11::waker::WakerSource;
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::time::Duration;
 use x11rb::protocol::xproto;
@@ -9,6 +10,7 @@ use x11rb::protocol::xproto::Visualid;
 pub struct WindowShared {
     pub xcb_window: XcbWindow,
     pub connection: Rc<X11Connection>,
+    pub waker_source: WakerSource,
     host: Rc<HostHandle>,
     visual_id: Visualid,
 
@@ -19,7 +21,6 @@ pub struct WindowShared {
     pub present_state: PresentStateShared,
     pub sizing_state: SizingStateShared,
     pub timer_manager: TimerManager,
-    pub redraw_delayed_timers: TimerManager,
 
     #[cfg(feature = "opengl")]
     gl_context: Option<PlatformGlContext>,
@@ -64,10 +65,10 @@ impl WindowShared {
             stop_own_event_loop: false.into(),
 
             cursor_state: CursorStateShared::new(),
-            present_state: PresentStateShared::new(),
+            present_state: PresentStateShared::new(&host),
             sizing_state,
             timer_manager: TimerManager::new(&host),
-            redraw_delayed_timers: TimerManager::new(&host),
+            waker_source: WakerSource::new(&host),
             host,
 
             xcb_window,
@@ -89,20 +90,12 @@ impl WindowShared {
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
-        self.present_state.request_present_notify_after(
-            duration,
-            &self.host,
-            &self.redraw_delayed_timers,
-        );
+        self.present_state.request_present_notify_after(duration, &self.host);
     }
 
+    #[inline]
     pub fn waker(&self) -> WindowWaker {
-        todo!()
-        /*
-        WindowWaker {
-            loop_signal: self.loop_signal.clone(),
-            shared: Arc::clone(&self.main_thread_shared),
-        }*/
+        self.waker_source.create_waker()
     }
 
     pub fn has_focus(&self) -> bool {
@@ -142,7 +135,7 @@ impl WindowShared {
 
     #[inline]
     pub fn create_timer(&self, duration: Duration) -> PlatformResult<TimerHandle> {
-        self.timer_manager.create_timer(duration, &self.host).map_err(|e| PlatformError::Host(e))
+        self.timer_manager.create_timer(duration, &self.host).map_err(PlatformError::Host)
     }
 
     pub fn scale_factor(&self) -> f64 {
