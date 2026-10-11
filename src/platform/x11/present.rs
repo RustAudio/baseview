@@ -14,29 +14,61 @@ use x11rb::protocol::xproto::ExposeEvent;
 pub struct PresentStateShared {
     present_notify_requested: Cell<bool>,
     poll_requested: Cell<bool>,
+    redraw_delayed_timers: TimerManager,
 }
 
 impl PresentStateShared {
-    pub fn new() -> Self {
-        Self { present_notify_requested: false.into(), poll_requested: false.into() }
+    pub fn new(host: &HostHandle) -> Self {
+        Self {
+            present_notify_requested: false.into(),
+            poll_requested: false.into(),
+            redraw_delayed_timers: TimerManager::new(host),
+        }
     }
 
     pub fn request_present_notify(&self) {
         self.present_notify_requested.set(true)
     }
 
-    pub fn request_present_notify_after(
-        &self, duration: Duration, host: &HostHandle, redraw_timers: &TimerManager,
-    ) {
+    pub fn trigger_if_redraw_timer(&self, timer_id: TimerId, host: &HostHandle) -> bool {
+        if let Some(redraw_timer) = self.redraw_delayed_timers.get_handle_if_exists(timer_id) {
+            self.request_present_notify();
+            self.redraw_delayed_timers.destroy_timer(redraw_timer, host);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn tick_timers(&self, host: &HostHandle) -> Option<Instant> {
+        let (deadline, triggered_timer) = self.redraw_delayed_timers.tick_next_timer();
+
+        if let Some(h) = triggered_timer {
+            self.request_present_notify();
+            self.redraw_delayed_timers.destroy_timer(h, host);
+        }
+
+        deadline
+    }
+
+    pub fn destroy_redraw_timers(&self, host: &HostHandle) {
+        self.redraw_delayed_timers.destroy_all(host);
+    }
+
+    pub fn request_present_notify_after(&self, duration: Duration, host: &HostHandle) {
         if duration.is_zero() || duration.as_millis() < 1 {
             self.request_present_notify();
             return;
         }
 
-        if let Err(e) = redraw_timers.create_timer(duration, host) {
+        if let Err(e) = self.redraw_delayed_timers.create_timer(duration, host) {
             warn!("{}", e);
             self.request_present_notify();
         }
+    }
+
+    pub fn request_poll(&self) {
+        self.poll_requested.set(true);
     }
 }
 

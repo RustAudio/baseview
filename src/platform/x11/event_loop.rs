@@ -37,7 +37,7 @@ pub(crate) struct EventLoop {
 
 impl EventLoop {
     pub fn waker(&self) -> WindowWaker {
-        todo!()
+        self.shared.waker_source.create_waker()
     }
 
     pub fn request_poll(&self) -> PlatformResult<()> {
@@ -55,13 +55,11 @@ impl EventLoop {
 
     pub fn host_timer_callback(&self, timer_id: TimerId) {
         if let Some(timer) = self.shared.timer_manager.get_handle_if_exists(timer_id) {
-            self.handler.on_timer(&timer.into())
-        } else if let Some(redraw_timer) =
-            self.shared.redraw_delayed_timers.get_handle_if_exists(timer_id)
-        {
-            self.shared.present_state.request_present_notify();
-            self.shared.redraw_delayed_timers.destroy_timer(redraw_timer, &self.host);
-        } else {
+            self.handler.on_timer(&timer.into());
+            return;
+        }
+
+        if !self.shared.present_state.trigger_if_redraw_timer(timer_id, &self.host) {
             self.present_state.trigger_possible_fallback_frame_timer(timer_id);
         }
     }
@@ -95,7 +93,8 @@ impl EventLoop {
         self.show()?;
 
         let connection = Rc::clone(&self.shared.connection);
-        let mut poller = ConnectionPoller::new(&connection.conn)?;
+        let waker_fd = self.shared.waker_source.inner_fd();
+        let mut poller = ConnectionPoller::new(&connection.conn, &waker_fd)?;
 
         self.shared.stop_own_event_loop.set(false);
 
@@ -103,9 +102,16 @@ impl EventLoop {
             let next_deadline = self.tick_all_timers();
             self.handle_idle()?;
 
-            if let PollStatus::ReadAvailable = poller.wait(next_deadline)? {
-                self.flush_drain_xcb_events()?;
+            match poller.wait(next_deadline)? {
+                PollStatus::ReadAvailable => {
+                    self.flush_drain_xcb_events()?;
+                }
+                PollStatus::WakerTriggered => {
+                    self.shared.waker_source.poll_requests(&self.shared.present_state, &self.host);
+                }
+                _ => {}
             }
+
             /*
             // Check if the user has requested the window to close
             if self.window.close_requested.get() {
@@ -157,7 +163,7 @@ impl EventLoop {
             fd_support.register_fd(self.shared.connection.conn.as_fd())?;
             self.fd_registered.set(true);
         } else {
-            todo!()
+            // TODO
         }
 
         Ok(())
@@ -170,13 +176,7 @@ impl EventLoop {
             self.handler.on_timer(&triggered_timer.into());
         }
 
-        let (deadline_2, triggered_timer) = self.shared.redraw_delayed_timers.tick_next_timer();
-
-        if let Some(h) = triggered_timer {
-            self.shared.present_state.request_present_notify();
-            self.shared.redraw_delayed_timers.destroy_timer(h, &self.host);
-        }
-
+        let deadline_2 = self.shared.present_state.tick_timers(&self.host);
         let deadline_3 = self.present_state.tick_fallback_frame_timer();
 
         fn min_deadline(d1: Option<Instant>, d2: Option<Instant>) -> Option<Instant> {
@@ -386,7 +386,7 @@ impl Drop for EventLoop {
     fn drop(&mut self) {
         // Deinit timers & FD watchers
         self.shared.timer_manager.destroy_all(&self.host);
-        self.shared.redraw_delayed_timers.destroy_all(&self.host);
+        self.shared.present_state.destroy_redraw_timers(&self.host);
 
         if self.fd_registered.get() {
             let Some(fd_support) = self.host.fd_support() else { unreachable!() };
