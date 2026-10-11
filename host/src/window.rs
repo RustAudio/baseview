@@ -105,17 +105,6 @@ pub trait HostedWindow {
     // This is set by the [`WindowSettings::max_size`] field.
     fn max_size(&self) -> Option<Size>;
 
-    /// Performs the work the window thread had scheduled for the main thread.
-    ///
-    /// This must be called back on the main thread, as a response to [`HostMainThreadCaller::call_main_thread`](crate::host::HostMainThreadCaller::call_main_thread).
-    ///
-    /// # Platform compatibility notes
-    ///
-    /// Only the X11 platform has a separate window thread, so this is only needed to run host callbacks on X11.
-    ///
-    /// On Windows and macOS, this is always a no-op.
-    fn host_main_thread_callback(&self);
-
     fn host_timer_callback(&self, timer_id: TimerId);
 
     #[cfg(unix)]

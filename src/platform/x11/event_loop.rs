@@ -49,10 +49,6 @@ impl EventLoop {
         self.shared.sizing_state.strategy()
     }
 
-    pub fn handle_main_thread_callback(&self) {
-        todo!()
-    }
-
     pub fn host_timer_callback(&self, timer_id: TimerId) {
         if let Some(timer) = self.shared.timer_manager.get_handle_if_exists(timer_id) {
             self.handler.on_timer(&timer.into());
@@ -162,8 +158,6 @@ impl EventLoop {
         if let Some(fd_support) = self.host.fd_support() {
             fd_support.register_fd(self.shared.connection.conn.as_fd())?;
             self.fd_registered.set(true);
-        } else {
-            // TODO
         }
 
         Ok(())
@@ -201,19 +195,6 @@ impl EventLoop {
         }
 
         Ok(event_received)
-    }
-
-    pub fn stop_now(&self) {
-        todo!();
-        //self.loop_signal.stop();
-        //self.loop_signal.wakeup();
-    }
-
-    pub fn trigger_fatal_error(&self, error: PlatformError) {
-        if self.run_error.is_none() {
-            //self.run_error = Some(error); TODO
-        }
-        self.stop_now();
     }
 
     pub fn resize(&self, new_size: Size) -> PlatformResult<()> {

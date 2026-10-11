@@ -78,13 +78,7 @@ impl<'a> ExamplePluginMainThread<'a> {
     }
 }
 
-impl<'a> PluginMainThread<'a, ()> for ExamplePluginMainThread<'a> {
-    fn on_main_thread(&self) {
-        if let Some(gui) = self.gui.borrow().as_ref() {
-            gui.handle.host_main_thread_callback();
-        }
-    }
-}
+impl<'a> PluginMainThread<'a, ()> for ExamplePluginMainThread<'a> {}
 
 impl PluginStateImpl for ExamplePluginMainThread<'_> {
     fn save(&self, _output: &mut OutputStream) -> Result<(), PluginError> {
