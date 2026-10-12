@@ -65,8 +65,7 @@ impl EventLoop {
             return;
         };
 
-        self.flush_drain_xcb_events().unwrap(); // TODO: unwraps
-        self.handle_idle().unwrap();
+        self.handle_idle().unwrap(); // TODO: unwraps
     }
 
     pub fn max_size(&self) -> Option<Size> {
@@ -94,7 +93,7 @@ impl EventLoop {
 
         self.shared.stop_own_event_loop.set(false);
 
-        while !self.shared.stop_own_event_loop.get() {
+        loop {
             let next_deadline = self.tick_all_timers();
             self.handle_idle()?;
 
@@ -108,12 +107,10 @@ impl EventLoop {
                 _ => {}
             }
 
-            /*
-            // Check if the user has requested the window to close
-            if self.window.close_requested.get() {
-                self.handle_must_close();
-                self.window.close_requested.set(false);
-            }*/
+            if self.shared.stop_own_event_loop.get() {
+                self.handler.on_event(Event::Window(WindowEvent::WillClose));
+                break;
+            }
         }
 
         poller.delete()?;
@@ -239,10 +236,6 @@ impl EventLoop {
         }
 
         Ok(())
-    }
-
-    pub fn shared(&self) -> &WindowShared {
-        &self.shared
     }
 
     fn handle_xcb_event(&self, event: XEvent) -> Result<(), FatalError> {

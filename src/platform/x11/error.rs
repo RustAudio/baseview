@@ -14,7 +14,6 @@ use x11rb::x11_utils::{TryParse, X11Error};
 #[derive(Debug)]
 pub enum FatalError {
     Connection(ConnectionError),
-    Calloop(calloop::Error),
     Redraw(String),
     Host(Box<dyn Error>),
 }
@@ -23,7 +22,6 @@ impl Display for FatalError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             FatalError::Connection(e) => e.fmt(f),
-            FatalError::Calloop(e) => e.fmt(f),
             FatalError::Redraw(e) => write!(f, "Fatal error while drawing the window: {}", e),
             FatalError::Host(e) => e.fmt(f),
         }
@@ -35,11 +33,6 @@ impl Error for FatalError {}
 impl From<ConnectionError> for FatalError {
     fn from(err: ConnectionError) -> FatalError {
         FatalError::Connection(err)
-    }
-}
-impl From<calloop::Error> for FatalError {
-    fn from(value: calloop::Error) -> Self {
-        Self::Calloop(value)
     }
 }
 
@@ -59,7 +52,6 @@ pub enum PlatformError {
     DisplayOpenFailed(DisplayOpenFailedError),
     Handler(HandlerError),
     Host(Box<dyn Error>),
-    Calloop(calloop::Error),
     Redraw(String),
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
@@ -87,7 +79,6 @@ impl Display for PlatformError {
             PlatformError::Handler(e) => e.fmt(f),
             PlatformError::Host(e) => e.fmt(f),
             PlatformError::Redraw(e) => e.fmt(f),
-            PlatformError::Calloop(e) => e.fmt(f),
             #[cfg(feature = "opengl")]
             PlatformError::XLib(e) => e.fmt(f),
             #[cfg(feature = "opengl")]
@@ -163,17 +154,10 @@ impl From<HandlerError> for PlatformError {
     }
 }
 
-impl From<calloop::Error> for PlatformError {
-    fn from(value: calloop::Error) -> Self {
-        Self::Calloop(value)
-    }
-}
-
 impl From<FatalError> for PlatformError {
     fn from(value: FatalError) -> Self {
         match value {
             FatalError::Connection(e) => Self::Connection(e),
-            FatalError::Calloop(e) => Self::Calloop(e),
             FatalError::Redraw(s) => Self::Redraw(s),
             FatalError::Host(e) => Self::Handler(HandlerError::from_boxed(e)),
         }
