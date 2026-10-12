@@ -66,6 +66,10 @@ impl EventLoop {
         };
 
         self.handle_idle().unwrap(); // TODO: unwraps
+
+        if self.shared.close_requested.get() {
+            self.handler.on_event(Event::Window(WindowEvent::WillClose));
+        }
     }
 
     pub fn max_size(&self) -> Option<Size> {
@@ -91,7 +95,7 @@ impl EventLoop {
         let waker_fd = self.shared.waker_source.inner_fd();
         let mut poller = ConnectionPoller::new(&connection.conn, &waker_fd)?;
 
-        self.shared.stop_own_event_loop.set(false);
+        self.shared.close_requested.set(false);
 
         loop {
             let next_deadline = self.tick_all_timers();
@@ -107,7 +111,7 @@ impl EventLoop {
                 _ => {}
             }
 
-            if self.shared.stop_own_event_loop.get() {
+            if self.shared.close_requested.get() {
                 self.handler.on_event(Event::Window(WindowEvent::WillClose));
                 break;
             }
