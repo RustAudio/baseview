@@ -36,7 +36,7 @@ impl SizingState {
         if let Some(new_parent_size) = self.new_parent_size.take() {
             if new_parent_size != shared.sizing_state.size() {
                 // The parent was resized, which means we should resize ourselves too.
-                if let Err(e) = shared.xcb_window.resize(new_parent_size.cast()) {
+                if let Err(e) = shared.xcb_window.resize(new_parent_size.cast())?.check() {
                     crate::warn!("Failed to resize window: {}", e);
                 } else {
                     // Makes the rest of this function run on the new parent size immediately (without waiting for a ConfigureNotify round-trip)
@@ -68,8 +68,13 @@ impl SizingState {
 
         if !comes_from_parent {
             if let Err(()) = host_handle.request_resize(new_size) {
-                let previous = WindowSize::from_physical(previous.cast(), scale_factor);
-                todo!() // roll back
+                let previous_size = WindowSize::from_physical(previous.cast(), scale_factor);
+                if let Err(()) = handler.resize(previous_size) {
+                    // If both host and handler failed, then we're kinda stuck here
+                    return Ok(());
+                }
+                shared.sizing_state.store_size(previous);
+                shared.xcb_window.resize(previous.cast())?.check_warn();
             }
         }
 
