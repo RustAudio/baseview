@@ -159,7 +159,7 @@ impl Window {
     /// This is set by the [`WindowSettings::resizable`] field.
     #[inline]
     pub fn is_resizable(&self) -> bool {
-        self.inner.is_resizable()
+        self.inner.sizing_strategy().is_resizable()
     }
 
     /// Returns the minimum size of the window, if it has one.
@@ -167,7 +167,7 @@ impl Window {
     /// This is set by the [`WindowSettings::min_size`] field.
     #[inline]
     pub fn min_size(&self) -> Option<Size> {
-        self.inner.min_size()
+        self.inner.sizing_strategy().min_size()
     }
 
     /// Returns the minimum size of the window, if it has one.
@@ -175,7 +175,7 @@ impl Window {
     /// This is set by the [`WindowSettings::max_size`] field.
     #[inline]
     pub fn max_size(&self) -> Option<Size> {
-        self.inner.max_size()
+        self.inner.sizing_strategy().max_size()
     }
 
     #[inline]
