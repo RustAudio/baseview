@@ -36,17 +36,13 @@ pub(crate) struct EventLoop {
 }
 
 impl EventLoop {
-    pub fn waker(&self) -> WindowWaker {
-        self.shared.waker_source.create_waker()
-    }
-
     pub fn request_poll(&self) -> PlatformResult<()> {
         self.handler.poll();
         Ok(())
     }
 
-    pub fn sizing_strategy(&self) -> SizingStrategy {
-        self.shared.sizing_state.strategy()
+    pub fn shared(&self) -> &Rc<WindowShared> {
+        &self.shared
     }
 
     pub fn host_timer_callback(&self, timer_id: TimerId) {
@@ -70,22 +66,6 @@ impl EventLoop {
         if self.shared.close_requested.get() {
             self.handler.on_event(Event::Window(WindowEvent::WillClose));
         }
-    }
-
-    pub fn max_size(&self) -> Option<Size> {
-        self.sizing_strategy().max_size()
-    }
-
-    pub fn min_size(&self) -> Option<Size> {
-        self.sizing_strategy().min_size()
-    }
-
-    pub fn is_resizable(&self) -> bool {
-        self.sizing_strategy().is_resizable()
-    }
-
-    pub fn is_open(&self) -> bool {
-        todo!()
     }
 
     pub fn run_until_closed(&self) -> PlatformResult<()> {
@@ -121,10 +101,6 @@ impl EventLoop {
         self.hide()?;
 
         Ok(())
-    }
-
-    pub fn size(&self) -> WindowSize {
-        self.shared.sizing_state.window_size()
     }
 }
 
