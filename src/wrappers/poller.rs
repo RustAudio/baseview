@@ -8,21 +8,24 @@ pub struct ConnectionPoller<'a> {
     poller: Poller,
     events: Events,
     fd: BorrowedFd<'a>,
-    waker_fd: BorrowedFd<'a>,
+    waker_fd: Option<BorrowedFd<'a>>,
 }
 
 const CONNECTION_KEY: usize = 42;
 const WAKER_KEY: usize = 69;
 
 impl<'a> ConnectionPoller<'a> {
-    pub fn new(source: &'a impl AsFd, waker: &'a impl AsFd) -> io::Result<Self> {
+    pub fn new(source: &'a impl AsFd, waker_fd: Option<BorrowedFd<'a>>) -> io::Result<Self> {
         let poller = Poller::new()?;
 
         let fd = source.as_fd();
         unsafe { poller.add_with_mode(&fd, Event::readable(CONNECTION_KEY), PollMode::Level)? };
 
-        let waker_fd = waker.as_fd();
-        unsafe { poller.add_with_mode(&waker_fd, Event::readable(WAKER_KEY), PollMode::Level)? };
+        if let Some(waker_fd) = waker_fd {
+            unsafe {
+                poller.add_with_mode(&waker_fd, Event::readable(WAKER_KEY), PollMode::Level)?
+            };
+        }
 
         Ok(Self { poller, fd, events: Events::new(), waker_fd })
     }
@@ -68,14 +71,20 @@ impl<'a> ConnectionPoller<'a> {
     }
 
     pub fn delete(self) -> io::Result<()> {
-        let _ = self.poller.delete(self.waker_fd)?;
+        if let Some(waker_fd) = self.waker_fd {
+            let _ = self.poller.delete(waker_fd);
+        }
+
         self.poller.delete(self.fd)
     }
 }
 
 impl<'a> Drop for ConnectionPoller<'a> {
     fn drop(&mut self) {
-        let _ = self.poller.delete(self.waker_fd);
+        if let Some(waker_fd) = self.waker_fd {
+            let _ = self.poller.delete(waker_fd);
+        }
+
         let _ = self.poller.delete(self.fd);
     }
 }
