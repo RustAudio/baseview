@@ -111,6 +111,7 @@ impl SizingState {
     pub fn handle_host_suggest_scale_factor(
         &mut self, scale: f64, handler: &Handler, shared: &WindowShared,
     ) -> Result<(), PlatformError> {
+        let previous_scale = shared.sizing_state.scale_factor();
         shared.sizing_state.host_suggested_scale_factor.set(Some(scale));
 
         // If the scaling factor is already provided by the system, do nothing
@@ -118,7 +119,7 @@ impl SizingState {
             return Ok(());
         };
 
-        let current_logical_size = shared.sizing_state.size().to_logical::<f64>(1.0);
+        let current_logical_size = shared.sizing_state.size().to_logical::<f64>(previous_scale);
         let new_physical_size = current_logical_size.to_physical(scale);
 
         shared.sizing_state.resize_from_host(new_physical_size, handler, shared)
