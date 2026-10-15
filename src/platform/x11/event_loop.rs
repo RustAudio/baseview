@@ -73,7 +73,8 @@ impl EventLoop {
 
         let connection = Rc::clone(&self.shared.connection);
         let waker_fd = self.shared.waker_source.inner_fd();
-        let mut poller = ConnectionPoller::new(&connection.conn, &waker_fd)?;
+        let waker_fd = waker_fd.as_ref().and_then(|s| s.fd());
+        let mut poller = ConnectionPoller::new(&connection.conn, waker_fd)?;
 
         self.shared.close_requested.set(false);
 

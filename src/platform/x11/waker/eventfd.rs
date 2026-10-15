@@ -1,20 +1,13 @@
 use rustix::event::{eventfd, EventfdFlags};
 use rustix::io::{read, write, Errno};
+use std::io;
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
-use std::sync::Arc;
 
-pub struct EventFdWakerSource {
-    fd: Arc<OwnedFd>,
-}
+pub struct EventFd(OwnedFd);
 
-impl EventFdWakerSource {
-    pub fn new() -> Self {
-        let fd = eventfd(0, EventfdFlags::CLOEXEC | EventfdFlags::NONBLOCK).unwrap();
-        Self { fd: Arc::new(fd) }
-    }
-
-    pub fn create_waker(&self) -> EventFdWaker {
-        EventFdWaker(Arc::clone(&self.fd))
+impl EventFd {
+    pub fn new() -> io::Result<Self> {
+        Ok(Self(eventfd(0, EventfdFlags::CLOEXEC | EventfdFlags::NONBLOCK)?))
     }
 
     // Returns true if something requested this to be woken up
@@ -23,7 +16,7 @@ impl EventFdWakerSource {
         const BYTES: usize = 8;
         let mut buf = [0u8; BYTES];
 
-        match read(&self.fd, &mut buf) {
+        match read(&self.0, &mut buf) {
             // Reading from an eventfd should only ever produce 8 bytes. No looping
             // is required.
             Ok(BYTES) => u64::from_ne_bytes(buf) > 0,
@@ -37,19 +30,7 @@ impl EventFdWakerSource {
             }
         }
     }
-}
 
-impl AsFd for EventFdWakerSource {
-    #[inline]
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.fd.as_fd()
-    }
-}
-
-#[derive(Clone)]
-pub struct EventFdWaker(Arc<OwnedFd>);
-
-impl EventFdWaker {
     pub fn wake(&self) {
         match write(&self.0, &1u64.to_ne_bytes()) {
             Ok(_) => {}
@@ -60,5 +41,12 @@ impl EventFdWaker {
                 crate::warn!("Failed to write to waker's eventfd counter: {}", e)
             }
         }
+    }
+}
+
+impl AsFd for EventFd {
+    #[inline]
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.0.as_fd()
     }
 }

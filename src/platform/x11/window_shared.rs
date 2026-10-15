@@ -68,7 +68,7 @@ impl WindowShared {
             present_state: PresentStateShared::new(&host),
             sizing_state,
             timer_manager: TimerManager::new(&host),
-            waker_source: WakerSource::new(&host),
+            waker_source: WakerSource::new(),
             host,
 
             xcb_window,
