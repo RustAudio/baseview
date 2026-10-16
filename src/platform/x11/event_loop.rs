@@ -105,9 +105,15 @@ impl EventLoop {
     pub fn create_window(init: WindowInitializer) -> PlatformResult<Self> {
         let parent_id = init.settings.parent.as_ref().map(|p| p.inner.window_id);
         let host = HostHandle::new(init.host);
-        // TODO: check deinit runs on initialization error
+
         let shared = WindowShared::create(init.settings, Rc::clone(&host))?;
-        let handler = init.builder.build(WindowContext::new(Rc::clone(&shared)))?;
+        let handler = match init.builder.build(WindowContext::new(Rc::clone(&shared))) {
+            Ok(handler) => handler,
+            Err(e) => {
+                shared.deinit_all_host();
+                return Err(e);
+            }
+        };
 
         let this = Self {
             handler: Handler::new(handler),
@@ -333,8 +339,7 @@ impl Drop for EventLoop {
         self.handler.on_event(Event::Window(WindowEvent::WillClose));
 
         // Deinit timers & FD watchers
-        self.shared.timer_manager.destroy_all(&self.host);
-        self.shared.present_state.destroy_redraw_timers(&self.host);
+        self.shared.deinit_all_host();
 
         if self.fd_registered.get() {
             let _ = self.host.unregister_fd(self.shared.connection.conn.as_raw_fd());

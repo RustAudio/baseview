@@ -148,4 +148,10 @@ impl WindowShared {
     pub fn raw_id(&self) -> xproto::Window {
         self.xcb_window.id().get()
     }
+
+    // Deinit host-registered timers and FD watchers
+    pub fn deinit_all_host(&self) {
+        self.timer_manager.destroy_all(&self.host);
+        self.present_state.destroy_redraw_timers(&self.host);
+    }
 }
