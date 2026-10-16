@@ -31,7 +31,6 @@ pub(crate) struct EventLoop {
 
     host: Rc<HostHandle>,
 
-    run_error: Option<PlatformError>,
     fd_registered: Cell<bool>,
 }
 
@@ -56,16 +55,14 @@ impl EventLoop {
         }
     }
 
-    pub fn host_fd_callback(&self, fd: RawFd) {
+    pub fn host_fd_callback(&self, fd: RawFd) -> Result<(), FatalError> {
         if fd != self.shared.connection.conn.as_raw_fd() {
-            return;
+            return Ok(());
         };
 
-        self.handle_idle().unwrap(); // TODO: unwraps
+        self.handle_idle()?;
 
-        if self.shared.close_requested.get() {
-            self.handler.on_event(Event::Window(WindowEvent::WillClose));
-        }
+        Ok(())
     }
 
     pub fn run_until_closed(&self) -> PlatformResult<()> {
@@ -93,7 +90,6 @@ impl EventLoop {
             }
 
             if self.shared.close_requested.get() {
-                self.handler.on_event(Event::Window(WindowEvent::WillClose));
                 break;
             }
         }
@@ -120,7 +116,6 @@ impl EventLoop {
             sizing_state: SizingState::new(parent_id),
             drag_n_drop: DragNDropState::new(),
             xkb_state: XkbcommonState::new(&shared.connection),
-            run_error: None,
             fd_registered: false.into(),
 
             shared,
@@ -335,14 +330,14 @@ impl EventLoop {
 
 impl Drop for EventLoop {
     fn drop(&mut self) {
+        self.handler.on_event(Event::Window(WindowEvent::WillClose));
+
         // Deinit timers & FD watchers
         self.shared.timer_manager.destroy_all(&self.host);
         self.shared.present_state.destroy_redraw_timers(&self.host);
 
         if self.fd_registered.get() {
-            let Some(fd_support) = self.host.fd_support() else { unreachable!() };
-            fd_support.unregister_fd(self.shared.connection.conn.as_raw_fd()).unwrap();
-            // TODO: unwrap
+            let _ = self.host.unregister_fd(self.shared.connection.conn.as_raw_fd());
         }
     }
 }

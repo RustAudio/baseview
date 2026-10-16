@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 
 mod eventfd;
 use crate::platform::prelude::PresentStateShared;
-use crate::DropData;
 use eventfd::*;
 
 pub(crate) struct WakerSource {
@@ -31,21 +30,27 @@ impl WakerSource {
         new_shared
     }
 
+    fn delete_shared_if_unused(&self) {
+        let mut shared = self.shared.borrow_mut();
+        let Some(shared_inner) = &mut *shared else { return };
+
+        if Arc::get_mut(shared_inner).is_some() {
+            *shared = None;
+        }
+    }
+
     pub fn create_waker(&self) -> WindowWaker {
         WindowWaker { shared: self.get_shared_or_create() }
     }
 
+    fn fetch_inner(&self) -> Option<(FlagsValues, Vec<Instant>)> {
+        let Some(shared) = &*self.shared.borrow() else { return None };
+
+        Some((shared.take_flags(), shared.take_requests()))
+    }
+
     pub fn poll_requests(&self, present_state_shared: &PresentStateShared, host: &HostHandle) {
-        let Some(shared) = &*self.shared.borrow() else { return };
-
-        if let Some(event_fd) = &shared.event_fd {
-            if !event_fd.poll() {
-                return;
-            }
-        }
-
-        let flags = shared.take_flags();
-        let requests = shared.take_requests();
+        let Some((flags, requests)) = self.fetch_inner() else { return };
 
         for instant in requests {
             if let Some(duration) = instant.checked_duration_since(Instant::now()) {
@@ -64,13 +69,13 @@ impl WakerSource {
         }
 
         if flags.dropped() {
-            // TODO
+            self.delete_shared_if_unused();
         }
     }
 
     pub fn inner_fd(&self) -> Option<Arc<Shared>> {
         let Some(shared) = &*self.shared.borrow() else { return None };
-        Some(Arc::clone(&shared))
+        Some(Arc::clone(shared))
     }
 }
 

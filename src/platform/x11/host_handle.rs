@@ -1,5 +1,6 @@
 use baseview_host::dpi::WindowSize;
 use baseview_host::host::*;
+use std::os::fd::RawFd;
 use std::rc::Rc;
 
 pub struct HostHandle {
@@ -17,6 +18,7 @@ impl HostHandle {
         })
     }
 
+    // TODO: call this
     pub fn notify_destroyed(&self) {
         if let Some(callbacks) = &self.callbacks {
             callbacks.destroyed()
@@ -47,6 +49,17 @@ impl HostHandle {
 
         if let Err(e) = callbacks.unregister_timer(id) {
             crate::warn!("Host failed to unregister timer: {}", e);
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn unregister_fd(&self, fd: RawFd) -> Result<(), ()> {
+        let Some(callbacks) = &self.fd else { unreachable!() };
+
+        if let Err(e) = callbacks.unregister_fd(fd) {
+            crate::warn!("Host failed to unregister fd: {}", e);
             Err(())
         } else {
             Ok(())
