@@ -7,7 +7,6 @@ use crate::platform::x11::host_handle::HostHandle;
 use crate::platform::x11::present::PresentState;
 use crate::platform::x11::sizing::SizingState;
 use crate::platform::ParentWindowHandle;
-use crate::utils::SizingStrategy;
 use crate::window::WindowInitializer;
 use crate::wrappers::poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;

@@ -1,4 +1,3 @@
-use crate::platform::prelude::PlatformResult;
 use crate::platform::x11::host_handle::HostHandle;
 use baseview_host::host::TimerId;
 use slotmap::{DefaultKey, DenseSlotMap, Key, KeyData};

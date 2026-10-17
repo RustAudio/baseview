@@ -4,8 +4,6 @@ use crate::utils::SizingStrategy;
 use crate::{WindowSettings, WindowSize};
 use std::cell::Cell;
 use std::num::{NonZero, NonZeroU32};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::OnceLock;
 use x11rb::properties::WmSizeHints;
 use x11rb::protocol::xproto::{ConfigureNotifyEvent, ReparentNotifyEvent};
 
