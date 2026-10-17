@@ -1,7 +1,6 @@
 use crate::platform::x11::host_handle::HostHandle;
 use baseview_host::host::TimerId;
 use std::cell::{Cell, RefCell};
-use std::error::Error;
 use std::mem;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -82,6 +81,10 @@ impl WakerSource {
 
     fn fetch_inner(&self) -> Option<(FlagsValues, Vec<Instant>)> {
         let Some(shared) = &*self.shared.borrow() else { return None };
+
+        if let Some(eventfd) = &shared.event_fd {
+            eventfd.poll();
+        }
 
         Some((shared.take_flags(), shared.take_requests()))
     }

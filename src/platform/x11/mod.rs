@@ -21,7 +21,7 @@ mod xcb_window;
 pub(crate) mod prelude {
     pub use super::cursor::*;
     pub use super::error::{CookieExt as _, FatalError, PlatformError, ReplyExt as _};
-    pub use super::event_loop::*;
+    pub(crate) use super::event_loop::*;
     pub use super::handler::Handler;
     pub use super::mouse::*;
     pub use super::present::*;
