@@ -160,10 +160,9 @@ fn main() -> Result<(), baseview::Error> {
         std::thread::sleep(Duration::from_secs(5));
 
         if tx.push(Message::Hello).is_err() {
-            println!("Failed sending message");
-        } else {
-            waker.request_poll();
+            break;
         }
+        waker.request_poll();
     });
 
     window.run_until_closed()?;

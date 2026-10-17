@@ -21,7 +21,7 @@ use crate::wrappers::win32::{
 use crate::{warn, DamageArea, EventStatus, HandlerError, WindowHandler};
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 use baseview_host::host::HostCallbacks;
-use std::cell::{Cell, OnceCell, RefCell};
+use std::cell::{Cell, OnceCell};
 use std::num::NonZeroU32;
 use windows_sys::Win32::Foundation::POINT;
 
@@ -49,18 +49,6 @@ impl WindowHandle {
 
     pub fn is_open(&self) -> bool {
         self.state.is_alive.get()
-    }
-
-    pub fn is_resizable(&self) -> bool {
-        self.state.sizing_strategy.is_resizable()
-    }
-
-    pub fn min_size(&self) -> Option<Size> {
-        self.state.sizing_strategy.min_size()
-    }
-
-    pub fn max_size(&self) -> Option<Size> {
-        self.state.sizing_strategy.max_size()
     }
 
     pub fn size(&self) -> WindowSize {
@@ -99,6 +87,9 @@ impl WindowHandle {
     pub fn sizing_strategy(&self) -> SizingStrategy {
         self.state.sizing_strategy
     }
+
+    #[inline(always)]
+    pub fn host_timer_callback(&self, _: crate::host::TimerId) {}
 
     pub fn suggest_scale_factor(&self, new_host_scale_factor: f64) -> Result<()> {
         let new_dpi = Dpi::from_scale_factor(new_host_scale_factor)
@@ -167,11 +158,6 @@ impl WindowHandle {
         Ok(())
     }
 
-    #[inline]
-    pub fn handle_main_thread_callback(&self) {
-        // No-op
-    }
-
     pub fn show(&self) -> Result<()> {
         let hwnd = match self.hwnd.get() {
             Some(hwnd) => hwnd,
@@ -232,7 +218,7 @@ pub struct BaseviewWindow {
 
     handler_builder: Cell<Option<WindowHandlerBuilder>>,
     handler: OnceCell<Box<dyn WindowHandler>>,
-    host: Option<RefCell<Box<dyn HostCallbacks>>>,
+    host: Option<Box<dyn HostCallbacks>>,
 
     // Workaround some VST3 hosts (e.g. Bitwig) not allowing request_resize before show() occurs
     pub host_needs_new_size_notified_on_show: Cell<Option<PhysicalSize<u32>>>,
@@ -277,7 +263,7 @@ impl BaseviewWindow {
                     handler_builder: Cell::new(Some(init.builder)),
                     handler: OnceCell::new(),
                     shared_state,
-                    host: init.host.take_callbacks().map(|cb| cb.into()),
+                    host: init.host.take_callbacks(),
                     host_needs_new_size_notified_on_show: None.into(),
 
                     _drop_target: None.into(),
@@ -302,7 +288,6 @@ impl BaseviewWindow {
         };
 
         let Some(host) = &self.host else { return };
-        let Ok(mut host) = host.try_borrow_mut() else { return };
         host.destroyed();
     }
 
@@ -312,7 +297,6 @@ impl BaseviewWindow {
         };
 
         let Some(host) = &self.host else { return Ok(()) };
-        let Ok(mut host) = host.try_borrow_mut() else { return Ok(()) };
         host.request_resize(new_size).map_err(HandlerError::from_boxed)?;
         Ok(())
     }

@@ -65,17 +65,17 @@ impl XkbcommonState {
         }
     }
 
-    pub fn update_key(&mut self, code: Keycode, dir: xkbc::xkb_key_direction) {
+    pub fn update_key(&self, code: Keycode, dir: xkbc::xkb_key_direction) {
         unsafe {
             (self.xkb_common.xkb_state_update_key)(self.state, code, dir);
         }
     }
 
-    pub fn update_key_down(&mut self, code: Keycode) {
+    pub fn update_key_down(&self, code: Keycode) {
         self.update_key(code, xkbc::xkb_key_direction::XKB_KEY_DOWN)
     }
 
-    pub fn update_key_up(&mut self, code: Keycode) {
+    pub fn update_key_up(&self, code: Keycode) {
         self.update_key(code, xkbc::xkb_key_direction::XKB_KEY_UP)
     }
 }

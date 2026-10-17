@@ -1,5 +1,6 @@
 use super::prelude::*;
-use calloop::{LoopHandle, LoopSignal};
+use crate::platform::x11::host_handle::HostHandle;
+use crate::platform::x11::waker::WakerSource;
 use raw_window_handle::{DisplayHandle, XlibWindowHandle};
 use std::time::Duration;
 use x11rb::protocol::xproto;
@@ -9,18 +10,18 @@ use x11rb::protocol::xproto::Visualid;
 pub struct WindowShared {
     pub xcb_window: XcbWindow,
     pub connection: Rc<X11Connection>,
+    pub waker_source: WakerSource,
+    host: Rc<HostHandle>,
     visual_id: Visualid,
 
     pub is_focused: Cell<bool>,
+    pub close_requested: Cell<bool>,
+    pub close_requested_from_host: Cell<bool>,
 
     pub cursor_state: CursorStateShared,
     pub present_state: PresentStateShared,
     pub sizing_state: SizingStateShared,
-
-    loop_signal: LoopSignal,
-    loop_handle: LoopHandle<'static, EventLoop>,
-
-    pub main_thread_shared: Arc<WindowThreadShared>,
+    pub timer_manager: TimerManager,
 
     #[cfg(feature = "opengl")]
     gl_context: Option<PlatformGlContext>,
@@ -28,12 +29,11 @@ pub struct WindowShared {
 
 impl WindowShared {
     pub(crate) fn create(
-        mut settings: WindowSettings, ev_loop: &calloop::EventLoop<'static, EventLoop>,
-        thread_shared: Arc<WindowThreadShared>,
+        mut settings: WindowSettings, host: Rc<HostHandle>,
     ) -> PlatformResult<Rc<Self>> {
         let connection = X11Connection::connect()?;
 
-        let sizing_state = SizingStateShared::load(&connection, &thread_shared.sizing, &settings)?;
+        let sizing_state = SizingStateShared::load(&connection, &settings)?;
 
         let connection = Rc::new(connection);
 
@@ -62,15 +62,16 @@ impl WindowShared {
             #[cfg(feature = "opengl")]
             gl_context: visual_config.make_gl_context(&xcb_window, &connection)?,
 
-            loop_signal: ev_loop.get_signal(),
-            loop_handle: ev_loop.handle(),
-
             is_focused: false.into(),
+            close_requested: false.into(),
+            close_requested_from_host: false.into(),
 
             cursor_state: CursorStateShared::new(),
-            present_state: PresentStateShared::new(),
+            present_state: PresentStateShared::new(&host),
             sizing_state,
-            main_thread_shared: thread_shared,
+            timer_manager: TimerManager::new(&host),
+            waker_source: WakerSource::new(),
+            host,
 
             xcb_window,
             connection,
@@ -82,8 +83,7 @@ impl WindowShared {
     }
 
     pub fn request_close(&self) {
-        self.loop_signal.stop();
-        self.loop_signal.wakeup();
+        self.close_requested.set(true);
     }
 
     pub fn request_redraw(&self) {
@@ -91,14 +91,12 @@ impl WindowShared {
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
-        self.present_state.request_present_notify_after(duration, &self.loop_handle);
+        self.present_state.request_present_notify_after(duration, &self.host);
     }
 
+    #[inline]
     pub fn waker(&self) -> WindowWaker {
-        WindowWaker {
-            loop_signal: self.loop_signal.clone(),
-            shared: Arc::clone(&self.main_thread_shared),
-        }
+        self.waker_source.create_waker(&self.host)
     }
 
     pub fn has_focus(&self) -> bool {
@@ -138,7 +136,7 @@ impl WindowShared {
 
     #[inline]
     pub fn create_timer(&self, duration: Duration) -> PlatformResult<TimerHandle> {
-        insert_timer(&self.loop_handle, duration)
+        self.timer_manager.create_timer(duration, &self.host).map_err(PlatformError::Host)
     }
 
     pub fn scale_factor(&self) -> f64 {
@@ -151,5 +149,12 @@ impl WindowShared {
 
     pub fn raw_id(&self) -> xproto::Window {
         self.xcb_window.id().get()
+    }
+
+    // Deinit host-registered timers and FD watchers
+    pub fn deinit_all_host(&self) {
+        self.timer_manager.destroy_all(&self.host);
+        self.present_state.destroy_redraw_timers(&self.host);
+        self.waker_source.deinit_host(&self.host);
     }
 }

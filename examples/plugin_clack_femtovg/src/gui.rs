@@ -2,14 +2,14 @@ use crate::window_handler::FemtovgExample;
 use crate::ExamplePluginMainThread;
 use baseview::dpi::*;
 use baseview::gl::GlConfig;
-use baseview::host::{Host, HostCallbacks, HostMainThreadCaller};
+use baseview::host::{Host, HostCallbacks};
 use baseview::{Window, WindowSettings, WindowSize};
 use clack_extensions::gui::{
     AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, HostGui,
     PluginGuiImpl, Window as ClapWindow,
 };
 use clack_plugin::plugin::PluginError;
-use clack_plugin::prelude::{HostMainThreadHandle, HostSharedHandle};
+use clack_plugin::prelude::HostMainThreadHandle;
 use std::error::Error;
 
 pub struct ExamplePluginGui {
@@ -35,9 +35,7 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
             .with_size(PhysicalSize::new(400, 200))
             .with_gl_config(GlConfig::default());
 
-        let mut host = Host::new().with_main_thread(unsafe {
-            MainThreadHandler { host: self.host.shared().with_arbitrary_lifetime() }
-        });
+        let mut host = Host::new();
 
         if let Some(gui) = self.host_gui {
             host = host.with_callbacks(unsafe {
@@ -153,29 +151,19 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 }
 
-struct MainThreadHandler {
-    host: HostSharedHandle<'static>,
-}
-
-impl HostMainThreadCaller for MainThreadHandler {
-    fn call_main_thread(&mut self) {
-        self.host.request_callback();
-    }
-}
-
 struct HostGuiCallbacks {
     ext: HostGui,
     host: HostMainThreadHandle<'static>,
 }
 
 impl HostCallbacks for HostGuiCallbacks {
-    fn request_resize(&mut self, new_size: WindowSize) -> Result<(), Box<dyn Error>> {
+    fn request_resize(&self, new_size: WindowSize) -> Result<(), Box<dyn Error>> {
         let new_size = new_size.to_native_size();
         self.ext.request_resize(&self.host, new_size.width, new_size.height)?;
         Ok(())
     }
 
-    fn destroyed(&mut self) {
+    fn destroyed(&self) {
         self.ext.closed(&self.host, true);
     }
 }

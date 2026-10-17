@@ -2,6 +2,7 @@ use crate::audio::ExamplePluginAudioProcessor;
 use crate::gui::ExamplePluginGui;
 use clack_extensions::gui::{HostGui, PluginGui};
 use clack_extensions::state::{PluginState, PluginStateImpl};
+use clack_extensions::timer::{HostTimer, PluginTimer};
 use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
 use std::cell::{Ref, RefCell};
@@ -21,7 +22,12 @@ impl Plugin for ExamplePlugin {
     type MainThread<'a> = ExamplePluginMainThread<'a>;
 
     fn declare_extensions(builder: &mut PluginExtensions<Self>, _shared: Option<&()>) {
-        builder.register::<PluginGui>().register::<PluginState>();
+        builder.register::<PluginGui>().register::<PluginState>().register::<PluginTimer>();
+
+        #[cfg(unix)]
+        {
+            builder.register::<clack_extensions::posix_fd::PluginPosixFd>();
+        }
     }
 }
 
@@ -40,7 +46,14 @@ impl DefaultPluginFactory for ExamplePlugin {
     fn new_main_thread<'a>(
         host: HostMainThreadHandle<'a>, _shared: &'a Self::Shared<'a>,
     ) -> Result<Self::MainThread<'a>, PluginError> {
-        Ok(Self::MainThread { gui: None.into(), host_gui: host.get_extension(), host })
+        Ok(Self::MainThread {
+            gui: None.into(),
+            host_gui: host.get_extension(),
+            #[cfg(unix)]
+            host_posix_fd: host.get_extension(),
+            host_timer: host.get_extension(),
+            host,
+        })
     }
 }
 
@@ -48,8 +61,13 @@ impl DefaultPluginFactory for ExamplePlugin {
 pub struct ExamplePluginMainThread<'a> {
     /// The host handle
     host: HostMainThreadHandle<'a>,
-    // The host GUI extension handle
+    /// The host GUI extension handle
     host_gui: Option<HostGui>,
+    /// The host FD extension handle
+    #[cfg(unix)]
+    host_posix_fd: Option<clack_extensions::posix_fd::HostPosixFd>,
+    /// The host Timer extension handle
+    host_timer: Option<HostTimer>,
     /// The plugin's GUI state and context
     gui: RefCell<Option<ExamplePluginGui>>,
 }
@@ -61,13 +79,7 @@ impl<'a> ExamplePluginMainThread<'a> {
     }
 }
 
-impl<'a> PluginMainThread<'a, ()> for ExamplePluginMainThread<'a> {
-    fn on_main_thread(&self) {
-        if let Some(gui) = self.gui.borrow().as_ref() {
-            gui.handle.host_main_thread_callback();
-        }
-    }
-}
+impl<'a> PluginMainThread<'a, ()> for ExamplePluginMainThread<'a> {}
 
 impl PluginStateImpl for ExamplePluginMainThread<'_> {
     fn save(&self, _output: &mut OutputStream) -> Result<(), PluginError> {

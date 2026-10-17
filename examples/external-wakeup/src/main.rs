@@ -141,7 +141,9 @@ fn run_thread(sender: Sender<Message>, waker: WindowWaker) {
     loop {
         let interval: f32 = rand::random_range(0.5..2.5);
         std::thread::sleep(Duration::from_secs_f32(interval));
-        sender.send(Message::Hello).unwrap();
+        if sender.send(Message::Hello).is_err() {
+            break; // Receiver has hung up, we can just shut this down.
+        }
         waker.request_poll();
     }
 }
