@@ -48,7 +48,12 @@ impl WindowHandle {
 
     pub fn host_fd_callback(&self, fd: RawFd) {
         let Some(event_loop) = self.ev_loop.get() else { return };
-        event_loop.host_fd_callback(fd);
+
+        if let Err(e) = event_loop.host_fd_callback(fd) {
+            error!("Fatal error: {}", e);
+            self.ev_loop.delete();
+            return;
+        }
 
         if self.shared.close_requested.get() {
             self.ev_loop.delete();
@@ -93,6 +98,12 @@ impl WindowHandle {
         }
 
         res
+    }
+}
+
+impl Drop for WindowHandle {
+    fn drop(&mut self) {
+        self.shared.close_requested_from_host.set(true);
     }
 }
 
