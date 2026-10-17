@@ -2,7 +2,7 @@ use crate::platform::prelude::PlatformResult;
 use crate::platform::x11::host_handle::HostHandle;
 use baseview_host::host::TimerId;
 use slotmap::{DefaultKey, DenseSlotMap, Key, KeyData};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::error::Error;
 use std::time::{Duration, Instant};
 
@@ -88,12 +88,6 @@ impl TimerManager {
     }
 }
 
-#[derive(Debug)]
-struct Timer {
-    interval: Duration,
-    next_trigger: Option<Instant>,
-}
-
 pub(crate) struct HostedTimerStore(RefCell<Vec<TimerId>>);
 
 impl HostedTimerStore {
@@ -121,6 +115,18 @@ impl HostedTimerStore {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct Timer {
+    interval: Duration,
+    next_trigger: Option<Instant>,
+}
+
+impl Timer {
+    pub fn new(interval: Duration) -> Self {
+        Self { interval, next_trigger: Instant::now().checked_add(interval) }
+    }
+}
+
 pub(crate) struct StandaloneTimerStore(RefCell<DenseSlotMap<DefaultKey, Timer>>);
 
 impl StandaloneTimerStore {
@@ -130,9 +136,8 @@ impl StandaloneTimerStore {
 
     fn insert_new_timer(&self, interval: Duration) -> TimerHandle {
         let mut store = self.0.borrow_mut();
-        let entry = Timer { interval, next_trigger: Instant::now().checked_add(interval) };
 
-        let key = store.insert(entry);
+        let key = store.insert(Timer::new(interval));
         TimerHandle(key.data().as_ffi())
     }
 
@@ -175,5 +180,79 @@ impl StandaloneTimerStore {
 
     fn destroy_all(&self) {
         self.0.borrow_mut().clear();
+    }
+}
+
+pub(crate) enum TimerSlot {
+    Hosted { id: Cell<Option<TimerId>> },
+    Standalone { timer: Cell<Option<Timer>> },
+}
+
+impl TimerSlot {
+    pub fn new(host: &HostHandle) -> Self {
+        if host.timer_support().is_some() {
+            Self::Hosted { id: None.into() }
+        } else {
+            Self::Standalone { timer: None.into() }
+        }
+    }
+
+    pub fn set_timer(&self, interval: Duration, host: &HostHandle) -> Result<(), Box<dyn Error>> {
+        match self {
+            Self::Standalone { timer } => timer.set(Some(Timer::new(interval))),
+            Self::Hosted { id: stored_id } => {
+                if let Some(previous_timer) = stored_id.take() {
+                    let _ = host.unregister_timer(previous_timer);
+                }
+
+                let Some(timer_support) = host.timer_support() else { unreachable!() };
+                let id = timer_support.register_timer(interval)?;
+
+                stored_id.set(Some(id));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn tick_next_timer(&self) -> (Option<Instant>, bool) {
+        match self {
+            Self::Hosted { .. } => (None, false), // Timers are not manually ticked in hosted mode
+            Self::Standalone { timer: stored_timer } => {
+                let Some(mut timer) = stored_timer.get() else { return (None, false) };
+
+                // Interval was so long it overflowed. This will essentially never trigger, so we just never trigger it.
+                let Some(next_trigger) = timer.next_trigger else { return (None, false) };
+
+                let now = Instant::now();
+
+                if next_trigger <= now {
+                    // Timer triggered!
+                    timer.next_trigger = now.checked_add(timer.interval);
+                    stored_timer.set(Some(timer));
+
+                    (timer.next_trigger, true)
+                } else {
+                    (timer.next_trigger, false)
+                }
+            }
+        }
+    }
+
+    pub fn matches_hosted(&self, id: TimerId) -> bool {
+        match self {
+            Self::Standalone { .. } => false,
+            Self::Hosted { id: stored_id } => stored_id.get() == Some(id),
+        }
+    }
+
+    pub fn destroy(&self, host: &HostHandle) {
+        match self {
+            Self::Standalone { timer } => timer.set(None),
+            Self::Hosted { id } => {
+                let Some(id) = id.take() else { return };
+                let _ = host.unregister_timer(id);
+            }
+        }
     }
 }

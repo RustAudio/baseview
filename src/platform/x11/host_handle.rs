@@ -1,7 +1,9 @@
 use baseview_host::dpi::WindowSize;
 use baseview_host::host::*;
+use std::error::Error;
 use std::os::fd::RawFd;
 use std::rc::Rc;
+use std::time::Duration;
 
 pub struct HostHandle {
     callbacks: Option<Box<dyn HostCallbacks>>,
