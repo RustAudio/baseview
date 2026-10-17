@@ -77,8 +77,7 @@ pub struct PresentState {
     last_requested_serial: Cell<Option<u32>>,
     last_received_present: Cell<Option<(u32, u64)>>,
 
-    fallback_frame_timer_manager: TimerManager,
-    fallback_frame_timer: Cell<Option<TimerHandle>>,
+    fallback_frame_timer: TimerSlot,
 }
 
 impl PresentState {
@@ -87,8 +86,7 @@ impl PresentState {
             draw_now: false.into(),
             last_requested_serial: None.into(),
             last_received_present: None.into(),
-            fallback_frame_timer_manager: TimerManager::new(host),
-            fallback_frame_timer: None.into(),
+            fallback_frame_timer: TimerSlot::new(host),
         }
     }
 
@@ -174,26 +172,17 @@ impl PresentState {
     }
 
     pub fn tick_fallback_frame_timer(&self) -> Option<Instant> {
-        let timer_handle = self.fallback_frame_timer.get()?;
+        let (deadline, triggered) = self.fallback_frame_timer.tick_next_timer();
 
-        let (deadline, triggered) = self.fallback_frame_timer_manager.tick_next_timer();
-        if let Some(triggered) = triggered {
-            if triggered == timer_handle {
-                self.draw_now.set(true);
-            }
+        if triggered {
+            self.draw_now.set(true);
         }
 
         deadline
     }
 
     pub fn trigger_possible_fallback_frame_timer(&self, id: TimerId) {
-        let Some(fallback_timer_handle) = self.fallback_frame_timer.get() else { return };
-
-        let Some(handle) = self.fallback_frame_timer_manager.get_handle_if_exists(id) else {
-            return;
-        };
-
-        if handle == fallback_timer_handle {
+        if self.fallback_frame_timer.matches_hosted(id) {
             self.draw_now.set(true);
         }
     }
@@ -201,18 +190,11 @@ impl PresentState {
     fn setup_fallback_frame_timer(&self, host: &HostHandle) -> Result<(), FatalError> {
         const FRAME_INTERVAL: Duration = Duration::from_millis(15);
 
-        if let Some(previous) = self.fallback_frame_timer.take() {
-            self.fallback_frame_timer_manager.destroy_timer(previous, host);
-        }
+        self.fallback_frame_timer.set_timer(FRAME_INTERVAL, host).map_err(FatalError::Host)
+    }
 
-        let handle = self
-            .fallback_frame_timer_manager
-            .create_timer(FRAME_INTERVAL, host)
-            .map_err(FatalError::Host)?;
-
-        self.fallback_frame_timer.set(Some(handle));
-
-        Ok(())
+    pub fn destroy_timers(&self, host: &HostHandle) {
+        self.fallback_frame_timer.destroy(host)
     }
 
     pub fn handle_present_notify(

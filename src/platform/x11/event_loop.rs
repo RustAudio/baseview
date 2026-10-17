@@ -340,6 +340,7 @@ impl Drop for EventLoop {
 
         // Deinit timers & FD watchers
         self.shared.deinit_all_host();
+        self.present_state.destroy_timers(&self.host);
 
         if self.fd_registered.get() {
             let _ = self.host.unregister_fd(self.shared.connection.conn.as_raw_fd());
