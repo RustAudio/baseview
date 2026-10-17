@@ -7,6 +7,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSSize, NSString};
 use std::cell::Cell;
+use std::os::fd::RawFd;
 use std::rc::Rc;
 
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
@@ -103,23 +104,6 @@ impl WindowHandle {
         self.state.closed.get()
     }
 
-    pub fn is_resizable(&self) -> bool {
-        self.state.sizing_strategy.is_resizable()
-    }
-
-    pub fn min_size(&self) -> Option<Size> {
-        self.state.sizing_strategy.min_size()
-    }
-
-    pub fn max_size(&self) -> Option<Size> {
-        self.state.sizing_strategy.max_size()
-    }
-
-    #[inline]
-    pub fn handle_main_thread_callback(&self) {
-        // No-op
-    }
-
     pub fn size(&self) -> WindowSize {
         WindowSize::from_logical(self.state.size.get(), self.state.scale_factor.get())
     }
@@ -174,6 +158,11 @@ impl WindowHandle {
     pub fn sizing_strategy(&self) -> SizingStrategy {
         self.state.sizing_strategy
     }
+
+    #[inline(always)]
+    pub fn host_timer_callback(&self, _: host::TimerId) {}
+    #[inline(always)]
+    pub fn host_fd_callback(&self, _: RawFd) {}
 
     pub fn request_poll(&self) -> Result<()> {
         let Some(view) = self.view.load() else { return Ok(()) };

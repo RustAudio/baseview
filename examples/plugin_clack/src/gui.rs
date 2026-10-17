@@ -1,18 +1,16 @@
 use crate::window_handler::OpenWindowExample;
 use crate::ExamplePluginMainThread;
 use baseview::dpi::*;
-use baseview::host::{Host, HostCallbacks, HostFdSupport, HostTimerSupport, TimerId as BvTimerId};
+use baseview::host::{Host, HostCallbacks, HostTimerSupport, TimerId as BvTimerId};
 use baseview::{Window, WindowSettings, WindowSize};
 use clack_extensions::gui::{
     AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, HostGui,
     PluginGuiImpl, Window as ClapWindow,
 };
-use clack_extensions::posix_fd::{FdFlags, HostPosixFd, PluginPosixFdImpl};
 use clack_extensions::timer::{HostTimer, PluginTimerImpl, TimerId};
 use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::HostMainThreadHandle;
 use std::error::Error;
-use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::time::Duration;
 
 pub struct ExamplePluginGui {
@@ -49,6 +47,7 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
             host = host.with_callbacks(HostGuiCallbacks { ext: gui, host: host_handle });
         }
 
+        #[cfg(unix)]
         if let Some(fd) = self.host_posix_fd {
             host = host.with_fd(HostFdCallbacks { ext: fd, host: host_handle });
         }
@@ -200,19 +199,25 @@ impl HostTimerSupport for HostTimerCallbacks {
     }
 }
 
+#[cfg(unix)]
 struct HostFdCallbacks {
-    ext: HostPosixFd,
+    ext: clack_extensions::posix_fd::HostPosixFd,
     host: HostMainThreadHandle<'static>,
 }
 
-impl HostFdSupport for HostFdCallbacks {
-    fn register_fd(&self, fd: BorrowedFd) -> Result<(), Box<dyn Error>> {
-        dbg!(fd);
-        self.ext.register_fd(&self.host, fd.as_raw_fd(), FdFlags::READ)?;
+#[cfg(unix)]
+impl baseview::host::HostFdSupport for HostFdCallbacks {
+    fn register_fd(&self, fd: std::os::fd::BorrowedFd) -> Result<(), Box<dyn Error>> {
+        use std::os::fd::AsRawFd;
+        self.ext.register_fd(
+            &self.host,
+            fd.as_raw_fd(),
+            clack_extensions::posix_fd::FdFlags::READ,
+        )?;
         Ok(())
     }
 
-    fn unregister_fd(&self, fd: RawFd) -> Result<(), Box<dyn Error>> {
+    fn unregister_fd(&self, fd: std::os::fd::RawFd) -> Result<(), Box<dyn Error>> {
         self.ext.unregister_fd(&self.host, fd)?;
         Ok(())
     }
@@ -226,9 +231,9 @@ impl PluginTimerImpl for ExamplePluginMainThread<'_> {
     }
 }
 
-impl PluginPosixFdImpl for ExamplePluginMainThread<'_> {
-    fn on_fd(&self, fd: RawFd, _: FdFlags) {
-        dbg!(fd);
+#[cfg(unix)]
+impl clack_extensions::posix_fd::PluginPosixFdImpl for ExamplePluginMainThread<'_> {
+    fn on_fd(&self, fd: std::os::fd::RawFd, _: clack_extensions::posix_fd::FdFlags) {
         if let Some(gui) = self.gui.borrow().as_ref() {
             gui.handle.host_fd_callback(fd)
         }

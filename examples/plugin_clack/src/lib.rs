@@ -1,7 +1,6 @@
 use crate::audio::ExamplePluginAudioProcessor;
 use crate::gui::ExamplePluginGui;
 use clack_extensions::gui::{HostGui, PluginGui};
-use clack_extensions::posix_fd::{HostPosixFd, PluginPosixFd};
 use clack_extensions::state::{PluginState, PluginStateImpl};
 use clack_extensions::timer::{HostTimer, PluginTimer};
 use clack_plugin::prelude::*;
@@ -23,11 +22,12 @@ impl Plugin for ExamplePlugin {
     type MainThread<'a> = ExamplePluginMainThread<'a>;
 
     fn declare_extensions(builder: &mut PluginExtensions<Self>, _shared: Option<&()>) {
-        builder
-            .register::<PluginGui>()
-            .register::<PluginState>()
-            .register::<PluginTimer>()
-            .register::<PluginPosixFd>();
+        builder.register::<PluginGui>().register::<PluginState>().register::<PluginTimer>();
+
+        #[cfg(unix)]
+        {
+            builder.register::<clack_extensions::posix_fd::PluginPosixFd>();
+        }
     }
 }
 
@@ -49,6 +49,7 @@ impl DefaultPluginFactory for ExamplePlugin {
         Ok(Self::MainThread {
             gui: None.into(),
             host_gui: host.get_extension(),
+            #[cfg(unix)]
             host_posix_fd: host.get_extension(),
             host_timer: host.get_extension(),
             host,
@@ -64,7 +65,7 @@ pub struct ExamplePluginMainThread<'a> {
     host_gui: Option<HostGui>,
     /// The host FD extension handle
     #[cfg(unix)]
-    host_posix_fd: Option<HostPosixFd>,
+    host_posix_fd: Option<clack_extensions::posix_fd::HostPosixFd>,
     /// The host Timer extension handle
     host_timer: Option<HostTimer>,
     /// The plugin's GUI state and context
