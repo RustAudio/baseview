@@ -1,7 +1,9 @@
 use crate::platform::x11::host_handle::HostHandle;
-use std::cell::RefCell;
+use baseview_host::host::TimerId;
+use std::cell::{Cell, RefCell};
+use std::error::Error;
 use std::mem;
-use std::os::fd::{AsFd, BorrowedFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -12,35 +14,70 @@ use eventfd::*;
 
 pub(crate) struct WakerSource {
     shared: RefCell<Option<Arc<Shared>>>,
+    host_timer_id: Cell<Option<TimerId>>,
 }
 
 impl WakerSource {
     pub fn new() -> Self {
-        Self { shared: None.into() }
+        Self { shared: None.into(), host_timer_id: None.into() }
     }
 
-    fn get_shared_or_create(&self) -> Arc<Shared> {
+    fn get_shared_or_create(&self, host: &HostHandle) -> Arc<Shared> {
         let mut shared = self.shared.borrow_mut();
         if let Some(shared) = &*shared {
             return Arc::clone(shared);
         }
 
-        let new_shared = Arc::new(Shared::new());
+        let should_create_eventfd = host.fd_support().is_some() || host.is_standalone();
+
+        let new_shared = Arc::new(Shared::new(should_create_eventfd));
+
+        if !host.is_standalone() {
+            self.register_to_host(host, &new_shared);
+        }
+
         *shared = Some(Arc::clone(&new_shared));
         new_shared
     }
 
-    fn delete_shared_if_unused(&self) {
+    fn register_to_host(&self, host: &HostHandle, shared: &Shared) {
+        if let Some(fd_support) = host.fd_support() {
+            if let Some(eventfd) = &shared.event_fd {
+                match fd_support.register_fd(eventfd.as_fd()) {
+                    Ok(()) => return,
+                    Err(e) => {
+                        crate::warn!("Host failed to register Waker's eventfd: {}.", e);
+                    }
+                }
+            }
+        }
+
+        let Some(timer_support) = host.timer_support() else { return };
+
+        const WAKE_INTERVAL: Duration = Duration::from_millis(100);
+        let timer_id = match timer_support.register_timer(WAKE_INTERVAL) {
+            Ok(id) => id,
+            Err(e) => {
+                crate::warn!("Host failed to register Waker's timer: {}.", e);
+                return;
+            }
+        };
+
+        self.host_timer_id.set(Some(timer_id));
+    }
+
+    fn delete_shared_if_unused(&self, host: &HostHandle) {
         let mut shared = self.shared.borrow_mut();
         let Some(shared_inner) = &mut *shared else { return };
 
-        if Arc::get_mut(shared_inner).is_some() {
+        if let Some(inner) = Arc::get_mut(shared_inner) {
+            self.deinit_host_inner(host, Some(inner));
             *shared = None;
         }
     }
 
-    pub fn create_waker(&self) -> WindowWaker {
-        WindowWaker { shared: self.get_shared_or_create() }
+    pub fn create_waker(&self, host: &HostHandle) -> WindowWaker {
+        WindowWaker { shared: self.get_shared_or_create(host) }
     }
 
     fn fetch_inner(&self) -> Option<(FlagsValues, Vec<Instant>)> {
@@ -69,13 +106,31 @@ impl WakerSource {
         }
 
         if flags.dropped() {
-            self.delete_shared_if_unused();
+            self.delete_shared_if_unused(host);
         }
     }
 
-    pub fn inner_fd(&self) -> Option<Arc<Shared>> {
+    pub fn inner_shared(&self) -> Option<Arc<Shared>> {
         let Some(shared) = &*self.shared.borrow() else { return None };
         Some(Arc::clone(shared))
+    }
+
+    pub fn deinit_host(&self, host: &HostHandle) {
+        self.deinit_host_inner(host, self.inner_shared().as_deref())
+    }
+
+    pub fn deinit_host_inner(&self, host: &HostHandle, shared: Option<&Shared>) {
+        if let Some(timer_id) = self.host_timer_id.take() {
+            let _ = host.unregister_timer(timer_id);
+        }
+
+        let Some(shared) = shared else { return };
+
+        if let Some(fd) = &shared.event_fd {
+            if host.fd_support().is_some() {
+                let _ = host.unregister_fd(fd.as_fd().as_raw_fd());
+            }
+        }
     }
 }
 
@@ -129,14 +184,16 @@ pub(crate) struct Shared {
 }
 
 impl Shared {
-    pub fn new() -> Self {
-        let event_fd = match EventFd::new() {
-            Ok(fd) => Some(fd),
-            Err(e) => {
-                crate::warn!("Could not create WindowWaker's eventfd: {}", e);
-                None
-            }
-        };
+    pub fn new(create_eventfd: bool) -> Self {
+        let event_fd = create_eventfd
+            .then(|| match EventFd::new() {
+                Ok(fd) => Some(fd),
+                Err(e) => {
+                    crate::warn!("Could not create WindowWaker's eventfd: {}", e);
+                    None
+                }
+            })
+            .flatten();
 
         Self { flags: AtomicU8::new(0), requests: Mutex::new(vec![]), event_fd }
     }

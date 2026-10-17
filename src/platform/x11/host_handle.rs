@@ -1,9 +1,7 @@
 use baseview_host::dpi::WindowSize;
 use baseview_host::host::*;
-use std::error::Error;
 use std::os::fd::RawFd;
 use std::rc::Rc;
-use std::time::Duration;
 
 pub struct HostHandle {
     callbacks: Option<Box<dyn HostCallbacks>>,
@@ -20,7 +18,10 @@ impl HostHandle {
         })
     }
 
-    // TODO: call this
+    pub fn is_standalone(&self) -> bool {
+        self.callbacks.is_none() && self.fd.is_none() && self.timer.is_none()
+    }
+
     pub fn notify_destroyed(&self) {
         if let Some(callbacks) = &self.callbacks {
             callbacks.destroyed()

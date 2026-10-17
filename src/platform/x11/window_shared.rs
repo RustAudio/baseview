@@ -16,6 +16,7 @@ pub struct WindowShared {
 
     pub is_focused: Cell<bool>,
     pub close_requested: Cell<bool>,
+    pub close_requested_from_host: Cell<bool>,
 
     pub cursor_state: CursorStateShared,
     pub present_state: PresentStateShared,
@@ -63,6 +64,7 @@ impl WindowShared {
 
             is_focused: false.into(),
             close_requested: false.into(),
+            close_requested_from_host: false.into(),
 
             cursor_state: CursorStateShared::new(),
             present_state: PresentStateShared::new(&host),
@@ -94,7 +96,7 @@ impl WindowShared {
 
     #[inline]
     pub fn waker(&self) -> WindowWaker {
-        self.waker_source.create_waker()
+        self.waker_source.create_waker(&self.host)
     }
 
     pub fn has_focus(&self) -> bool {
@@ -153,5 +155,6 @@ impl WindowShared {
     pub fn deinit_all_host(&self) {
         self.timer_manager.destroy_all(&self.host);
         self.present_state.destroy_redraw_timers(&self.host);
+        self.waker_source.deinit_host(&self.host);
     }
 }
