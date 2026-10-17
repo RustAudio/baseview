@@ -6,7 +6,6 @@ use crate::waker::WindowWaker;
 use crate::*;
 use raw_window_handle::HasWindowHandle;
 use std::marker::PhantomData;
-use std::os::fd::RawFd;
 
 /// A handle to a Window created by baseview.
 ///
@@ -167,7 +166,8 @@ impl Window {
     }
 
     #[inline]
-    pub fn host_fd_callback(&self, fd: RawFd) {
+    #[cfg(unix)]
+    pub fn host_fd_callback(&self, fd: std::os::fd::RawFd) {
         self.inner.host_fd_callback(fd)
     }
 
@@ -292,7 +292,8 @@ impl HostedWindow for Window {
     }
 
     #[inline]
-    fn host_fd_callback(&self, fd: RawFd) {
+    #[cfg(unix)]
+    fn host_fd_callback(&self, fd: std::os::fd::RawFd) {
         self.host_fd_callback(fd)
     }
 
