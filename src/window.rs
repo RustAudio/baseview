@@ -56,7 +56,7 @@ impl Window {
     #[inline]
     pub fn create<H: WindowHandler>(
         settings: WindowSettings, host: Option<Host>,
-        handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
+        handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + 'static,
     ) -> Result<Window, Error> {
         let initializer = WindowInitializer {
             settings,

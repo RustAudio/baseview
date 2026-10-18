@@ -124,12 +124,12 @@ pub trait WindowHandler: 'static {
 type DynBuilderResult = Result<Box<dyn WindowHandler>, HandlerError>;
 
 pub struct WindowHandlerBuilder {
-    inner: Box<dyn FnOnce(WindowContext) -> DynBuilderResult + Send + 'static>,
+    inner: Box<dyn FnOnce(WindowContext) -> DynBuilderResult + 'static>,
 }
 
 impl WindowHandlerBuilder {
     pub fn new<H: WindowHandler>(
-        f: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
+        f: impl FnOnce(WindowContext) -> Result<H, HandlerError> + 'static,
     ) -> WindowHandlerBuilder {
         Self { inner: Box::new(|c| Ok(Box::new(f(c)?))) }
     }
