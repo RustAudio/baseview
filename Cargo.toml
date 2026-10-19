@@ -110,7 +110,8 @@ members = [
     "examples/test-frame-pacing",
     "examples/timers",
     "examples/external-wakeup",
-    "tests/partial-rendering"
+    "tests/partial-rendering",
+    "tests/plugin_clack_frame_pacing"
     , "host"]
 
 [lints.clippy]
