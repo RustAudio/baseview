@@ -21,7 +21,7 @@ impl ParentWindowHandler {
         let window_open_options =
             WindowSettings::new().with_size(size).with_parent(&window).with_title("baseview child");
 
-        let child_window = Window::create(window_open_options, ChildWindowHandler::new)?;
+        let child_window = Window::create(window_open_options, None, ChildWindowHandler::new)?;
         child_window.show()?;
 
         Ok(Self { surface: surface.into(), child_window })
@@ -116,7 +116,7 @@ fn main() -> Result<(), baseview::Error> {
     unsafe { baseview::assume_standalone_in_process() };
     let window_open_options = WindowSettings::new().with_size(LogicalSize::new(512.0, 512.0));
 
-    Window::create(window_open_options, ParentWindowHandler::new)?.run_until_closed()?;
+    Window::create(window_open_options, None, ParentWindowHandler::new)?.run_until_closed()?;
 
     Ok(())
 }

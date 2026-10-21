@@ -45,7 +45,7 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
             });
         }
 
-        let window = Window::create_with_host(options, OpenWindowExample::new, host)?;
+        let window = Window::create(options, Some(host), OpenWindowExample::new)?;
 
         self.gui.replace(Some(ExamplePluginGui { handle: window }));
         Ok(())

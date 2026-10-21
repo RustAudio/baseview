@@ -129,7 +129,8 @@ fn main() -> Result<(), baseview::Error> {
         .with_size(LogicalSize::new(512, 512))
         .with_gl_config(GlConfig { alpha_bits: 8, ..GlConfig::default() });
 
-    let window = Window::create(window_open_options, |ctx| FemtovgExample::new(ctx, receiver))?;
+    let window =
+        Window::create(window_open_options, None, |ctx| FemtovgExample::new(ctx, receiver))?;
     let waker = window.waker();
     std::thread::spawn(|| run_thread(sender, waker));
 

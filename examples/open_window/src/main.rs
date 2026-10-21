@@ -140,7 +140,7 @@ fn main() -> Result<(), baseview::Error> {
 
     let (mut tx, rx) = RingBuffer::new(128);
 
-    let window = Window::create(window_open_options, |window| {
+    let window = Window::create(window_open_options, None, |window| {
         let ctx = softbuffer::Context::new(window.clone())?;
         let mut surface = softbuffer::Surface::new(&ctx, window.clone())?;
         let size = window.size().physical;
