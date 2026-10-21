@@ -99,6 +99,6 @@ fn main() -> Result<(), baseview::Error> {
         .with_size(LogicalSize::new(512, 512))
         .with_gl_config(GlConfig::default());
 
-    Window::create(window_open_options, CursorsExample::new)?.run_until_closed()?;
+    Window::create(window_open_options, None, CursorsExample::new)?.run_until_closed()?;
     Ok(())
 }

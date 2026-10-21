@@ -47,38 +47,21 @@ pub struct Window {
 
 impl Window {
     /// Creates a new window, using the given [`WindowSettings`] and a builder closure to
-    /// create the associated [`WindowHandler`].
-    ///
-    /// This function creates the window but does not open or show it.
-    /// You must use the [`show`](Self::show) method to actually open it
-    /// (unless you use [`run_until_closed`](Self::run_until_closed), which does it automatically).
-    #[inline]
-    pub fn create<H: WindowHandler>(
-        options: WindowSettings,
-        handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
-    ) -> Result<Window, Error> {
-        Self::create_with_host(options, handler, None)
-    }
-
-    /// Creates a new window, using the given [`WindowSettings`] and a builder closure to
     /// create the associated [`WindowHandler`], as well as an optional [`Host`] containing callbacks
     /// to a potential system that is hosting the window (e.g. in a plug-in setting).
     ///
     /// This function creates the window but does not open or show it.
     /// You must use the [`show`](Self::show) method to actually open it
     /// (unless you use [`run_until_closed`](Self::run_until_closed), which does it automatically).
-    ///
-    /// Calling this function with [`None`] for the `host` value is equivalent to calling
-    /// [`create`](Self::create).
-    pub fn create_with_host<H: WindowHandler>(
-        settings: WindowSettings,
+    #[inline]
+    pub fn create<H: WindowHandler>(
+        settings: WindowSettings, host: Option<Host>,
         handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
-        host: impl Into<Option<Host>>,
     ) -> Result<Window, Error> {
         let initializer = WindowInitializer {
             settings,
             builder: WindowHandlerBuilder::new(handler),
-            host: host.into().unwrap_or_else(Host::default),
+            host: host.unwrap_or_default(),
         };
 
         Ok(Self {

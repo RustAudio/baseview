@@ -101,7 +101,7 @@ fn main() -> Result<(), baseview::Error> {
         .with_size(LogicalSize::new(512, 512))
         .with_gl_config(GlConfig { alpha_bits: 8, ..GlConfig::default() });
 
-    let window = Window::create(window_open_options, FemtovgExample::new)?;
+    let window = Window::create(window_open_options, None, FemtovgExample::new)?;
 
     window.run_until_closed()?;
     Ok(())
