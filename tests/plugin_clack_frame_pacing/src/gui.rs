@@ -56,7 +56,7 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
             host = host.with_timer(HostTimerCallbacks { ext: timer, host: host_handle })
         }
 
-        let window = Window::create_with_host(options, FramePacingTest::new, host)?;
+        let window = Window::create(options, Some(host), FramePacingTest::new)?;
 
         self.gui.replace(Some(ExamplePluginGui { handle: window }));
         Ok(())
