@@ -1,15 +1,17 @@
 use crate::window_handler::OpenWindowExample;
 use crate::ExamplePluginMainThread;
 use baseview::dpi::*;
-use baseview::host::{Host, HostCallbacks, HostMainThreadCaller};
+use baseview::host::{Host, HostCallbacks, HostTimerSupport, TimerId as BvTimerId};
 use baseview::{Window, WindowSettings, WindowSize};
 use clack_extensions::gui::{
     AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, HostGui,
     PluginGuiImpl, Window as ClapWindow,
 };
+use clack_extensions::timer::{HostTimer, PluginTimerImpl, TimerId};
 use clack_plugin::plugin::PluginError;
-use clack_plugin::prelude::{HostMainThreadHandle, HostSharedHandle};
+use clack_plugin::prelude::HostMainThreadHandle;
 use std::error::Error;
+use std::time::Duration;
 
 pub struct ExamplePluginGui {
     pub handle: Window,
@@ -35,14 +37,23 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
             .with_min_size(LogicalSize::new(200.0, 100.0))
             .with_max_size(LogicalSize::new(600.0, 400.0));
 
-        let mut host = Host::new().with_main_thread(unsafe {
-            MainThreadHandler { host: self.host.shared().with_arbitrary_lifetime() }
-        });
+        // SAFETY: this handle is valid for the lifetime of the plugin, and baseview guarantees
+        // it releases all references to host callbacks on `drop` (which we do unconditionally)
+        let host_handle = unsafe { self.host.with_arbitrary_lifetime() };
+
+        let mut host = Host::new();
 
         if let Some(gui) = self.host_gui {
-            host = host.with_callbacks(unsafe {
-                HostGuiCallbacks { ext: gui, host: self.host.with_arbitrary_lifetime() }
-            });
+            host = host.with_callbacks(HostGuiCallbacks { ext: gui, host: host_handle });
+        }
+
+        #[cfg(unix)]
+        if let Some(fd) = self.host_posix_fd {
+            host = host.with_fd(HostFdCallbacks { ext: fd, host: host_handle });
+        }
+
+        if let Some(timer) = self.host_timer {
+            host = host.with_timer(HostTimerCallbacks { ext: timer, host: host_handle })
         }
 
         let window = Window::create(options, Some(host), OpenWindowExample::new)?;
@@ -153,29 +164,78 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
     }
 }
 
-struct MainThreadHandler {
-    host: HostSharedHandle<'static>,
-}
-
-impl HostMainThreadCaller for MainThreadHandler {
-    fn call_main_thread(&mut self) {
-        self.host.request_callback();
-    }
-}
-
 struct HostGuiCallbacks {
     ext: HostGui,
     host: HostMainThreadHandle<'static>,
 }
 
 impl HostCallbacks for HostGuiCallbacks {
-    fn request_resize(&mut self, new_size: WindowSize) -> Result<(), Box<dyn Error>> {
+    fn request_resize(&self, new_size: WindowSize) -> Result<(), Box<dyn Error>> {
         let new_size = new_size.to_native_size();
         self.ext.request_resize(&self.host, new_size.width, new_size.height)?;
         Ok(())
     }
 
-    fn destroyed(&mut self) {
+    fn destroyed(&self) {
         self.ext.closed(&self.host, true);
+    }
+}
+
+struct HostTimerCallbacks {
+    ext: HostTimer,
+    host: HostMainThreadHandle<'static>,
+}
+
+impl HostTimerSupport for HostTimerCallbacks {
+    fn register_timer(&self, period: Duration) -> Result<BvTimerId, Box<dyn Error>> {
+        let period_ms = period.as_millis().try_into().unwrap_or(u32::MAX);
+        let timer = self.ext.register_timer(&self.host, period_ms)?;
+        Ok(BvTimerId(timer.0))
+    }
+
+    fn unregister_timer(&self, timer: BvTimerId) -> Result<(), Box<dyn Error>> {
+        self.ext.unregister_timer(&self.host, TimerId(timer.0))?;
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+struct HostFdCallbacks {
+    ext: clack_extensions::posix_fd::HostPosixFd,
+    host: HostMainThreadHandle<'static>,
+}
+
+#[cfg(unix)]
+impl baseview::host::HostFdSupport for HostFdCallbacks {
+    fn register_fd(&self, fd: std::os::fd::BorrowedFd) -> Result<(), Box<dyn Error>> {
+        use std::os::fd::AsRawFd;
+        self.ext.register_fd(
+            &self.host,
+            fd.as_raw_fd(),
+            clack_extensions::posix_fd::FdFlags::READ,
+        )?;
+        Ok(())
+    }
+
+    fn unregister_fd(&self, fd: std::os::fd::RawFd) -> Result<(), Box<dyn Error>> {
+        self.ext.unregister_fd(&self.host, fd)?;
+        Ok(())
+    }
+}
+
+impl PluginTimerImpl for ExamplePluginMainThread<'_> {
+    fn on_timer(&self, timer_id: TimerId) {
+        if let Some(gui) = self.gui.borrow().as_ref() {
+            gui.handle.host_timer_callback(BvTimerId(timer_id.0));
+        }
+    }
+}
+
+#[cfg(unix)]
+impl clack_extensions::posix_fd::PluginPosixFdImpl for ExamplePluginMainThread<'_> {
+    fn on_fd(&self, fd: std::os::fd::RawFd, _: clack_extensions::posix_fd::FdFlags) {
+        if let Some(gui) = self.gui.borrow().as_ref() {
+            gui.handle.host_fd_callback(fd)
+        }
     }
 }

@@ -78,7 +78,7 @@ pub(crate) struct BaseviewView {
     display_link: OnceCell<Retained<CADisplayLink>>,
     display_link_started: Cell<bool>,
 
-    host: Option<RefCell<Box<dyn HostCallbacks>>>,
+    host: Option<Box<dyn HostCallbacks>>,
     pub(crate) cursor_manager: CursorManager,
 
     timers: TimerManager,
@@ -111,7 +111,7 @@ impl BaseviewView {
             window_handler: WindowHandlerContainer::new(),
             notification_center_observer: None.into(),
             parenting: ViewParentingType::Uninitialized.into(),
-            host: init.host.take_callbacks().map(|c| c.into()),
+            host: init.host.take_callbacks(),
             lifetime_tied_to_app: None.into(),
             cursor_manager: CursorManager::new(),
 
@@ -329,13 +329,11 @@ impl BaseviewView {
 
     fn host_notify_destroyed(&self) {
         let Some(host) = &self.host else { return };
-        let Ok(mut host) = host.try_borrow_mut() else { return };
         host.destroyed();
     }
 
     fn host_request_resize(&self, new_size: WindowSize) -> core::result::Result<(), HandlerError> {
         let Some(host) = &self.host else { return Ok(()) };
-        let Ok(mut host) = host.try_borrow_mut() else { return Ok(()) };
         host.request_resize(new_size).map_err(HandlerError::from_boxed)?;
         Ok(())
     }

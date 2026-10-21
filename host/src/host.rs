@@ -1,24 +1,22 @@
 use crate::dpi::WindowSize;
 use std::error::Error;
+use std::time::Duration;
 
-/// A special handler for the Window thread to wake up and call methods on the main thread.
-///
-/// [`HostedWindow::host_main_thread_callback`](crate::HostedWindow::host_main_thread_callback)
-/// should be called as a response to this.
-///
-/// # Platform compatibility notes
-///
-/// This is only needed on X11, as Windows and macOS windows already run on the main thread.
-pub trait HostMainThreadCaller: Send + 'static {
-    /// Schedules a callback on the main thread.
-    ///
-    /// [`HostedWindow::host_main_thread_callback`](crate::HostedWindow::host_main_thread_callback)
-    /// should be called as a response to this.
-    ///
-    /// # Platform compatibility notes
-    ///
-    /// Only X11 needs this. This can be implemented as a no-op on Windows and macOS.
-    fn call_main_thread(&mut self);
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TimerId(pub u32);
+
+pub trait HostTimerSupport: 'static {
+    fn register_timer(&self, period: Duration) -> Result<TimerId, Box<dyn Error>>;
+    fn unregister_timer(&self, timer: TimerId) -> Result<(), Box<dyn Error>>;
+}
+
+#[cfg(unix)]
+use std::os::fd::*;
+pub trait HostFdSupport: 'static {
+    #[cfg(unix)]
+    fn register_fd(&self, fd: BorrowedFd) -> Result<(), Box<dyn Error>>;
+    #[cfg(unix)]
+    fn unregister_fd(&self, fd: RawFd) -> Result<(), Box<dyn Error>>;
 }
 
 /// A handler for baseview windows to interact with their host.
@@ -31,7 +29,7 @@ pub trait HostCallbacks: 'static {
     /// This can return any type of error, indicating the host either failed or denied to handle the
     /// resize request.
     /// If it does, the error is logged and the resize operation is canceled or reverted.
-    fn request_resize(&mut self, new_size: WindowSize) -> Result<(), Box<dyn Error>>;
+    fn request_resize(&self, new_size: WindowSize) -> Result<(), Box<dyn Error>>;
     /// Notifies the host that the child window has been destroyed for a reason outside the host's
     /// control.
     ///
@@ -39,7 +37,7 @@ pub trait HostCallbacks: 'static {
     /// because the window handler decided to close the window itself.
     ///
     /// The host should close its parent window, as it will not show anything useful anymore.
-    fn destroyed(&mut self);
+    fn destroyed(&self);
 }
 
 /// Configuration and callbacks for a window's host.
@@ -56,7 +54,9 @@ pub trait HostCallbacks: 'static {
 pub struct Host {
     callbacks: Option<Box<dyn HostCallbacks>>,
     #[cfg(target_os = "linux")]
-    main_thread: Option<Box<dyn HostMainThreadCaller>>,
+    timer: Option<Box<dyn HostTimerSupport>>,
+    #[cfg(target_os = "linux")]
+    fd: Option<Box<dyn HostFdSupport>>,
 }
 
 impl Default for Host {
@@ -70,30 +70,40 @@ impl Host {
     #[inline]
     pub fn new() -> Self {
         Self {
-            #[cfg(target_os = "linux")]
-            main_thread: None,
             callbacks: None,
+            #[cfg(target_os = "linux")]
+            timer: None,
+            #[cfg(target_os = "linux")]
+            fd: None,
         }
     }
 
-    /// Sets the [`HostMainThreadCaller`] handler to be used.
-    ///
-    /// If another callback handler was already set, it is replaced.
-    ///
-    /// # Platform Compatibility notes
-    ///
-    /// This is only useful on X11. On Windows and macOS, this is a no-op.
     #[inline]
-    pub fn with_main_thread(self, main_thread: impl HostMainThreadCaller) -> Self {
+    pub fn with_fd(self, fd: impl HostFdSupport) -> Self {
         #[cfg(target_os = "linux")]
         {
             let mut this = self;
-            this.main_thread = Some(Box::new(main_thread));
+            this.fd = Some(Box::new(fd));
             this
         }
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = main_thread;
+            let _ = fd;
+            self
+        }
+    }
+
+    #[inline]
+    pub fn with_timer(self, timer: impl HostTimerSupport) -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            let mut this = self;
+            this.timer = Some(Box::new(timer));
+            this
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = timer;
             self
         }
     }
@@ -113,10 +123,22 @@ impl Host {
     }
 
     #[inline]
-    pub fn take_main_thread(&mut self) -> Option<Box<dyn HostMainThreadCaller>> {
+    pub fn take_timer(&mut self) -> Option<Box<dyn HostTimerSupport>> {
         #[cfg(target_os = "linux")]
         {
-            self.main_thread.take()
+            self.timer.take()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn take_fd(&mut self) -> Option<Box<dyn HostFdSupport>> {
+        #[cfg(target_os = "linux")]
+        {
+            self.fd.take()
         }
         #[cfg(not(target_os = "linux"))]
         {

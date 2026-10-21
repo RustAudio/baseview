@@ -56,7 +56,7 @@ impl Window {
     #[inline]
     pub fn create<H: WindowHandler>(
         settings: WindowSettings, host: Option<Host>,
-        handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + Send + 'static,
+        handler: impl FnOnce(WindowContext) -> Result<H, HandlerError> + 'static,
     ) -> Result<Window, Error> {
         let initializer = WindowInitializer {
             settings,
@@ -141,7 +141,7 @@ impl Window {
     /// This is set by the [`WindowSettings::resizable`] field.
     #[inline]
     pub fn is_resizable(&self) -> bool {
-        self.inner.is_resizable()
+        self.inner.sizing_strategy().is_resizable()
     }
 
     /// Returns the minimum size of the window, if it has one.
@@ -149,7 +149,7 @@ impl Window {
     /// This is set by the [`WindowSettings::min_size`] field.
     #[inline]
     pub fn min_size(&self) -> Option<Size> {
-        self.inner.min_size()
+        self.inner.sizing_strategy().min_size()
     }
 
     /// Returns the minimum size of the window, if it has one.
@@ -157,21 +157,18 @@ impl Window {
     /// This is set by the [`WindowSettings::max_size`] field.
     #[inline]
     pub fn max_size(&self) -> Option<Size> {
-        self.inner.max_size()
+        self.inner.sizing_strategy().max_size()
     }
 
-    /// Performs the work the window thread had scheduled for the main thread.
-    ///
-    /// This must be called back on the main thread, as a response to [`HostMainThreadCaller::call_main_thread`](host::HostMainThreadCaller::call_main_thread).
-    ///
-    /// # Platform compatibility notes
-    ///
-    /// Only the X11 platform has a separate window thread, so this is only needed to run host callbacks on X11.
-    ///
-    /// On Windows and macOS, this is always a no-op.
     #[inline]
-    pub fn host_main_thread_callback(&self) {
-        self.inner.handle_main_thread_callback()
+    pub fn host_timer_callback(&self, timer_id: TimerId) {
+        self.inner.host_timer_callback(timer_id)
+    }
+
+    #[inline]
+    #[cfg(unix)]
+    pub fn host_fd_callback(&self, fd: std::os::fd::RawFd) {
+        self.inner.host_fd_callback(fd)
     }
 
     /// Reparents this window using the given `parent`.
@@ -231,6 +228,7 @@ pub(crate) struct WindowInitializer {
 }
 
 pub use baseview_host::dpi::WindowSize;
+use baseview_host::host::TimerId;
 use baseview_host::HostedWindow;
 
 impl HostedWindow for Window {
@@ -289,8 +287,14 @@ impl HostedWindow for Window {
     }
 
     #[inline]
-    fn host_main_thread_callback(&self) {
-        self.host_main_thread_callback()
+    fn host_timer_callback(&self, timer_id: TimerId) {
+        self.host_timer_callback(timer_id)
+    }
+
+    #[inline]
+    #[cfg(unix)]
+    fn host_fd_callback(&self, fd: std::os::fd::RawFd) {
+        self.host_fd_callback(fd)
     }
 
     #[inline]
