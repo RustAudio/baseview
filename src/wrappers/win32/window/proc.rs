@@ -43,7 +43,12 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
                 inner.initialize(window)
             };
 
-            (handle_error_as_fatal(result, window, inner_ptr) == 0) as _
+            match handle_error_as_fatal(result, window, inner_ptr) {
+                // On success, DefWindowProc sets up the non-client area, which includes the title
+                0 => handle_default(),
+                // On failure, abort with false
+                _ => 0,
+            }
         }
         WM_CREATE => {
             let create = unsafe { &*(l_param as *const CREATESTRUCTW) };
