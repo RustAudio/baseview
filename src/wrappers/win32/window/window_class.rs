@@ -6,7 +6,8 @@ use std::sync::Arc;
 use windows_core::{Error, Result, HSTRING};
 use windows_sys::core::PCWSTR;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    LoadCursorW, RegisterClassW, UnregisterClassW, CS_OWNDC, IDC_ARROW, WNDCLASSW, WNDPROC,
+    LoadCursorW, LoadIconA, RegisterClassW, UnregisterClassW, CS_OWNDC, IDC_ARROW, WNDCLASSW,
+    WNDPROC,
 };
 
 #[derive(Clone)]
@@ -25,10 +26,10 @@ impl RegisteredClass {
             style: CS_OWNDC,
             cbClsExtra: 0,
             cbWndExtra: 0,
-            hIcon: null_mut(),                                      // Default icon
-            hCursor: unsafe { LoadCursorW(null_mut(), IDC_ARROW) }, // Arrow cursor
-            hbrBackground: null_mut(),                              // No default background
-            lpszMenuName: null_mut(),                               // No default menu
+            hIcon: unsafe { LoadIconA(instance.as_raw(), 1u16 as _) }, // Icon ID 1, or fallback to default icon if not found
+            hCursor: unsafe { LoadCursorW(null_mut(), IDC_ARROW) },    // Arrow cursor
+            hbrBackground: null_mut(),                                 // No default background
+            lpszMenuName: null_mut(),                                  // No default menu
         };
 
         let class_atom = unsafe { RegisterClassW(&class_info) };
