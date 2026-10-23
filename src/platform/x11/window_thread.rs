@@ -94,7 +94,16 @@ pub enum WindowThreadRequest {
     Hide,
 }
 
-pub type WindowThreadResponseMessage = core::result::Result<(), String>;
+/// What the window thread did with a request it handled successfully.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestOutcome {
+    /// The request was carried out.
+    Done,
+    /// A suggested scale factor was stored, but not used: the system provides its own.
+    ScaleFactorIgnored,
+}
+
+pub type WindowThreadResponseMessage = core::result::Result<RequestOutcome, String>;
 
 pub enum HostCallback {
     Resized { new_size: WindowSize, previous: WindowSize },
@@ -165,14 +174,17 @@ impl WindowThreadHandle {
     }
 
     pub fn resize(&self, size: Size) -> PlatformResult<()> {
-        self.request(WindowThreadRequest::Resize(size))
+        self.request(WindowThreadRequest::Resize(size))?;
+        Ok(())
     }
 
-    pub fn suggest_scale_factor(&self, scale_factor: f64) -> PlatformResult<()> {
-        self.request(WindowThreadRequest::SuggestScaleFactor(scale_factor))
+    /// Returns whether the suggested scale factor is now the one in use.
+    pub fn suggest_scale_factor(&self, scale_factor: f64) -> PlatformResult<bool> {
+        let outcome = self.request(WindowThreadRequest::SuggestScaleFactor(scale_factor))?;
+        Ok(outcome == RequestOutcome::Done)
     }
 
-    fn request(&self, req: WindowThreadRequest) -> PlatformResult<()> {
+    fn request(&self, req: WindowThreadRequest) -> PlatformResult<RequestOutcome> {
         self.request_sender.send(req).map_err(|_| RequestFailed::Send)?;
         let result = self.response_receiver.recv().map_err(|_| RequestFailed::Recv)?;
 
@@ -203,11 +215,13 @@ impl WindowThreadHandle {
     }
 
     pub fn show(&self) -> PlatformResult<()> {
-        self.request(WindowThreadRequest::Show)
+        self.request(WindowThreadRequest::Show)?;
+        Ok(())
     }
 
     pub fn hide(&self) -> PlatformResult<()> {
-        self.request(WindowThreadRequest::Hide)
+        self.request(WindowThreadRequest::Hide)?;
+        Ok(())
     }
 
     pub fn is_open(&self) -> bool {
@@ -236,7 +250,8 @@ impl WindowThreadHandle {
     }
 
     pub fn set_parent(&self, new_parent: ParentWindowHandle) -> PlatformResult<()> {
-        self.request(WindowThreadRequest::SetParent(new_parent))
+        self.request(WindowThreadRequest::SetParent(new_parent))?;
+        Ok(())
     }
 
     pub fn request_poll(&self) -> PlatformResult<()> {

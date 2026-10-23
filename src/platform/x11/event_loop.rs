@@ -7,7 +7,7 @@ use crate::platform::x11::handler::Handler;
 use crate::platform::x11::present::PresentState;
 use crate::platform::x11::sizing::SizingState;
 use crate::platform::x11::window_thread::{
-    HostCallback, WindowThreadRequest, WindowThreadResponseMessage,
+    HostCallback, RequestOutcome, WindowThreadRequest, WindowThreadResponseMessage,
 };
 use crate::warn;
 use crate::wrappers::xkbcommon::XkbcommonState;
@@ -127,7 +127,7 @@ impl EventLoop {
                 self.stop_now();
             }
             calloop::channel::Event::Msg(req) => match self.handle_request(req) {
-                Ok(()) => self.send_response(Ok(())),
+                Ok(outcome) => self.send_response(Ok(outcome)),
                 Err(e) => self.send_response(Err(e.to_string())),
             },
         }
@@ -156,14 +156,23 @@ impl EventLoop {
         self.stop_now();
     }
 
-    fn handle_request(&mut self, req: WindowThreadRequest) -> Result<(), PlatformError> {
+    fn handle_request(
+        &mut self, req: WindowThreadRequest,
+    ) -> Result<RequestOutcome, PlatformError> {
         match req {
             WindowThreadRequest::Resize(new_size) => {
                 self.sizing_state.handle_host_resize(new_size, &self.handler, &self.shared)?
             }
-            WindowThreadRequest::SuggestScaleFactor(scale) => self
-                .sizing_state
-                .handle_host_suggest_scale_factor(scale, &self.handler, &self.shared)?,
+            WindowThreadRequest::SuggestScaleFactor(scale) => {
+                let used = self.sizing_state.handle_host_suggest_scale_factor(
+                    scale,
+                    &self.handler,
+                    &self.shared,
+                )?;
+                if !used {
+                    return Ok(RequestOutcome::ScaleFactorIgnored);
+                }
+            }
             WindowThreadRequest::SetParent(new_parent) => {
                 self.shared.xcb_window.reparent(Some(new_parent.window_id))?.check()?
             }
@@ -171,7 +180,7 @@ impl EventLoop {
             WindowThreadRequest::Hide => self.shared.xcb_window.unmap_window()?.check()?,
         }
 
-        Ok(())
+        Ok(RequestOutcome::Done)
     }
 
     fn handle_connection_event_ready(&mut self) -> Result<PostAction, FatalError> {
