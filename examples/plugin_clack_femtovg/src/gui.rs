@@ -60,7 +60,13 @@ impl PluginGuiImpl for ExamplePluginMainThread<'_> {
         let Some(gui) = self.borrow_window() else {
             return Err(PluginError::Message("set_scale called without a GUI active"));
         };
-        gui.suggest_fallback_scale_factor(scale)?;
+        // An error tells the host the scale was ignored (clap_plugin_gui::set_scale returns
+        // false), so it takes the size from get_size rather than assume its own scale.
+        if !gui.suggest_fallback_scale_factor(scale)? {
+            return Err(PluginError::Message(
+                "set_scale ignored: the platform provides its own scale factor",
+            ));
+        }
 
         Ok(())
     }
