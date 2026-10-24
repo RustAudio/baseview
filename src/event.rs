@@ -39,7 +39,7 @@ pub enum ScrollDelta {
 pub enum MouseEvent {
     /// The mouse cursor was moved.
     CursorMoved {
-        /// The logical coordinates of the mouse position.
+        /// The physical coordinates of the mouse position.
         position: PhysicalPosition<f64>,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
@@ -80,7 +80,7 @@ pub enum MouseEvent {
     CursorLeft,
 
     DragEntered {
-        /// The logical coordinates of the mouse position.
+        /// The physical coordinates of the mouse position.
         position: PhysicalPosition<f64>,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
@@ -89,7 +89,7 @@ pub enum MouseEvent {
     },
 
     DragMoved {
-        /// The logical coordinates of the mouse position.
+        /// The physical coordinates of the mouse position.
         position: PhysicalPosition<f64>,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
@@ -100,7 +100,7 @@ pub enum MouseEvent {
     DragLeft,
 
     DragDropped {
-        /// The logical coordinates of the mouse position.
+        /// The physical coordinates of the mouse position.
         position: PhysicalPosition<f64>,
         /// The modifiers that were held down just before the event.
         modifiers: Modifiers,
