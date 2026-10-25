@@ -103,17 +103,21 @@ impl Window {
     /// If the given fallback scale factor is actually useful and different from the current one
     /// (1.0 by default), this will resize and redraw the window accordingly.
     ///
+    /// Returns `true` if the given scale factor is now the one the window uses, and `false` if it
+    /// was ignored because the platform provides its own. Plugins can pass this on to the host:
+    /// CLAP's `clap_plugin_gui::set_scale` returns `false` when the call was ignored, which tells
+    /// the host to take the size from `get_size` rather than assume its own scale.
+    ///
     /// # Platform compatibility notes.
     ///
     /// On Win32, this value is used if running on early versions of Windows 10 (or earlier).
     ///
     /// On X11, this value is used if no `Xft.dpi`setting is set.
     ///
-    /// On macOS, this function is always a no-op.
+    /// On macOS, this function is always a no-op, and always returns `false`.
     #[inline]
-    pub fn suggest_fallback_scale_factor(&self, scale_factor: f64) -> Result<(), Error> {
-        self.inner.suggest_scale_factor(scale_factor)?;
-        Ok(())
+    pub fn suggest_fallback_scale_factor(&self, scale_factor: f64) -> Result<bool, Error> {
+        Ok(self.inner.suggest_scale_factor(scale_factor)?)
     }
 
     /// Closes and destroys the window.
@@ -261,9 +265,8 @@ impl HostedWindow for Window {
     #[inline]
     fn suggest_fallback_scale_factor(
         &self, scale_factor: f64,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.suggest_fallback_scale_factor(scale_factor)?;
-        Ok(())
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        Ok(self.suggest_fallback_scale_factor(scale_factor)?)
     }
 
     #[inline]

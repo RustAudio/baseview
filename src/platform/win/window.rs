@@ -91,7 +91,9 @@ impl WindowHandle {
     #[inline(always)]
     pub fn host_timer_callback(&self, _: crate::host::TimerId) {}
 
-    pub fn suggest_scale_factor(&self, new_host_scale_factor: f64) -> Result<()> {
+    /// Returns whether the suggested scale factor is now the one in use (`false` when the OS
+    /// provides per-monitor scaling itself).
+    pub fn suggest_scale_factor(&self, new_host_scale_factor: f64) -> Result<bool> {
         let new_dpi = Dpi::from_scale_factor(new_host_scale_factor)
             .ok_or(PlatformError::InvalidScaleFactor)?;
 
@@ -101,12 +103,12 @@ impl WindowHandle {
         let dpi_scaling_strategy = self.state.dpi_scaling_strategy.get();
 
         if !dpi_scaling_strategy.should_use_host_suggested_scale_factor {
-            return Ok(());
+            return Ok(false);
         }
 
         self.state.current_dpi.set(new_dpi);
 
-        let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
+        let Some(hwnd) = self.hwnd.get() else { return Ok(true) };
 
         let current_size = self.state.current_size.get();
         let new_size = self
@@ -118,7 +120,7 @@ impl WindowHandle {
 
         // This call doesn't meaningfully change the scaling factor, ignore the result
         if current_size == new_size {
-            return Ok(());
+            return Ok(true);
         }
 
         let _guard = self.state.originate_host_resize();
@@ -127,7 +129,7 @@ impl WindowHandle {
         hwnd.resize_and_activate(new_size, new_dpi, &dpi_ctx)?;
 
         if self.state.current_size.get() == new_size {
-            Ok(())
+            Ok(true)
         } else {
             Err(PlatformError::UnexpectedResizeResult {
                 new_actual_size: self.state.current_size.get(),
