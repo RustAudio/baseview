@@ -59,7 +59,7 @@ pub trait WindowImpl: 'static {
 
 /// # Safety
 ///
-/// Must only be called on a window created with create_window, and W must match the inner window type
+/// Must only be called on a window created with create_window, and W must match the inner window type.
 pub unsafe fn use_window<W: WindowImpl>(hwnd: HWnd, handler: impl FnOnce(&W)) {
     let Some(raw_data) = hwnd.get_userdata_ptr::<WindowData<W>>() else { return };
     // This is actually borrowed from the window itself

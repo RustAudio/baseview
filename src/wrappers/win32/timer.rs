@@ -5,13 +5,10 @@ use dpi::PhysicalSize;
 use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
-use std::ptr::null_mut;
-use std::rc::Rc;
 use std::time::Duration;
 use windows::Win32::UI::WindowsAndMessaging::WM_TIMER;
 use windows_core::{Error, HSTRING};
-use windows_sys::Win32::Foundation::{FALSE, LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
+use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct TimerId(NonZeroUsize);
