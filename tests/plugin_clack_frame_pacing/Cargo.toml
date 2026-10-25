@@ -1,0 +1,14 @@
+[package]
+name = "plugin_clack_frame_pacing"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clack-plugin = "0.2.0"
+clack-extensions = { version = "0.2.0", features = ["clack-plugin", "raw-window-handle_06", "gui", "state", "timer", "posix-fd"] }
+baseview = { path = "../..", features = ["opengl"] }
+femtovg = "0.26.0"
+keyboard-types = "0.8.3"

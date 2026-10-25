@@ -1,54 +1,25 @@
 use super::drag_n_drop::DragNDropState;
 use super::keyboard::{convert_key_press_event, convert_key_release_event};
 use super::prelude::*;
-use crate::host::HostMainThreadCaller;
 use crate::platform::x11::error::FatalError;
 use crate::platform::x11::handler::Handler;
+use crate::platform::x11::host_handle::HostHandle;
 use crate::platform::x11::present::PresentState;
 use crate::platform::x11::sizing::SizingState;
-use crate::platform::x11::window_thread::{
-    HostCallback, WindowThreadRequest, WindowThreadResponseMessage,
-};
-use crate::warn;
+use crate::platform::ParentWindowHandle;
+use crate::window::WindowInitializer;
+use crate::wrappers::poller::{ConnectionPoller, PollStatus};
 use crate::wrappers::xkbcommon::XkbcommonState;
-use crate::{Event, WindowEvent, WindowHandler};
-use calloop::generic::Generic;
-use calloop::{Interest, LoopHandle, LoopSignal, Mode, PostAction};
-use std::num::NonZeroU32;
+use crate::{warn, WindowContext};
+use crate::{Event, WindowEvent};
+use baseview_host::host::TimerId;
+use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::result::Result;
-use std::sync::mpsc;
-use std::sync::mpsc::Receiver;
+use std::time::Instant;
 use x11rb::connection::Connection;
 use x11rb::protocol::Event as XEvent;
 
-pub struct MainThreadCaller {
-    sender: mpsc::Sender<HostCallback>,
-    caller: Box<dyn HostMainThreadCaller>,
-}
-
-impl MainThreadCaller {
-    pub(crate) fn new(
-        main_thread: Option<Box<dyn HostMainThreadCaller>>,
-    ) -> (Option<Self>, Option<Receiver<HostCallback>>) {
-        let Some(main_thread) = main_thread else {
-            return (None, None);
-        };
-
-        let (sender, receiver) = mpsc::channel();
-        (Some(Self { sender, caller: main_thread }), Some(receiver))
-    }
-
-    pub fn send(&mut self, msg: HostCallback) -> Result<(), FatalError> {
-        self.sender.send(msg).map_err(|_| FatalError::SendMainThread)?;
-        self.caller.call_main_thread();
-        Ok(())
-    }
-}
-
 pub(crate) struct EventLoop {
-    response_sender: mpsc::Sender<WindowThreadResponseMessage>,
-    main_thread: Option<MainThreadCaller>,
-
     handler: Handler,
     shared: Rc<WindowShared>,
 
@@ -57,59 +28,144 @@ pub(crate) struct EventLoop {
     pub present_state: PresentState,
     xkb_state: Option<XkbcommonState>,
 
-    loop_signal: LoopSignal,
-    loop_handle: LoopHandle<'static, Self>,
+    host: Rc<HostHandle>,
 
-    run_error: Option<PlatformError>,
+    fd_registered: Cell<bool>,
 }
 
 impl EventLoop {
-    pub fn new(
-        window: Rc<WindowShared>, handler: Box<dyn WindowHandler>, parent_id: Option<NonZeroU32>,
-        request_receiver: calloop::channel::Channel<WindowThreadRequest>,
-        response_sender: mpsc::Sender<WindowThreadResponseMessage>,
-        main_thread: Option<MainThreadCaller>, inner: &mut calloop::EventLoop<'static, Self>,
-    ) -> Result<Self, PlatformError> {
-        let loop_handle = inner.handle();
-
-        loop_handle
-            .insert_source(
-                Generic::new_with_error(
-                    Arc::clone(&window.connection.conn),
-                    Interest::READ,
-                    Mode::Edge,
-                ),
-                |_, _, e| e.handle_connection_event_ready(),
-            )
-            .map_err(|e| e.error)?;
-
-        loop_handle
-            .insert_source(request_receiver, |e, _, l| l.handle_main_thread_request(e))
-            .map_err(|e| e.error)?;
-
-        Ok(Self {
-            loop_signal: inner.get_signal(),
-            loop_handle,
-            handler: Handler::new(handler),
-            present_state: PresentState::new(),
-            sizing_state: SizingState::new(parent_id),
-
-            drag_n_drop: DragNDropState::NoCurrentSession,
-            xkb_state: XkbcommonState::new(&window.connection),
-            run_error: None,
-            main_thread,
-
-            shared: window,
-            response_sender,
-        })
+    pub fn request_poll(&self) -> PlatformResult<()> {
+        self.handler.poll();
+        Ok(())
     }
 
-    pub(crate) fn handle_timer(&mut self, handle: &TimerHandle) {
-        self.handler.on_timer(handle.into())
+    pub fn shared(&self) -> &Rc<WindowShared> {
+        &self.shared
+    }
+
+    pub fn host_timer_callback(&self, timer_id: TimerId) {
+        if let Some(timer) = self.shared.timer_manager.get_handle_if_exists(timer_id) {
+            self.handler.on_timer(&timer.into());
+            return;
+        }
+
+        if !self.shared.present_state.trigger_if_redraw_timer(timer_id, &self.host) {
+            self.present_state.trigger_possible_fallback_frame_timer(timer_id);
+        }
+    }
+
+    pub fn host_fd_callback(&self, fd: RawFd) -> Result<(), FatalError> {
+        if fd != self.shared.connection.conn.as_raw_fd() {
+            return Ok(());
+        };
+
+        self.handle_idle()?;
+
+        Ok(())
+    }
+
+    pub fn run_until_closed(&self) -> PlatformResult<()> {
+        self.show()?;
+
+        let connection = Rc::clone(&self.shared.connection);
+        let waker_fd = self.shared.waker_source.inner_shared();
+        let waker_fd = waker_fd.as_ref().and_then(|s| s.fd());
+        let mut poller = ConnectionPoller::new(&connection.conn, waker_fd)?;
+
+        self.shared.close_requested.set(false);
+
+        loop {
+            let next_deadline = self.tick_all_timers();
+            self.handle_idle()?;
+
+            match poller.wait(next_deadline)? {
+                PollStatus::ReadAvailable => {
+                    self.flush_drain_xcb_events()?;
+                }
+                PollStatus::WakerTriggered => {
+                    self.shared.waker_source.poll_requests(&self.shared.present_state, &self.host);
+                }
+                _ => {}
+            }
+
+            if self.shared.close_requested.get() {
+                break;
+            }
+        }
+
+        poller.delete()?;
+        self.hide()?;
+
+        Ok(())
+    }
+}
+
+impl EventLoop {
+    pub fn create_window(init: WindowInitializer) -> PlatformResult<Self> {
+        let parent_id = init.settings.parent.as_ref().map(|p| p.inner.window_id);
+        let host = HostHandle::new(init.host);
+
+        let shared = WindowShared::create(init.settings, Rc::clone(&host))?;
+        let handler = match init.builder.build(WindowContext::new(Rc::clone(&shared))) {
+            Ok(handler) => handler,
+            Err(e) => {
+                shared.deinit_all_host();
+                return Err(e);
+            }
+        };
+
+        let this = Self {
+            handler: Handler::new(handler),
+
+            present_state: PresentState::new(&host),
+            sizing_state: SizingState::new(parent_id),
+            drag_n_drop: DragNDropState::new(),
+            xkb_state: XkbcommonState::new(&shared.connection),
+            fd_registered: false.into(),
+
+            shared,
+            host,
+        };
+
+        this.register_fd()?;
+
+        Ok(this)
+    }
+
+    fn register_fd(&self) -> PlatformResult<()> {
+        if let Some(fd_support) = self.host.fd_support() {
+            fd_support.register_fd(self.shared.connection.conn.as_fd())?;
+            self.fd_registered.set(true);
+        }
+
+        Ok(())
+    }
+
+    fn tick_all_timers(&self) -> Option<Instant> {
+        let (deadline_1, triggered_timer) = self.shared.timer_manager.tick_next_timer();
+
+        if let Some(triggered_timer) = triggered_timer {
+            self.handler.on_timer(&triggered_timer.into());
+        }
+
+        let deadline_2 = self.shared.present_state.tick_timers(&self.host);
+        let deadline_3 = self.present_state.tick_fallback_frame_timer();
+
+        fn min_deadline(d1: Option<Instant>, d2: Option<Instant>) -> Option<Instant> {
+            match (d1, d2) {
+                (Some(d1), Some(d2)) => Some(d2.min(d1)),
+                (None, Some(d)) | (Some(d), None) => Some(d),
+                (None, None) => None,
+            }
+        }
+
+        min_deadline(min_deadline(deadline_1, deadline_2), deadline_3)
     }
 
     #[inline]
-    fn drain_xcb_events(&mut self) -> Result<bool, FatalError> {
+    fn flush_drain_xcb_events(&self) -> Result<bool, FatalError> {
+        self.shared.connection.conn.flush()?;
+
         let mut event_received = false;
         while let Some(event) = self.shared.connection.conn.poll_for_event()? {
             event_received = true;
@@ -119,123 +175,51 @@ impl EventLoop {
         Ok(event_received)
     }
 
-    fn handle_main_thread_request(&mut self, event: calloop::channel::Event<WindowThreadRequest>) {
-        match event {
-            calloop::channel::Event::Closed => {
-                // Closed channel means the sender, i.e. the Window Handle has been dropped.
-                // It should already stop this event loop on drop, but we'll take the hint.
-                self.stop_now();
-            }
-            calloop::channel::Event::Msg(req) => match self.handle_request(req) {
-                Ok(()) => self.send_response(Ok(())),
-                Err(e) => self.send_response(Err(e.to_string())),
-            },
-        }
+    pub fn resize(&self, new_size: Size) -> PlatformResult<()> {
+        self.sizing_state.handle_host_resize(new_size, &self.handler, &self.shared)
     }
 
-    fn send_response(&mut self, response: WindowThreadResponseMessage) {
-        if let Err(e) = self.response_sender.send(response) {
-            warn!("Failed to send response back to main thread: {}", &e);
-            if let Err(e) = e.0 {
-                crate::error!("Request failed: {}", e)
-            }
-
-            self.stop_now();
-        }
+    pub fn suggest_scale_factor(&self, scale: f64) -> PlatformResult<()> {
+        self.sizing_state.handle_host_suggest_scale_factor(scale, &self.handler, &self.shared)
     }
 
-    pub fn stop_now(&self) {
-        self.loop_signal.stop();
-        self.loop_signal.wakeup();
-    }
-
-    pub fn trigger_fatal_error(&mut self, error: PlatformError) {
-        if self.run_error.is_none() {
-            self.run_error = Some(error);
-        }
-        self.stop_now();
-    }
-
-    fn handle_request(&mut self, req: WindowThreadRequest) -> Result<(), PlatformError> {
-        match req {
-            WindowThreadRequest::Resize(new_size) => {
-                self.sizing_state.handle_host_resize(new_size, &self.handler, &self.shared)?
-            }
-            WindowThreadRequest::SuggestScaleFactor(scale) => self
-                .sizing_state
-                .handle_host_suggest_scale_factor(scale, &self.handler, &self.shared)?,
-            WindowThreadRequest::SetParent(new_parent) => {
-                self.shared.xcb_window.reparent(Some(new_parent.window_id))?.check()?
-            }
-            WindowThreadRequest::Show => self.shared.xcb_window.map_window()?.check()?,
-            WindowThreadRequest::Hide => self.shared.xcb_window.unmap_window()?.check()?,
-        }
-
+    pub fn set_parent(&self, new_parent: ParentWindowHandle) -> PlatformResult<()> {
+        self.shared.xcb_window.reparent(Some(new_parent.window_id))?.check()?;
         Ok(())
     }
 
-    fn handle_connection_event_ready(&mut self) -> Result<PostAction, FatalError> {
-        self.drain_xcb_events()?;
-
-        Ok(PostAction::Continue)
+    pub fn show(&self) -> PlatformResult<()> {
+        self.shared.xcb_window.map_window()?.check()?;
+        Ok(())
     }
 
-    fn handle_idle(&mut self) {
-        if let Err(e) = self.try_handle_idle() {
-            self.trigger_fatal_error(e.into());
-        }
+    pub fn hide(&self) -> PlatformResult<()> {
+        self.shared.xcb_window.unmap_window()?.check()?;
+        Ok(())
     }
 
-    fn try_handle_idle(&mut self) -> Result<(), FatalError> {
+    fn handle_idle(&self) -> Result<(), FatalError> {
         // Check for any events in the internal buffers before going to sleep:
-        self.drain_xcb_events()?;
+        self.flush_drain_xcb_events()?;
 
         loop {
             self.sizing_state.handle_coalesced_resize_events(
                 &self.shared,
                 &self.handler,
-                self.main_thread.as_mut(),
+                &self.host,
             )?;
 
-            self.present_state.handle_requests(&self.shared, &self.handler, &self.loop_handle)?;
+            self.present_state.handle_requests(&self.shared, &self.handler, &self.host)?;
 
-            if !self.drain_xcb_events()? {
+            if !self.flush_drain_xcb_events()? {
                 break;
             }
         }
 
-        self.shared.connection.conn.flush()?;
-
         Ok(())
     }
 
-    pub fn run(mut self, mut inner: calloop::EventLoop<Self>) -> Result<(), PlatformError> {
-        self.drain_xcb_events()?;
-        inner.run(None, &mut self, Self::handle_idle)?;
-
-        self.handler.on_event(Event::Window(WindowEvent::WillClose));
-
-        // If the event loop doesn't stop because the host asked it to, then we should notify it
-        if !self.shared.main_thread_shared.is_stop_host_requested() {
-            if let Some(main_thread) = self.main_thread.as_mut() {
-                if let Err(e) = main_thread.send(HostCallback::Destroyed) {
-                    warn!("Could not notify host that X11 thread is stopping: {}", e)
-                }
-            }
-        }
-
-        if let Some(err) = self.run_error {
-            return Err(err);
-        };
-
-        Ok(())
-    }
-
-    pub fn shared(&self) -> &WindowShared {
-        &self.shared
-    }
-
-    fn handle_xcb_event(&mut self, event: XEvent) -> Result<(), FatalError> {
+    fn handle_xcb_event(&self, event: XEvent) -> Result<(), FatalError> {
         match event {
             XEvent::ClientMessage(event) if event.window == self.shared.raw_id() => {
                 if event.format != 32 {
@@ -299,17 +283,13 @@ impl EventLoop {
             // keys
             ////
             XEvent::KeyPress(event) if event.event == self.shared.raw_id() => {
-                self.handler.on_event(Event::Keyboard(convert_key_press_event(
-                    &event,
-                    &mut self.xkb_state,
-                )));
+                self.handler
+                    .on_event(Event::Keyboard(convert_key_press_event(&event, &self.xkb_state)));
             }
 
             XEvent::KeyRelease(event) if event.event == self.shared.raw_id() => {
-                self.handler.on_event(Event::Keyboard(convert_key_release_event(
-                    &event,
-                    &mut self.xkb_state,
-                )));
+                self.handler
+                    .on_event(Event::Keyboard(convert_key_release_event(&event, &self.xkb_state)));
             }
 
             XEvent::FocusIn(event) if event.event == self.shared.raw_id() => {
@@ -330,7 +310,7 @@ impl EventLoop {
                 self.present_state.handle_window_mapped(
                     &self.shared.present_state,
                     &self.shared.xcb_window,
-                    &self.loop_handle,
+                    &self.host,
                 )?;
             }
 
@@ -350,5 +330,23 @@ impl EventLoop {
         }
 
         Ok(())
+    }
+}
+
+impl Drop for EventLoop {
+    fn drop(&mut self) {
+        self.handler.on_event(Event::Window(WindowEvent::WillClose));
+
+        // Deinit timers & FD watchers
+        self.shared.deinit_all_host();
+        self.present_state.destroy_timers(&self.host);
+
+        if self.fd_registered.get() {
+            let _ = self.host.unregister_fd(self.shared.connection.conn.as_raw_fd());
+        }
+
+        if !self.shared.close_requested_from_host.get() {
+            self.host.notify_destroyed();
+        }
     }
 }

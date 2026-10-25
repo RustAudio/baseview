@@ -1,14 +1,11 @@
 use crate::platform::prelude::*;
 use crate::platform::x11::handler::Handler;
+use crate::platform::x11::host_handle::HostHandle;
 use crate::platform::x11::sizing::SizingState;
 use crate::platform::x11::window_shared::WindowShared;
-use crate::platform::x11::window_thread::RedrawRequested;
 use crate::DamageArea;
-use calloop::timer::{TimeoutAction, Timer};
-use calloop::LoopHandle;
+use baseview_host::host::TimerId;
 use std::cell::Cell;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::protocol::present::{CompleteKind, CompleteNotifyEvent};
@@ -17,81 +14,107 @@ use x11rb::protocol::xproto::ExposeEvent;
 pub struct PresentStateShared {
     present_notify_requested: Cell<bool>,
     poll_requested: Cell<bool>,
+    redraw_delayed_timers: TimerManager,
 }
 
 impl PresentStateShared {
-    pub(crate) fn request_present_notify_after(
-        &self, duration: Duration, loop_handle: &LoopHandle<EventLoop>,
-    ) {
-        if duration.is_zero() || duration.as_millis() < 1 {
-            self.request_present_notify();
-            return;
+    pub fn new(host: &HostHandle) -> Self {
+        Self {
+            present_notify_requested: false.into(),
+            poll_requested: false.into(),
+            redraw_delayed_timers: TimerManager::new(host),
         }
-
-        let result = loop_handle.insert_source(Timer::from_duration(duration), |_, _, e| {
-            e.shared().present_state.request_present_notify();
-            TimeoutAction::Drop
-        });
-
-        if let Err(e) = result {
-            warn!("{}", e);
-            self.request_present_notify();
-        }
-    }
-}
-
-impl PresentStateShared {
-    pub fn new() -> Self {
-        Self { present_notify_requested: false.into(), poll_requested: false.into() }
     }
 
     pub fn request_present_notify(&self) {
         self.present_notify_requested.set(true)
     }
+
+    pub fn trigger_if_redraw_timer(&self, timer_id: TimerId, host: &HostHandle) -> bool {
+        if let Some(redraw_timer) = self.redraw_delayed_timers.get_handle_if_exists(timer_id) {
+            self.request_present_notify();
+            self.redraw_delayed_timers.destroy_timer(redraw_timer, host);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn tick_timers(&self, host: &HostHandle) -> Option<Instant> {
+        let (deadline, triggered_timer) = self.redraw_delayed_timers.tick_next_timer();
+
+        if let Some(h) = triggered_timer {
+            self.request_present_notify();
+            self.redraw_delayed_timers.destroy_timer(h, host);
+        }
+
+        deadline
+    }
+
+    pub fn destroy_redraw_timers(&self, host: &HostHandle) {
+        self.redraw_delayed_timers.destroy_all(host);
+    }
+
+    pub fn request_present_notify_after(&self, duration: Duration, host: &HostHandle) {
+        if duration.is_zero() || duration.as_millis() < 1 {
+            self.request_present_notify();
+            return;
+        }
+
+        if let Err(e) = self.redraw_delayed_timers.create_timer(duration, host) {
+            warn!("{}", e);
+            self.request_present_notify();
+        }
+    }
+
+    pub fn request_poll(&self) {
+        self.poll_requested.set(true);
+    }
 }
 
 pub struct PresentState {
-    draw_now: bool,
-    last_requested_serial: Option<u32>,
-    last_received_present: Option<(u32, u64)>,
+    draw_now: Cell<bool>,
+    last_requested_serial: Cell<Option<u32>>,
+    last_received_present: Cell<Option<(u32, u64)>>,
+
+    fallback_frame_timer: TimerSlot,
 }
 
 impl PresentState {
-    pub(crate) fn handle_requests(
-        &mut self, shared: &WindowShared, handler: &Handler, loop_handle: &LoopHandle<EventLoop>,
+    pub fn new(host: &HostHandle) -> Self {
+        Self {
+            draw_now: false.into(),
+            last_requested_serial: None.into(),
+            last_received_present: None.into(),
+            fallback_frame_timer: TimerSlot::new(host),
+        }
+    }
+
+    pub fn handle_requests(
+        &self, shared: &WindowShared, handler: &Handler, host: &HostHandle,
     ) -> Result<(), FatalError> {
         let shared_state = &shared.present_state;
-        let thread_state = &shared.main_thread_shared.present;
 
-        // Consume all requests from above poll
-        if let Some(redraw_after) = thread_state.take_redraw_request() {
-            shared.request_redraw_after(redraw_after)
-        }
-
-        if self.draw_now {
-            let _ = thread_state.take_poll_request();
-
+        if self.draw_now.get() {
             handler.poll();
             shared.present_state.present_notify_requested.set(false);
 
             handler.draw()?;
 
             shared_state.poll_requested.set(false);
-            self.draw_now = false;
+            self.draw_now.set(false);
 
             shared.connection.conn.flush()?;
-        } else if thread_state.take_poll_request() || shared_state.poll_requested.take() {
+        } else if shared_state.poll_requested.take() {
             handler.poll();
         }
 
-        self.handle_present_notify(&shared.present_state, &shared.xcb_window, loop_handle)?;
+        self.handle_present_notify(&shared.present_state, &shared.xcb_window, host)?;
 
         Ok(())
     }
-}
 
-impl PresentState {
-    pub(crate) fn handle_expose_event(
+    pub fn handle_expose_event(
         &self, e: ExposeEvent, handler: &Handler, shared: &WindowShared, sizing_state: &SizingState,
     ) {
         if e.count == 0 {
@@ -109,88 +132,73 @@ impl PresentState {
 
         handler.damage(area);
     }
-}
 
-impl PresentState {
     pub fn handle_window_mapped(
-        &self, shared: &PresentStateShared, window: &XcbWindow, loop_handle: &LoopHandle<EventLoop>,
+        &self, shared: &PresentStateShared, window: &XcbWindow, host: &HostHandle,
     ) -> Result<(), FatalError> {
         if window.present_supported() && window.present_select_input()? {
             shared.present_notify_requested.set(true);
         } else {
-            Self::setup_fallback_frame_timer(loop_handle)?;
+            self.setup_fallback_frame_timer(host)?;
         }
 
         Ok(())
     }
-}
 
-impl PresentState {
-    pub fn new() -> Self {
-        Self { draw_now: false, last_requested_serial: None, last_received_present: None }
-    }
-
-    pub fn handle_present_complete_notify(&mut self, e: CompleteNotifyEvent) {
+    pub fn handle_present_complete_notify(&self, e: CompleteNotifyEvent) {
         if e.kind != CompleteKind::NOTIFY_MSC {
             return;
         }
 
-        let Some(last_requested_serial) = self.last_requested_serial else { return };
+        let Some(last_requested_serial) = self.last_requested_serial.get() else { return };
 
         if last_requested_serial != e.serial {
             return;
         }
 
-        if let Some((last_received_serial, last_received_msc)) = self.last_received_present {
+        if let Some((last_received_serial, last_received_msc)) = self.last_received_present.get() {
             if last_received_serial == e.serial {
                 return;
             }
 
             if e.msc <= last_received_msc {
-                self.last_received_present = Some((e.serial, e.msc));
+                self.last_received_present.set(Some((e.serial, e.msc)));
                 return;
             }
         }
 
-        self.last_received_present = Some((e.serial, e.msc));
-        self.draw_now = true;
+        self.last_received_present.set(Some((e.serial, e.msc)));
+        self.draw_now.set(true);
     }
 
-    fn setup_fallback_frame_timer(
-        loop_handle: &LoopHandle<EventLoop>,
-    ) -> Result<(), calloop::Error> {
-        const FRAME_INTERVAL: Duration = Duration::from_millis(15);
+    pub fn tick_fallback_frame_timer(&self) -> Option<Instant> {
+        let (deadline, triggered) = self.fallback_frame_timer.tick_next_timer();
 
-        fn handle_frame(evloop: &mut EventLoop, previous_deadline: Instant) -> TimeoutAction {
-            evloop.present_state.draw_now = true;
-
-            // We'll try to keep a consistent frame pace. If the last frame couldn't be processed in
-            // the expected frame time, this will throttle down to prevent multiple frames from
-            // being queued up.
-
-            let now = Instant::now();
-
-            let Some(next_deadline) = previous_deadline.checked_add(FRAME_INTERVAL) else {
-                return TimeoutAction::ToDuration(FRAME_INTERVAL);
-            };
-
-            if next_deadline >= now {
-                return TimeoutAction::ToDuration(FRAME_INTERVAL);
-            }
-
-            TimeoutAction::ToInstant(next_deadline)
+        if triggered {
+            self.draw_now.set(true);
         }
 
-        loop_handle
-            .insert_source(Timer::from_duration(FRAME_INTERVAL), |i, _, e| handle_frame(e, i))
-            .map_err(|e| e.error)?;
+        deadline
+    }
 
-        Ok(())
+    pub fn trigger_possible_fallback_frame_timer(&self, id: TimerId) {
+        if self.fallback_frame_timer.matches_hosted(id) {
+            self.draw_now.set(true);
+        }
+    }
+
+    fn setup_fallback_frame_timer(&self, host: &HostHandle) -> Result<(), FatalError> {
+        const FRAME_INTERVAL: Duration = Duration::from_millis(15);
+
+        self.fallback_frame_timer.set_timer(FRAME_INTERVAL, host).map_err(FatalError::Host)
+    }
+
+    pub fn destroy_timers(&self, host: &HostHandle) {
+        self.fallback_frame_timer.destroy(host)
     }
 
     pub fn handle_present_notify(
-        &mut self, shared: &PresentStateShared, window: &XcbWindow,
-        loop_handle: &LoopHandle<EventLoop>,
+        &self, shared: &PresentStateShared, window: &XcbWindow, host: &HostHandle,
     ) -> Result<(), FatalError> {
         if !shared.present_notify_requested.get() {
             return Ok(());
@@ -202,7 +210,7 @@ impl PresentState {
         }
 
         let (next_serial, target_msc) =
-            match (self.last_requested_serial, self.last_received_present) {
+            match (self.last_requested_serial.get(), self.last_received_present.get()) {
                 // First request, always send
                 (None, None) => (0, 0),
                 (Some(sent_serial), Some((received_serial, last_msc)))
@@ -220,44 +228,14 @@ impl PresentState {
             };
 
         if window.present_notify(target_msc, next_serial)?.check_is_ok() {
-            self.last_requested_serial = Some(next_serial);
+            self.last_requested_serial.set(Some(next_serial));
         } else {
-            self.last_requested_serial = None;
-            Self::setup_fallback_frame_timer(loop_handle)?;
+            self.last_requested_serial.set(None);
+            self.setup_fallback_frame_timer(host)?;
         }
         shared.present_notify_requested.set(false);
 
         Ok(())
-    }
-}
-
-pub struct PresentThreadShared {
-    poll_requested: AtomicBool,
-    redraw_requested_after: Mutex<Option<RedrawRequested>>,
-}
-
-impl PresentThreadShared {
-    pub(crate) fn new() -> Self {
-        Self { poll_requested: false.into(), redraw_requested_after: None.into() }
-    }
-
-    pub fn request_redraw_after(&self, duration: Duration) {
-        // Ignore a poisoned mutex, we just fully override this value anyway.
-        let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
-        *guard = Some(RedrawRequested::from_duration(duration));
-    }
-
-    fn take_redraw_request(&self) -> Option<Duration> {
-        let mut guard = self.redraw_requested_after.lock().unwrap_or_else(|g| g.into_inner());
-        guard.take().map(|w| w.to_duration())
-    }
-
-    pub fn request_poll(&self) {
-        self.poll_requested.store(true, Ordering::Relaxed);
-    }
-
-    fn take_poll_request(&self) -> bool {
-        self.poll_requested.swap(false, Ordering::Relaxed)
     }
 }
 
