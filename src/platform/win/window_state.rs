@@ -2,7 +2,7 @@ use crate::dpi::{PhysicalSize, Size};
 use crate::platform::win::dpi::DpiScalingStrategy;
 use crate::platform::win::keyboard::KeyboardState;
 use crate::platform::win::waker::WindowWakerSource;
-use crate::platform::{PlatformHandle, TimerHandle, WindowWaker};
+use crate::platform::{BaseviewWindow, PlatformHandle, TimerHandle, WindowWaker};
 use crate::utils::SizingStrategy;
 use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
@@ -146,7 +146,7 @@ impl WindowState {
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
-        if let Err(e) = self.shared.delayed_redraw_timers.add_new_timer(duration) {
+        if let Err(e) = self.shared.delayed_redraw_timers.add_new_timer(self.hwnd, duration) {
             crate::warn!("Request Redraw failed: Could not add timer: {}", e)
         }
     }
@@ -158,7 +158,7 @@ impl WindowState {
 
     #[inline]
     pub fn create_timer(&self, duration: Duration) -> Result<TimerHandle, super::PlatformError> {
-        Ok(self.shared.user_timers.add_new_timer(duration)?)
+        Ok(self.shared.user_timers.add_new_timer(self.hwnd, duration)?)
     }
 }
 
@@ -185,11 +185,15 @@ impl WindowSharedState {
         let state = Self {
             sizing_strategy: SizingStrategy::from_settings(&init.settings),
             user32,
+            hwnd: None.into(),
 
             // Internal state
             is_alive: true.into(),
             resize_host_originated: false.into(),
             destroy_host_originated: false.into(),
+            delayed_redraw_timers: TimerList::new(BaseviewWindow::handle_delayed_redraw_wm_timer),
+            user_timers: TimerList::new(BaseviewWindow::handle_user_wm_timer),
+            window_waker_source: WindowWakerSource::new(),
 
             // Overriden by init() below
             parented: false.into(),
@@ -197,10 +201,6 @@ impl WindowSharedState {
             current_size: init.settings.size.to_physical(1.0).into(),
             fallback_scale_factor: init.settings.fallback_scale_factor.into(),
             dpi_scaling_strategy: DpiScalingStrategy::default().into(),
-            delayed_redraw_timers: TimerList::new(),
-            user_timers: TimerList::new(),
-            window_waker_source: WindowWakerSource::new(),
-            hwnd: None.into(),
         };
 
         state.init(init);

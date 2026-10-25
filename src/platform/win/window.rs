@@ -359,18 +359,32 @@ impl BaseviewWindow {
         handler.poll();
     }
 
-    pub(crate) fn handle_timer(&self, timer: &TimerHandle) {
-        let Some(handler) = self.handler.get() else { return };
-
-        handler.on_timer(timer.into());
-    }
-
     pub(crate) fn handle_event(&self, event: Event) -> EventStatus {
         let Some(handler) = self.handler.get() else {
             return EventStatus::Ignored;
         };
 
         handler.on_event(event)
+    }
+
+    pub(crate) fn handle_delayed_redraw_wm_timer(&self, id: TimerId) {
+        match self.shared_state.delayed_redraw_timers.remove_if_exists(id) {
+            Ok(false) => {}
+            Err(e) => {
+                warn!("Could not remove timer: {}", e);
+            }
+            Ok(true) => {
+                self.window_state.request_redraw();
+            }
+        }
+    }
+
+    pub(crate) fn handle_user_wm_timer(&self, id: TimerId) {
+        if self.shared_state.user_timers.exists(id) {
+            let Some(handler) = self.handler.get() else { return };
+
+            handler.on_timer((&id).into());
+        }
     }
 }
 
@@ -634,24 +648,7 @@ unsafe fn wnd_proc_inner(
                 return Some(0);
             }
 
-            match window_state.shared.delayed_redraw_timers.remove_if_exists(timer_id) {
-                Ok(false) => {}
-                Err(e) => {
-                    warn!("Could not remove timer: {}", e);
-                    return None;
-                }
-                Ok(true) => {
-                    window_state.request_redraw();
-                    return Some(0);
-                }
-            }
-
-            if window_state.shared.user_timers.exists(timer_id) {
-                window_bv.handle_timer(&timer_id);
-                Some(0)
-            } else {
-                None
-            }
+            None
         }
         WM_CLOSE => {
             window_bv.handle_event(Event::Window(WindowEvent::WillClose));

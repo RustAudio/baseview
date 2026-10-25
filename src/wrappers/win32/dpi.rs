@@ -265,6 +265,10 @@ impl<'a> DpiAwarenessGuard<'a> {
         }
     }
 
+    pub fn dummy() -> Self {
+        Self { inner: None }
+    }
+
     pub fn with_guard_optional<T>(
         user32: &'a ExtendedUser32, strategy: DpiScalingStrategy, handler: impl FnOnce() -> T,
     ) -> T {

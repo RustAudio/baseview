@@ -1,11 +1,16 @@
-use crate::wrappers::win32::window::HWnd;
+use crate::platform::{BaseviewWindow, PlatformError};
+use crate::wrappers::win32::window::{create_window, HWnd, WindowImpl};
+use crate::wrappers::win32::{DpiAwarenessGuard, WindowStyle};
+use dpi::PhysicalSize;
 use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ptr::null_mut;
+use std::rc::Rc;
 use std::time::Duration;
-use windows_core::Error;
-use windows_sys::Win32::Foundation::{FALSE, WPARAM};
+use windows::Win32::UI::WindowsAndMessaging::WM_TIMER;
+use windows_core::{Error, HSTRING};
+use windows_sys::Win32::Foundation::{FALSE, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -79,16 +84,56 @@ impl<T: TimerType> TimerSlot<T> {
 
 pub struct TimerList {
     timers: RefCell<Vec<TimerId>>,
+    timer_window: Cell<Option<HWnd>>,
+    timer_fn: fn(&BaseviewWindow, TimerId),
 }
 
 impl TimerList {
-    pub fn new() -> Self {
-        Self { timers: Vec::new().into() }
+    pub fn new(timer_fn: fn(&BaseviewWindow, TimerId)) -> Self {
+        Self { timers: Vec::new().into(), timer_window: None.into(), timer_fn }
     }
 
-    pub fn add_new_timer(&self, timeout: Duration) -> Result<TimerId, Error> {
+    fn get_or_create_timer_window(&self, baseview_window: HWnd) -> Result<HWnd, Error> {
+        if let Some(timer_window) = self.timer_window.get() {
+            return Ok(timer_window);
+        }
+
+        let timer_fn = self.timer_fn;
+        let timer_window = create_window(
+            &HSTRING::new(),
+            WindowStyle::dummy(),
+            PhysicalSize::new(1, 1),
+            None,
+            &DpiAwarenessGuard::dummy(),
+            move |_| TimerWindow { baseview_window, timer_fn },
+        )?;
+        self.timer_window.set(Some(timer_window));
+
+        Ok(timer_window)
+    }
+
+    pub fn get_new_timer_id(&self) -> TimerId {
+        let Some(mut id) = NonZeroUsize::new(1) else { unreachable!() };
+
+        let timers = self.timers.borrow();
+
+        while timers.contains(&TimerId(id)) {
+            let Some(new_id) = id.checked_add(1) else { panic!("Too many timers") };
+            id = new_id;
+        }
+
+        TimerId(id)
+    }
+
+    pub fn add_new_timer(
+        &self, baseview_window: HWnd, timeout: Duration,
+    ) -> Result<TimerId, Error> {
         let timeout_msec = timeout.as_millis().try_into().unwrap_or(u32::MAX);
-        let new_timer_id = create_thread_timer(timeout_msec)?;
+        let timer_window = self.get_or_create_timer_window(baseview_window)?;
+        let new_timer_id = self.get_new_timer_id();
+
+        timer_window.reset_timer(new_timer_id, timeout_msec)?;
+
         self.timers.borrow_mut().push(new_timer_id);
         Ok(new_timer_id)
     }
@@ -102,7 +147,8 @@ impl TimerList {
             return Ok(false);
         };
 
-        kill_thread_timer(id)?;
+        let Some(window) = self.timer_window.get() else { unreachable!() };
+        window.kill_timer(id)?;
 
         Ok(true)
     }
@@ -119,11 +165,16 @@ impl TimerList {
     }
 
     fn stop_and_destroy_all(&self) {
+        let Some(window) = self.timer_window.get() else { return };
+
         while let Some(timer) = self.pop() {
-            if let Err(e) = kill_thread_timer(timer) {
+            if let Err(e) = window.kill_timer(timer) {
                 crate::warn!("Failed to kill timer: {}", e);
             }
         }
+
+        let _ = window.destroy();
+        self.timer_window.set(None);
     }
 }
 
@@ -133,22 +184,40 @@ impl Drop for TimerList {
     }
 }
 
-fn create_thread_timer(elapse: u32) -> windows_core::Result<TimerId> {
-    let result = unsafe { SetTimer(null_mut(), 0, elapse, None) };
-
-    let Some(id) = TimerId::from_raw(result) else {
-        return Err(Error::from_thread());
-    };
-
-    Ok(id)
+struct TimerWindow {
+    baseview_window: HWnd,
+    timer_fn: fn(&BaseviewWindow, TimerId),
 }
 
-fn kill_thread_timer(timer_id: TimerId) -> windows_core::Result<()> {
-    let result = unsafe { KillTimer(null_mut(), timer_id.as_raw()) };
+impl TimerWindow {
+    fn get_baseview_window_state(&self) -> Rc<BaseviewWindow> {
+        todo!()
+    }
+}
 
-    if result == FALSE {
-        return Err(Error::from_thread());
+impl WindowImpl for TimerWindow {
+    fn non_client_create(&self, _: HWnd) -> Result<(), PlatformError> {
+        Ok(())
     }
 
-    Ok(())
+    fn after_create(&self, _: HWnd) -> Result<(), PlatformError> {
+        Ok(())
+    }
+
+    unsafe fn handle_message(
+        &self, _: HWnd, message_code: u32, wparam: WPARAM, _: LPARAM,
+    ) -> Option<LRESULT> {
+        if message_code != WM_TIMER {
+            return None;
+        }
+
+        let timer_id = TimerId::from_raw(wparam)?;
+        let window_state = self.get_baseview_window_state();
+
+        (self.timer_fn)(&window_state, timer_id);
+
+        Some(0)
+    }
+
+    fn before_destroy(&self, _: HWnd) {}
 }
