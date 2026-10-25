@@ -106,20 +106,23 @@ impl SizingState {
         shared.sizing_state.resize_from_host(new_size, handler, shared)
     }
 
+    /// Returns whether the suggested scale factor is now the one in use (`false` if the system
+    /// provides its own, which takes precedence).
     pub fn handle_host_suggest_scale_factor(
         &self, scale: f64, handler: &Handler, shared: &WindowShared,
-    ) -> Result<(), PlatformError> {
+    ) -> Result<bool, PlatformError> {
         shared.sizing_state.host_suggested_scale_factor.set(Some(scale));
 
         // If the scaling factor is already provided by the system, do nothing
         if shared.sizing_state.system_scale_factor.get().is_some() {
-            return Ok(());
+            return Ok(false);
         };
 
         let current_logical_size = shared.sizing_state.size().to_logical::<f64>(1.0);
         let new_physical_size = current_logical_size.to_physical(scale);
 
-        shared.sizing_state.resize_from_host(new_physical_size, handler, shared)
+        shared.sizing_state.resize_from_host(new_physical_size, handler, shared)?;
+        Ok(true)
     }
 }
 

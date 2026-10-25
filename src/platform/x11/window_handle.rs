@@ -22,7 +22,8 @@ impl WindowHandle {
         self.handle_evloop(|e| e.resize(new_size))
     }
 
-    pub fn suggest_scale_factor(&self, scale: f64) -> PlatformResult<()> {
+    /// Returns whether the suggested scale factor is now the one in use.
+    pub fn suggest_scale_factor(&self, scale: f64) -> PlatformResult<bool> {
         self.handle_evloop(|e| e.suggest_scale_factor(scale))
     }
 
@@ -87,10 +88,12 @@ impl WindowHandle {
 }
 
 impl WindowHandle {
-    fn handle_evloop(
-        &self, handler: impl FnOnce(&EventLoop) -> PlatformResult<()>,
-    ) -> PlatformResult<()> {
-        let Some(event_loop) = self.ev_loop.get() else { return Ok(()) };
+    /// Runs `handler` on the event loop. Once the window is closed this does nothing, and returns
+    /// the default value (`()`, or `false`: a closed window has used nothing it was given).
+    fn handle_evloop<T: Default>(
+        &self, handler: impl FnOnce(&EventLoop) -> PlatformResult<T>,
+    ) -> PlatformResult<T> {
+        let Some(event_loop) = self.ev_loop.get() else { return Ok(T::default()) };
         let res = handler(&event_loop);
 
         if self.shared.close_requested.get() {
