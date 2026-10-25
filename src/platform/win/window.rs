@@ -14,7 +14,7 @@ use super::drop_target::DropTarget;
 use super::*;
 use crate::handler::WindowHandlerBuilder;
 use crate::host::Host;
-use crate::platform::win::window_state::{WindowSharedState, WindowState};
+use crate::platform::win::window_state::{RedrawTimer, WindowSharedState, WindowState};
 use crate::platform::PlatformError;
 use crate::utils::SizingStrategy;
 use crate::window::WindowInitializer;
@@ -22,7 +22,7 @@ use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, LibraryModule, Rect,
-    TimerId, WindowStyle,
+    TimerId, TimerType, WindowStyle,
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 
@@ -626,7 +626,7 @@ unsafe fn wnd_proc_inner(
         WM_TIMER => {
             let timer_id = TimerId::from_raw(wparam)?;
 
-            if window_state.redraw_timer.matches_id(timer_id) {
+            if timer_id == RedrawTimer::ID {
                 if !window_state.redraw_timer.is_running() {
                     return None;
                 };
@@ -634,7 +634,7 @@ unsafe fn wnd_proc_inner(
                 return Some(0);
             }
 
-            match window_state.shared.delayed_redraw_timers.remove_if_exists(window, timer_id) {
+            match window_state.shared.delayed_redraw_timers.remove_if_exists(timer_id) {
                 Ok(false) => {}
                 Err(e) => {
                     warn!("Could not remove timer: {}", e);

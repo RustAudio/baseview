@@ -9,7 +9,7 @@ use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::{HWnd, PostMessageExt};
 use crate::wrappers::win32::{
-    Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule, TimerList, TimerSlot,
+    Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule, TimerId, TimerList, TimerSlot, TimerType,
 };
 use crate::{MouseCursor, WindowSize};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
@@ -18,7 +18,12 @@ use std::num::NonZeroIsize;
 use std::rc::Rc;
 use std::time::Duration;
 
-const REDRAW_TIMER_DELAY_MSEC: u32 = 15;
+pub(crate) struct RedrawTimer;
+
+impl TimerType for RedrawTimer {
+    const ID: TimerId = TimerId::from_const(0x42691);
+    const TIMEOUT_MSEC: u32 = 15;
+}
 
 /// All data associated with the window.
 pub(crate) struct WindowState {
@@ -31,7 +36,7 @@ pub(crate) struct WindowState {
 
     pub user32: LibraryModule<ExtendedUser32>,
     pub shared: Rc<WindowSharedState>,
-    pub(crate) redraw_timer: TimerSlot,
+    pub(crate) redraw_timer: TimerSlot<RedrawTimer>,
     pub redraw_requested: Cell<bool>,
 
     #[cfg(feature = "opengl")]
@@ -131,17 +136,17 @@ impl WindowState {
     pub fn request_redraw(&self) {
         self.redraw_requested.set(true);
 
-        self.redraw_timer.start_if_not_running(REDRAW_TIMER_DELAY_MSEC);
+        self.redraw_timer.start_if_not_running();
     }
 
     pub fn setup_redraw_request_for_next_frame(&self) {
         let should_redraw_next_frame = self.redraw_requested.take();
 
-        self.redraw_timer.set_running(should_redraw_next_frame, REDRAW_TIMER_DELAY_MSEC);
+        self.redraw_timer.set_running(should_redraw_next_frame);
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
-        if let Err(e) = self.shared.delayed_redraw_timers.add_new_timer(self.hwnd, duration) {
+        if let Err(e) = self.shared.delayed_redraw_timers.add_new_timer(duration) {
             crate::warn!("Request Redraw failed: Could not add timer: {}", e)
         }
     }
@@ -153,7 +158,7 @@ impl WindowState {
 
     #[inline]
     pub fn create_timer(&self, duration: Duration) -> Result<TimerHandle, super::PlatformError> {
-        Ok(self.shared.user_timers.add_new_timer(self.hwnd, duration)?)
+        Ok(self.shared.user_timers.add_new_timer(duration)?)
     }
 }
 
@@ -262,15 +267,6 @@ impl WindowSharedState {
     pub fn originate_host_destroy(&self) -> impl Drop + use<'_> {
         self.destroy_host_originated.set(true);
         Guard(&self.destroy_host_originated)
-    }
-}
-
-impl Drop for WindowSharedState {
-    fn drop(&mut self) {
-        if let Some(hwnd) = self.hwnd.get() {
-            self.user_timers.stop_and_destroy_all(hwnd);
-            self.delayed_redraw_timers.stop_and_destroy_all(hwnd);
-        }
     }
 }
 
