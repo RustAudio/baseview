@@ -1,5 +1,5 @@
 use crate::platform::{BaseviewWindow, PlatformError};
-use crate::wrappers::win32::window::{create_window, HWnd, WindowImpl};
+use crate::wrappers::win32::window::{create_window, use_window, HWnd, WindowImpl};
 use crate::wrappers::win32::{DpiAwarenessGuard, WindowStyle};
 use dpi::PhysicalSize;
 use std::cell::{Cell, RefCell};
@@ -189,12 +189,6 @@ struct TimerWindow {
     timer_fn: fn(&BaseviewWindow, TimerId),
 }
 
-impl TimerWindow {
-    fn get_baseview_window_state(&self) -> Rc<BaseviewWindow> {
-        todo!()
-    }
-}
-
 impl WindowImpl for TimerWindow {
     fn non_client_create(&self, _: HWnd) -> Result<(), PlatformError> {
         Ok(())
@@ -212,9 +206,13 @@ impl WindowImpl for TimerWindow {
         }
 
         let timer_id = TimerId::from_raw(wparam)?;
-        let window_state = self.get_baseview_window_state();
 
-        (self.timer_fn)(&window_state, timer_id);
+        // SAFETY: baseview_window is of type BaseviewWindow
+        unsafe {
+            use_window::<BaseviewWindow>(self.baseview_window, |hwnd| {
+                (self.timer_fn)(hwnd, timer_id)
+            })
+        };
 
         Some(0)
     }
