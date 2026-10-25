@@ -1,6 +1,6 @@
 use crate::dpi::Size;
 use crate::{AspectRatio, WindowSettings, WindowSize};
-use dpi::{LogicalSize, PhysicalSize};
+use dpi::{LogicalSize, PhysicalSize, Pixel};
 
 #[derive(Copy, Clone)]
 pub(crate) enum SizingStrategy {
@@ -101,64 +101,12 @@ impl SizingStrategy {
             Self::Resizable { aspect_ratio, .. } => *aspect_ratio,
         }
     }
-
-    pub fn adjust_size(&self, size: Size, scale_factor: f64) -> Size {
-        let (min, max, ratio) = match *self {
-            SizingStrategy::Resizable { min_size, max_size, aspect_ratio } => {
-                (min_size, max_size, aspect_ratio)
-            }
-            SizingStrategy::Fixed { size: fixed_size } => {
-                return match size {
-                    Size::Physical(_) => Size::Physical(fixed_size.to_physical(scale_factor)),
-                    Size::Logical(_) => Size::Logical(fixed_size.to_logical(scale_factor)),
-                }
-            }
-        };
-
-        match size {
-            Size::Physical(mut size) => {
-                if let Some(max_size) = max {
-                    let max_size = max_size.to_physical(scale_factor);
-                    size.width = size.width.min(max_size.width);
-                    size.height = size.height.min(max_size.height);
-                }
-
-                if let Some(min_size) = min {
-                    let min_size = min_size.to_physical(scale_factor);
-                    size.width = size.width.max(min_size.width);
-                    size.height = size.height.max(min_size.height);
-                }
-
-                if let Some(ratio) = ratio {
-                    todo!()
-                }
-
-                size.into()
-            }
-            Size::Logical(size) => {
-                todo!()
-            }
-        }
-    }
 }
 
 impl Default for SizingStrategy {
     fn default() -> Self {
         Self::Resizable { min_size: None, max_size: None, aspect_ratio: None }
     }
-}
-
-macro_rules! map_size {
-    ($size:expr, $ratio:expr, $inner:expr) => {
-        match $size {
-            Size::Physical(PhysicalSize { width, height }) => {
-                Size::Physical(PhysicalSize::from($inner(width, height, $ratio)))
-            }
-            Size::Logical(LogicalSize { width, height }) => {
-                Size::Logical(LogicalSize::from($inner(width, height, $ratio)))
-            }
-        }
-    };
 }
 
 fn adjust_min_size(size: Size, ratio: AspectRatio) -> Size {
@@ -213,7 +161,14 @@ fn adjust_max_size(size: Size, ratio: AspectRatio) -> Size {
         }
     }
 
-    map_size!(size, ratio, inner)
+    match size {
+        Size::Physical(PhysicalSize { width, height }) => {
+            Size::Physical(PhysicalSize::from(inner(width, height, ratio)))
+        }
+        Size::Logical(LogicalSize { width, height }) => {
+            Size::Logical(LogicalSize::from(inner(width, height, ratio)))
+        }
+    }
 }
 
 #[cfg(test)]

@@ -106,6 +106,13 @@ impl Window {
     /// The `size` can be provided in either physical or logical pixels.
     ///
     /// Using this method does *not* trigger the [`HostCallbacks::request_resize`](host::HostCallbacks) callback.
+    ///
+    /// # Errors
+    ///
+    /// This function will fail if the window is not resizable.
+    ///
+    /// It can also fail if either the underlying window or the platform failed to resize the window
+    /// or its contents.
     #[inline]
     pub fn resize(&self, size: impl Into<Size>) -> Result<(), Error> {
         self.inner.resize(size.into())?;
