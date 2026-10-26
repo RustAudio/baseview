@@ -35,7 +35,7 @@ fn lo_word(lparam: LPARAM) -> u16 {
 }
 
 pub struct WindowHandle {
-    init: Cell<Option<WindowInitializer>>,
+    init: Cell<Option<Box<WindowInitializer>>>,
     hwnd: Cell<Option<HWnd>>,
     state: Rc<WindowSharedState>,
 }
@@ -50,18 +50,6 @@ impl WindowHandle {
 
     pub fn is_open(&self) -> bool {
         self.state.is_alive.get()
-    }
-
-    pub fn is_resizable(&self) -> bool {
-        self.state.sizing_strategy.is_resizable()
-    }
-
-    pub fn min_size(&self) -> Option<Size> {
-        self.state.sizing_strategy.min_size()
-    }
-
-    pub fn max_size(&self) -> Option<Size> {
-        self.state.sizing_strategy.max_size()
     }
 
     pub fn size(&self) -> WindowSize {
@@ -97,6 +85,7 @@ impl WindowHandle {
         }
     }
 
+    #[inline]
     pub fn sizing_strategy(&self) -> SizingStrategy {
         self.state.sizing_strategy
     }
@@ -152,7 +141,7 @@ impl WindowHandle {
                 let Some(mut init) = self.init.take() else { return Ok(()) };
                 init.settings.parent = Some(new_parent.into());
 
-                let window = BaseviewWindow::create(Rc::clone(&self.state), init)?;
+                let window = BaseviewWindow::create(Rc::clone(&self.state), *init)?;
                 self.hwnd.set(Some(window));
 
                 return Ok(());
@@ -179,10 +168,10 @@ impl WindowHandle {
             None => {
                 let Some(init) = self.init.take() else { return Ok(()) };
 
-                let window = BaseviewWindow::create(Rc::clone(&self.state), init)?;
+                let window = BaseviewWindow::create(Rc::clone(&self.state), *init)?;
                 self.hwnd.set(Some(window));
 
-                return Ok(());
+                window
             }
         };
 
@@ -881,7 +870,7 @@ impl WindowHandle {
             return Ok(WindowHandle {
                 hwnd: None.into(),
                 state: shared_state,
-                init: Some(init).into(),
+                init: Some(Box::new(init)).into(),
             });
         }
 
