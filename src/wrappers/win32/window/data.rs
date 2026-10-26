@@ -73,14 +73,4 @@ impl<W: WindowImpl> WindowData<W> {
     pub fn inner(&self) -> Option<&W> {
         self.inner_impl.get()
     }
-
-    pub unsafe fn handle_message(
-        &self, window: HWnd, message_code: u32, w_param: WPARAM, l_param: LPARAM,
-    ) -> Option<LRESULT> {
-        if let Some(inner) = self.inner_impl.get() {
-            inner.handle_message(window, message_code, w_param, l_param)
-        } else {
-            None
-        }
-    }
 }

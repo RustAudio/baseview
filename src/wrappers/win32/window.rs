@@ -1,7 +1,10 @@
 mod data;
 mod handle;
+mod interfaces;
 mod proc;
 mod window_class;
+
+pub use interfaces::*;
 
 #[cfg(feature = "opengl")]
 mod dc;
@@ -29,7 +32,7 @@ use crate::wrappers::win32::style::WindowStyle;
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW;
 
-pub trait WindowImpl: 'static {
+pub trait WindowImpl: WmSizing + 'static {
     fn non_client_create(
         &self, window: HWnd,
     ) -> core::result::Result<(), crate::platform::PlatformError>;

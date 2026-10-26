@@ -1,14 +1,12 @@
 use windows_core::{ComObject, HSTRING};
 use windows_sys::Win32::{
-    Foundation::{LPARAM, LRESULT, RECT, WPARAM},
+    Foundation::{LPARAM, LRESULT, WPARAM},
     UI::{Controls::WM_MOUSELEAVE, WindowsAndMessaging::*},
 };
 
 use crate::dpi::{PhysicalPosition, PhysicalSize, Size};
-use crate::{warn, DamageArea, EventStatus, HandlerError, WindowHandler};
+use crate::{warn, DamageArea, EventStatus, WindowHandler};
 use std::cell::{Cell, OnceCell};
-use std::num::NonZeroU32;
-use windows_sys::Win32::Foundation::POINT;
 
 use super::drop_target::DropTarget;
 use super::*;
@@ -21,10 +19,12 @@ use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
-    ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, LibraryModule, Rect,
-    TimerId, TimerType, WindowStyle,
+    ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, LibraryModule, TimerId,
+   TimerType, WindowStyle,
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
+
+mod sizing;
 
 fn hi_word(wparam: WPARAM) -> u16 {
     ((wparam >> 16) & 0xffff) as u16
@@ -63,12 +63,9 @@ impl WindowHandle {
             return Ok(());
         }
 
-        let hwnd = match self.hwnd.get() {
-            Some(hwnd) => hwnd,
-            None => {
-                self.state.current_size.set(new_size);
-                return Ok(());
-            }
+        let Some(hwnd) = self.hwnd.get() else {
+            self.state.current_size.set(new_size);
+            return Ok(());
         };
 
         let _guard = self.state.originate_host_resize();
@@ -292,37 +289,6 @@ impl BaseviewWindow {
         self.host.notify_destroyed()
     }
 
-    fn request_host_resize(&self, new_size: WindowSize) -> core::result::Result<(), HandlerError> {
-        if self.shared_state.resize_host_originated.get() {
-            return Ok(());
-        };
-
-        self.host.request_resize(new_size)
-    }
-
-    fn adapt_host_window_to_size(
-        &self, previous_size: PhysicalSize<u32>, new_size: WindowSize,
-    ) -> core::result::Result<(), ()> {
-        if let Err(e) = self.request_host_resize(new_size) {
-            warn!("Resize request from Host failed: {}. Reverting to previous size.", e);
-
-            if let Some(handler) = self.handler.get() {
-                if let Err(e) = handler.resized(new_size) {
-                    warn!("Window Handler failed to resize to previous window size: {}", e);
-                }
-            };
-
-            self.window_state.shared.current_size.set(previous_size);
-            if let Err(e) = self.window_state.resize(previous_size.into()) {
-                warn!("Failed to resize back to previous window size: {}", e);
-            }
-
-            return Err(());
-        }
-
-        Ok(())
-    }
-
     pub(crate) fn notify_damage(&self, damage: DamageArea) {
         let Some(handler) = self.handler.get() else { return };
         handler.damage(damage);
@@ -399,42 +365,7 @@ impl WindowImpl for BaseviewWindow {
         self._keyboard_hook.set(Some(hook::init_keyboard_hook(window.as_raw())));
 
         // Now we can get the actual dpi of the window.
-        let dpi = window_state
-            .shared
-            .dpi_scaling_strategy
-            .get()
-            .get_dpi_for_window(window, &self.shared_state.user32);
-
-        if let Some(dpi) = dpi {
-            if dpi != window_state.shared.current_dpi.get() {
-                window_state.shared.current_dpi.set(dpi);
-
-                // We cannot create a window in "logical" pixels, and we can't DPI-scale to physical pixels because we
-                // have no way to know where the window will end up.
-                // So, at window creation, we assume a DPI=96 (or parent DPI if available), and if it ends up wrong, we resize the window
-                // to the actual logical size the user desired.
-                let new_size = self.initial_size.to_physical(dpi.scale_factor());
-
-                // Preemptively update so a synchronous WM_SIZE from SetWindowPos below
-                // doesn't also emit Resized.
-                let previous_size = window_state.shared.current_size.replace(new_size);
-                let guard = DpiAwarenessGuard::new(
-                    &window_state.shared.user32,
-                    self.shared_state.dpi_scaling_strategy.get(),
-                )?;
-                window.resize_and_activate(new_size, dpi, &guard)?;
-
-                self.host_needs_new_size_notified_on_show.set(Some(previous_size));
-            } else {
-                // If the host queried size before it gave us a parent, this is the one it's been using.
-                let previous_host_size = self.initial_size.to_physical(1.0);
-                let current_size = self.initial_size.to_physical(dpi.scale_factor());
-
-                if previous_host_size != current_size {
-                    self.host_needs_new_size_notified_on_show.set(Some(previous_host_size));
-                }
-            }
-        }
+        self.initialize_window_dpi(window)?;
 
         let drop_target = ComObject::new(DropTarget::new(Rc::downgrade(window_state), window));
         self._drop_target.set(Some(drop_target.clone()));
@@ -673,113 +604,8 @@ unsafe fn wnd_proc_inner(
 
             None
         }
-        WM_SIZE => {
-            let width = (lparam & 0xFFFF) as u16 as u32;
-            let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
-
-            let new_size = PhysicalSize { width, height };
-            let current_size = window_state.shared.current_size.get();
-
-            // Only send the event if anything changed
-            if current_size == new_size {
-                return None;
-            }
-
-            let previous = window_state.shared.current_size.replace(new_size);
-            let new_size = WindowSize::from_physical(new_size, window_state.shared.scale_factor());
-
-            let handler = window_bv.handler.get()?;
-            if let Err(e) = handler.resized(new_size) {
-                warn!("Window Handler failed to resize: {}", e);
-                window_state.shared.current_size.set(previous);
-
-                if let Err(e) = window_state.resize(previous.into()) {
-                    warn!("Failed to resize back to previous window size: {}", e);
-                }
-
-                return Some(-1);
-            }
-
-            if let Err(e) = window_bv.request_host_resize(new_size) {
-                warn!("Resize request from Host failed: {}. Reverting to previous size.", e);
-
-                if let Err(e) = handler.resized(new_size) {
-                    warn!("Window Handler failed to resize to previous window size: {}", e);
-                }
-
-                window_state.shared.current_size.set(previous);
-                if let Err(e) = window_state.resize(previous.into()) {
-                    warn!("Failed to resize back to previous window size: {}", e);
-                }
-
-                return Some(-1);
-            }
-
-            window.invalidate_window();
-
-            None
-        }
         WM_SHOWWINDOW => {
-            if let Some(previous_size) = window_bv.host_needs_new_size_notified_on_show.take() {
-                let new_size = window_state.shared.current_size.get();
-                let dpi = window_state.shared.current_dpi.get();
-
-                let _ = window_bv.adapt_host_window_to_size(
-                    previous_size,
-                    WindowSize::from_physical(new_size, dpi.scale_factor()),
-                );
-            }
-
-            None
-        }
-        WM_DPICHANGED => {
-            let suggested_nc_rect = Rect((lparam as *const RECT).read());
-            let Some(dpi) = NonZeroU32::new((wparam & 0xFFFF) as u16 as u32) else {
-                return Some(-1);
-            };
-            let dpi = Dpi(dpi);
-
-            let dpi_ctx = DpiAwarenessGuard::new(
-                &window_state.user32,
-                window_state.shared.dpi_scaling_strategy.get(),
-            )
-            .unwrap();
-            let style = window.get_style().unwrap();
-            let suggested_rect =
-                dpi_ctx.nc_area_to_client_area(suggested_nc_rect, style, Some(dpi)).unwrap();
-
-            let new_size = suggested_rect.size();
-
-            let changed = window_state.shared.current_size.get() != new_size
-                || window_state.shared.current_dpi.get() != dpi;
-
-            window_state.shared.current_dpi.set(dpi);
-            let previous_size = window_state.shared.current_size.replace(new_size);
-
-            // Windows makes us resize the window manually. This however will not send a WM_SIZE event,
-            // hence why we are notifying the window handler manually below.
-            let _ = window.set_nc_rect(suggested_nc_rect);
-
-            if changed {
-                let handler = window_bv.handler.get()?;
-                let new_size = WindowSize::from_physical(new_size, dpi.scale_factor());
-
-                if let Err(e) = handler.resized(new_size) {
-                    warn!("Window Handler failed to resize: {}", e);
-                    window_state.shared.current_size.set(previous_size);
-
-                    if let Err(e) = window_state.resize(previous_size.into()) {
-                        warn!("Failed to resize back to previous window size: {}", e);
-                    }
-
-                    return Some(-1);
-                }
-
-                if let Err(()) = window_bv.adapt_host_window_to_size(previous_size, new_size) {
-                    return Some(-1);
-                }
-            }
-
+            window_bv.handle_new_size_on_show();
             None
         }
         // If WM_SETCURSOR returns `None`, WM_SETCURSOR continues to get handled by the outer window(s),
@@ -797,48 +623,6 @@ unsafe fn wnd_proc_inner(
                 // Cursor is being changed by some other window, e.g. when having mouse on the borders to resize it
                 None
             }
-        }
-        WM_GETMINMAXINFO => {
-            let sizing = window_state.shared.sizing_strategy;
-
-            // Only implement this message if we actually need to specify a min/max size
-            if let (None, None) = (sizing.min_size(), sizing.max_size()) {
-                return None;
-            }
-
-            let info = lparam as *mut MINMAXINFO;
-
-            let ctx = DpiAwarenessGuard::new(
-                &window_state.user32,
-                window_state.shared.dpi_scaling_strategy.get(),
-            )
-            .unwrap();
-            let style = window.get_style().unwrap();
-            let dpi = window_state.shared.current_dpi.get();
-
-            if let Some(size) = sizing.min_size() {
-                let size = size.to_physical(window_state.shared.scale_factor());
-                let size = ctx
-                    .client_area_to_nc_area(size.into(), style, Some(dpi))
-                    .unwrap()
-                    .size()
-                    .cast();
-                let pt = POINT { x: size.width, y: size.height };
-                (&raw mut (*info).ptMinTrackSize).write(pt);
-            }
-
-            if let Some(size) = sizing.max_size() {
-                let size = size.to_physical(window_state.shared.scale_factor());
-                let size = ctx
-                    .client_area_to_nc_area(size.into(), style, Some(dpi))
-                    .unwrap()
-                    .size()
-                    .cast();
-                let pt = POINT { x: size.width, y: size.height };
-                (&raw mut (*info).ptMaxTrackSize).write(pt);
-            }
-
-            Some(0)
         }
         // NOTE: `WM_NCDESTROY` is handled in the outer function because this deallocates the window
         //        state
