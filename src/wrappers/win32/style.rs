@@ -24,4 +24,8 @@ impl WindowStyle {
 
         style
     }
+
+    pub const fn dummy() -> Self {
+        Self { style: 0, style_ex: 0 }
+    }
 }

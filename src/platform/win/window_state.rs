@@ -2,14 +2,14 @@ use crate::dpi::{PhysicalSize, Size};
 use crate::platform::win::dpi::DpiScalingStrategy;
 use crate::platform::win::keyboard::KeyboardState;
 use crate::platform::win::waker::WindowWakerSource;
-use crate::platform::{PlatformHandle, TimerHandle, WindowWaker};
+use crate::platform::{BaseviewWindow, PlatformHandle, TimerHandle, WindowWaker};
 use crate::utils::SizingStrategy;
 use crate::window::WindowInitializer;
 use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::window::{HWnd, PostMessageExt};
 use crate::wrappers::win32::{
-    Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule, TimerList, TimerSlot,
+    Dpi, DpiAwarenessGuard, ExtendedUser32, LibraryModule, TimerId, TimerList, TimerSlot, TimerType,
 };
 use crate::{MouseCursor, WindowSize};
 use raw_window_handle::{DisplayHandle, Win32WindowHandle};
@@ -18,7 +18,12 @@ use std::num::NonZeroIsize;
 use std::rc::Rc;
 use std::time::Duration;
 
-const REDRAW_TIMER_DELAY_MSEC: u32 = 15;
+pub(crate) struct RedrawTimer;
+
+impl TimerType for RedrawTimer {
+    const ID: TimerId = TimerId::from_const(0x42691);
+    const TIMEOUT_MSEC: u32 = 15;
+}
 
 /// All data associated with the window.
 pub(crate) struct WindowState {
@@ -31,7 +36,7 @@ pub(crate) struct WindowState {
 
     pub user32: LibraryModule<ExtendedUser32>,
     pub shared: Rc<WindowSharedState>,
-    pub(crate) redraw_timer: TimerSlot,
+    pub(crate) redraw_timer: TimerSlot<RedrawTimer>,
     pub redraw_requested: Cell<bool>,
 
     #[cfg(feature = "opengl")]
@@ -131,13 +136,13 @@ impl WindowState {
     pub fn request_redraw(&self) {
         self.redraw_requested.set(true);
 
-        self.redraw_timer.start_if_not_running(REDRAW_TIMER_DELAY_MSEC);
+        self.redraw_timer.start_if_not_running();
     }
 
     pub fn setup_redraw_request_for_next_frame(&self) {
         let should_redraw_next_frame = self.redraw_requested.take();
 
-        self.redraw_timer.set_running(should_redraw_next_frame, REDRAW_TIMER_DELAY_MSEC);
+        self.redraw_timer.set_running(should_redraw_next_frame);
     }
 
     pub fn request_redraw_after(&self, duration: Duration) {
@@ -180,11 +185,15 @@ impl WindowSharedState {
         let state = Self {
             sizing_strategy: SizingStrategy::from_settings(&init.settings),
             user32,
+            hwnd: None.into(),
 
             // Internal state
             is_alive: true.into(),
             resize_host_originated: false.into(),
             destroy_host_originated: false.into(),
+            delayed_redraw_timers: TimerList::new(BaseviewWindow::handle_delayed_redraw_wm_timer),
+            user_timers: TimerList::new(BaseviewWindow::handle_user_wm_timer),
+            window_waker_source: WindowWakerSource::new(),
 
             // Overriden by init() below
             parented: false.into(),
@@ -192,10 +201,6 @@ impl WindowSharedState {
             current_size: init.settings.size.to_physical(1.0).into(),
             fallback_scale_factor: init.settings.fallback_scale_factor.into(),
             dpi_scaling_strategy: DpiScalingStrategy::default().into(),
-            delayed_redraw_timers: TimerList::new(),
-            user_timers: TimerList::new(),
-            window_waker_source: WindowWakerSource::new(),
-            hwnd: None.into(),
         };
 
         state.init(init);
@@ -262,15 +267,6 @@ impl WindowSharedState {
     pub fn originate_host_destroy(&self) -> impl Drop + use<'_> {
         self.destroy_host_originated.set(true);
         Guard(&self.destroy_host_originated)
-    }
-}
-
-impl Drop for WindowSharedState {
-    fn drop(&mut self) {
-        if let Some(hwnd) = self.hwnd.get() {
-            self.user_timers.stop_and_destroy_all(hwnd);
-            self.delayed_redraw_timers.stop_and_destroy_all(hwnd);
-        }
     }
 }
 

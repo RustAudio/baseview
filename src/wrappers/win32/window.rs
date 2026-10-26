@@ -5,8 +5,10 @@ mod window_class;
 
 #[cfg(feature = "opengl")]
 mod dc;
+
 #[cfg(feature = "opengl")]
 pub use dc::*;
+use std::mem::ManuallyDrop;
 #[cfg(feature = "opengl")]
 mod wgl;
 #[cfg(feature = "opengl")]
@@ -53,6 +55,21 @@ pub trait WindowImpl: 'static {
     ///
     /// This function is not fallible. Any errors will be ignored.
     fn before_destroy(&self, window: HWnd);
+}
+
+/// # Safety
+///
+/// Must only be called on a window created with create_window, and W must match the inner window type.
+pub unsafe fn use_window<W: WindowImpl>(hwnd: HWnd, handler: impl FnOnce(&W)) {
+    let Some(raw_data) = hwnd.get_userdata_ptr::<WindowData<W>>() else { return };
+    // This is actually borrowed from the window itself
+    let raw = ManuallyDrop::new(Rc::from_raw(raw_data.as_ptr()));
+
+    // We keep this alive for as long as inner() runs, to guard against possible re-entrancy
+    let window_data = Rc::clone(&raw);
+    if let Some(inner) = window_data.inner() {
+        handler(inner);
+    }
 }
 
 /// Creates a window from the given settings, with a given [`WindowImpl`] type to handle the message,
