@@ -32,7 +32,7 @@ use crate::wrappers::win32::style::WindowStyle;
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW;
 
-pub trait WindowImpl: WmSizing + 'static {
+pub trait WindowImpl: WmSizing + WmMouse + 'static {
     fn non_client_create(
         &self, window: HWnd,
     ) -> core::result::Result<(), crate::platform::PlatformError>;

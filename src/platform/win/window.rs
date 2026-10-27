@@ -20,19 +20,12 @@ use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, LibraryModule, TimerId,
-   TimerType, WindowStyle,
+    TimerType, WindowStyle,
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 
+mod mouse;
 mod sizing;
-
-fn hi_word(wparam: WPARAM) -> u16 {
-    ((wparam >> 16) & 0xffff) as u16
-}
-
-fn lo_word(lparam: LPARAM) -> u16 {
-    (lparam & 0xffff) as u16
-}
 
 pub struct WindowHandle {
     init: Cell<Option<Box<WindowInitializer>>>,
@@ -415,139 +408,6 @@ unsafe fn wnd_proc_inner(
 ) -> Option<LRESULT> {
     let window_state = &window_bv.window_state;
     match msg {
-        WM_MOUSEMOVE => {
-            if window_state.mouse_was_outside_window.get() {
-                // this makes Windows track whether the mouse leaves the window.
-                // When the mouse leaves it results in a `WM_MOUSELEAVE` event.
-                // Couldn't find a good way to track whether the mouse enters,
-                // but if `WM_MOUSEMOVE` happens, the mouse must have entered.
-                let _ = window.start_cursor_leave_tracking();
-                window_state.mouse_was_outside_window.set(false);
-
-                let enter_event = Event::Mouse(MouseEvent::CursorEntered);
-                window_bv.handle_event(enter_event);
-            }
-
-            let x = (lparam & 0xFFFF) as i16 as i32;
-            let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
-
-            let move_event = Event::Mouse(MouseEvent::CursorMoved {
-                position: PhysicalPosition { x, y }.cast(),
-                modifiers: window_state
-                    .keyboard_state
-                    .borrow()
-                    .get_modifiers_from_mouse_wparam(wparam),
-            });
-
-            window_bv.handle_event(move_event);
-            Some(0)
-        }
-
-        WM_MOUSELEAVE => {
-            window_bv.handle_event(Event::Mouse(MouseEvent::CursorLeft));
-
-            window_state.mouse_was_outside_window.set(true);
-            Some(0)
-        }
-        WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
-            let value = (wparam >> 16) as i16;
-            let value = value as i32;
-            let value = value as f32 / WHEEL_DELTA as f32;
-
-            let event = Event::Mouse(MouseEvent::WheelScrolled {
-                delta: if msg == WM_MOUSEWHEEL {
-                    ScrollDelta::Lines { x: 0.0, y: value }
-                } else {
-                    ScrollDelta::Lines { x: value, y: 0.0 }
-                },
-                modifiers: window_state
-                    .keyboard_state
-                    .borrow()
-                    .get_modifiers_from_mouse_wparam(wparam),
-            });
-
-            window_bv.handle_event(event);
-            Some(0)
-        }
-        WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
-        | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
-            let mut mouse_button_counter = window_state.mouse_button_counter.get();
-
-            fn get_xbutton_wparam(wparam: WPARAM) -> u16 {
-                hi_word(wparam)
-            }
-
-            const XBUTTON1: u16 = 0x1;
-            const XBUTTON2: u16 = 0x2;
-
-            let button = match msg {
-                WM_LBUTTONDOWN | WM_LBUTTONUP => Some(MouseButton::Left),
-                WM_MBUTTONDOWN | WM_MBUTTONUP => Some(MouseButton::Middle),
-                WM_RBUTTONDOWN | WM_RBUTTONUP => Some(MouseButton::Right),
-                WM_XBUTTONDOWN | WM_XBUTTONUP => match get_xbutton_wparam(wparam) {
-                    XBUTTON1 => Some(MouseButton::Back),
-                    XBUTTON2 => Some(MouseButton::Forward),
-                    _ => None,
-                },
-                _ => None,
-            };
-
-            if let Some(button) = button {
-                let event = match msg {
-                    WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN | WM_XBUTTONDOWN => {
-                        // Capture the mouse cursor on button down
-                        mouse_button_counter = mouse_button_counter.saturating_add(1);
-                        window.set_capture();
-                        MouseEvent::ButtonPressed {
-                            button,
-                            modifiers: window_state
-                                .keyboard_state
-                                .borrow()
-                                .get_modifiers_from_mouse_wparam(wparam),
-                        }
-                    }
-                    WM_LBUTTONUP | WM_MBUTTONUP | WM_RBUTTONUP | WM_XBUTTONUP => {
-                        // Release the mouse cursor capture when all buttons are released
-                        mouse_button_counter = mouse_button_counter.saturating_sub(1);
-                        if mouse_button_counter == 0 {
-                            HWnd::release_capture();
-                        }
-
-                        MouseEvent::ButtonReleased {
-                            button,
-                            modifiers: window_state
-                                .keyboard_state
-                                .borrow()
-                                .get_modifiers_from_mouse_wparam(wparam),
-                        }
-                    }
-                    _ => {
-                        unreachable!()
-                    }
-                };
-
-                window_state.mouse_button_counter.set(mouse_button_counter);
-                window_bv.handle_event(Event::Mouse(event));
-            }
-
-            None
-        }
-        WM_CAPTURECHANGED => {
-            let window_gaining_capture =
-                NonNull::new(lparam as _).map(|p| unsafe { HWnd::from_raw(p) });
-
-            if window_gaining_capture != Some(window) {
-                let previous_counter = window_state.mouse_button_counter.replace(0);
-                HWnd::release_capture();
-
-                if previous_counter == 0 {
-                    window_bv.handle_event(Event::Mouse(MouseEvent::CursorLeft));
-                    window_state.mouse_was_outside_window.set(true);
-                }
-            }
-
-            Some(0)
-        }
         WM_PAINT => {
             if let Some(rect) = window.get_update_rect() {
                 window_bv.notify_damage(DamageArea::Rect(rect.into()));

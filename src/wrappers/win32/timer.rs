@@ -1,7 +1,10 @@
 use crate::platform::{BaseviewWindow, PlatformError};
-use crate::wrappers::win32::window::{create_window, use_window, HWnd, WindowImpl};
-use crate::wrappers::win32::{DpiAwarenessGuard, WindowStyle};
-use dpi::PhysicalSize;
+use crate::wrappers::win32::window::{
+    create_window, use_window, HWnd, WindowImpl, WmMouse, WmSizing,
+};
+use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, Rect, WindowStyle};
+use crate::{MouseButton, ScrollDelta};
+use dpi::{PhysicalPosition, PhysicalSize};
 use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
@@ -206,8 +209,8 @@ impl WindowImpl for TimerWindow {
 
         // SAFETY: baseview_window is of type BaseviewWindow
         unsafe {
-            use_window::<BaseviewWindow>(self.baseview_window, |hwnd| {
-                (self.timer_fn)(hwnd, timer_id)
+            use_window::<BaseviewWindow>(self.baseview_window, |window| {
+                (self.timer_fn)(window, timer_id)
             })
         };
 
@@ -215,4 +218,26 @@ impl WindowImpl for TimerWindow {
     }
 
     fn before_destroy(&self, _: HWnd) {}
+}
+
+impl WmSizing for TimerWindow {
+    fn on_size(&self, _: HWnd, _: PhysicalSize<u32>) -> Result<(), ()> {
+        Ok(())
+    }
+
+    fn on_dpi_changed(&self, _: HWnd, _: Dpi, _: Rect) -> Result<(), ()> {
+        Ok(())
+    }
+
+    fn get_min_max_size(&self, _: HWnd) -> (Option<PhysicalSize<i32>>, Option<PhysicalSize<i32>>) {
+        (None, None)
+    }
+}
+
+impl WmMouse for TimerWindow {
+    fn on_move(&self, window: HWnd, position: PhysicalPosition<i16>, wparam: WPARAM) {}
+    fn on_leave(&self, _: HWnd) {}
+    fn on_wheel(&self, window: HWnd, delta: ScrollDelta, wparam: WPARAM) {}
+    fn on_capture_changed(&self, _: HWnd, _: Option<HWnd>) {}
+    fn on_button(&self, window: HWnd, button: MouseButton, down: bool, wparam: WPARAM) {}
 }
