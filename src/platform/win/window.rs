@@ -24,9 +24,6 @@ use crate::wrappers::win32::{
 };
 use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
 
-mod mouse;
-mod sizing;
-
 pub struct WindowHandle {
     init: Cell<Option<Box<WindowInitializer>>>,
     hwnd: Cell<Option<HWnd>>,
@@ -142,7 +139,7 @@ impl WindowHandle {
             panic!("Called set_parent on a floating window")
         }
 
-        hwnd.set_parent(&new_parent.handle)?;
+        hwnd.set_parent(&new_parent.hwnd())?;
 
         Ok(())
     }
@@ -205,32 +202,12 @@ impl Drop for WindowHandle {
     }
 }
 
-pub struct BaseviewWindow {
-    window_state: Rc<WindowState>,
-    shared_state: Rc<WindowSharedState>,
-    initial_size: Size,
-
-    handler_builder: Cell<Option<WindowHandlerBuilder>>,
-    handler: OnceCell<Box<dyn WindowHandler>>,
-    host: Host,
-
-    // Workaround some VST3 hosts (e.g. Bitwig) not allowing request_resize before show() occurs
-    pub host_needs_new_size_notified_on_show: Cell<Option<PhysicalSize<u32>>>,
-
-    // Things not directly used, but kept so their Drop impl runs when the window is destroyed
-    _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
-    _drop_target: Cell<Option<ComObject<DropTarget>>>,
-
-    #[cfg(feature = "opengl")]
-    gl_config: Option<crate::gl::GlConfig>,
-}
-
 impl BaseviewWindow {
     pub fn create(shared_state: Rc<WindowSharedState>, init: WindowInitializer) -> Result<HWnd> {
         shared_state.init(&init);
 
         let style = WindowStyle::from_settings(&init.settings);
-        let parent = init.settings.parent.map(|p| p.inner.handle);
+        let parent = init.settings.parent.map(|p| p.inner.hwnd());
 
         let dpi_ctx =
             DpiAwarenessGuard::new(&shared_state.user32, shared_state.dpi_scaling_strategy.get())?;

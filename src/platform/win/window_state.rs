@@ -209,7 +209,7 @@ impl WindowSharedState {
     }
 
     pub fn init(&self, init: &WindowInitializer) {
-        let parent = init.settings.parent.as_ref().map(|p| p.inner.handle);
+        let parent = init.settings.parent.as_ref().map(|p| p.inner.hwnd());
         let strategy = DpiScalingStrategy::get(
             Some(&self.user32),
             parent,
