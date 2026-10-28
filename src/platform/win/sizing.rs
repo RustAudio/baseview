@@ -10,7 +10,7 @@ impl BaseviewWindow {
         &self, previous_size: PhysicalSize<u32>, new_size: WindowSize,
     ) -> Result<(), PlatformError> {
         if let Err(e) = self.request_host_resize(new_size) {
-            warn!("Resize request from Host failed: {}. Reverting to previous size.", e);
+            warn!("Resize request from Host failed: {}. Reverting to previous size.", &e);
 
             if let Some(handler) = self.handler.get() {
                 if let Err(e) = handler.resized(new_size) {
@@ -163,7 +163,7 @@ impl WmSizing for BaseviewWindow {
             let new_size = WindowSize::from_physical(new_size, new_dpi.scale_factor());
 
             if let Err(e) = handler.resized(new_size) {
-                warn!("Window Handler failed to resize: {}", e);
+                warn!("Window Handler failed to resize: {}", &e);
                 self.shared_state.current_size.set(previous_size);
 
                 if let Err(e) = self.window_state.resize(previous_size.into()) {
