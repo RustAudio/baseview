@@ -28,6 +28,9 @@ use std::collections::{HashMap, HashSet};
 use std::mem;
 use std::ops::RangeInclusive;
 
+use crate::platform::BaseviewWindow;
+use crate::wrappers::win32::window::{HWnd, WmKeyboard};
+use crate::{Event, WindowEvent};
 use keyboard_types::{Code, Key, KeyState, KeyboardEvent, Location, Modifiers, NamedKey};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, WPARAM},
@@ -693,5 +696,32 @@ impl KeyboardState {
             }
             _ => vk,
         }
+    }
+}
+
+impl WmKeyboard for BaseviewWindow {
+    fn on_key_event(&self, window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM) -> bool {
+        let opt_event = unsafe {
+            self.window_state.keyboard_state.borrow_mut().process_message(
+                window.as_raw(),
+                msg,
+                wparam,
+                lparam,
+            )
+        };
+
+        if let Some(event) = opt_event {
+            self.handle_event(Event::Keyboard(event));
+        }
+
+        msg != WM_SYSKEYDOWN
+    }
+
+    fn on_focus(&self) {
+        self.handle_event(Event::Window(WindowEvent::Focused));
+    }
+
+    fn on_unfocus(&self) {
+        self.handle_event(Event::Window(WindowEvent::Unfocused));
     }
 }

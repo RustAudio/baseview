@@ -4,8 +4,6 @@ use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, Rect};
 use crate::{HandlerError, WindowSize};
 use dpi::PhysicalSize;
 use tracing::warn;
-use windows_sys::Win32::Foundation::POINT;
-use windows_sys::Win32::UI::WindowsAndMessaging::MINMAXINFO;
 
 impl BaseviewWindow {
     fn adapt_host_window_to_size(

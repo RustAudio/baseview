@@ -1,6 +1,8 @@
-use crate::wrappers::win32::window::{HWnd, WindowData, WindowImpl};
-use crate::wrappers::win32::{Dpi, Rect};
-use crate::{Event, MouseButton, MouseEvent, ScrollDelta};
+use crate::wrappers::win32::window::{
+    HWnd, WindowData, WindowImpl, BV_REQUEST_POLL, BV_REQUEST_REDRAW, BV_WINDOW_MUST_CLOSE,
+};
+use crate::wrappers::win32::{Dpi, Rect, TimerId};
+use crate::{MouseButton, ScrollDelta};
 use dpi::{PhysicalPosition, PhysicalSize};
 use std::num::NonZeroU32;
 use std::ptr::NonNull;
@@ -25,12 +27,43 @@ pub trait WmMouse {
     fn on_button(&self, window: HWnd, button: MouseButton, down: bool, wparam: WPARAM);
 }
 
+pub trait WmKeyboard {
+    /// Returns true if event was handled, false otherwise.
+    fn on_key_event(&self, window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM) -> bool;
+    fn on_focus(&self);
+    fn on_unfocus(&self);
+}
+
+pub trait WmDraw {
+    /// Returns true if this matched a known timer, false otherwise.
+    fn on_timer(&self, window: HWnd, timer_id: TimerId) -> bool;
+    fn on_paint(&self, window: HWnd);
+    fn on_redraw_requested(&self);
+    fn on_poll_requested(&self);
+}
+
+pub trait WmCursor {
+    /// Returns true to override the cursor, if false then a default cursor is set for the current window area.
+    fn on_set_cursor(&self, mouse_in_window: bool) -> bool;
+}
+
 pub unsafe fn handle_message<W: WindowImpl>(
     data: &WindowData<W>, window: HWnd, message_code: u32, wparam: WPARAM, lparam: LPARAM,
 ) -> Option<LRESULT> {
     let inner = data.inner()?;
 
     match message_code {
+        // Cursor
+        WM_SETCURSOR => {
+            let low_word = lo_word(lparam) as u32;
+            let mouse_in_window = low_word == HTCLIENT;
+
+            if inner.on_set_cursor(mouse_in_window) {
+                Some(1)
+            } else {
+                None
+            }
+        }
         // Sizing
         WM_SIZE => {
             let width = (lparam & 0xFFFF) as u16 as u32;
@@ -72,6 +105,48 @@ pub unsafe fn handle_message<W: WindowImpl>(
             }
 
             Some(0)
+        }
+
+        // Draw
+        WM_PAINT => {
+            inner.on_paint(window);
+
+            Some(0)
+        }
+        WM_TIMER => {
+            let timer_id = TimerId::from_raw(wparam)?;
+
+            if inner.on_timer(window, timer_id) {
+                Some(0)
+            } else {
+                None
+            }
+        }
+        BV_REQUEST_REDRAW => {
+            inner.on_redraw_requested();
+            Some(0)
+        }
+        BV_REQUEST_POLL => {
+            inner.on_poll_requested();
+            Some(0)
+        }
+
+        // Keyboard
+        WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP
+        | WM_INPUTLANGCHANGE => {
+            if inner.on_key_event(window, message_code, wparam, lparam) {
+                Some(0)
+            } else {
+                None
+            }
+        }
+        WM_SETFOCUS => {
+            inner.on_focus();
+            None
+        }
+        WM_KILLFOCUS => {
+            inner.on_unfocus();
+            None
         }
 
         // Mouse
@@ -145,6 +220,22 @@ pub unsafe fn handle_message<W: WindowImpl>(
 
             Some(0)
         }
+
+        // Other window functions
+        WM_CLOSE => {
+            inner.on_close();
+
+            None
+        }
+        WM_SHOWWINDOW => {
+            inner.on_show_window();
+            None
+        }
+        BV_WINDOW_MUST_CLOSE => {
+            inner.on_close_requested(window);
+            Some(0)
+        }
+
         _ => None,
     }
 }

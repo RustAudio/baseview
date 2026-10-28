@@ -1,28 +1,21 @@
 use windows_core::{ComObject, HSTRING};
-use windows_sys::Win32::{
-    Foundation::{LPARAM, LRESULT, WPARAM},
-    UI::{Controls::WM_MOUSELEAVE, WindowsAndMessaging::*},
-};
 
-use crate::dpi::{PhysicalPosition, PhysicalSize, Size};
-use crate::{warn, DamageArea, EventStatus, WindowHandler};
+use crate::dpi::Size;
+use crate::{warn, DamageArea, EventStatus};
 use std::cell::{Cell, OnceCell};
 
 use super::drop_target::DropTarget;
 use super::*;
-use crate::handler::WindowHandlerBuilder;
-use crate::host::Host;
-use crate::platform::win::window_state::{RedrawTimer, WindowSharedState, WindowState};
+use crate::platform::win::window_state::{WindowSharedState, WindowState};
 use crate::platform::PlatformError;
 use crate::utils::SizingStrategy;
 use crate::window::WindowInitializer;
-use crate::wrappers::win32::cursor::SystemCursor;
 use crate::wrappers::win32::window::*;
 use crate::wrappers::win32::{
     ole_initialize, run_thread_message_loop_until, Dpi, DpiAwarenessGuard, LibraryModule, TimerId,
-    TimerType, WindowStyle,
+    WindowStyle,
 };
-use crate::{Event, MouseButton, MouseEvent, ScrollDelta, WindowEvent, WindowSize};
+use crate::{Event, WindowEvent, WindowSize};
 
 pub struct WindowHandle {
     init: Cell<Option<Box<WindowInitializer>>>,
@@ -213,6 +206,8 @@ impl BaseviewWindow {
             DpiAwarenessGuard::new(&shared_state.user32, shared_state.dpi_scaling_strategy.get())?;
 
         let window_size = shared_state.current_size.get();
+        let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, None)?;
+        let title = HSTRING::from(init.settings.title);
 
         let initializer = {
             let shared_state = Rc::clone(&shared_state);
@@ -243,12 +238,7 @@ impl BaseviewWindow {
                 }
             }
         };
-
-        let rect = dpi_ctx.client_area_to_nc_area(window_size.into(), style, None)?;
-        let title = HSTRING::from(init.settings.title);
-        let window = create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?;
-
-        Ok(window)
+        Ok(create_window(&title, style, rect.size(), parent, &dpi_ctx, initializer)?)
     }
 
     fn notify_destroyed_to_host(&self) {
@@ -365,119 +355,21 @@ impl WindowImpl for BaseviewWindow {
         Ok(())
     }
 
-    unsafe fn handle_message(
-        &self, window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM,
-    ) -> Option<LRESULT> {
-        unsafe { wnd_proc_inner(window, msg, wparam, lparam, self) }
-    }
-
     fn before_destroy(&self, window: HWnd) {
         let _ = window.revoke_drag_drop();
         // No need to destroy timers: they are all destroyed when the window is invalidated.
     }
-}
 
-/// Our custom `wnd_proc` handler. If the result contains a value, then this is returned after
-/// handling any deferred tasks. otherwise the default window procedure is invoked.
-#[allow(clippy::unwrap_used, reason = "Refactor this in a later PR")] // TODO
-unsafe fn wnd_proc_inner(
-    window: HWnd, msg: u32, wparam: WPARAM, lparam: LPARAM, window_bv: &BaseviewWindow,
-) -> Option<LRESULT> {
-    let window_state = &window_bv.window_state;
-    match msg {
-        WM_PAINT => {
-            if let Some(rect) = window.get_update_rect() {
-                window_bv.notify_damage(DamageArea::Rect(rect.into()));
-                window_bv.handle_draw();
-                window.validate_rect(rect);
-            }
+    fn on_close(&self) {
+        self.handle_event(Event::Window(WindowEvent::WillClose));
+    }
 
-            Some(0)
-        }
-        WM_TIMER => {
-            let timer_id = TimerId::from_raw(wparam)?;
+    fn on_show_window(&self) {
+        self.handle_new_size_on_show();
+    }
 
-            if timer_id == RedrawTimer::ID {
-                if !window_state.redraw_timer.is_running() {
-                    return None;
-                };
-                window.invalidate_window();
-                return Some(0);
-            }
-
-            None
-        }
-        WM_CLOSE => {
-            window_bv.handle_event(Event::Window(WindowEvent::WillClose));
-
-            None
-        }
-        WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP
-        | WM_INPUTLANGCHANGE => {
-            let opt_event = window_state.keyboard_state.borrow_mut().process_message(
-                window.as_raw(),
-                msg,
-                wparam,
-                lparam,
-            );
-
-            if let Some(event) = opt_event {
-                window_bv.handle_event(Event::Keyboard(event));
-            }
-
-            if msg != WM_SYSKEYDOWN {
-                Some(0)
-            } else {
-                None
-            }
-        }
-        WM_SETFOCUS => {
-            window_bv.handle_event(Event::Window(WindowEvent::Focused));
-
-            None
-        }
-        WM_KILLFOCUS => {
-            window_bv.handle_event(Event::Window(WindowEvent::Unfocused));
-
-            None
-        }
-        WM_SHOWWINDOW => {
-            window_bv.handle_new_size_on_show();
-            None
-        }
-        // If WM_SETCURSOR returns `None`, WM_SETCURSOR continues to get handled by the outer window(s),
-        // If it returns `Some(1)`, the current window decides what the cursor is
-        WM_SETCURSOR => {
-            let low_word = lo_word(lparam) as u32;
-            let mouse_in_window = low_word == HTCLIENT;
-            if mouse_in_window {
-                // Here we need to set the cursor back to what the state says, since it can have changed when outside the window
-                if let Ok(cursor) = SystemCursor::load(window_state.cursor_icon.get()) {
-                    cursor.set()
-                }
-                Some(1)
-            } else {
-                // Cursor is being changed by some other window, e.g. when having mouse on the borders to resize it
-                None
-            }
-        }
-        // NOTE: `WM_NCDESTROY` is handled in the outer function because this deallocates the window
-        //        state
-        BV_WINDOW_MUST_CLOSE => {
-            let _ = window.destroy();
-            Some(0)
-        }
-
-        BV_REQUEST_REDRAW => {
-            window_state.request_redraw();
-            Some(0)
-        }
-
-        BV_REQUEST_POLL => {
-            window_bv.handle_poll();
-            Some(0)
-        }
-        _ => None,
+    fn on_close_requested(&self, window: HWnd) {
+        let _ = window.destroy();
     }
 }
 

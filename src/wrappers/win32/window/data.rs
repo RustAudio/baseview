@@ -3,7 +3,6 @@ use std::cell::{Cell, OnceCell};
 use std::mem::ManuallyDrop;
 use std::ptr::NonNull;
 use std::rc::Rc;
-use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 
 type Initializer<W> = dyn FnOnce(HWnd) -> W + 'static;
 

@@ -29,10 +29,9 @@ use windows_core::{Error, Result, HSTRING};
 use crate::wrappers::win32::dpi::DpiAwarenessGuard;
 use crate::wrappers::win32::h_instance::HInstance;
 use crate::wrappers::win32::style::WindowStyle;
-use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::CreateWindowExW;
 
-pub trait WindowImpl: WmSizing + WmMouse + 'static {
+pub trait WindowImpl: WmSizing + WmMouse + WmKeyboard + WmDraw + WmCursor + 'static {
     fn non_client_create(
         &self, window: HWnd,
     ) -> core::result::Result<(), crate::platform::PlatformError>;
@@ -47,9 +46,7 @@ pub trait WindowImpl: WmSizing + WmMouse + 'static {
     fn after_create(
         &self, window: HWnd,
     ) -> core::result::Result<(), crate::platform::PlatformError>;
-    unsafe fn handle_message(
-        &self, window: HWnd, message_code: u32, w_param: WPARAM, l_param: LPARAM,
-    ) -> Option<LRESULT>;
+
     /// Called during the processing of the WM_DESTROY message, but before any other de-initialization
     /// takes place.
     ///
@@ -58,6 +55,10 @@ pub trait WindowImpl: WmSizing + WmMouse + 'static {
     ///
     /// This function is not fallible. Any errors will be ignored.
     fn before_destroy(&self, window: HWnd);
+
+    fn on_close(&self);
+    fn on_close_requested(&self, window: HWnd);
+    fn on_show_window(&self);
 }
 
 /// # Safety
@@ -81,8 +82,8 @@ pub unsafe fn use_window<W: WindowImpl>(hwnd: HWnd, handler: impl FnOnce(&W)) {
 /// The initialization function is called during the handling of the WM_CREATE function, which allows
 /// it to receive a valid HWND, but before it has to handle any messages.
 ///
-/// Note that any message sent to the window by the given `initializer` will not be sent to the
-/// [`WindowImpl::handle_message`] function.
+/// Note that any message sent to the window by the given `initializer` will not be sent to any of
+/// its handler methods.
 /// For any non-trivial operations (e.g. window resizing, GL context creation, etc.), put them in
 /// [`WindowImpl::after_create`] instead.
 pub fn create_window<W: WindowImpl>(

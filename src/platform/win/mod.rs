@@ -1,4 +1,6 @@
+mod cursor;
 mod dpi;
+mod draw;
 mod drop_target;
 mod error;
 #[cfg(feature = "opengl")]
