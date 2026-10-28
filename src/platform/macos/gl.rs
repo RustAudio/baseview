@@ -60,7 +60,7 @@ pub struct PlatformGlContext {
 impl PlatformGlContext {
     pub(crate) fn create(
         parent_view: &NSView, config: GlConfig, marker: MainThreadMarker,
-    ) -> Result<PlatformGlContext> {
+    ) -> PlatformResult<PlatformGlContext> {
         let version = if config.version < (3, 2) && config.profile == Profile::Compatibility {
             NSOpenGLProfileVersionLegacy
         } else if config.version == (3, 2) && config.profile == Profile::Core {
@@ -136,14 +136,14 @@ impl PlatformGlContext {
         Ok(PlatformGlContext { view, context, gl_bundle })
     }
 
-    pub unsafe fn make_current(&self) -> Result<()> {
+    pub unsafe fn make_current(&self) -> PlatformResult<()> {
         autoreleasepool(|_| {
             self.context.makeCurrentContext();
         });
         Ok(())
     }
 
-    pub unsafe fn make_not_current(&self) -> Result<()> {
+    pub unsafe fn make_not_current(&self) -> PlatformResult<()> {
         autoreleasepool(|_| {
             NSOpenGLContext::clearCurrentContext();
         });
@@ -173,7 +173,7 @@ impl PlatformGlContext {
         autoreleasepool(|_| self.gl_bundle.function_pointer_for_name(Some(&symbol_name)))
     }
 
-    pub fn swap_buffers(&self) -> Result<()> {
+    pub fn swap_buffers(&self) -> PlatformResult<()> {
         autoreleasepool(|_| {
             self.context.flushBuffer();
         });

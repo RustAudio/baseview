@@ -214,18 +214,6 @@ impl WindowThreadHandle {
         !self.shared.stopped.load(Ordering::Relaxed)
     }
 
-    pub fn is_resizable(&self) -> bool {
-        self.sizing_strategy().is_resizable()
-    }
-
-    pub fn min_size(&self) -> Option<Size> {
-        self.sizing_strategy().min_size()
-    }
-
-    pub fn max_size(&self) -> Option<Size> {
-        self.sizing_strategy().max_size()
-    }
-
     pub fn handle_main_thread_callback(&self) {
         loop {
             let Some(receiver) = self.callback_receiver.as_ref() else { return };
