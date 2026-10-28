@@ -1,4 +1,4 @@
-use crate::platform::{BaseviewWindow, PlatformError};
+use crate::platform::{BaseviewWindow, PlatformError, PlatformResult};
 use crate::wrappers::win32::window::{
     create_window, use_window, HWnd, WindowImpl, WmCursor, WmDraw, WmKeyboard, WmMouse, WmSizing,
 };
@@ -205,7 +205,7 @@ impl WmSizing for TimerWindow {
     fn on_size(&self, _: HWnd, _: PhysicalSize<u32>) -> Result<(), ()> {
         Ok(())
     }
-    fn on_dpi_changed(&self, _: HWnd, _: Dpi, _: Rect) -> Result<(), ()> {
+    fn on_dpi_changed(&self, _: HWnd, _: Dpi, _: Rect) -> PlatformResult<()> {
         Ok(())
     }
     fn get_min_max_size(&self, _: HWnd) -> (Option<PhysicalSize<i32>>, Option<PhysicalSize<i32>>) {

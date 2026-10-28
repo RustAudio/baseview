@@ -24,7 +24,7 @@ pub struct WindowHandle {
 }
 
 impl WindowHandle {
-    pub fn run_until_closed(self) -> Result<()> {
+    pub fn run_until_closed(self) -> PlatformResult<()> {
         self.show()?;
 
         run_thread_message_loop_until(|| !self.is_open())?;
@@ -39,7 +39,7 @@ impl WindowHandle {
         self.state.size()
     }
 
-    pub fn resize(&self, new_size: Size) -> Result<()> {
+    pub fn resize(&self, new_size: Size) -> PlatformResult<()> {
         let new_size = self.state.sizing_strategy.adjust_size(new_size, self.size()).physical;
 
         if new_size == self.state.current_size.get() {
@@ -70,7 +70,7 @@ impl WindowHandle {
         self.state.sizing_strategy
     }
 
-    pub fn suggest_scale_factor(&self, new_host_scale_factor: f64) -> Result<()> {
+    pub fn suggest_scale_factor(&self, new_host_scale_factor: f64) -> PlatformResult<()> {
         let new_dpi = Dpi::from_scale_factor(new_host_scale_factor)
             .ok_or(PlatformError::InvalidScaleFactor)?;
 
@@ -114,7 +114,7 @@ impl WindowHandle {
         }
     }
 
-    pub fn set_parent(&self, new_parent: ParentWindowHandle) -> Result<()> {
+    pub fn set_parent(&self, new_parent: ParentWindowHandle) -> PlatformResult<()> {
         let hwnd = match self.hwnd.get() {
             Some(hwnd) => hwnd,
             None => {
@@ -142,7 +142,7 @@ impl WindowHandle {
         // No-op
     }
 
-    pub fn show(&self) -> Result<()> {
+    pub fn show(&self) -> PlatformResult<()> {
         let hwnd = match self.hwnd.get() {
             Some(hwnd) => hwnd,
             None => {
@@ -160,7 +160,7 @@ impl WindowHandle {
         Ok(())
     }
 
-    pub fn hide(&self) -> Result<()> {
+    pub fn hide(&self) -> PlatformResult<()> {
         let Some(hwnd) = self.hwnd.get() else { return Ok(()) };
         hwnd.hide();
 
@@ -171,7 +171,7 @@ impl WindowHandle {
         self.state.window_waker_source.waker()
     }
 
-    pub fn request_poll(&self) -> Result<()> {
+    pub fn request_poll(&self) -> PlatformResult<()> {
         if let Some(hwnd) = self.hwnd.get() {
             hwnd.post_request_poll();
         }
@@ -196,7 +196,9 @@ impl Drop for WindowHandle {
 }
 
 impl BaseviewWindow {
-    pub fn create(shared_state: Rc<WindowSharedState>, init: WindowInitializer) -> Result<HWnd> {
+    pub fn create(
+        shared_state: Rc<WindowSharedState>, init: WindowInitializer,
+    ) -> PlatformResult<HWnd> {
         shared_state.init(&init);
 
         let style = WindowStyle::from_settings(&init.settings);
@@ -374,7 +376,7 @@ impl WindowImpl for BaseviewWindow {
 }
 
 impl WindowHandle {
-    pub fn create_window(init: WindowInitializer) -> Result<WindowHandle> {
+    pub fn create_window(init: WindowInitializer) -> PlatformResult<WindowHandle> {
         let extended_user_32 = LibraryModule::load()?;
 
         let shared_state = WindowSharedState::new(extended_user_32, &init);

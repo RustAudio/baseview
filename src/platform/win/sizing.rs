@@ -1,6 +1,6 @@
-use crate::platform::{BaseviewWindow, PlatformError};
+use crate::platform::{BaseviewWindow, PlatformError, PlatformResult};
 use crate::wrappers::win32::window::{HWnd, WmSizing};
-use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, Rect};
+use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, Rect, WindowStyle};
 use crate::{HandlerError, WindowSize};
 use dpi::PhysicalSize;
 use tracing::warn;
@@ -8,7 +8,7 @@ use tracing::warn;
 impl BaseviewWindow {
     fn adapt_host_window_to_size(
         &self, previous_size: PhysicalSize<u32>, new_size: WindowSize,
-    ) -> Result<(), ()> {
+    ) -> Result<(), PlatformError> {
         if let Err(e) = self.request_host_resize(new_size) {
             warn!("Resize request from Host failed: {}. Reverting to previous size.", e);
 
@@ -23,7 +23,7 @@ impl BaseviewWindow {
                 warn!("Failed to resize back to previous window size: {}", e);
             }
 
-            return Err(());
+            return Err(e.into());
         }
 
         Ok(())
@@ -137,15 +137,14 @@ impl WmSizing for BaseviewWindow {
 
     fn on_dpi_changed(
         &self, window: HWnd, new_dpi: Dpi, suggested_nc_rect: Rect,
-    ) -> Result<(), ()> {
+    ) -> PlatformResult<()> {
         let dpi_ctx = DpiAwarenessGuard::new(
             &self.shared_state.user32,
             self.shared_state.dpi_scaling_strategy.get(),
-        )
-        .unwrap();
-        let style = window.get_style().unwrap();
+        )?;
+        let style = window.get_style()?;
         let suggested_rect =
-            dpi_ctx.nc_area_to_client_area(suggested_nc_rect, style, Some(new_dpi)).unwrap();
+            dpi_ctx.nc_area_to_client_area(suggested_nc_rect, style, Some(new_dpi))?;
 
         let new_size = suggested_rect.size();
 
@@ -171,7 +170,7 @@ impl WmSizing for BaseviewWindow {
                     warn!("Failed to resize back to previous window size: {}", e);
                 }
 
-                return Err(());
+                return Err(e.into());
             }
 
             self.adapt_host_window_to_size(previous_size, new_size)?;
@@ -190,25 +189,34 @@ impl WmSizing for BaseviewWindow {
             return (None, None);
         }
 
-        let ctx = DpiAwarenessGuard::new(
+        let Ok(ctx) = DpiAwarenessGuard::new(
             &self.shared_state.user32,
             self.shared_state.dpi_scaling_strategy.get(),
-        )
-        .unwrap();
-        let style = window.get_style().unwrap();
+        ) else {
+            return (None, None);
+        };
+
+        let style = window.get_style().unwrap_or(WindowStyle::dummy());
         let dpi = self.shared_state.current_dpi.get();
 
-        let min_size = sizing.min_size().map(|size| {
+        let min_size = if let Some(size) = sizing.min_size() {
+            let size = size.to_physical(self.shared_state.scale_factor());
+            let nc_size = ctx.client_area_to_nc_area(size.into(), style, Some(dpi));
+
+            nc_size.ok().map(|rect| rect.size().cast())
+        } else {
+            None
+        };
+
+        let max_size = if let Some(size) = sizing.max_size() {
             let size = size.to_physical(self.shared_state.scale_factor());
 
-            ctx.client_area_to_nc_area(size.into(), style, Some(dpi)).unwrap().size().cast()
-        });
+            let nc_size = ctx.client_area_to_nc_area(size.into(), style, Some(dpi));
 
-        let max_size = sizing.max_size().map(|size| {
-            let size = size.to_physical(self.shared_state.scale_factor());
-
-            ctx.client_area_to_nc_area(size.into(), style, Some(dpi)).unwrap().size().cast()
-        });
+            nc_size.ok().map(|rect| rect.size().cast())
+        } else {
+            None
+        };
 
         (min_size, max_size)
     }

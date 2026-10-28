@@ -1,3 +1,4 @@
+use crate::platform::PlatformResult;
 use crate::wrappers::win32::window::{
     HWnd, WindowData, WindowImpl, BV_REQUEST_POLL, BV_REQUEST_REDRAW, BV_WINDOW_MUST_CLOSE,
 };
@@ -12,8 +13,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 pub trait WmSizing {
     fn on_size(&self, window: HWnd, new_size: PhysicalSize<u32>) -> Result<(), ()>;
-    fn on_dpi_changed(&self, window: HWnd, new_dpi: Dpi, suggested_nc_rect: Rect)
-        -> Result<(), ()>;
+    fn on_dpi_changed(
+        &self, window: HWnd, new_dpi: Dpi, suggested_nc_rect: Rect,
+    ) -> PlatformResult<()>;
     fn get_min_max_size(
         &self, window: HWnd,
     ) -> (Option<PhysicalSize<i32>>, Option<PhysicalSize<i32>>);
@@ -84,7 +86,10 @@ pub unsafe fn handle_message<W: WindowImpl>(
 
             match inner.on_dpi_changed(window, dpi, suggested_nc_rect) {
                 Ok(()) => None,
-                Err(()) => Some(-1),
+                Err(e) => {
+                    crate::warn!("Could not handle WM_DPICHANGED message: {e}");
+                    Some(-1)
+                }
             }
         }
         WM_GETMINMAXINFO => {

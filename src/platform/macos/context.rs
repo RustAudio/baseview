@@ -1,7 +1,7 @@
 use crate::dpi::Size;
 use crate::platform::macos::view::BaseviewView;
 use crate::platform::{PlatformError, PlatformHandle, WindowSharedState};
-use crate::platform::{Result, WindowWaker};
+use crate::platform::{PlatformResult, WindowWaker};
 use crate::wrappers::appkit::{View, ViewRef};
 use crate::*;
 use dispatch2::MainThreadBound;

@@ -10,7 +10,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
-use crate::platform::Result;
+use crate::platform::PlatformResult;
 use crate::platform::{ParentWindowHandle, WindowWaker};
 use crate::utils::SizingStrategy;
 use crate::wrappers::appkit::{create_window, View};

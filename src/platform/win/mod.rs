@@ -16,7 +16,7 @@ mod window;
 mod window_state;
 
 pub(crate) use dpi::DpiScalingStrategy;
-pub use error::{PlatformError, Result};
+pub use error::{PlatformError, PlatformResult};
 pub use parent_handle::*;
 pub use platform_handle::*;
 pub use waker::WindowWaker;
