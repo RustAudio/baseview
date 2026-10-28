@@ -1,9 +1,9 @@
 use crate::platform::{BaseviewWindow, PlatformError, PlatformResult};
+use crate::warn;
 use crate::wrappers::win32::window::{HWnd, WmSizing};
 use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, Rect, WindowStyle};
 use crate::{HandlerError, WindowSize};
 use dpi::PhysicalSize;
-use tracing::warn;
 
 impl BaseviewWindow {
     fn adapt_host_window_to_size(

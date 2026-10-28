@@ -87,7 +87,7 @@ pub unsafe fn handle_message<W: WindowImpl>(
             match inner.on_dpi_changed(window, dpi, suggested_nc_rect) {
                 Ok(()) => None,
                 Err(e) => {
-                    crate::warn!("Could not handle WM_DPICHANGED message: {e}");
+                    crate::warn!("Could not handle WM_DPICHANGED message: {}", e);
                     Some(-1)
                 }
             }
