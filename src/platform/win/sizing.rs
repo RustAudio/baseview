@@ -227,12 +227,27 @@ impl WmSizing for BaseviewWindow {
         let aspect_ratio = self.shared_state.sizing_strategy.aspect_ratio()?.ratio();
         let requested_size = drag_rectangle.size();
 
+        if requested_size.width == 0 || requested_size.height == 0 {
+            return None;
+        }
+
+        if aspect_ratio == 0. {
+            return None;
+        }
+
         match edge {
-            Right => {
+            Left | Right => {
                 let adjusted_height = requested_size.width as f64 * aspect_ratio;
                 Some(drag_rectangle.with_size(PhysicalSize {
                     width: requested_size.width,
                     height: adjusted_height.cast(),
+                }))
+            }
+            Top | Bottom => {
+                let adjusted_width = requested_size.height as f64 / aspect_ratio;
+                Some(drag_rectangle.with_size(PhysicalSize {
+                    width: adjusted_width.cast(),
+                    height: requested_size.height,
                 }))
             }
             _ => None,
