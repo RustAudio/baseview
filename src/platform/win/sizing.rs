@@ -98,68 +98,31 @@ impl BaseviewWindow {
         &self, drag_rectangle: Rect, edge: SizingEdge, aspect_ratio: f64, min_max_size: MinMaxSize,
     ) -> Rect {
         use SizingEdge::*;
-        //let requested_size = min_max_size.clamp(drag_rectangle.size());
-        let requested_size = drag_rectangle.size();
+
+        let requested_size = min_max_size.clamp(drag_rectangle.size());
+
+        let keep_width_size = PhysicalSize {
+            width: requested_size.width,
+            height: (requested_size.width as f64 / aspect_ratio).cast(),
+        };
+
+        let keep_height_size = PhysicalSize {
+            width: (requested_size.height as f64 * aspect_ratio).cast(),
+            height: requested_size.height,
+        };
+
+        let requested_ratio = requested_size.width as f64 / requested_size.height as f64;
+        let biggest_fitting_rect =
+            if requested_ratio > aspect_ratio { keep_height_size } else { keep_width_size };
 
         match edge {
-            Left | Right => {
-                let adjusted_height = requested_size.width as f64 / aspect_ratio;
-                drag_rectangle.with_size(PhysicalSize {
-                    width: requested_size.width,
-                    height: adjusted_height.cast(),
-                })
-            }
-            Top | Bottom => {
-                let adjusted_width = requested_size.height as f64 * aspect_ratio;
-                drag_rectangle.with_size(PhysicalSize {
-                    width: adjusted_width.cast(),
-                    height: requested_size.height,
-                })
-            }
-            BottomRight | TopRight => {
-                let adjusted_height = requested_size.width as f64 / aspect_ratio;
-                let adjusted_width = requested_size.height as f64 * aspect_ratio;
+            Left | Right => drag_rectangle.with_size_anchor_top_left(keep_width_size),
+            Top | Bottom => drag_rectangle.with_size_anchor_top_left(keep_height_size),
 
-                let height_diff = requested_size.height.abs_diff(adjusted_height.cast());
-                let width_diff = requested_size.width.abs_diff(adjusted_width.cast());
-
-                if height_diff > width_diff {
-                    drag_rectangle.with_size(PhysicalSize {
-                        width: requested_size.width,
-                        height: adjusted_height.cast(),
-                    })
-                } else {
-                    drag_rectangle.with_size(PhysicalSize {
-                        width: adjusted_width.cast(),
-                        height: requested_size.height,
-                    })
-                }
-            }
-            TopLeft | BottomLeft => {
-                let adjusted_height = requested_size.width as f64 / aspect_ratio;
-                let adjusted_width = requested_size.height as f64 * aspect_ratio;
-
-                let height_diff = requested_size.height.abs_diff(adjusted_height.cast());
-                let width_diff = requested_size.width.abs_diff(adjusted_width.cast());
-
-                let mut use_width = height_diff > width_diff;
-
-                if aspect_ratio < 1.0 {
-                    use_width = !use_width
-                }
-
-                if use_width {
-                    drag_rectangle.with_size_shifting_origin(PhysicalSize {
-                        width: requested_size.width,
-                        height: adjusted_height.cast(),
-                    })
-                } else {
-                    drag_rectangle.with_size_shifting_origin(PhysicalSize {
-                        width: adjusted_width.cast(),
-                        height: requested_size.height,
-                    })
-                }
-            }
+            BottomRight => drag_rectangle.with_size_anchor_top_left(biggest_fitting_rect),
+            TopRight => drag_rectangle.with_size_anchor_bottom_left(biggest_fitting_rect),
+            BottomLeft => drag_rectangle.with_size_anchor_top_right(biggest_fitting_rect),
+            TopLeft => drag_rectangle.with_size_anchor_bottom_right(biggest_fitting_rect),
         }
     }
 }

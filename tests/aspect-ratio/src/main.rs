@@ -78,6 +78,7 @@ fn main() -> Result<(), baseview::Error> {
     let window_open_options = WindowSettings::new()
         .with_title("Baseview Partial redraw example")
         .with_size(LogicalSize::new(512, 512))
+        .with_min_size(LogicalSize::new(100, 100))
         .with_aspect_ratio(Some(ASPECT_RATIO))
         .with_gl_config(GlConfig { alpha_bits: 8, ..GlConfig::default() });
 
