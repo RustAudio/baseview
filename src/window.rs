@@ -188,7 +188,7 @@ impl Window {
     /// This is set by the [`WindowSettings::aspect_ratio`] field.
     #[inline]
     pub fn aspect_ratio(&self) -> Option<AspectRatio> {
-        self.inner.aspect_ratio()
+        self.inner.sizing_strategy().aspect_ratio()
     }
 
     /// Performs the work the window thread had scheduled for the main thread.

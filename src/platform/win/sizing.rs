@@ -1,9 +1,9 @@
 use crate::platform::{BaseviewWindow, PlatformError, PlatformResult};
 use crate::warn;
-use crate::wrappers::win32::window::{HWnd, WmSizing};
+use crate::wrappers::win32::window::{HWnd, SizingEdge, WmSizing};
 use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, Rect, WindowStyle};
 use crate::{HandlerError, WindowSize};
-use dpi::PhysicalSize;
+use dpi::{PhysicalSize, Pixel};
 
 impl BaseviewWindow {
     fn adapt_host_window_to_size(
@@ -219,5 +219,23 @@ impl WmSizing for BaseviewWindow {
         };
 
         (min_size, max_size)
+    }
+
+    fn on_sizing(&self, drag_rectangle: Rect, edge: SizingEdge) -> Option<Rect> {
+        use SizingEdge::*;
+
+        let aspect_ratio = self.shared_state.sizing_strategy.aspect_ratio()?.ratio();
+        let requested_size = drag_rectangle.size();
+
+        match edge {
+            Right => {
+                let adjusted_height = requested_size.width as f64 * aspect_ratio;
+                Some(drag_rectangle.with_size(PhysicalSize {
+                    width: requested_size.width,
+                    height: adjusted_height.cast(),
+                }))
+            }
+            _ => None,
+        }
     }
 }

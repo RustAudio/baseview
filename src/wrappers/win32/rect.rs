@@ -26,6 +26,18 @@ impl Rect {
     }
 
     #[inline]
+    pub fn set_size(&mut self, size: PhysicalSize<u32>) {
+        self.0.right = self.0.left.saturating_add(size.width.try_into().unwrap_or(i32::MAX));
+        self.0.bottom = self.0.top.saturating_add(size.height.try_into().unwrap_or(i32::MAX));
+    }
+
+    #[inline]
+    pub fn with_size(mut self, size: PhysicalSize<u32>) -> Self {
+        self.set_size(size);
+        self
+    }
+
+    #[inline]
     pub fn is_empty(&self) -> bool {
         let size = self.size();
         size.width == 0 && size.height == 0
