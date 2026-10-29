@@ -129,8 +129,7 @@ impl WindowState {
     }
 
     pub fn platform_handle(&self) -> PlatformHandle {
-        let Some(hwnd) = NonZeroIsize::new(self.hwnd.as_raw() as _) else { unreachable!() };
-        PlatformHandle { hwnd }
+        PlatformHandle::new(self.hwnd)
     }
 
     pub fn request_redraw(&self) {
@@ -209,7 +208,7 @@ impl WindowSharedState {
     }
 
     pub fn init(&self, init: &WindowInitializer) {
-        let parent = init.settings.parent.as_ref().map(|p| p.inner.handle);
+        let parent = init.settings.parent.as_ref().map(|p| p.inner.hwnd());
         let strategy = DpiScalingStrategy::get(
             Some(&self.user32),
             parent,

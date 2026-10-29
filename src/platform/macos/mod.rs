@@ -25,7 +25,7 @@ pub use timer::TimerHandle;
 pub use waker::WindowWaker;
 pub use window::*;
 
-pub(crate) type Result<T> = std::result::Result<T, PlatformError>;
+pub(crate) type PlatformResult<T> = Result<T, PlatformError>;
 
 #[cfg(feature = "opengl")]
 pub mod gl;
@@ -82,9 +82,7 @@ pub struct ParentWindowHandle {
 }
 
 impl ParentWindowHandle {
-    pub fn extract(
-        window: &impl HasWindowHandle,
-    ) -> core::result::Result<Self, ParentWindowHandleError> {
+    pub fn extract(window: &impl HasWindowHandle) -> Result<Self, ParentWindowHandleError> {
         let view = extract_raw_window_handle(window.window_handle()?)?;
 
         let mtm = view.mtm();

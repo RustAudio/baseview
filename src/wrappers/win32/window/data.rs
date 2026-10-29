@@ -3,7 +3,6 @@ use std::cell::{Cell, OnceCell};
 use std::mem::ManuallyDrop;
 use std::ptr::NonNull;
 use std::rc::Rc;
-use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 
 type Initializer<W> = dyn FnOnce(HWnd) -> W + 'static;
 
@@ -72,15 +71,5 @@ impl<W: WindowImpl> WindowData<W> {
 
     pub fn inner(&self) -> Option<&W> {
         self.inner_impl.get()
-    }
-
-    pub unsafe fn handle_message(
-        &self, window: HWnd, message_code: u32, w_param: WPARAM, l_param: LPARAM,
-    ) -> Option<LRESULT> {
-        if let Some(inner) = self.inner_impl.get() {
-            inner.handle_message(window, message_code, w_param, l_param)
-        } else {
-            None
-        }
     }
 }

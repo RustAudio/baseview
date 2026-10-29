@@ -91,7 +91,7 @@ impl BaseviewView {
     pub fn new(
         init: WindowInitializer, parenting: ViewParentingType, final_size: LogicalSize<f64>,
         mtm: MainThreadMarker,
-    ) -> Result<(Retained<View<Self>>, Rc<WindowSharedState>)> {
+    ) -> PlatformResult<(Retained<View<Self>>, Rc<WindowSharedState>)> {
         let view_rect =
             NSRect::new(NSPoint::ZERO, NSSize::new(final_size.width, final_size.height));
 

@@ -2,7 +2,7 @@ use crate::HandlerError;
 use dpi::PhysicalSize;
 use std::fmt::Display;
 
-pub type Result<T> = std::result::Result<T, PlatformError>;
+pub type PlatformResult<T> = Result<T, PlatformError>;
 
 #[derive(Debug)]
 pub enum PlatformError {

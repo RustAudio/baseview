@@ -1,14 +1,16 @@
-use crate::platform::{BaseviewWindow, PlatformError};
-use crate::wrappers::win32::window::{create_window, use_window, HWnd, WindowImpl};
-use crate::wrappers::win32::{DpiAwarenessGuard, WindowStyle};
-use dpi::PhysicalSize;
+use crate::platform::{BaseviewWindow, PlatformError, PlatformResult};
+use crate::wrappers::win32::window::{
+    create_window, use_window, HWnd, WindowImpl, WmCursor, WmDraw, WmKeyboard, WmMouse, WmSizing,
+};
+use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, Rect, WindowStyle};
+use crate::{MouseButton, ScrollDelta};
+use dpi::{PhysicalPosition, PhysicalSize};
 use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::time::Duration;
-use windows::Win32::UI::WindowsAndMessaging::WM_TIMER;
 use windows_core::{Error, HSTRING};
-use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::Foundation::{LPARAM, WPARAM};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct TimerId(NonZeroUsize);
@@ -190,29 +192,62 @@ impl WindowImpl for TimerWindow {
     fn non_client_create(&self, _: HWnd) -> Result<(), PlatformError> {
         Ok(())
     }
-
     fn after_create(&self, _: HWnd) -> Result<(), PlatformError> {
         Ok(())
     }
+    fn before_destroy(&self, _: HWnd) {}
+    fn on_close(&self) {}
+    fn on_close_requested(&self, _: HWnd) {}
+    fn on_show_window(&self) {}
+}
 
-    unsafe fn handle_message(
-        &self, _: HWnd, message_code: u32, wparam: WPARAM, _: LPARAM,
-    ) -> Option<LRESULT> {
-        if message_code != WM_TIMER {
-            return None;
-        }
+impl WmSizing for TimerWindow {
+    fn on_size(&self, _: HWnd, _: PhysicalSize<u32>) -> Result<(), ()> {
+        Ok(())
+    }
+    fn on_dpi_changed(&self, _: HWnd, _: Dpi, _: Rect) -> PlatformResult<()> {
+        Ok(())
+    }
+    fn get_min_max_size(&self, _: HWnd) -> (Option<PhysicalSize<i32>>, Option<PhysicalSize<i32>>) {
+        (None, None)
+    }
+}
 
-        let timer_id = TimerId::from_raw(wparam)?;
+impl WmMouse for TimerWindow {
+    fn on_move(&self, _: HWnd, _: PhysicalPosition<i16>, _: WPARAM) {}
+    fn on_leave(&self, _: HWnd) {}
+    fn on_wheel(&self, _: HWnd, _: ScrollDelta, _: WPARAM) {}
+    fn on_capture_changed(&self, _: HWnd, _: Option<HWnd>) {}
+    fn on_button(&self, _: HWnd, _: MouseButton, _: bool, _: WPARAM) {}
+}
 
+impl WmKeyboard for TimerWindow {
+    fn on_key_event(&self, _: HWnd, _: u32, _: WPARAM, _: LPARAM) -> bool {
+        false
+    }
+    fn on_focus(&self) {}
+    fn on_unfocus(&self) {}
+}
+
+impl WmDraw for TimerWindow {
+    fn on_timer(&self, _: HWnd, timer_id: TimerId) -> bool {
         // SAFETY: baseview_window is of type BaseviewWindow
         unsafe {
-            use_window::<BaseviewWindow>(self.baseview_window, |hwnd| {
-                (self.timer_fn)(hwnd, timer_id)
+            use_window::<BaseviewWindow>(self.baseview_window, |window| {
+                (self.timer_fn)(window, timer_id)
             })
         };
 
-        Some(0)
+        true
     }
 
-    fn before_destroy(&self, _: HWnd) {}
+    fn on_paint(&self, _: HWnd) {}
+    fn on_redraw_requested(&self) {}
+    fn on_poll_requested(&self) {}
+}
+
+impl WmCursor for TimerWindow {
+    fn on_set_cursor(&self, _: bool) -> bool {
+        false
+    }
 }

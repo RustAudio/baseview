@@ -10,7 +10,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::platform::macos::view::{BaseviewView, ViewParentingType};
-use crate::platform::Result;
+use crate::platform::PlatformResult;
 use crate::platform::{ParentWindowHandle, WindowWaker};
 use crate::utils::SizingStrategy;
 use crate::wrappers::appkit::{create_window, View};
@@ -33,7 +33,7 @@ impl Drop for WindowHandle {
 }
 
 impl WindowHandle {
-    pub fn create_window(mut init: WindowInitializer) -> Result<Self> {
+    pub fn create_window(mut init: WindowInitializer) -> PlatformResult<Self> {
         autoreleasepool(|_| {
             let Some(mtm) = MainThreadMarker::new() else {
                 panic!("macOS: Windows can only be created on the main thread!")
@@ -52,7 +52,7 @@ impl WindowHandle {
 
     fn create_window_parented(
         init: WindowInitializer, parent_view: Retained<NSView>, mtm: MainThreadMarker,
-    ) -> Result<Self> {
+    ) -> PlatformResult<Self> {
         let parenting =
             ViewParentingType::Parented { parent_view: Weak::from_retained(&parent_view) };
 
@@ -67,7 +67,7 @@ impl WindowHandle {
 
     pub fn create_window_standalone(
         init: WindowInitializer, mtm: MainThreadMarker,
-    ) -> Result<Self> {
+    ) -> PlatformResult<Self> {
         let window = create_window_with_options(&init.settings, mtm);
         window.setAcceptsMouseMovedEvents(true);
 
@@ -81,7 +81,7 @@ impl WindowHandle {
         Ok(Self { mtm, state, view: Weak::from_retained(&view), _window: Some(window) })
     }
 
-    pub fn run_until_closed(self) -> Result<()> {
+    pub fn run_until_closed(self) -> PlatformResult<()> {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
@@ -103,18 +103,6 @@ impl WindowHandle {
         self.state.closed.get()
     }
 
-    pub fn is_resizable(&self) -> bool {
-        self.state.sizing_strategy.is_resizable()
-    }
-
-    pub fn min_size(&self) -> Option<Size> {
-        self.state.sizing_strategy.min_size()
-    }
-
-    pub fn max_size(&self) -> Option<Size> {
-        self.state.sizing_strategy.max_size()
-    }
-
     #[inline]
     pub fn handle_main_thread_callback(&self) {
         // No-op
@@ -124,7 +112,7 @@ impl WindowHandle {
         WindowSize::from_logical(self.state.size.get(), self.state.scale_factor.get())
     }
 
-    pub fn resize(&self, size: Size) -> Result<()> {
+    pub fn resize(&self, size: Size) -> PlatformResult<()> {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
@@ -135,12 +123,12 @@ impl WindowHandle {
         Ok(())
     }
 
-    pub fn suggest_scale_factor(&self, _scale_factor: f64) -> Result<()> {
+    pub fn suggest_scale_factor(&self, _scale_factor: f64) -> PlatformResult<()> {
         // This does not do anything on macOS: all coordinates are already logical
         Ok(())
     }
 
-    pub fn set_parent(&self, new_parent: ParentWindowHandle) -> Result<()> {
+    pub fn set_parent(&self, new_parent: ParentWindowHandle) -> PlatformResult<()> {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
@@ -151,7 +139,7 @@ impl WindowHandle {
         Ok(())
     }
 
-    pub fn show(&self) -> Result<()> {
+    pub fn show(&self) -> PlatformResult<()> {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
@@ -161,7 +149,7 @@ impl WindowHandle {
         Ok(())
     }
 
-    pub fn hide(&self) -> Result<()> {
+    pub fn hide(&self) -> PlatformResult<()> {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
@@ -171,11 +159,12 @@ impl WindowHandle {
         Ok(())
     }
 
+    #[inline]
     pub fn sizing_strategy(&self) -> SizingStrategy {
         self.state.sizing_strategy
     }
 
-    pub fn request_poll(&self) -> Result<()> {
+    pub fn request_poll(&self) -> PlatformResult<()> {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 

@@ -85,8 +85,7 @@ pub unsafe extern "system" fn wnd_proc<W: WindowImpl>(
             // even if the event handler leads to the window being destroyed
             unsafe {
                 WindowData::handle(inner_ptr, |inner| {
-                    inner
-                        .handle_message(window, message_code, w_param, l_param)
+                    handle_message(inner, window, message_code, w_param, l_param)
                         .unwrap_or_else(handle_default)
                 })
             }

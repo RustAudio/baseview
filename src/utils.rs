@@ -23,10 +23,12 @@ impl SizingStrategy {
         Self::Resizable { min_size: settings.min_size, max_size: settings.max_size }
     }
 
+    #[inline]
     pub fn is_resizable(&self) -> bool {
         matches!(self, Self::Resizable { .. })
     }
 
+    #[inline]
     pub fn min_size(&self) -> Option<Size> {
         match self {
             Self::Fixed => None,
@@ -34,6 +36,7 @@ impl SizingStrategy {
         }
     }
 
+    #[inline]
     pub fn max_size(&self) -> Option<Size> {
         match self {
             Self::Fixed => None,

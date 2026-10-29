@@ -1,109 +1,63 @@
+mod cursor;
 mod dpi;
+mod draw;
 mod drop_target;
 mod error;
+#[cfg(feature = "opengl")]
+pub mod gl;
 mod hook;
 mod keyboard;
+mod mouse;
+mod parent_handle;
+mod platform_handle;
+mod sizing;
 mod waker;
 mod window;
 mod window_state;
 
-use crate::wrappers::win32::h_instance::HInstance;
-use crate::wrappers::win32::window::HWnd;
-use crate::wrappers::win32::{Rect, TimerId};
 pub(crate) use dpi::DpiScalingStrategy;
-pub use error::{PlatformError, Result};
-use raw_window_handle::{
-    DisplayHandle, HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle,
-};
-use std::fmt::{Debug, Display, Formatter};
-use std::num::NonZeroIsize;
-use std::ptr::NonNull;
-use std::rc::Rc;
+pub use error::{PlatformError, PlatformResult};
+pub use parent_handle::*;
+pub use platform_handle::*;
 pub use waker::WindowWaker;
 pub use window::*;
 
+use crate::handler::WindowHandlerBuilder;
+use crate::host::Host;
+use crate::platform::win::drop_target::DropTarget;
+use crate::platform::win::window_state::{WindowSharedState, WindowState};
+use crate::wrappers::win32::{Rect, TimerId};
+use crate::WindowHandler;
+use ::dpi::{PhysicalSize, Size};
+use std::cell::{Cell, OnceCell};
+use std::rc::Rc;
+use windows_core::ComObject;
+
 pub type TimerHandle = TimerId;
 
-#[cfg(feature = "opengl")]
-pub mod gl;
-
-pub type WindowContext = Rc<window_state::WindowState>;
+pub type WindowContext = Rc<WindowState>;
 pub type DamageRect = Rect;
-
-#[derive(Clone)]
-pub struct PlatformHandle {
-    hwnd: NonZeroIsize,
-}
-
-impl PlatformHandle {
-    pub fn window_handle(&self) -> Option<raw_window_handle::WindowHandle<'_>> {
-        let mut handle = Win32WindowHandle::new(self.hwnd);
-        handle.hinstance = Some(HInstance::get_from_dll().addr());
-
-        Some(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle.into()) })
-    }
-
-    pub fn display_handle(&self) -> DisplayHandle<'_> {
-        DisplayHandle::windows()
-    }
-}
-
-impl Debug for PlatformHandle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PlatformHandle (Win32)")
-            .field("hwnd", &self.hwnd.get())
-            .field("hinstance", &HInstance::get_from_dll().addr().get())
-            .finish()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParentWindowHandle {
-    handle: HWnd,
-}
-
-// SAFETY: ParentWindowHandle does not actually expose any thread-unsafe operation
-unsafe impl Send for ParentWindowHandle {}
-// SAFETY: ParentWindowHandle does not actually expose any thread-unsafe operation
-unsafe impl Sync for ParentWindowHandle {}
-
-impl ParentWindowHandle {
-    pub fn extract(
-        parent: &impl HasWindowHandle,
-    ) -> core::result::Result<Self, ParentWindowHandleError> {
-        let parent = match parent.window_handle()?.as_raw() {
-            RawWindowHandle::Win32(h) => h.hwnd,
-            h => return Err(ParentWindowHandleError::UnsupportedWindowHandleType(h)),
-        };
-
-        let Some(parent) = NonNull::new(parent.get() as _) else { unreachable!() };
-
-        Ok(Self { handle: unsafe { HWnd::from_raw(parent) } })
-    }
-}
-
-pub enum ParentWindowHandleError {
-    HandleError(HandleError),
-    UnsupportedWindowHandleType(RawWindowHandle),
-}
-
-impl From<HandleError> for ParentWindowHandleError {
-    fn from(err: HandleError) -> Self {
-        Self::HandleError(err)
-    }
-}
-
-impl Display for ParentWindowHandleError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParentWindowHandleError::HandleError(e) => Display::fmt(e, f),
-            ParentWindowHandleError::UnsupportedWindowHandleType(h) => {
-                write!(f, "Unsupported window handle type on Win32: {h:?}")
-            }
-        }
-    }
-}
 
 pub fn assume_standalone_in_process() {
     dpi::set_process_dpi_awareness();
+}
+
+pub struct BaseviewWindow {
+    window_state: Rc<WindowState>,
+    shared_state: Rc<WindowSharedState>,
+    initial_size: Size,
+
+    handler_builder: Cell<Option<WindowHandlerBuilder>>,
+    handler: OnceCell<Box<dyn WindowHandler>>,
+    host: Host,
+
+    // Workaround some VST3 hosts (e.g. Bitwig) not allowing request_resize before show() occurs
+    pub host_needs_new_size_notified_on_show: Cell<Option<PhysicalSize<u32>>>,
+
+    // Things not directly used, but kept so their Drop impl runs when the window is destroyed
+    _keyboard_hook: Cell<Option<hook::KeyboardHookHandle>>,
+    _drop_target: Cell<Option<ComObject<DropTarget>>>,
+
+    #[cfg(feature = "opengl")]
+    gl_config: Option<crate::gl::GlConfig>,
 }

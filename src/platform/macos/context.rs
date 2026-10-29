@@ -1,7 +1,7 @@
 use crate::dpi::Size;
 use crate::platform::macos::view::BaseviewView;
 use crate::platform::{PlatformError, PlatformHandle, WindowSharedState};
-use crate::platform::{Result, WindowWaker};
+use crate::platform::{PlatformResult, WindowWaker};
 use crate::wrappers::appkit::{View, ViewRef};
 use crate::*;
 use dispatch2::MainThreadBound;
@@ -69,7 +69,7 @@ impl WindowContext {
         view.isEqual(Some(&*first_responder))
     }
 
-    pub fn focus(&self) -> Result<()> {
+    pub fn focus(&self) -> PlatformResult<()> {
         let Some(view) = self.view.load() else { return Ok(()) };
 
         autoreleasepool(|_| {
@@ -81,7 +81,7 @@ impl WindowContext {
         Ok(())
     }
 
-    pub fn resize(&self, size: Size) -> Result<()> {
+    pub fn resize(&self, size: Size) -> PlatformResult<()> {
         if self.state.closed.get() {
             return Ok(());
         }
@@ -98,7 +98,7 @@ impl WindowContext {
         Ok(())
     }
 
-    pub fn set_mouse_cursor(&self, cursor: MouseCursor) -> Result<()> {
+    pub fn set_mouse_cursor(&self, cursor: MouseCursor) -> PlatformResult<()> {
         let Some(view) = self.view.load() else { return Ok(()) };
         let Some(view) = view.inner_ref() else { return Ok(()) };
 
@@ -137,7 +137,7 @@ impl WindowContext {
     }
 
     #[inline]
-    pub fn create_timer(&self, duration: Duration) -> Result<super::TimerHandle> {
+    pub fn create_timer(&self, duration: Duration) -> PlatformResult<super::TimerHandle> {
         let Some(view_retained) = self.view.load() else {
             return Err(PlatformError::InvalidWindowContext);
         };
