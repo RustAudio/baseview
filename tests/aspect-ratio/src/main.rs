@@ -1,14 +1,14 @@
-use baseview::dpi::{LogicalSize, PhysicalSize, Pixel};
+use baseview::dpi::{LogicalSize, Pixel};
 use baseview::gl::{GlConfig, GlContext};
 use baseview::{
-    AspectRatio, DamageArea, Event, EventStatus, HandlerError, Window, WindowContext,
-    WindowHandler, WindowSettings, WindowSize,
+    AspectRatio, Event, EventStatus, HandlerError, Window, WindowContext, WindowHandler,
+    WindowSettings, WindowSize,
 };
 use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
 use std::cell::RefCell;
 
-const ASPECT_RATIO: AspectRatio = AspectRatio::new(1, 1);
+const ASPECT_RATIO: AspectRatio = AspectRatio::new(2, 1);
 
 struct FemtovgExample {
     gl_context: GlContext,

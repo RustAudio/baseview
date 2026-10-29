@@ -206,7 +206,7 @@ impl WmSizing for TimerWindow {
     fn on_size(&self, _: HWnd, _: PhysicalSize<u32>) -> Result<(), ()> {
         Ok(())
     }
-    fn on_sizing(&self, _: Rect, _: SizingEdge) -> Option<Rect> {
+    fn on_sizing(&self, _: HWnd, _: Rect, _: SizingEdge) -> Option<Rect> {
         None
     }
     fn on_dpi_changed(&self, _: HWnd, _: Dpi, _: Rect) -> PlatformResult<()> {

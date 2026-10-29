@@ -32,8 +32,25 @@ impl Rect {
     }
 
     #[inline]
+    pub fn set_size_shifting_origin(&mut self, size: PhysicalSize<u32>) {
+        let current_size = self.size();
+        if let Some(w_diff) = checked_signed_diff(size.width, current_size.width) {
+            self.0.left = self.0.left.saturating_sub(w_diff);
+        }
+        if let Some(h_diff) = checked_signed_diff(size.height, current_size.height) {
+            self.0.top = self.0.top.saturating_add(h_diff);
+        }
+    }
+
+    #[inline]
     pub fn with_size(mut self, size: PhysicalSize<u32>) -> Self {
         self.set_size(size);
+        self
+    }
+
+    #[inline]
+    pub fn with_size_shifting_origin(mut self, size: PhysicalSize<u32>) -> Self {
+        self.set_size_shifting_origin(size);
         self
     }
 
@@ -76,5 +93,17 @@ impl From<PhysicalSize<u32>> for Rect {
             right: size.width.try_into().unwrap_or(i32::MAX),
             bottom: size.height.try_into().unwrap_or(i32::MAX),
         })
+    }
+}
+
+// Replace this with u32::checked_signed_diff from stdlib when MSRV >= 1.91
+fn checked_signed_diff(lhs: u32, rhs: u32) -> Option<i32> {
+    let res = lhs.wrapping_sub(rhs) as i32;
+    let overflow = (lhs >= rhs) == (res < 0);
+
+    if !overflow {
+        Some(res)
+    } else {
+        None
     }
 }

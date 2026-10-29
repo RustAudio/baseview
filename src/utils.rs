@@ -52,7 +52,9 @@ impl SizingStrategy {
         }
     }
 
-    fn adjust_size_physical(&self, mut size: PhysicalSize<u32>, scale_factor: f64) -> WindowSize {
+    pub(crate) fn adjust_size_physical(
+        &self, mut size: PhysicalSize<u32>, scale_factor: f64,
+    ) -> WindowSize {
         if let Some(max_size) = self.max_size() {
             let max_size = max_size.to_physical::<u32>(scale_factor);
             size.width = max_size.width.min(size.width);

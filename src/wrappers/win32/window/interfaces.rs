@@ -19,7 +19,7 @@ pub trait WmSizing {
     fn get_min_max_size(
         &self, window: HWnd,
     ) -> (Option<PhysicalSize<i32>>, Option<PhysicalSize<i32>>);
-    fn on_sizing(&self, drag_rectangle: Rect, edge: SizingEdge) -> Option<Rect>;
+    fn on_sizing(&self, window: HWnd, drag_rectangle: Rect, edge: SizingEdge) -> Option<Rect>;
 }
 
 pub trait WmMouse {
@@ -117,7 +117,7 @@ pub unsafe fn handle_message<W: WindowImpl>(
             let dragging_rect = Rect(rect.read());
             let edge = SizingEdge::from_raw(wparam.try_into().ok()?)?;
 
-            let changed_rect = inner.on_sizing(dragging_rect, edge)?;
+            let changed_rect = inner.on_sizing(window, dragging_rect, edge)?;
             rect.write(changed_rect.0);
 
             Some(1)
@@ -265,6 +265,7 @@ fn lo_word(lparam: LPARAM) -> u16 {
 }
 
 #[repr(u8)]
+#[derive(Copy, Clone)]
 pub enum SizingEdge {
     Bottom = WMSZ_BOTTOM as _,
     BottomLeft = WMSZ_BOTTOMLEFT as _,
