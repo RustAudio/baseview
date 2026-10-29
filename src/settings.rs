@@ -215,12 +215,12 @@ pub struct AspectRatio {
 impl AspectRatio {
     /// Create a new aspect ratio with the given `numerator` and `denominator`.
     #[inline]
-    pub fn new(numerator: u32, denominator: u32) -> Self {
+    pub const fn new(numerator: u32, denominator: u32) -> Self {
         Self { numerator, denominator }
     }
 
     #[inline]
-    pub fn ratio(&self) -> f64 {
+    pub const fn ratio(&self) -> f64 {
         (self.numerator as f64) / (self.denominator as f64)
     }
 }

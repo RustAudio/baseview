@@ -1,18 +1,18 @@
-use baseview::dpi::LogicalSize;
+use baseview::dpi::{LogicalSize, PhysicalSize, Pixel};
 use baseview::gl::{GlConfig, GlContext};
 use baseview::{
-    DamageArea, DamageRect, Event, EventStatus, HandlerError, Window, WindowContext, WindowHandler,
-    WindowSettings, WindowSize,
+    AspectRatio, DamageArea, Event, EventStatus, HandlerError, Window, WindowContext,
+    WindowHandler, WindowSettings, WindowSize,
 };
-use color::{Hsl, OpaqueColor};
 use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
+
+const ASPECT_RATIO: AspectRatio = AspectRatio::new(1, 1);
 
 struct FemtovgExample {
     gl_context: GlContext,
     canvas: RefCell<Canvas<OpenGl>>,
-    damage_handler: DamageHandler,
 }
 
 impl FemtovgExample {
@@ -29,7 +29,7 @@ impl FemtovgExample {
         canvas.set_size(size.physical.width, size.physical.height, size.scale_factor as f32);
 
         unsafe { gl_context.make_not_current()? };
-        Ok(Self { gl_context, canvas: canvas.into(), damage_handler: DamageHandler::new() })
+        Ok(Self { gl_context, canvas: canvas.into() })
     }
 }
 
@@ -39,27 +39,18 @@ impl WindowHandler for FemtovgExample {
         unsafe { context.make_current()? };
 
         let mut canvas = self.canvas.borrow_mut();
+        let aspect_ratio = ASPECT_RATIO.ratio();
 
-        let screen_height = canvas.height();
-        let screen_width = canvas.width();
+        let canvas_height = canvas.height();
+        let canvas_width = canvas.width();
 
-        let color_of_the_day = new_random_color();
+        // If aspect ratio works, these should be equal to the canvas size
+        let height_ratioed = (canvas_width as f64 / aspect_ratio).cast();
+        let width_ratioed = (canvas_height as f64 * aspect_ratio).cast();
 
-        if self.damage_handler.is_full_screen_clear() {
-            canvas.clear_rect(0, 0, screen_width, screen_height, color_of_the_day);
-        } else {
-            while let Some(rect) = self.damage_handler.next_damage() {
-                canvas.clear_rect(
-                    rect.position().x,
-                    rect.position().y,
-                    rect.size().width,
-                    rect.size().height,
-                    color_of_the_day,
-                );
-            }
-        }
-
-        self.damage_handler.clear();
+        canvas.clear_rect(0, 0, canvas_width, canvas_height, Color::black());
+        canvas.clear_rect(0, height_ratioed, canvas_width, canvas_height, Color::rgb(255, 0, 0));
+        canvas.clear_rect(width_ratioed, 0, canvas_width, canvas_height, Color::rgb(255, 0, 0));
 
         // Tell renderer to execute all drawing commands
         canvas.flush();
@@ -67,18 +58,6 @@ impl WindowHandler for FemtovgExample {
         unsafe { context.make_not_current()? };
 
         Ok(())
-    }
-
-    fn damage(&self, area: DamageArea) {
-        eprintln!("Damaged: {area:?}");
-        match area {
-            DamageArea::FullWindow => self.damage_handler.set_full_screen_clear(),
-            DamageArea::Rect(rect) => self.damage_handler.add_damaged_rect(rect),
-            DamageArea::Rects(rects) => {
-                rects.iter().for_each(|r| self.damage_handler.add_damaged_rect(*r))
-            }
-            _ => {}
-        }
     }
 
     fn resized(&self, new_size: WindowSize) -> Result<(), HandlerError> {
@@ -99,50 +78,11 @@ fn main() -> Result<(), baseview::Error> {
     let window_open_options = WindowSettings::new()
         .with_title("Baseview Partial redraw example")
         .with_size(LogicalSize::new(512, 512))
+        .with_aspect_ratio(Some(ASPECT_RATIO))
         .with_gl_config(GlConfig { alpha_bits: 8, ..GlConfig::default() });
 
     let window = Window::create(window_open_options, FemtovgExample::new)?;
 
     window.run_until_closed()?;
     Ok(())
-}
-
-fn new_random_color() -> Color {
-    let hue = rand::random_range(0.0..360.0);
-    let hsv_color = OpaqueColor::<Hsl>::new([hue, 100.0, 15.0]);
-    let color = hsv_color.to_rgba8();
-
-    Color::rgb(color.r, color.g, color.b)
-}
-
-struct DamageHandler {
-    full_screen: Cell<bool>,
-    damaged_rects: RefCell<Vec<DamageRect>>,
-}
-
-impl DamageHandler {
-    fn new() -> Self {
-        Self { full_screen: false.into(), damaged_rects: RefCell::new(Vec::with_capacity(8)) }
-    }
-
-    fn is_full_screen_clear(&self) -> bool {
-        self.full_screen.get()
-    }
-
-    fn set_full_screen_clear(&self) {
-        self.full_screen.set(true)
-    }
-
-    fn clear(&self) {
-        self.full_screen.set(false);
-        self.damaged_rects.borrow_mut().clear();
-    }
-
-    fn next_damage(&self) -> Option<DamageRect> {
-        self.damaged_rects.borrow_mut().pop()
-    }
-
-    fn add_damaged_rect(&self, rect: DamageRect) {
-        self.damaged_rects.borrow_mut().push(rect);
-    }
 }
