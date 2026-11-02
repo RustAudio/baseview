@@ -175,9 +175,10 @@ fn adjust_max_size(size: Size, ratio: AspectRatio) -> Size {
 
 #[cfg(test)]
 mod tests {
+    use crate::dpi::*;
     use crate::utils::SizingStrategy;
-    use crate::{AspectRatio, WindowSettings};
-    use dpi::LogicalSize;
+    use crate::{AspectRatio, WindowSettings, WindowSize};
+    use std::cell::Cell;
 
     #[test]
     fn aspect_ratio_set_to_min_size() {
@@ -215,5 +216,42 @@ mod tests {
             SizingStrategy::from_settings(&settings).max_size(),
             Some(LogicalSize::new(200.0, 100.0).into())
         );
+    }
+
+    #[test]
+    fn adjust_size() {
+        let settings = WindowSettings::new()
+            .with_min_size(LogicalSize::new(200.0, 300.0))
+            .with_max_size(LogicalSize::new(400.0, 800.0));
+
+        let current_window_size = WindowSize::from_logical(LogicalSize::new(200.0, 400.0), 1.0);
+
+        let strategy = Cell::new(SizingStrategy::from_settings(&settings));
+
+        let assert_size = |input: (u32, u32), expected: (u32, u32)| {
+            let input = NativeSize::new(input.0, input.1);
+            let expected = NativeSize::new(expected.0, expected.1);
+
+            assert_eq!(
+                strategy.get().adjust_size(input.into(), current_window_size).to_native_size(),
+                expected
+            );
+        };
+
+        // Check min
+        assert_size((250, 450), (250, 450));
+        assert_size((50, 450), (200, 450));
+        assert_size((50, 50), (200, 300));
+
+        // Check max
+        assert_size((5000, 450), (400, 450));
+        assert_size((250, 5000), (250, 800));
+        assert_size((5000, 5000), (400, 800));
+
+        // Check conflicting min&max
+        let settings = settings.with_max_size(LogicalSize::new(150.0, 200.0));
+        strategy.set(SizingStrategy::from_settings(&settings));
+
+        assert_size((5000, 5000), (200, 300));
     }
 }
