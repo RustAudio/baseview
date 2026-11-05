@@ -26,6 +26,60 @@ impl Rect {
     }
 
     #[inline]
+    pub fn with_size_anchor_top_left(mut self, size: PhysicalSize<u32>) -> Self {
+        self.0.right = self.0.left.saturating_add(size.width.try_into().unwrap_or(i32::MAX));
+        self.0.bottom = self.0.top.saturating_add(size.height.try_into().unwrap_or(i32::MAX));
+        self
+    }
+
+    #[inline]
+    pub fn with_size_anchor_top_right(mut self, size: PhysicalSize<u32>) -> Self {
+        let current_width = self.size().width.try_into().unwrap_or(i32::MAX);
+
+        let size = PhysicalSize {
+            width: size.width.try_into().unwrap_or(i32::MAX),
+            height: size.height.try_into().unwrap_or(i32::MAX),
+        };
+
+        self.0.left = self.0.left.saturating_add(current_width.saturating_sub(size.width));
+        self.0.bottom = self.0.top.saturating_add(size.height);
+
+        self
+    }
+
+    #[inline]
+    pub fn with_size_anchor_bottom_left(mut self, size: PhysicalSize<u32>) -> Self {
+        let current_height = self.size().height.try_into().unwrap_or(i32::MAX);
+
+        let size = PhysicalSize {
+            width: size.width.try_into().unwrap_or(i32::MAX),
+            height: size.height.try_into().unwrap_or(i32::MAX),
+        };
+
+        self.0.right = self.0.left.saturating_add(size.width);
+        self.0.top = self.0.top.saturating_add(current_height.saturating_sub(size.height));
+
+        self
+    }
+
+    #[inline]
+    pub fn with_size_anchor_bottom_right(mut self, size: PhysicalSize<u32>) -> Self {
+        let current_size = self.size();
+        let current_height = current_size.height.try_into().unwrap_or(i32::MAX);
+        let current_width = current_size.width.try_into().unwrap_or(i32::MAX);
+
+        let size = PhysicalSize {
+            width: size.width.try_into().unwrap_or(i32::MAX),
+            height: size.height.try_into().unwrap_or(i32::MAX),
+        };
+
+        self.0.left = self.0.left.saturating_add(current_width.saturating_sub(size.width));
+        self.0.top = self.0.top.saturating_add(current_height.saturating_sub(size.height));
+
+        self
+    }
+
+    #[inline]
     pub fn is_empty(&self) -> bool {
         let size = self.size();
         size.width == 0 && size.height == 0
@@ -64,5 +118,17 @@ impl From<PhysicalSize<u32>> for Rect {
             right: size.width.try_into().unwrap_or(i32::MAX),
             bottom: size.height.try_into().unwrap_or(i32::MAX),
         })
+    }
+}
+
+// Replace this with u32::checked_signed_diff from stdlib when MSRV >= 1.91
+fn checked_signed_diff(lhs: u32, rhs: u32) -> Option<i32> {
+    let res = lhs.wrapping_sub(rhs) as i32;
+    let overflow = (lhs >= rhs) == (res < 0);
+
+    if !overflow {
+        Some(res)
+    } else {
+        None
     }
 }

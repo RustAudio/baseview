@@ -19,6 +19,7 @@ pub trait WmSizing {
     fn get_min_max_size(
         &self, window: HWnd,
     ) -> (Option<PhysicalSize<i32>>, Option<PhysicalSize<i32>>);
+    fn on_sizing(&self, window: HWnd, drag_rectangle: Rect, edge: SizingEdge) -> Option<Rect>;
 }
 
 pub trait WmMouse {
@@ -110,6 +111,16 @@ pub unsafe fn handle_message<W: WindowImpl>(
             }
 
             Some(0)
+        }
+        WM_SIZING => {
+            let rect = lparam as *mut RECT;
+            let dragging_rect = Rect(rect.read());
+            let edge = SizingEdge::from_raw(wparam.try_into().ok()?)?;
+
+            let changed_rect = inner.on_sizing(window, dragging_rect, edge)?;
+            rect.write(changed_rect.0);
+
+            Some(1)
         }
 
         // Draw
@@ -251,4 +262,37 @@ fn hi_word(wparam: WPARAM) -> u16 {
 
 fn lo_word(lparam: LPARAM) -> u16 {
     (lparam & 0xffff) as u16
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone)]
+pub enum SizingEdge {
+    Bottom = WMSZ_BOTTOM as _,
+    BottomLeft = WMSZ_BOTTOMLEFT as _,
+    BottomRight = WMSZ_BOTTOMRIGHT as _,
+    Left = WMSZ_LEFT as _,
+    Right = WMSZ_RIGHT as _,
+    Top = WMSZ_TOP as _,
+    TopLeft = WMSZ_TOPLEFT as _,
+    TopRight = WMSZ_TOPRIGHT as _,
+}
+
+impl SizingEdge {
+    pub fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            WMSZ_BOTTOM => Some(SizingEdge::Bottom),
+            WMSZ_BOTTOMLEFT => Some(SizingEdge::BottomLeft),
+            WMSZ_BOTTOMRIGHT => Some(SizingEdge::BottomRight),
+            WMSZ_LEFT => Some(SizingEdge::Left),
+            WMSZ_RIGHT => Some(SizingEdge::Right),
+            WMSZ_TOP => Some(SizingEdge::Top),
+            WMSZ_TOPLEFT => Some(SizingEdge::TopLeft),
+            WMSZ_TOPRIGHT => Some(SizingEdge::TopRight),
+            _ => None,
+        }
+    }
+
+    pub fn into_raw(self) -> u32 {
+        self as u32
+    }
 }

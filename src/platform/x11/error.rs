@@ -65,6 +65,7 @@ pub enum PlatformError {
     RequestFromMainThreadFailed(RequestFailed),
     SendMainThread,
     Redraw(String),
+    ResizeAttemptedOnFixedWindow,
     #[cfg(feature = "opengl")]
     XLib(crate::wrappers::xlib::XLibError),
     #[cfg(feature = "opengl")]
@@ -96,6 +97,7 @@ impl Display for PlatformError {
             PlatformError::Calloop(e) => e.fmt(f),
             PlatformError::RequestFromMainThreadFailed(e) => e.fmt(f),
             PlatformError::SendMainThread => FatalError::SendMainThread.fmt(f),
+            PlatformError::ResizeAttemptedOnFixedWindow => f.write_str("Attempted to resize a window which does not support resizing."),
             #[cfg(feature = "opengl")]
             PlatformError::XLib(e) => e.fmt(f),
             #[cfg(feature = "opengl")]

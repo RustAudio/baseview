@@ -1,9 +1,13 @@
 use crate::platform::{BaseviewWindow, PlatformError, PlatformResult};
+use crate::utils::SizingStrategy;
 use crate::warn;
-use crate::wrappers::win32::window::{HWnd, WmSizing};
+use crate::wrappers::win32::window::SizingEdge::{
+    Bottom, BottomLeft, BottomRight, Left, Right, Top, TopLeft, TopRight,
+};
+use crate::wrappers::win32::window::{HWnd, SizingEdge, WmSizing};
 use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, Rect, WindowStyle};
 use crate::{HandlerError, WindowSize};
-use dpi::PhysicalSize;
+use dpi::{PhysicalSize, Pixel};
 
 impl BaseviewWindow {
     fn adapt_host_window_to_size(
@@ -88,6 +92,69 @@ impl BaseviewWindow {
         }
 
         Ok(())
+    }
+
+    fn on_sizing_inner(
+        &self, drag_rectangle: Rect, edge: SizingEdge, aspect_ratio: f64, min_max_size: MinMaxSize,
+    ) -> Rect {
+        use SizingEdge::*;
+
+        let requested_size = min_max_size.clamp(drag_rectangle.size());
+
+        let keep_width_size = PhysicalSize {
+            width: requested_size.width,
+            height: (requested_size.width as f64 / aspect_ratio).cast(),
+        };
+
+        let keep_height_size = PhysicalSize {
+            width: (requested_size.height as f64 * aspect_ratio).cast(),
+            height: requested_size.height,
+        };
+
+        let requested_ratio = requested_size.width as f64 / requested_size.height as f64;
+        let biggest_fitting_rect =
+            if requested_ratio > aspect_ratio { keep_height_size } else { keep_width_size };
+
+        match edge {
+            Left | Right => drag_rectangle.with_size_anchor_top_left(keep_width_size),
+            Top | Bottom => drag_rectangle.with_size_anchor_top_left(keep_height_size),
+
+            BottomRight => drag_rectangle.with_size_anchor_top_left(biggest_fitting_rect),
+            TopRight => drag_rectangle.with_size_anchor_bottom_left(biggest_fitting_rect),
+            BottomLeft => drag_rectangle.with_size_anchor_top_right(biggest_fitting_rect),
+            TopLeft => drag_rectangle.with_size_anchor_bottom_right(biggest_fitting_rect),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+struct MinMaxSize {
+    min_size: Option<PhysicalSize<u32>>,
+    max_size: Option<PhysicalSize<u32>>,
+}
+
+impl MinMaxSize {
+    pub fn from_strategy(sizing_strategy: &SizingStrategy, dpi: Dpi) -> Self {
+        let scale_factor = dpi.scale_factor();
+
+        Self {
+            min_size: sizing_strategy.min_size().map(|s| s.to_physical(scale_factor)),
+            max_size: sizing_strategy.max_size().map(|s| s.to_physical(scale_factor)),
+        }
+    }
+
+    pub fn clamp(&self, mut size: PhysicalSize<u32>) -> PhysicalSize<u32> {
+        if let Some(max_size) = self.max_size {
+            size.width = size.width.min(max_size.width);
+            size.height = size.height.min(max_size.height);
+        }
+
+        if let Some(min_size) = self.min_size {
+            size.width = size.width.max(min_size.width);
+            size.height = size.height.max(min_size.height);
+        }
+
+        size
     }
 }
 
@@ -219,5 +286,33 @@ impl WmSizing for BaseviewWindow {
         };
 
         (min_size, max_size)
+    }
+
+    fn on_sizing(&self, window: HWnd, nc_drag_rectangle: Rect, edge: SizingEdge) -> Option<Rect> {
+        let aspect_ratio = self.shared_state.sizing_strategy.aspect_ratio()?.ratio();
+
+        let ctx = DpiAwarenessGuard::new(
+            &self.shared_state.user32,
+            self.shared_state.dpi_scaling_strategy.get(),
+        )
+        .unwrap_or_else(|_| DpiAwarenessGuard::dummy());
+
+        let style = window.get_style().unwrap_or(WindowStyle::dummy());
+        let dpi = self.shared_state.current_dpi.get();
+
+        let min_max_size = MinMaxSize::from_strategy(&self.shared_state.sizing_strategy, dpi);
+
+        let Ok(client_rect) = ctx.nc_area_to_client_area(nc_drag_rectangle, style, Some(dpi))
+        else {
+            return Some(self.on_sizing_inner(nc_drag_rectangle, edge, aspect_ratio, min_max_size));
+        };
+
+        let updated_rect = self.on_sizing_inner(client_rect, edge, aspect_ratio, min_max_size);
+
+        let Ok(nc_rect) = ctx.client_area_to_nc_area(updated_rect, style, Some(dpi)) else {
+            return Some(self.on_sizing_inner(client_rect, edge, aspect_ratio, min_max_size));
+        };
+
+        Some(nc_rect)
     }
 }
