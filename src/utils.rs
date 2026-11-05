@@ -55,6 +55,12 @@ impl SizingStrategy {
     pub(crate) fn adjust_size_physical(
         &self, mut size: PhysicalSize<u32>, scale_factor: f64,
     ) -> WindowSize {
+        if let Some(max_size) = self.max_size() {
+            let max_size = max_size.to_physical::<u32>(scale_factor);
+            size.width = max_size.width.min(size.width);
+            size.height = max_size.height.min(size.height);
+        }
+
         if let Some(aspect_ratio) = self.aspect_ratio() {
             let given_ratio = size.width as f64 / size.height as f64;
             let required_ratio = aspect_ratio.ratio();
@@ -74,12 +80,6 @@ impl SizingStrategy {
             size = biggest_fitting_size;
         }
 
-        if let Some(max_size) = self.max_size() {
-            let max_size = max_size.to_physical::<u32>(scale_factor);
-            size.width = max_size.width.min(size.width);
-            size.height = max_size.height.min(size.height);
-        }
-
         if let Some(min_size) = self.min_size() {
             let min_size = min_size.to_physical::<u32>(scale_factor);
             size.width = min_size.width.max(size.width);
@@ -94,6 +94,19 @@ impl SizingStrategy {
             let max_size = max_size.to_logical::<f64>(scale_factor);
             size.width = max_size.width.min(size.width);
             size.height = max_size.height.min(size.height);
+        }
+
+        if let Some(aspect_ratio) = self.aspect_ratio() {
+            let given_ratio = size.width / size.height;
+            let required_ratio = aspect_ratio.ratio();
+
+            let biggest_fitting_size = if given_ratio > required_ratio {
+                LogicalSize { width: (size.height * required_ratio).cast(), height: size.height }
+            } else {
+                LogicalSize { width: size.width, height: (size.width / required_ratio).cast() }
+            };
+
+            size = biggest_fitting_size;
         }
 
         if let Some(min_size) = self.min_size() {
