@@ -55,6 +55,25 @@ impl SizingStrategy {
     pub(crate) fn adjust_size_physical(
         &self, mut size: PhysicalSize<u32>, scale_factor: f64,
     ) -> WindowSize {
+        if let Some(aspect_ratio) = self.aspect_ratio() {
+            let given_ratio = size.width as f64 / size.height as f64;
+            let required_ratio = aspect_ratio.ratio();
+
+            let biggest_fitting_size = if given_ratio > required_ratio {
+                PhysicalSize {
+                    width: (size.height as f64 * required_ratio).cast(),
+                    height: size.height,
+                }
+            } else {
+                PhysicalSize {
+                    width: size.width,
+                    height: (size.width as f64 / required_ratio).cast(),
+                }
+            };
+
+            size = biggest_fitting_size;
+        }
+
         if let Some(max_size) = self.max_size() {
             let max_size = max_size.to_physical::<u32>(scale_factor);
             size.width = max_size.width.min(size.width);
@@ -253,5 +272,29 @@ mod tests {
         strategy.set(SizingStrategy::from_settings(&settings));
 
         assert_size((5000, 5000), (200, 300));
+    }
+
+    #[test]
+    fn adjust_size_with_aspect_ratio() {
+        let current_window_size = WindowSize::from_logical(LogicalSize::new(200.0, 400.0), 1.0);
+
+        let settings = WindowSettings::new().with_aspect_ratio(Some((1, 1)));
+        let strategy = Cell::new(SizingStrategy::from_settings(&settings));
+
+        let assert_size = |input: (u32, u32), expected: (u32, u32)| {
+            let input = NativeSize::new(input.0, input.1);
+            let expected = NativeSize::new(expected.0, expected.1);
+
+            assert_eq!(
+                strategy.get().adjust_size(input.into(), current_window_size).to_native_size(),
+                expected
+            );
+        };
+
+        assert_size((200, 200), (200, 200));
+
+        // Should always shrink, never grow
+        assert_size((500, 300), (300, 300));
+        assert_size((300, 500), (300, 300));
     }
 }
