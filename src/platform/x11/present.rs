@@ -55,12 +55,26 @@ pub struct PresentState {
     draw_now: bool,
     last_requested_serial: Option<u32>,
     last_received_present: Option<(u32, u64)>,
+    /// Set when the Present watchdog decides the server will never complete a frame.
+    fallback_requested: bool,
+    /// Whether the fallback frame timer has already been started.
+    fallback_started: bool,
 }
 
 impl PresentState {
     pub(crate) fn handle_requests(
         &mut self, shared: &WindowShared, handler: &Handler, loop_handle: &LoopHandle<EventLoop>,
     ) -> Result<(), FatalError> {
+        if self.fallback_requested {
+            self.fallback_requested = false;
+            self.fallback_started = true;
+            self.draw_now = true;
+
+            if let Err(err) = Self::setup_fallback_frame_timer(loop_handle) {
+                warn!("{}", err);
+            }
+        }
+
         let shared_state = &shared.present_state;
         let thread_state = &shared.main_thread_shared.present;
 
@@ -118,9 +132,34 @@ impl PresentState {
     ) -> Result<(), FatalError> {
         if window.present_supported() && window.present_select_input()? {
             shared.present_notify_requested.set(true);
+            Self::setup_present_watchdog(loop_handle)?;
         } else {
             Self::setup_fallback_frame_timer(loop_handle)?;
         }
+
+        Ok(())
+    }
+
+    /// Some X servers (notably XWayland) advertise the Present extension without ever sending
+    /// the `CompleteNotify` events `handle_requests()` waits for, in which case no frame is ever
+    /// drawn and the window stays black. If the first completion does not arrive promptly, ask
+    /// `handle_requests()` to switch to the frame timer used when Present is unavailable.
+    fn setup_present_watchdog(loop_handle: &LoopHandle<EventLoop>) -> Result<(), calloop::Error> {
+        const WATCHDOG_TIMEOUT: Duration = Duration::from_millis(200);
+
+        loop_handle
+            .insert_source(
+                Timer::from_duration(WATCHDOG_TIMEOUT),
+                |_, _, evloop: &mut EventLoop| {
+                    let state = &mut evloop.present_state;
+                    if !state.fallback_started && state.last_received_present.is_none() {
+                        state.fallback_requested = true;
+                    }
+
+                    TimeoutAction::Drop
+                },
+            )
+            .map_err(|e| e.error)?;
 
         Ok(())
     }
@@ -128,7 +167,13 @@ impl PresentState {
 
 impl PresentState {
     pub fn new() -> Self {
-        Self { draw_now: false, last_requested_serial: None, last_received_present: None }
+        Self {
+            draw_now: false,
+            last_requested_serial: None,
+            last_received_present: None,
+            fallback_requested: false,
+            fallback_started: false,
+        }
     }
 
     pub fn handle_present_complete_notify(&mut self, e: CompleteNotifyEvent) {
