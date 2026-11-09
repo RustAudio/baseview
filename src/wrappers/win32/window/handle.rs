@@ -15,7 +15,10 @@ use windows_sys::Win32::Graphics::Gdi::{
     MONITOR_DEFAULTTOPRIMARY,
 };
 use windows_sys::Win32::System::Ole::{RegisterDragDrop, RevokeDragDrop};
-use windows_sys::Win32::UI::HiDpi::{DPI_HOSTING_BEHAVIOR_MIXED, MDT_DEFAULT};
+use windows_sys::Win32::UI::HiDpi::{
+    LogicalToPhysicalPointForPerMonitorDPI, PhysicalToLogicalPointForPerMonitorDPI,
+    DPI_HOSTING_BEHAVIOR_MIXED, MDT_DEFAULT,
+};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
 };
@@ -300,9 +303,17 @@ impl HWnd {
 
     pub fn screen_to_client(&self, pt: PhysicalPosition<i32>) -> Result<PhysicalPosition<i32>> {
         let mut pt = POINT { x: pt.x, y: pt.y };
-        let result = unsafe { ScreenToClient(self.as_raw(), &mut pt as *mut POINT) };
 
-        if result == 0 {
+        // ScreenToClient isn't DPI-aware
+        if unsafe { PhysicalToLogicalPointForPerMonitorDPI(null_mut(), &mut pt) } == 0 {
+            return Err(Error::from_thread());
+        }
+
+        if unsafe { ScreenToClient(self.as_raw(), &mut pt) } == 0 {
+            return Err(Error::from_thread());
+        }
+
+        if unsafe { LogicalToPhysicalPointForPerMonitorDPI(null_mut(), &mut pt) } == 0 {
             return Err(Error::from_thread());
         }
 
