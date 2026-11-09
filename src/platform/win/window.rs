@@ -329,6 +329,10 @@ impl WindowImpl for BaseviewWindow {
         // Now we can get the actual dpi of the window.
         self.initialize_window_dpi(window)?;
 
+        if !self.shared_state.parented.get() {
+            window.center_on_primary_monitor()?;
+        }
+
         let drop_target = ComObject::new(DropTarget::new(Rc::downgrade(window_state), window));
         self._drop_target.set(Some(drop_target.clone()));
 
