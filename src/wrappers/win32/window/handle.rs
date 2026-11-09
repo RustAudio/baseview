@@ -301,11 +301,17 @@ impl HWnd {
         }
     }
 
-    pub fn screen_to_client(&self, pt: PhysicalPosition<i32>) -> Result<PhysicalPosition<i32>> {
+    /// Converts screen coordinates to client coordinates.
+    ///
+    /// For DPI-aware windows, OLE screen points can disagree with what
+    /// [`ScreenToClient`] expects, so we convert to logical space first and then back to physical.
+    pub fn screen_to_client(
+        &self, pt: PhysicalPosition<i32>, dpi_aware: bool,
+    ) -> Result<PhysicalPosition<i32>> {
         let mut pt = POINT { x: pt.x, y: pt.y };
 
-        // ScreenToClient isn't DPI-aware
-        if unsafe { PhysicalToLogicalPointForPerMonitorDPI(null_mut(), &mut pt) } == 0 {
+        if dpi_aware && unsafe { PhysicalToLogicalPointForPerMonitorDPI(null_mut(), &mut pt) } == 0
+        {
             return Err(Error::from_thread());
         }
 
@@ -313,7 +319,8 @@ impl HWnd {
             return Err(Error::from_thread());
         }
 
-        if unsafe { LogicalToPhysicalPointForPerMonitorDPI(null_mut(), &mut pt) } == 0 {
+        if dpi_aware && unsafe { LogicalToPhysicalPointForPerMonitorDPI(null_mut(), &mut pt) } == 0
+        {
             return Err(Error::from_thread());
         }
 
