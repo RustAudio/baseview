@@ -563,7 +563,8 @@ impl ViewImpl for BaseviewView {
         let drop_data = get_drop_data(sender);
 
         let event = MouseEvent::DragEntered {
-            position: get_drag_position(sender).to_physical(this.view.backing_scale_factor()),
+            position: get_drag_position(this.view, sender)
+                .to_physical(this.view.backing_scale_factor()),
             modifiers: make_modifiers(modifiers),
             data: drop_data,
         };
@@ -578,7 +579,8 @@ impl ViewImpl for BaseviewView {
         let drop_data = get_drop_data(sender);
 
         let event = MouseEvent::DragMoved {
-            position: get_drag_position(sender).to_physical(this.view.backing_scale_factor()),
+            position: get_drag_position(this.view, sender)
+                .to_physical(this.view.backing_scale_factor()),
             modifiers: make_modifiers(modifiers),
             data: drop_data,
         };
@@ -602,7 +604,8 @@ impl ViewImpl for BaseviewView {
         let drop_data = get_drop_data(sender);
 
         let event = MouseEvent::DragDropped {
-            position: get_drag_position(sender).to_physical(this.view.backing_scale_factor()),
+            position: get_drag_position(this.view, sender)
+                .to_physical(this.view.backing_scale_factor()),
             modifiers: make_modifiers(modifiers),
             data: drop_data,
         };
@@ -797,12 +800,15 @@ fn new_tracking_area(this: &NSView) -> Retained<NSTrackingArea> {
     }
 }
 
-fn get_drag_position(sender: Option<&ProtocolObject<dyn NSDraggingInfo>>) -> LogicalPosition<f64> {
-    let point = match sender {
-        Some(sender) => sender.draggingLocation(),
-        None => NSPoint::ZERO,
+fn get_drag_position(
+    view: &NSView, sender: Option<&ProtocolObject<dyn NSDraggingInfo>>,
+) -> LogicalPosition<f64> {
+    let Some(sender) = sender else {
+        return LogicalPosition::new(0.0, 0.0);
     };
 
+    // Flip the Y coordinate to match CursorMoved coordinate space.
+    let point = view.convertPoint_fromView(sender.draggingLocation(), None);
     LogicalPosition::new(point.x, point.y)
 }
 
