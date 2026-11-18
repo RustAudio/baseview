@@ -21,6 +21,10 @@ impl WindowWaker {
         self.view.use_on_main_thread_after(duration, |view| {
             let Some(view) = view.load() else { return };
             let Some(view) = view.inner() else { return };
+            // Like `WindowContext::request_redraw`: `trigger_frame` pauses the display link
+            // after a frame unless this is set, so without it a request made during `draw()`
+            // would be undone when the frame ends.
+            view.state.redraw_requested.set(true);
             view.set_next_frame_needed(true);
         })
     }
