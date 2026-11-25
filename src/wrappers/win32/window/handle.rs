@@ -20,9 +20,10 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetFocus, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DestroyWindow, GetWindowLongPtrW, GetWindowLongW, KillTimer, PostMessageW, SetParent, SetTimer,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_LONG_PTR_INDEX, WM_USER,
+    DestroyWindow, GetSystemMetrics, GetWindowLongPtrW, GetWindowLongW, GetWindowRect, KillTimer,
+    PostMessageW, SetParent, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWLP_USERDATA,
+    GWL_EXSTYLE, GWL_STYLE, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_LONG_PTR_INDEX, WM_USER,
 };
 
 pub(crate) const BV_WINDOW_MUST_CLOSE: u32 = WM_USER + 1;
@@ -187,6 +188,41 @@ impl HWnd {
         let rect = dpi_ctx.client_area_to_nc_area(rect, style, Some(window_dpi))?;
 
         self.resize_nc_and_activate(rect.size())
+    }
+
+    /// Centers the window on the primary monitor, preserving its current non-client size.
+    pub fn center_on_primary_monitor(&self) -> Result<()> {
+        let mut rect = Rect::EMPTY;
+        // SAFETY: This type guarantees the HWND is safe to use.
+        if unsafe { GetWindowRect(self.as_raw(), &mut rect.0) } == 0 {
+            return Err(Error::from_thread());
+        }
+
+        let size = rect.size();
+        let width = i32::try_from(size.width).unwrap_or(i32::MAX);
+        let height = i32::try_from(size.height).unwrap_or(i32::MAX);
+
+        // SAFETY: GetSystemMetrics is always safe to call.
+        let x = unsafe { GetSystemMetrics(SM_CXSCREEN) }.saturating_sub(width).div_euclid(2);
+        let y = unsafe { GetSystemMetrics(SM_CYSCREEN) }.saturating_sub(height).div_euclid(2);
+
+        let result = unsafe {
+            SetWindowPos(
+                self.as_raw(),
+                null_mut(), // Ignored by SWP_NOZORDER
+                x,
+                y,
+                0, // Ignored by SWP_NOSIZE
+                0, // Ignored by SWP_NOSIZE
+                SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE,
+            )
+        };
+
+        if result == 0 {
+            return Err(Error::from_thread());
+        }
+
+        Ok(())
     }
 
     /// Returns true if the window was previously visible, false otherwise.
