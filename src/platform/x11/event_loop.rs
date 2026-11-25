@@ -179,7 +179,7 @@ impl EventLoop {
         self.sizing_state.handle_host_resize(new_size, &self.handler, &self.shared)
     }
 
-    pub fn suggest_scale_factor(&self, scale: f64) -> PlatformResult<()> {
+    pub fn suggest_scale_factor(&self, scale: f64) -> PlatformResult<bool> {
         self.sizing_state.handle_host_suggest_scale_factor(scale, &self.handler, &self.shared)
     }
 

@@ -119,9 +119,9 @@ impl WindowHandle {
         Ok(())
     }
 
-    pub fn suggest_scale_factor(&self, _scale_factor: f64) -> Result<()> {
+    pub fn suggest_scale_factor(&self, _scale_factor: f64) -> Result<bool> {
         // This does not do anything on macOS: all coordinates are already logical
-        Ok(())
+        Ok(false)
     }
 
     pub fn set_parent(&self, new_parent: ParentWindowHandle) -> Result<()> {
