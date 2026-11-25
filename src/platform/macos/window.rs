@@ -100,7 +100,7 @@ impl WindowHandle {
     }
 
     pub fn is_open(&self) -> bool {
-        self.state.closed.get()
+        !self.state.closed.get()
     }
 
     #[inline]
