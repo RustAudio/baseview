@@ -66,7 +66,14 @@ impl DropTarget {
     }
 
     fn parse_coordinates(&self, pt: POINTL) {
-        let Ok(phy_point) = self.hwnd.screen_to_client(PhysicalPosition::new(pt.x, pt.y)) else {
+        let Some(window_state) = self.window_state.upgrade() else {
+            return;
+        };
+
+        let dpi_aware = !window_state.shared.dpi_scaling_strategy.get().assume_96_dpi;
+        let Ok(phy_point) =
+            self.hwnd.screen_to_client(PhysicalPosition::new(pt.x, pt.y), dpi_aware)
+        else {
             return;
         };
 
