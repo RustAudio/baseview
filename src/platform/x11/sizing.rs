@@ -107,18 +107,21 @@ impl SizingState {
     }
 
     /// Returns whether the suggested scale factor is now the one in use (`false` if the system
-    /// provides its own, which takes precedence).
+    /// provides its own, which takes precedence for a window that has no parent).
     pub fn handle_host_suggest_scale_factor(
         &self, scale: f64, handler: &Handler, shared: &WindowShared,
     ) -> Result<bool, PlatformError> {
+        let previous_scale = shared.sizing_state.scale_factor();
         shared.sizing_state.host_suggested_scale_factor.set(Some(scale));
 
-        // If the scaling factor is already provided by the system, do nothing
-        if shared.sizing_state.system_scale_factor.get().is_some() {
+        // If the scaling factor is already provided by the system, do nothing, unless the window
+        // is embedded: then the host's scale takes precedence
+        if !shared.sizing_state.parented && shared.sizing_state.system_scale_factor.get().is_some()
+        {
             return Ok(false);
         };
 
-        let current_logical_size = shared.sizing_state.size().to_logical::<f64>(1.0);
+        let current_logical_size = shared.sizing_state.size().to_logical::<f64>(previous_scale);
         let new_physical_size = current_logical_size.to_physical(scale);
 
         shared.sizing_state.resize_from_host(new_physical_size, handler, shared)?;
@@ -132,12 +135,18 @@ pub struct SizingStateShared {
 
     system_scale_factor: Cell<Option<f64>>,
     host_suggested_scale_factor: Cell<Option<f64>>,
+    /// Whether the window is embedded in a parent (e.g. a plug-in's editor). Then the host's
+    /// suggested scale takes precedence over the system's: the host knows the scale its own UI is
+    /// drawn at, which `Xft.dpi` (one value for the whole X display) may not match.
+    parented: bool,
 }
 
 impl SizingStateShared {
     pub fn load(connection: &X11Connection, settings: &WindowSettings) -> Result<Self, FatalError> {
         let scaling = connection.resources.xft_dpi.map(|dpi| dpi as f64 / 96.0);
-        let initial_scale_factor = scaling.unwrap_or(1.0);
+        let parented = settings.parent.is_some();
+        let initial_scale_factor =
+            Self::pick_scale_factor(parented, scaling, settings.fallback_scale_factor);
 
         let sizing_strategy = SizingStrategy::from_settings(settings);
         let window_size = settings.size.to_physical(initial_scale_factor);
@@ -147,19 +156,22 @@ impl SizingStateShared {
             window_size: window_size.into(),
             system_scale_factor: scaling.into(),
             host_suggested_scale_factor: settings.fallback_scale_factor.into(),
+            parented,
         })
     }
 
     pub fn scale_factor(&self) -> f64 {
-        if let Some(factor) = self.system_scale_factor.get() {
-            return factor;
-        };
+        Self::pick_scale_factor(
+            self.parented,
+            self.system_scale_factor.get(),
+            self.host_suggested_scale_factor.get(),
+        )
+    }
 
-        if let Some(factor) = self.host_suggested_scale_factor.get() {
-            return factor;
-        }
-
-        1.0
+    /// The system's scale factor first, then the host's suggestion; the other way round for an
+    /// embedded window. 1.0 if neither is known.
+    fn pick_scale_factor(parented: bool, system: Option<f64>, host: Option<f64>) -> f64 {
+        if parented { host.or(system) } else { system.or(host) }.unwrap_or(1.0)
     }
 
     pub fn size(&self) -> PhysicalSize<u16> {

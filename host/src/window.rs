@@ -70,7 +70,9 @@ pub trait HostedWindow {
     ///
     /// On Win32, this value is used if running on early versions of Windows 10 (or earlier).
     ///
-    /// On X11, this value is used if no `Xft.dpi`setting is set.
+    /// On X11, for a window embedded in a parent (e.g. a plug-in's editor), this value takes
+    /// precedence over the `Xft.dpi` setting. For other windows, it is used if no `Xft.dpi`
+    /// setting is set.
     ///
     /// On macOS, this function is always a no-op, and always returns `false`.
     fn suggest_fallback_scale_factor(&self, scale_factor: f64) -> Result<bool, Box<dyn Error>>;
