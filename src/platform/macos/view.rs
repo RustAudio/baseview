@@ -278,6 +278,26 @@ impl BaseviewView {
         this.window_handler.use_handler(|h| h.on_event(event)).unwrap_or(EventStatus::Ignored)
     }
 
+    /// Reports the mouse position of `event` as a `CursorMoved` event.
+    ///
+    /// Button presses report it first too: mouse moves are only tracked while
+    /// the window is key, so without it the first click into an inactive window
+    /// would come with no known position, and handlers that need one (such as
+    /// egui-baseview) would drop it.
+    fn report_position(this: ViewRef<Self>, event: &NSEvent) {
+        let point = this.view.convertPoint_fromView(event.locationInWindow(), None);
+
+        let position = LogicalPosition { x: point.x, y: point.y };
+
+        Self::trigger_event(
+            this,
+            Event::Mouse(MouseEvent::CursorMoved {
+                position: position.to_physical(this.state.scale_factor.get()),
+                modifiers: make_modifiers(event.modifierFlags()),
+            }),
+        );
+    }
+
     fn trigger_frame(this: ViewRef<Self>) {
         let result = this.window_handler.use_handler(|h| {
             this.state.redraw_requested.set(false);
@@ -521,17 +541,7 @@ impl ViewImpl for BaseviewView {
     }
 
     fn mouse_moved(this: ViewRef<Self>, event: &NSEvent) {
-        let point = this.view.convertPoint_fromView(event.locationInWindow(), None);
-
-        let position = LogicalPosition { x: point.x, y: point.y };
-
-        Self::trigger_event(
-            this,
-            Event::Mouse(MouseEvent::CursorMoved {
-                position: position.to_physical(this.state.scale_factor.get()),
-                modifiers: make_modifiers(event.modifierFlags()),
-            }),
-        );
+        Self::report_position(this, event);
 
         // SAFETY: Our superclass is NSView
         let _: () = unsafe { msg_send![super(this.view, NSView::class()), mouseMoved: event] };
@@ -652,6 +662,7 @@ impl ViewImpl for BaseviewView {
     }
 
     fn mouse_down(this: ViewRef<Self>, event: &NSEvent) {
+        Self::report_position(this, event);
         Self::trigger_event(
             this,
             Event::Mouse(ButtonPressed {
@@ -672,6 +683,7 @@ impl ViewImpl for BaseviewView {
     }
 
     fn right_mouse_down(this: ViewRef<Self>, event: &NSEvent) {
+        Self::report_position(this, event);
         Self::trigger_event(
             this,
             Event::Mouse(ButtonPressed {
@@ -692,6 +704,7 @@ impl ViewImpl for BaseviewView {
     }
 
     fn other_mouse_down(this: ViewRef<Self>, event: &NSEvent) {
+        Self::report_position(this, event);
         Self::trigger_event(
             this,
             Event::Mouse(ButtonPressed {
