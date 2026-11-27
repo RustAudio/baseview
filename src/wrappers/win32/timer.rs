@@ -1,6 +1,7 @@
 use crate::platform::{BaseviewWindow, PlatformError, PlatformResult};
 use crate::wrappers::win32::window::{
-    create_window, use_window, HWnd, WindowImpl, WmCursor, WmDraw, WmKeyboard, WmMouse, WmSizing,
+    create_window, use_window, HWnd, SizingEdge, WindowImpl, WmCursor, WmDraw, WmKeyboard, WmMouse,
+    WmSizing,
 };
 use crate::wrappers::win32::{Dpi, DpiAwarenessGuard, Rect, WindowStyle};
 use crate::{MouseButton, ScrollDelta};
@@ -204,6 +205,9 @@ impl WindowImpl for TimerWindow {
 impl WmSizing for TimerWindow {
     fn on_size(&self, _: HWnd, _: PhysicalSize<u32>) -> Result<(), ()> {
         Ok(())
+    }
+    fn on_sizing(&self, _: HWnd, _: Rect, _: SizingEdge) -> Option<Rect> {
+        None
     }
     fn on_dpi_changed(&self, _: HWnd, _: Dpi, _: Rect) -> PlatformResult<()> {
         Ok(())

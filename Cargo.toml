@@ -107,6 +107,7 @@ members = [
     "examples/test-frame-pacing",
     "examples/timers",
     "examples/external-wakeup",
+    "tests/aspect-ratio",
     "tests/partial-rendering"
 ]
 

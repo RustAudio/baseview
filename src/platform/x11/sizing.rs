@@ -176,7 +176,7 @@ impl SizingStateShared {
     }
 
     pub fn make_size_hints(&self) -> WmSizeHints {
-        get_size_hints(&self.sizing_strategy, self.window_size.get(), self.scale_factor())
+        get_size_hints(&self.sizing_strategy, self.scale_factor())
     }
 
     pub fn store_size(
@@ -198,12 +198,11 @@ impl SizingStateShared {
             return Ok(());
         }
 
-        window.resize(new_size)?.check()?;
-
         if !self.sizing_strategy.is_resizable() {
-            let size_hints = get_size_hints(&self.sizing_strategy, new_size, self.scale_factor());
-            window.set_size_hints(size_hints)?.check()?;
+            return Err(PlatformError::ResizeAttemptedOnFixedWindow);
         }
+
+        window.resize(new_size)?.check()?;
 
         // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
         // and notify the window handler about it
@@ -220,6 +219,10 @@ impl SizingStateShared {
             return Ok(());
         };
 
+        if !self.sizing_strategy.is_resizable() {
+            return Err(PlatformError::ResizeAttemptedOnFixedWindow);
+        }
+
         if let Err(()) =
             handler.resize(WindowSize::from_physical(new_size.cast(), self.scale_factor()))
         {
@@ -228,10 +231,6 @@ impl SizingStateShared {
         }
 
         shared.xcb_window.resize(new_size.cast())?.check()?; // Will not call handler, as size is the same as above.
-        if !self.sizing_strategy.is_resizable() {
-            let size_hints = get_size_hints(&self.sizing_strategy, new_size, self.scale_factor());
-            shared.xcb_window.set_size_hints(size_hints)?.check()?;
-        }
 
         // These come from the Host, no need to notify it about the new size
 
@@ -290,28 +289,37 @@ impl SizingThreadShared {
     }
 }
 
-pub fn get_size_hints(
-    strategy: &SizingStrategy, current_size: PhysicalSize<impl Pixel>, scale_factor: f64,
-) -> WmSizeHints {
+pub fn get_size_hints(strategy: &SizingStrategy, scale_factor: f64) -> WmSizeHints {
+    fn to_x11_aspect_ratio(aspect_ratio: crate::AspectRatio) -> x11rb::properties::AspectRatio {
+        match (aspect_ratio.numerator.try_into(), aspect_ratio.denominator.try_into()) {
+            (Ok(numerator), Ok(denominator)) => {
+                x11rb::properties::AspectRatio { numerator, denominator }
+            }
+            _ => x11rb::properties::AspectRatio {
+                numerator: (aspect_ratio.numerator as f64 / 2.0) as i32,
+                denominator: (aspect_ratio.denominator as f64 / 2.0) as i32,
+            },
+        }
+    }
+
     let mut size_hints = WmSizeHints::default();
 
     match strategy {
-        SizingStrategy::Fixed => {
-            size_hints.min_size = Some(to_size_hint(current_size));
+        SizingStrategy::Fixed { size } => {
+            size_hints.min_size = Some(to_size_hint(size.to_physical(scale_factor)));
             size_hints.max_size = size_hints.min_size;
+            size_hints.aspect = None;
         }
-        SizingStrategy::Resizable { min_size, max_size } => {
-            size_hints.min_size =
-                min_size.map(|s| to_size_hint(s.to_physical::<i32>(scale_factor)));
-            size_hints.max_size =
-                max_size.map(|s| to_size_hint(s.to_physical::<i32>(scale_factor)));
+        SizingStrategy::Resizable { min_size, max_size, aspect_ratio } => {
+            size_hints.min_size = min_size.map(|s| to_size_hint(s.to_physical(scale_factor)));
+            size_hints.max_size = max_size.map(|s| to_size_hint(s.to_physical(scale_factor)));
+            size_hints.aspect = aspect_ratio.map(to_x11_aspect_ratio).map(|a| (a, a))
         }
     }
 
     size_hints
 }
 
-fn to_size_hint(size: PhysicalSize<impl Pixel>) -> (i32, i32) {
-    let size = size.cast();
+fn to_size_hint(size: PhysicalSize<i32>) -> (i32, i32) {
     (size.width, size.height)
 }
